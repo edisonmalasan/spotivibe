@@ -25,7 +25,7 @@ ROADMAP M3 (see proposal.md — Why) requires the provider layer itself. Referen
 ## Decisions
 
 1. **Two-stage provider pipeline: provider-specific parse → shared normalize → shared filter/score.**
-   Each tier implements one interface — `{ id, search(query, ctx): Promise<ProviderCandidate[]> }` — where `ProviderCandidate` is a small Spotivibe-owned type (videoId, title, artist text, artwork candidates, optional duration, optional category hint, tier id). One shared module converts candidates to canonical `Track`s (duration parsing, artwork selection, artist joining, categorization, `qualityScore`), and one shared filter module runs the centralized rules.
+   Each tier implements one interface — `{ id, search(query, ctx): Promise<ProviderCandidate[]> }` — where `ProviderCandidate` is a small Spotivibe-owned type (videoId, title, artist text and id, album title/id when the tier provides them — the YTMusic album run, which Lyrix never parsed —, artwork candidates, optional duration, optional category hint, tier id). One shared module converts candidates to canonical `Track`s (duration parsing, artwork selection, artist joining, categorization, `qualityScore`), and one shared filter module runs the centralized rules.
    *Why:* filters/scoring cannot drift per tier (spec: identical filtering regardless of tier), and normalization quirks stay isolated in each provider's parser. *Alternative:* providers return final `Track[]` — rejected: duplicates normalization and lets tier-specific filter drift re-enter.
 
 2. **Canonical `Track` via type-only import from `@/data/repositories`.**

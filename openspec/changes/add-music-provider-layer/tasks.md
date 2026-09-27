@@ -9,10 +9,10 @@
 ## 2. Provider fixtures and tier parsers
 
 - [x] 2.1 Capture one live response per tier (YouTube Music Innertube, YouTube Web Innertube, Invidious, Piped) into `frontend/tests/fixtures/providers/*.json` with a provenance note (date, request shape) in `frontend/tests/fixtures/providers/README.md`; verify each fixture parses as JSON. If an upstream is unreachable from this environment, record the exact failure and commit a clearly labeled minimal synthetic fixture for that tier instead. (Captured live 2026-09-27: all four tiers reachable — Invidious via `invidious.f5.si`, Piped via `pipedapi.ducks.party`; all four fixtures parse.)
-- [ ] 2.2 Implement the YouTube Music Innertube provider (request builder: WEB_REMIX context/headers/songs filter param; recursive renderer traversal parser) and verify fixture tests assert extracted candidates (video IDs, titles, artist text, duration/artwork when present, no hard-coded durations).
-- [ ] 2.3 Implement the YouTube Web Innertube provider (WEB context, recursive `videoRenderer`/`compactVideoRenderer` traversal) and verify its fixture tests pass.
-- [ ] 2.4 Implement the Invidious provider (built-in/env instance list, ≤2 instance attempts, `/api/v1/search` parse) and verify its fixture tests pass, including instance-rotation behavior on a failing instance (mocked fetch).
-- [ ] 2.5 Implement the Piped provider (instance list, `/search` parse) and verify its fixture tests pass, including rotation on failure (mocked fetch).
+- [x] 2.2 Implement the YouTube Music Innertube provider (request builder: WEB_REMIX context/headers/songs filter param; recursive renderer traversal parser) and verify fixture tests assert extracted candidates (video IDs, titles, artist text, duration/artwork when present, no hard-coded durations).
+- [x] 2.3 Implement the YouTube Web Innertube provider (WEB context, recursive `videoRenderer`/`compactVideoRenderer` traversal) and verify its fixture tests pass.
+- [x] 2.4 Implement the Invidious provider (built-in/env instance list, ≤2 instance attempts, `/api/v1/search` parse) and verify its fixture tests pass, including instance-rotation behavior on a failing instance (mocked fetch).
+- [x] 2.5 Implement the Piped provider (instance list, `/search` parse) and verify its fixture tests pass, including rotation on failure (mocked fetch).
 
 ## 3. Shared normalization, filtering, and scoring
 

@@ -42,6 +42,10 @@ export interface ProviderCandidate {
   artistText?: string;
   /** Channel id when the tier provides one. */
   artistId?: string;
+  /** Album title when the tier provides one (e.g. the YTMusic album run). */
+  albumTitle?: string;
+  /** Album id when the tier provides one. */
+  albumId?: string;
   /** Artwork candidates of any size; normalization selects the largest. */
   artwork: ArtworkCandidate[];
   /** Seconds, only when the tier presented a parsable duration. */
