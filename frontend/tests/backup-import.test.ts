@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import {
+  migrateEnvelope,
+  prepareImport,
+  type BackupMigration,
+  type RawEnvelope,
+} from "@/data/backup";
+import { encode, makeBackupData, makeEnvelope } from "./helpers/backup-fixtures";
+
+/**
+ * Task 4.2: import preparation — malformed input, foreign formats, newer
+ * versions, and invalid records all reject before any mutation; the migration
+ * pipeline runs pure steps in ascending order without mutating its input.
+ */
+
+describe("prepareImport", () => {
+  it("rejects malformed JSON", () => {
+    const result = prepareImport("{not json");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("invalid-json");
+  });
+
+  it("rejects files that are not Spotivibe backup envelopes", () => {
+    const foreign = [
+      "[]",
+      '"hello"',
+      "42",
+      "null",
+      JSON.stringify({ foo: 1 }),
+      JSON.stringify({ format: "other-backup", version: 1 }),
+      JSON.stringify({ version: 1 }),
+      JSON.stringify({ format: "spotivibe-backup" }),
+    ];
+    for (const input of foreign) {
+      const result = prepareImport(input);
+      expect(result.ok, `input: ${input}`).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("invalid-format");
+    }
+  });
+
+  it("rejects an unsupported newer version", () => {
+    const envelope = { ...makeEnvelope(), version: 99 };
+    const result = prepareImport(encode(envelope));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("unsupported-version");
+      if (result.error.kind === "unsupported-version") {
+        expect(result.error.version).toBe(99);
+      }
+    }
+  });
+
+  it("rejects records that violate the schema", () => {
+    const missingCapabilities: {
+      data: { likedTracks: { track: Record<string, unknown> }[] };
+    } = JSON.parse(encode(makeEnvelope()));
+    delete missingCapabilities.data.likedTracks[0].track.capabilities;
+    const r1 = prepareImport(encode(missingCapabilities));
+    expect(r1.ok).toBe(false);
+    if (!r1.ok) {
+      expect(r1.error.kind).toBe("invalid-records");
+      if (r1.error.kind === "invalid-records") {
+        expect(r1.error.issues.join(" ")).toContain("capabilities");
+      }
+    }
+
+    const unknownTopLevel = { ...makeEnvelope(), secretField: "token" };
+    const r2 = prepareImport(encode(unknownTopLevel));
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.error.kind).toBe("invalid-records");
+
+    const badContext = makeBackupData();
+    badContext.history[0].context = "nowhere" as (typeof badContext.history)[0]["context"];
+    const r3 = prepareImport(encode(makeEnvelope(badContext)));
+    expect(r3.ok).toBe(false);
+    if (!r3.ok) expect(r3.error.kind).toBe("invalid-records");
+  });
+
+  it("accepts a valid current-version envelope", () => {
+    const result = prepareImport(encode(makeEnvelope()));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.sourceVersion).toBe(1);
+      expect(result.envelope.version).toBe(1);
+      expect(result.envelope.data.likedTracks).toHaveLength(2);
+      expect(result.envelope.data.preferences.languages).toEqual(["hi"]);
+    }
+  });
+});
+
+describe("migrateEnvelope", () => {
+  it("runs steps in ascending order, bumps versions, and never mutates input", () => {
+    const order: number[] = [];
+    const steps: BackupMigration[] = [
+      {
+        fromVersion: 2,
+        description: "v2 → v3",
+        migrate: (envelope) => {
+          order.push(2);
+          return { ...envelope, marker: "after-2" };
+        },
+      },
+      {
+        fromVersion: 1,
+        description: "v1 → v2",
+        migrate: (envelope) => {
+          order.push(1);
+          return { ...envelope, marker: "after-1" };
+        },
+      },
+    ];
+    const input = makeEnvelope() as unknown as RawEnvelope;
+    const snapshot = structuredClone(input);
+
+    const result = migrateEnvelope(input, 3, steps);
+    expect(result.ok).toBe(true);
+    expect(order).toEqual([1, 2]);
+    if (result.ok) {
+      expect(result.sourceVersion).toBe(1);
+      expect(result.envelope.version).toBe(3);
+      expect(result.envelope.marker).toBe("after-2");
+    }
+    // Purity: the caller's object is untouched.
+    expect(input).toEqual(snapshot);
+  });
+
+  it("fails when no migration path exists to the target version", () => {
+    const result = migrateEnvelope(makeEnvelope() as unknown as RawEnvelope, 3, []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("unsupported-version");
+  });
+
+  it("rejects versions above the target", () => {
+    const result = migrateEnvelope({ version: 5 }, 1, []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("unsupported-version");
+      if (result.error.kind === "unsupported-version") {
+        expect(result.error.version).toBe(5);
+      }
+    }
+  });
+
+  it("rejects non-integer versions", () => {
+    const result = migrateEnvelope({ version: 1.5 }, 3, []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("invalid-format");
+  });
+});

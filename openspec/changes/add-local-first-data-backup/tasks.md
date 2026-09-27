@@ -18,9 +18,9 @@
 
 ## 4. Backup preparation (pure layer)
 
-- [ ] 4.1 Implement the `BackupEnvelope` v1 zod schemas and the export serializer (collect supported datasets from repositories → envelope with `format`/`version`/`exportedAt`/`appVersion`/whitelisted `data`); verify unit tests assert envelope fields, whitelist-only contents (no cache/unknown keys), and export reflecting the latest data.
-- [ ] 4.2 Implement the import preparation pipeline — parse, format/version gate, ascending pure migration steps (injectable registry), strict per-record validation; verify unit tests cover malformed JSON, foreign format, newer version rejection before mutation, older-version migration ordering, and input non-mutation (purity).
-- [ ] 4.3 Implement the pure `planReplace` and `planMerge` planners with the spec's deterministic dedupe rules per dataset; verify unit tests assert each conflict rule, merge preserving local-only records, and repeated planning of the same envelope producing identical, duplicate-free plans.
+- [x] 4.1 Implement the `BackupEnvelope` v1 zod schemas and the export serializer (collect supported datasets from repositories → envelope with `format`/`version`/`exportedAt`/`appVersion`/whitelisted `data`); verify unit tests assert envelope fields, whitelist-only contents (no cache/unknown keys), and export reflecting the latest data.
+- [x] 4.2 Implement the import preparation pipeline — parse, format/version gate, ascending pure migration steps (injectable registry), strict per-record validation; verify unit tests cover malformed JSON, foreign format, newer version rejection before mutation, older-version migration ordering, and input non-mutation (purity).
+- [x] 4.3 Implement the pure `planReplace` and `planMerge` planners with the spec's deterministic dedupe rules per dataset; verify unit tests assert each conflict rule, merge preserving local-only records, and repeated planning of the same envelope producing identical, duplicate-free plans.
 
 ## 5. Atomic application and end-to-end backup loop
 
