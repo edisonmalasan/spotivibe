@@ -13,7 +13,7 @@ The shell SHALL be styled exclusively through design tokens extracted from `fron
 #### Scenario: Rendered surfaces match DESIGN.md token values
 
 - **WHEN** a card primitive and the page canvas are rendered
-- **THEN** the canvas computes to `#000000`, the card surface to `#121212`, and the card hover surface to `#292929`
+- **THEN** the canvas computes to `#000000`, the album card surface to `#121212`, the album card hover surface to `#1f1f1f`, and an elevated card's hover surface to `#292929`
 
 #### Scenario: Typography and radius follow the token scale
 
@@ -106,7 +106,7 @@ The shell SHALL present Spotivibe's own name, logo mark, and icon surfaces. It M
 #### Scenario: Branding surfaces show Spotivibe identity
 
 - **WHEN** the shell renders
-- **THEN** the Spotivibe name and logo mark are present in the sidebar/branding area and the app manifest/icon surfaces
+- **THEN** the Spotivibe name and logo mark are present in the shell's branding area (top bar), the page title, and the app icon surface
 
 #### Scenario: No Spotify brand assets are shipped
 
