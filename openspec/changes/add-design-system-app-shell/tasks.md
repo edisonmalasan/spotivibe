@@ -25,8 +25,8 @@
 
 ## 5. Branding and placeholder routes
 
-- [ ] 5.1 Create original Spotivibe branding (inline logo mark/wordmark component, favicon, page title/metadata), then verify a test asserts Spotivibe branding renders and a repo/bundle check finds no Spotify logo, icon, or brand copy.
-- [ ] 5.2 Implement placeholder routes `/`, `/search`, `/library` that render only shell chrome plus `EmptyState`/`Skeleton` states, then verify component tests render each route showing the empty/skeleton state and no functional search/library/playback controls exist.
+- [x] 5.1 Create original Spotivibe branding (inline logo mark/wordmark component, favicon, page title/metadata), then verify a test asserts Spotivibe branding renders and a repo/bundle check finds no Spotify logo, icon, or brand copy.
+- [x] 5.2 Implement placeholder routes `/`, `/search`, `/library` that render only shell chrome plus `EmptyState`/`Skeleton` states, then verify component tests render each route showing the empty/skeleton state and no functional search/library/playback controls exist.
 
 ## 6. Integration verification (M1 acceptance)
 

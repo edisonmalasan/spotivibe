@@ -1,6 +1,7 @@
 /**
  * Original Spotivibe identity — dark rounded tile with three ascending green
- * "vibe" bars plus the wordmark. No Spotify marks, logos, or copy anywhere.
+ * "vibe" bars plus the wordmark. No third-party music-service marks, logos,
+ * or copy anywhere.
  */
 export function Logo() {
   return (
