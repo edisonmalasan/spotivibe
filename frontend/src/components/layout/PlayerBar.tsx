@@ -4,9 +4,10 @@ import Link from "next/link";
 
 /**
  * Desktop player slot (72px, void-black) below the content area. Idle state
- * only in M1: placeholder artwork/title, disabled transport controls with the
- * green play affordance, and a zeroed progress track. The whole track cluster
- * links to the expanded Now Playing route.
+ * only in M1: placeholder artwork/title, muted disabled transport controls
+ * (the accent tone renders the play button #1ed760 once a track can play),
+ * and a zeroed progress track. The whole track cluster links to the expanded
+ * Now Playing route.
  */
 export function PlayerBar() {
   return (

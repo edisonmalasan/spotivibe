@@ -99,4 +99,32 @@ describe("IconButton", () => {
 
     expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();
   });
+
+  it("keeps the disabled accent play icon legible against the iron fill", () => {
+    render(
+      <IconButton label="Play" tone="accent" disabled>
+        <svg aria-hidden="true" />
+      </IconButton>,
+    );
+    const button = screen.getByRole("button", { name: "Play" });
+
+    expect(button).toBeDisabled();
+    expect(button.className).toContain("disabled:bg-iron");
+    expect(button.className).toContain("disabled:text-fog");
+    // Exactly one disabled text color: a base-level `disabled:text-iron`
+    // overrode the accent's fog and rendered the icon invisible (#333 on #333).
+    expect(button.className).not.toContain("disabled:text-iron");
+  });
+
+  it("keeps default-tone disabled controls muted at iron", () => {
+    render(
+      <IconButton label="Queue" disabled>
+        <svg aria-hidden="true" />
+      </IconButton>,
+    );
+    const button = screen.getByRole("button", { name: "Queue" });
+
+    expect(button).toBeDisabled();
+    expect(button.className).toContain("disabled:text-iron");
+  });
 });
