@@ -1,0 +1,125 @@
+/*
+ * Spotivibe design tokens — extracted from frontend/docs/DESIGN.md (canonical UI/UX source).
+ *
+ * Layer 1: @theme — the Tailwind v4 theme registry. Tailwind emits these as CSS custom
+ *          properties on :root and derives utilities (bg-carbon, text-mist, rounded-cards,
+ *          text-heading, font-bold, shadow-subtle, ...).
+ * Layer 2: :root  — literal tokens from DESIGN.md's CSS Custom Properties block that the
+ *          theme block does not carry (spacing scale literals, surfaces, gradients, layout).
+ *
+ * Spacing contract (DESIGN.md: base unit 4px, compact density):
+ *   --spacing: 4px drives every numeric utility, so numbers are 4px units —
+ *   p-1=4px, p-2=8px, p-3=12px, p-4=16px, p-6=24px, p-8=32px, p-12=48px, p-43=172px.
+ *   The literal tokens (--spacing-12: 12px, ...) are available for direct var() use.
+ *
+ * Breakpoint contract (DESIGN.md does not specify; decided in design.md):
+ *   mobile <768px, tablet 768–1023px (md), desktop ≥1024px (lg).
+ */
+
+@theme {
+  /* Colors */
+  --color-spotify-green: #1ed760;
+  --color-signal-red: #b85850;
+  --color-void-black: #000000;
+  --color-carbon: #121212;
+  --color-graphite: #1f1f1f;
+  --color-smoke: #292929;
+  --color-iron: #333333;
+  --color-steel: #535353;
+  --color-fog: #73777c;
+  --color-mist: #b3b3b3;
+  --color-bone: #c5c5c5;
+  --color-pure-white: #ffffff;
+  --color-promo-gradient: #509bf5;
+  --color-magenta-glow: #af2896;
+
+  /* Typography — font families.
+   * 'SpotifyMixUI'/'SpotifyMixUITitle' are proprietary and never bundled; DESIGN.md names
+   * Inter as the substitute, provided by next/font as --font-inter. */
+  --font-spotifymixui:
+    "SpotifyMixUI", var(--font-inter, Inter), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-spotifymixuititle:
+    "SpotifyMixUITitle", var(--font-inter, Inter), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Typography — scale (DESIGN.md Type Scale, line heights paired to each role) */
+  --text-caption: 11px;
+  --text-caption--line-height: 1.2;
+  --text-body-lg: 14px;
+  --text-body-lg--line-height: 1.33;
+  --text-link: 16px;
+  --text-link--line-height: 1.2;
+  --text-heading: 24px;
+  --text-heading--line-height: 1.2;
+  /* 12px label links (DESIGN.md component specs: section "Show all" link, artist "Artist" label) */
+  --text-label: 12px;
+  --leading-caption: 1.2;
+  --leading-body-lg: 1.33;
+  --leading-link: 1.2;
+  --leading-heading: 1.2;
+
+  /* Typography — weights */
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Spacing — 4px base unit (DESIGN.md) */
+  --spacing: 4px;
+
+  /* Border radius — DESIGN.md families. Never mix families:
+   * content cards/images 6px, actions 9999px, inputs/avatars 500px, small details 2px.
+   * Components use the named families (rounded-cards, rounded-buttons, rounded-inputs,
+   * rounded-avatars, rounded-small); --radius-full/full-2 mirror DESIGN.md's literal block. */
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-2xl: 16px;
+  --radius-full: 500px;
+  --radius-full-2: 9999px;
+  --radius-small: 2px;
+  --radius-cards: 6px;
+  --radius-images: 6px;
+  --radius-inputs: 500px;
+  --radius-avatars: 500px;
+  --radius-buttons: 9999px;
+
+  /* Shadows */
+  --shadow-lg: rgba(0, 0, 0, 0.5) 0px 8px 24px 0px;
+  --shadow-subtle: rgb(18, 18, 18) 0px 1px 0px 0px, rgb(124, 124, 124) 0px 0px 0px 1px inset;
+
+  /* Breakpoints — shell contract: md = tablet (768px), lg = desktop (1024px) */
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+}
+
+:root {
+  /* Spacing — literal scale tokens (DESIGN.md spacing scale) */
+  --spacing-unit: 4px;
+  --spacing-4: 4px;
+  --spacing-8: 8px;
+  --spacing-12: 12px;
+  --spacing-16: 16px;
+  --spacing-20: 20px;
+  --spacing-24: 24px;
+  --spacing-28: 28px;
+  --spacing-32: 32px;
+  --spacing-36: 36px;
+  --spacing-40: 40px;
+  --spacing-48: 48px;
+  --spacing-172: 172px;
+
+  /* Layout (DESIGN.md layout measurements; ranges are documentation tokens) */
+  --section-gap: 32-48px;
+  --card-padding: 12px;
+  --element-gap: 8-12px;
+
+  /* Gradients (DESIGN.md promo/magenta gradient endpoints) */
+  --gradient-promo-gradient: linear-gradient(90deg, rgb(175, 40, 150), rgb(80, 155, 245));
+  --gradient-magenta-glow: linear-gradient(90deg, rgb(175, 40, 150), rgb(80, 155, 245));
+
+  /* Surfaces (DESIGN.md surface ladder) */
+  --surface-canvas: #000000;
+  --surface-sidebar: #121212;
+  --surface-card: #1f1f1f;
+  --surface-card-hover: #292929;
+}

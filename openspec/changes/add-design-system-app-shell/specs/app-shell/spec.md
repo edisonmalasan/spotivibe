@@ -13,7 +13,7 @@ The shell SHALL be styled exclusively through design tokens extracted from `fron
 #### Scenario: Rendered surfaces match DESIGN.md token values
 
 - **WHEN** a card primitive and the page canvas are rendered
-- **THEN** the canvas computes to `#000000`, the card surface to `#121212`, and the card hover surface to `#292929`
+- **THEN** the canvas computes to `#000000`, the album card surface to `#121212`, the album card hover surface to `#1f1f1f`, and an elevated card's hover surface to `#292929`
 
 #### Scenario: Typography and radius follow the token scale
 
@@ -22,7 +22,7 @@ The shell SHALL be styled exclusively through design tokens extracted from `fron
 
 ### Requirement: Desktop shell layout
 
-At viewports of 1024px and wider, the shell SHALL render a 340px-wide left library sidebar (`#121212`), a 64px-tall top navigation bar (`#000000`) containing the search input, back/forward navigation arrows, and action controls, a vertically scrollable main content region, and the persistent player region at the bottom of the viewport.
+At viewports of 1024px and wider, the shell SHALL render a 340px-wide left library sidebar (`#121212`), a 64px-tall top navigation bar (`#000000`) containing the branding area, the search input, and back/forward navigation arrows (account and upgrade call-to-action controls are permanently out of scope for this accountless product), a vertically scrollable main content region, and the persistent player region at the bottom of the viewport.
 
 #### Scenario: Wide viewport renders the two-column shell
 
@@ -106,7 +106,7 @@ The shell SHALL present Spotivibe's own name, logo mark, and icon surfaces. It M
 #### Scenario: Branding surfaces show Spotivibe identity
 
 - **WHEN** the shell renders
-- **THEN** the Spotivibe name and logo mark are present in the sidebar/branding area and the app manifest/icon surfaces
+- **THEN** the Spotivibe name and logo mark are present in the shell's branding area (top bar), the page title, and the app icon surface
 
 #### Scenario: No Spotify brand assets are shipped
 
@@ -115,7 +115,7 @@ The shell SHALL present Spotivibe's own name, logo mark, and icon surfaces. It M
 
 ### Requirement: Accessibility fundamentals
 
-All interactive shell controls SHALL be keyboard reachable, expose visible focus states, and carry accessible names; icon-only controls MUST have text alternatives (e.g. `aria-label`), and landmarks (banner/navigation/main/complementary/contentinfo) SHALL be expressed with semantic elements.
+All interactive shell controls SHALL be keyboard reachable, expose visible focus states, and carry accessible names; icon-only controls MUST have text alternatives (e.g. `aria-label`), and landmarks (banner/navigation/main/complementary) SHALL be expressed with semantic elements — the shell intentionally has no `contentinfo` region (the player areas are application chrome, not document footer content).
 
 #### Scenario: Icon-only controls have accessible names
 

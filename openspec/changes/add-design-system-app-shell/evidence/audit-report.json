@@ -1,0 +1,430 @@
+{
+  "base": "http://localhost:3100",
+  "capturedAt": "2026-09-27T08:56:02.212Z",
+  "shots": [
+    "home-390.png",
+    "search-390.png",
+    "library-390.png",
+    "now-playing-390.png",
+    "home-820.png",
+    "home-1280.png",
+    "focus-visible-1280.png",
+    "focus-traversal-1280.png",
+    "hover-navarrow-1280.png",
+    "hover-card-1280.png",
+    "hover-bottomnav-390.png"
+  ],
+  "variants": [
+    {
+      "viewport": "390x844",
+      "route": "/",
+      "w": 390,
+      "h": 844,
+      "header": true,
+      "sidebar": "none",
+      "playerBar": "none",
+      "compactShell": "flex",
+      "bottomNav": "flex",
+      "miniPlayer": "flex"
+    },
+    {
+      "viewport": "390x844",
+      "route": "/search",
+      "w": 390,
+      "h": 844,
+      "header": true,
+      "sidebar": "none",
+      "playerBar": "none",
+      "compactShell": "flex",
+      "bottomNav": "flex",
+      "miniPlayer": "flex"
+    },
+    {
+      "viewport": "390x844",
+      "route": "/library",
+      "w": 390,
+      "h": 844,
+      "header": true,
+      "sidebar": "none",
+      "playerBar": "none",
+      "compactShell": "flex",
+      "bottomNav": "flex",
+      "miniPlayer": "flex"
+    },
+    {
+      "viewport": "390x844",
+      "route": "/now-playing",
+      "w": 390,
+      "h": 844,
+      "header": true,
+      "sidebar": "none",
+      "playerBar": "none",
+      "compactShell": "flex",
+      "bottomNav": "flex",
+      "miniPlayer": "flex"
+    },
+    {
+      "viewport": "820x1000",
+      "route": "/",
+      "w": 820,
+      "h": 1000,
+      "header": true,
+      "sidebar": "none",
+      "playerBar": "none",
+      "compactShell": "flex",
+      "bottomNav": "flex",
+      "miniPlayer": "flex"
+    },
+    {
+      "viewport": "1280x800",
+      "route": "/",
+      "w": 1280,
+      "h": 800,
+      "header": true,
+      "sidebar": "flex",
+      "playerBar": "flex",
+      "compactShell": "none",
+      "bottomNav": "none",
+      "miniPlayer": "flex"
+    }
+  ],
+  "checks": {
+    "empty_390": "[\"Home\",\"Trending songs\",\"Made for you\",\"Nothing here yet\",\"Recommendations will appear here as you explore Spotivibe.\"]",
+    "empty_820": "[\"Home\",\"Trending songs\",\"Made for you\",\"Nothing here yet\",\"Recommendations will appear here as you explore Spotivibe.\"]",
+    "empty_1280": "[\"Home\",\"Trending songs\",\"Made for you\",\"Nothing here yet\",\"Recommendations will appear here as you explore Spotivibe.\"]",
+    "playerPersistence": [
+      {
+        "viewport": "390x844",
+        "link": "nav[aria-label=\"Primary\"] a[href=\"/search\"]",
+        "landed": "/search",
+        "playerBarMarker": "preserved",
+        "miniPlayerMarker": "preserved",
+        "playerRegionVisible": "[data-testid=\"mini-player\"]"
+      },
+      {
+        "viewport": "1280x800",
+        "link": "aside a[href=\"/search\"]",
+        "landed": "/search",
+        "playerBarMarker": "preserved",
+        "miniPlayerMarker": "preserved",
+        "playerRegionVisible": "[data-testid=\"player-bar\"]"
+      }
+    ],
+    "focusTrail": [
+      {
+        "stop": 1,
+        "tag": "A",
+        "name": "Spotivibe",
+        "href": "/",
+        "outline": "solid 2px rgb(30, 215, 96)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 2,
+        "tag": "BUTTON",
+        "name": "Go back",
+        "href": null,
+        "outline": "solid 2px rgb(32, 215, 97)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 3,
+        "tag": "BUTTON",
+        "name": "Go forward",
+        "href": null,
+        "outline": "solid 2px rgb(37, 216, 101)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 4,
+        "tag": "INPUT",
+        "name": "Search",
+        "href": null,
+        "outline": "solid 2px rgb(30, 215, 96)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 5,
+        "tag": "BUTTON",
+        "name": "Add to Your Library",
+        "href": null,
+        "outline": "solid 2px rgb(37, 216, 101)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 6,
+        "tag": "A",
+        "name": "Open library",
+        "href": "/library",
+        "outline": "solid 2px rgb(28, 198, 88)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 7,
+        "tag": "A",
+        "name": "Search now",
+        "href": "/search",
+        "outline": "solid 2px rgb(28, 198, 88)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 8,
+        "tag": "A",
+        "name": "Close Now Playing",
+        "href": "/",
+        "outline": "solid 2px rgb(37, 216, 101)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 9,
+        "tag": "A",
+        "name": "Open Now Playing",
+        "href": "/now-playing",
+        "outline": "solid 2px rgb(30, 215, 96)",
+        "outlineOffset": "2px"
+      }
+    ],
+    "hover": [
+      {
+        "target": "topbar-nav-arrow",
+        "selector": "header button",
+        "viewport": "1280x800",
+        "before": {
+          "bg": "rgb(0, 0, 0)",
+          "color": "rgb(255, 255, 255)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "after": {
+          "bg": "rgb(41, 41, 41)",
+          "color": "rgb(255, 255, 255)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "changed": true
+      },
+      {
+        "target": "sidebar-pill-cta",
+        "selector": "aside a[href=\"/library\"]",
+        "viewport": "1280x800",
+        "before": {
+          "bg": "rgb(255, 255, 255)",
+          "color": "rgb(0, 0, 0)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "after": {
+          "bg": "rgb(255, 255, 255)",
+          "color": "rgb(0, 0, 0)",
+          "scale": "1.05",
+          "transform": "none",
+          "translate": "none"
+        },
+        "changed": true
+      },
+      {
+        "target": "sidebar-prompt-card",
+        "selector": "aside .rounded-cards",
+        "viewport": "1280x800",
+        "before": {
+          "bg": "rgb(31, 31, 31)",
+          "color": "rgb(255, 255, 255)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "after": {
+          "bg": "rgb(41, 41, 41)",
+          "color": "rgb(255, 255, 255)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "changed": true
+      },
+      {
+        "target": "player-play-disabled",
+        "selector": "[data-testid=\"player-bar\"] button[aria-label=\"Play\"]",
+        "viewport": "1280x800",
+        "before": {
+          "bg": "rgb(51, 51, 51)",
+          "color": "rgb(115, 119, 124)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "after": {
+          "bg": "rgb(51, 51, 51)",
+          "color": "rgb(115, 119, 124)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "changed": false
+      },
+      {
+        "target": "bottomnav-link",
+        "selector": "nav[aria-label=\"Primary\"] a[href=\"/search\"]",
+        "viewport": "390x844",
+        "before": {
+          "bg": "rgba(0, 0, 0, 0)",
+          "color": "rgb(115, 119, 124)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "after": {
+          "bg": "rgba(0, 0, 0, 0)",
+          "color": "rgb(179, 179, 179)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "changed": true
+      }
+    ],
+    "scroll": [
+      {
+        "viewport": "1280x800",
+        "canScroll": true,
+        "scrolledTo": 61,
+        "regionsBefore": {
+          "header": 0,
+          "player": 728,
+          "nav": null
+        },
+        "regionsAfter": {
+          "header": 0,
+          "player": 728,
+          "nav": null
+        },
+        "shellFixed": true
+      },
+      {
+        "viewport": "390x844",
+        "canScroll": true,
+        "scrolledTo": 160,
+        "regionsBefore": {
+          "header": 0,
+          "player": 724,
+          "nav": 780
+        },
+        "regionsAfter": {
+          "header": 0,
+          "player": 724,
+          "nav": 780
+        },
+        "shellFixed": true
+      }
+    ],
+    "disabledControls": [
+      {
+        "label": "Previous track",
+        "disabled": true,
+        "cursor": "default",
+        "opacity": "1",
+        "color": "rgb(51, 51, 51)",
+        "bg": "rgba(0, 0, 0, 0)"
+      },
+      {
+        "label": "Play",
+        "disabled": true,
+        "cursor": "default",
+        "opacity": "1",
+        "color": "rgb(115, 119, 124)",
+        "bg": "rgb(51, 51, 51)"
+      },
+      {
+        "label": "Next track",
+        "disabled": true,
+        "cursor": "default",
+        "opacity": "1",
+        "color": "rgb(51, 51, 51)",
+        "bg": "rgba(0, 0, 0, 0)"
+      },
+      {
+        "label": "Save to Liked Songs",
+        "disabled": true,
+        "cursor": "default",
+        "opacity": "1",
+        "color": "rgb(51, 51, 51)",
+        "bg": "rgba(0, 0, 0, 0)"
+      },
+      {
+        "label": "Queue",
+        "disabled": true,
+        "cursor": "default",
+        "opacity": "1",
+        "color": "rgb(51, 51, 51)",
+        "bg": "rgba(0, 0, 0, 0)"
+      }
+    ],
+    "accessibleNames": {
+      "inspected": 11,
+      "missing": [
+        "banner",
+        "main"
+      ],
+      "named": [
+        {
+          "role": "banner",
+          "name": ""
+        },
+        {
+          "role": "main",
+          "name": ""
+        },
+        {
+          "role": "link",
+          "name": "Open Now Playing"
+        },
+        {
+          "role": "progressbar",
+          "name": "Track progress"
+        },
+        {
+          "role": "link",
+          "name": "Spotivibe"
+        },
+        {
+          "role": "button",
+          "name": "Go back"
+        },
+        {
+          "role": "button",
+          "name": "Go forward"
+        },
+        {
+          "role": "searchbox",
+          "name": "Search"
+        },
+        {
+          "role": "button",
+          "name": "Add to Your Library"
+        },
+        {
+          "role": "link",
+          "name": "Open library"
+        },
+        {
+          "role": "link",
+          "name": "Search now"
+        }
+      ]
+    },
+    "branding": {
+      "title": "Spotivibe",
+      "textMatches": [],
+      "imageSrcs": [],
+      "spotifyLinks": []
+    },
+    "errors": {
+      "exceptions": [],
+      "consoleErrors": []
+    }
+  },
+  "browser": "Edg/154.0.4258.37"
+}
