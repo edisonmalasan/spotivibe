@@ -41,7 +41,7 @@
 
 ## 8. Integration checks and status
 
-- [ ] 8.1 Run the full local gate sequence (`npm run lint`, `format:check`, `typecheck`, `npm test`, `npm run build`) and verify every command exits 0, recording test counts.
-- [ ] 8.2 Run `openspec validate add-local-first-data-backup --strict` and verify it reports the change valid.
+- [x] 8.1 Run the full local gate sequence (`npm run lint`, `format:check`, `typecheck`, `npm test`, `npm run build`) and verify every command exits 0, recording test counts. (Run 2026-09-27: all five exit 0; 21 test files / 131 tests passed.)
+- [x] 8.2 Run `openspec validate add-local-first-data-backup --strict` and verify it reports the change valid. (Run 2026-09-27: reported "Change 'add-local-first-data-backup' is valid".)
 - [ ] 8.3 Repeat the full gate sequence from a clean checkout of the branch and record the results in the Apply PR description (AGENTS.md verification-evidence rules: distinguish automated/static/browser evidence).
 - [ ] 8.4 After verification passes, update `ROADMAP.md` §5 so M2 reads `DONE` and verify no other milestone row changed.
