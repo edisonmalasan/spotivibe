@@ -4,10 +4,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * Task 7.1: static architecture invariants checked against the real source
- * files — routes/components/features depend on repository interfaces (never
- * the IndexedDB implementation), the data layer stays server- and
- * network-free, and the stored/backup datasets stay inside the whitelist.
+ * Static architecture invariants checked against the real source files
+ * (M2 task 7.1 + M3 task 6.1) — routes/components/features depend on
+ * repository interfaces (never the IndexedDB implementation), the data layer
+ * stays server- and network-free, UI code never reaches into `src/server`
+ * or names raw Innertube/provider-response shapes, the server layer never
+ * imports IndexedDB, API routes never return media bytes, and the
+ * stored/backup datasets stay inside the whitelist.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -55,6 +58,52 @@ function hasDirectIndexedDbImport(source: string): boolean {
 
 function hasServerReferenceOrFetch(source: string): boolean {
   return moduleSpecifiers(source).some(targetsServerModule) || /\bfetch\s*\(/.test(source);
+}
+
+/**
+ * UI scope (task 6.1): pages, components, features, and stores — the API
+ * route modules under src/app/api are transport code and legitimately
+ * import `src/server`, so they are excluded from this sweep.
+ */
+function uiSourceFiles(): Array<{ file: string; source: string }> {
+  return ["app", "components", "features", "stores"]
+    .flatMap((dir) => readTree(join(srcDir, dir)))
+    .filter(({ file }) => !/[\\/]api(?:[\\/][^\\/]+)*[\\/]route\.tsx?$/.test(file));
+}
+
+/**
+ * Raw Innertube renderer/view-model keys and provider-response type names —
+ * they may exist only inside `src/server`. Finding one in UI code means
+ * un-normalized provider data leaked past the canonical `Track` boundary
+ * (spec: normalized Track conversion; raw provider structures never reach
+ * the client).
+ */
+function mentionsRawProviderShape(source: string): boolean {
+  return (
+    /\b\w+(?:Renderer|ViewModel)\b/.test(source) ||
+    /\b(?:InvidiousVideo|PipedItem|MusicRun|MusicFlexColumn|TextRun|SimpleText)\b/.test(source)
+  );
+}
+
+/** Indicators that an API route streams or proxies raw bytes instead of JSON. */
+const MEDIA_BYTE_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: "byte-body read", pattern: /\.\s*arrayBuffer\s*\(/ },
+  { label: "blob body", pattern: /\.\s*blob\s*\(/ },
+  {
+    label: "raw response body",
+    pattern: /new\s+Response\s*\(\s*(?!null\b)/,
+  },
+  { label: "streamed body", pattern: /new\s+ReadableStream|\bpipeThrough\b|\bpipeTo\b/ },
+  {
+    label: "media MIME type",
+    pattern: /\b(?:audio|video)\/[a-z0-9.+-]+|\bapplication\/octet-stream/i,
+  },
+];
+
+function mediaByteIndicators(source: string): string[] {
+  return MEDIA_BYTE_PATTERNS.filter(({ pattern }) => pattern.test(source)).map(
+    ({ label }) => label,
+  );
 }
 
 /** Top-level keys of an `export const <name> = { ... } as const;` block. */
@@ -141,6 +190,47 @@ describe("architecture violation detectors", () => {
       [...BACKUP_WHITELIST].sort(),
     );
   });
+
+  it("flags raw provider shape names but passes normalized UI code", () => {
+    expect(mentionsRawProviderShape("const item: MusicResponsiveListItemRenderer = node;")).toBe(
+      true,
+    );
+    expect(mentionsRawProviderShape('const key = "videoRenderer";')).toBe(true);
+    expect(mentionsRawProviderShape("interface PipedItem { id: string }")).toBe(true);
+    expect(mentionsRawProviderShape("interface TextRun { text?: string }")).toBe(true);
+    expect(mentionsRawProviderShape("const tracks = useSearchStore((s) => s.tracks);")).toBe(false);
+    expect(mentionsRawProviderShape("const rows = items.map((track) => renderRow(track));")).toBe(
+      false,
+    );
+  });
+
+  it("flags media-byte indicators but passes JSON-only route bodies", () => {
+    expect(
+      mediaByteIndicators(
+        'return new Response(bytes, { headers: { "Content-Type": "audio/mpeg" } });',
+      ),
+    ).toContain("media MIME type");
+    expect(mediaByteIndicators("const buf = await upstream.arrayBuffer();")).toContain(
+      "byte-body read",
+    );
+    expect(mediaByteIndicators("const stream = new Response(webStream);")).toContain(
+      "raw response body",
+    );
+    expect(mediaByteIndicators("const out = upstream.body.pipeThrough(transform);")).toContain(
+      "streamed body",
+    );
+    expect(mediaByteIndicators("return Response.json({ tracks, diagnostics });")).toEqual([]);
+    expect(mediaByteIndicators("return new Response(null, { status: 499 });")).toEqual([]);
+  });
+
+  it("scopes the UI sweep to non-route app code, components, features, and stores", () => {
+    const files = uiSourceFiles().map(({ file }) => file);
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((file) => /[\\/]app[\\/]page\.tsx$/.test(file))).toBe(true);
+    // The API route legitimately imports @/server; it must sit outside this sweep.
+    expect(files.some((file) => /[\\/]api[\\/]search[\\/]route\.ts$/.test(file))).toBe(false);
+    expect(existsSync(join(srcDir, "app", "api", "search", "route.ts"))).toBe(true);
+  });
 });
 
 describe("architecture: routes and features use repository interfaces only", () => {
@@ -176,5 +266,49 @@ describe("architecture: datasets stay inside the whitelist", () => {
     const schema = readFileSync(join(srcDir, "data", "backup", "schema.ts"), "utf8");
 
     expect([...extractBackupDatasetKeys(schema)].sort()).toEqual([...BACKUP_WHITELIST].sort());
+  });
+});
+
+describe("architecture: UI never crosses into server or provider shapes (task 6.1)", () => {
+  it("imports no src/server module from pages, components, features, or stores", () => {
+    const offenders = uiSourceFiles()
+      .filter(({ source }) => moduleSpecifiers(source).some(targetsServerModule))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("names no Innertube renderer or provider-response type in UI code", () => {
+    const offenders = uiSourceFiles()
+      .filter(({ source }) => mentionsRawProviderShape(source))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: the server layer stays off IndexedDB (task 6.1)", () => {
+  it("imports no src/data/indexeddb module from src/server", () => {
+    const serverFiles = readTree(join(srcDir, "server"));
+    expect(serverFiles.length).toBeGreaterThan(0);
+
+    const offenders = serverFiles
+      .filter(({ source }) => hasDirectIndexedDbImport(source))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: API routes never return media bytes (task 6.1)", () => {
+  it("finds no media-byte indicators in any src/app/api route", () => {
+    const routes = readTree(join(srcDir, "app", "api")).filter(({ file }) =>
+      /[\\/]route\.tsx?$/.test(file),
+    );
+    expect(routes.length).toBeGreaterThan(0);
+
+    for (const { file, source } of routes) {
+      expect(mediaByteIndicators(source), file).toEqual([]);
+    }
   });
 });

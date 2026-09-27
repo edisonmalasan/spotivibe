@@ -35,7 +35,7 @@
 
 ## 6. Architecture invariants
 
-- [ ] 6.1 Extend `frontend/tests/architecture.test.ts` with detectors + detector self-tests: UI code (`app/**` except `api/**/route.ts`, `components/**`, `features/**`, `stores/**`) imports neither `src/server` nor Innertube/renderer/provider-response type names; `src/server/**` never imports `src/data/indexeddb`; no `src/app/api/**` route returns media bytes; and verify the suite passes with the real source tree.
+- [x] 6.1 Extend `frontend/tests/architecture.test.ts` with detectors + detector self-tests: UI code (`app/**` except `api/**/route.ts`, `components/**`, `features/**`, `stores/**`) imports neither `src/server` nor Innertube/renderer/provider-response type names; `src/server/**` never imports `src/data/indexeddb`; no `src/app/api/**` route returns media bytes; and verify the suite passes with the real source tree.
 
 ## 7. Evidence
 
