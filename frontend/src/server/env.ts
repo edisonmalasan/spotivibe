@@ -3,15 +3,20 @@ import { z } from "zod";
 /**
  * Server-only environment variables.
  *
- * Empty at M0: Spotivibe needs no server-side provider/config values yet.
- * When a milestone introduces one (for example provider configuration in M3):
+ * M3 added optional provider instance overrides; every value is read only
+ * through this module — never from client code. When a milestone adds one:
  *   1. add it to this schema,
  *   2. document it in `.env.example`,
  *   3. read it only through this module — never from client code.
  *
  * Secrets must never be prefixed with `NEXT_PUBLIC_`.
  */
-const serverEnvSchema = z.object({});
+const serverEnvSchema = z.object({
+  /** Optional comma-separated Invidious base URLs (overrides the built-in list). */
+  SPOTIVIBE_INVIDIOUS_INSTANCES: z.string().optional(),
+  /** Optional comma-separated Piped API base URLs (overrides the built-in list). */
+  SPOTIVIBE_PIPED_INSTANCES: z.string().optional(),
+});
 
 /**
  * Client-exposed environment variables (`NEXT_PUBLIC_*`).
@@ -97,4 +102,16 @@ export function validateEnv(env: Record<string, string | undefined>): ValidatedE
 /** Validate `process.env` at server startup (see `src/instrumentation.ts`). */
 export function validateServerEnv(): ValidatedEnv {
   return validateEnv(process.env);
+}
+
+/**
+ * Validated server env values for runtime reads (provider instance lists).
+ *
+ * Deliberately not memoized: the parse is cheap (a couple of optional
+ * strings), and avoiding module-level cached state keeps request handlers
+ * and tests free of shared mutable globals. Startup validation still fails
+ * fast via `validateServerEnv()` in `src/instrumentation.ts`.
+ */
+export function getServerEnv(): ValidatedEnv["server"] {
+  return validateServerEnv().server;
 }
