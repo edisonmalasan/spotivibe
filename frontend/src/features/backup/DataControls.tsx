@@ -293,38 +293,10 @@ export function DataControls() {
   const controlsDisabled = !ready || busy !== null;
   const modeFieldsetDisabled = controlsDisabled || pending !== null;
 
-  const cleanupActions: Array<{
-    action: ConfirmableAction;
-    label: string;
-    busyKey: BusyOperation;
-    start: string;
-    success: string;
-    failure: string;
-  }> = [
-    {
-      action: "clear-history",
-      label: "Clear listening history",
-      busyKey: "clear-history",
-      start: "Clearing listening history…",
-      success: "Listening history cleared.",
-      failure: "Could not clear listening history — your data is unchanged.",
-    },
-    {
-      action: "clear-search",
-      label: "Clear search history",
-      busyKey: "clear-search",
-      start: "Clearing search history…",
-      success: "Search history cleared.",
-      failure: "Could not clear search history — your data is unchanged.",
-    },
-    {
-      action: "reset",
-      label: "Reset Spotivibe data",
-      busyKey: "reset",
-      start: "Resetting Spotivibe data…",
-      success: "Spotivibe data reset.",
-      failure: "Could not reset Spotivibe data — your data is unchanged.",
-    },
+  const cleanupActions: Array<{ action: ConfirmableAction; label: string }> = [
+    { action: "clear-history", label: "Clear listening history" },
+    { action: "clear-search", label: "Clear search history" },
+    { action: "reset", label: "Reset Spotivibe data" },
   ];
 
   function renderConfirmation(action: ConfirmableAction) {

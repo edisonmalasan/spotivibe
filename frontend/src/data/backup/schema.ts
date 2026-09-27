@@ -43,7 +43,11 @@ const trackSchema = z.strictObject({
   language: z.string().optional(),
   capabilities: z.strictObject({
     stream: z.boolean(),
-    offlineDownload: z.boolean(),
+    // ROADMAP §8.1: YouTube-sourced tracks must never claim offline download.
+    // Imported backups are untrusted input, so enforce it at the boundary.
+    offlineDownload: z.boolean().refine((value) => value === false, {
+      message: "offlineDownload must remain false for YouTube-sourced tracks (ROADMAP §8.1)",
+    }),
   }),
 });
 

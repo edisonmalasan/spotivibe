@@ -30,7 +30,9 @@ export async function collectLocalData(repos: Repositories): Promise<BackupData>
   ]);
 
   return {
-    // Strip store bookkeeping (`id`) — backups carry domain data only.
+    // Strip store bookkeeping (the single-record `id`) — backups carry
+    // domain data only. `session.updatedAt` is kept because the schema
+    // requires it and merge conflict rules compare it.
     preferences: {
       languages: preferences.languages,
       autoplayNext: preferences.autoplayNext,

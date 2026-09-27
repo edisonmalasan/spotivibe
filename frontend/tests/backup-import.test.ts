@@ -86,6 +86,101 @@ describe("prepareImport", () => {
       expect(result.envelope.data.preferences.languages).toEqual(["hi"]);
     }
   });
+
+  it("rejects backups claiming offlineDownload (ROADMAP §8.1 invariant)", () => {
+    const tampered = JSON.parse(encode(makeEnvelope())) as {
+      data: { likedTracks: { track: { capabilities: { offlineDownload: boolean } } }[] };
+    };
+    tampered.data.likedTracks[0].track.capabilities.offlineDownload = true;
+
+    const result = prepareImport(encode(tampered));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("invalid-records");
+      if (result.error.kind === "invalid-records") {
+        expect(result.error.issues.join(" ")).toContain("offlineDownload");
+      }
+    }
+  });
+
+  it("migrates an older supported version before validating the result", () => {
+    // A v0-era envelope: no session dataset yet, so as-is it cannot pass the
+    // v1 schema — it only becomes valid after the registered migration runs.
+    const legacy = JSON.parse(encode(makeEnvelope())) as {
+      version: number;
+      data: Record<string, unknown>;
+    };
+    legacy.version = 0;
+    delete legacy.data.session;
+    const step: BackupMigration = {
+      fromVersion: 0,
+      description: "v0 → v1: introduce the session snapshot field",
+      migrate: (envelope) => ({
+        ...envelope,
+        data: { ...(envelope.data as Record<string, unknown>), session: null },
+      }),
+    };
+
+    // Without a registered step the same file cannot be imported at all.
+    const noPath = prepareImport(encode(legacy));
+    expect(noPath.ok).toBe(false);
+    if (!noPath.ok) expect(noPath.error.kind).toBe("unsupported-version");
+
+    const result = prepareImport(encode(legacy), { migrations: [step] });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.sourceVersion).toBe(0);
+      expect(result.envelope.version).toBe(1);
+      expect(result.envelope.data.session).toBeNull();
+      expect(result.envelope.data.likedTracks).toHaveLength(2);
+    }
+  });
+
+  it("applies schema validation to the migrated result, not the raw file", () => {
+    const legacy = JSON.parse(encode(makeEnvelope())) as {
+      version: number;
+      data: Record<string, unknown>;
+    };
+    legacy.version = 0;
+    delete legacy.data.session;
+    const broken: BackupMigration = {
+      fromVersion: 0,
+      description: "v0 → v1: repairs the shape but emits an offlineDownload claim",
+      migrate: (envelope) => {
+        const data = envelope.data as Record<string, unknown>;
+        const likedTracks = data.likedTracks as {
+          track: { capabilities: Record<string, boolean> };
+        }[];
+        const first = likedTracks[0];
+        return {
+          ...envelope,
+          data: {
+            ...data,
+            session: null,
+            likedTracks: [
+              {
+                ...first,
+                track: {
+                  ...first.track,
+                  capabilities: { ...first.track.capabilities, offlineDownload: true },
+                },
+              },
+              ...likedTracks.slice(1),
+            ],
+          },
+        };
+      },
+    };
+
+    const result = prepareImport(encode(legacy), { migrations: [broken] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("invalid-records");
+      if (result.error.kind === "invalid-records") {
+        expect(result.error.issues.join(" ")).toContain("offlineDownload");
+      }
+    }
+  });
 });
 
 describe("migrateEnvelope", () => {
