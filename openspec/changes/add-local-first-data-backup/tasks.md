@@ -37,7 +37,7 @@
 ## 7. Architecture invariants and evidence
 
 - [x] 7.1 Add static architecture tests: components/routes import no `src/data/indexeddb` directly, the data layer imports no `src/server`/performs no `fetch`, and stored/backup datasets stay within the whitelist; verify the suite fails if any invariant is violated (checked against real source files).
-- [ ] 7.2 Capture M2 evidence with a dependency-free CDP script against a production build: `/settings` screenshots at 390px and 1280px, plus a scripted import → reload → export round-trip proving data survives reload and export matches; store `evidence/README.md`, machine-readable results, and screenshots in the change directory and verify the report shows zero console errors and a passing round-trip.
+- [x] 7.2 Capture M2 evidence with a dependency-free CDP script against a production build: `/settings` screenshots at 390px and 1280px, plus a scripted import → reload → export round-trip proving data survives reload and export matches; store `evidence/README.md`, machine-readable results, and screenshots in the change directory and verify the report shows zero console errors and a passing round-trip.
 
 ## 8. Integration checks and status
 

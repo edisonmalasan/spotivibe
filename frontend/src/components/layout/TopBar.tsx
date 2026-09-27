@@ -25,7 +25,9 @@ export function TopBar() {
         <NavArrowButton direction="back" onClick={() => router.back()} />
         <NavArrowButton direction="forward" onClick={() => router.forward()} />
       </div>
-      <SearchInput className="w-full sm:w-90" />
+      {/* min-w-0 lets the pill shrink below its min-content on narrow
+          viewports so the settings gear is never pushed off-screen. */}
+      <SearchInput className="w-full min-w-0 sm:w-90" />
       <div className="flex-1" />
       {/* Settings entry — mirrors the IconButton sm/default contract as a link
           (navigation target, not an action) with a required accessible name. */}
