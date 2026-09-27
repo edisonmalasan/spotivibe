@@ -10,6 +10,9 @@
 export const DATABASE_NAME = "spotivibe";
 export const SCHEMA_VERSION = 1;
 
+/** Store key for the single-record stores (preferences, session). */
+export const SINGLE_RECORD_KEY = "app";
+
 export const STORE = {
   likedTracks: "likedTracks",
   playlists: "playlists",

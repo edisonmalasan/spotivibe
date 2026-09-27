@@ -1,16 +1,14 @@
 import type { Preferences, PreferencesRecord, PreferencesRepository } from "@/data/repositories";
 import { DEFAULT_PREFERENCES } from "@/data/repositories";
 import { requestToPromise, transactionDone } from "./idb";
-import { STORE } from "./schema";
-
-const PREFERENCES_ID = "app";
+import { SINGLE_RECORD_KEY, STORE } from "./schema";
 
 export function createPreferencesRepository(db: IDBDatabase): PreferencesRepository {
   return {
     async get(): Promise<Preferences> {
       const tx = db.transaction(STORE.preferences, "readonly");
       const record = await requestToPromise<PreferencesRecord | undefined>(
-        tx.objectStore(STORE.preferences).get(PREFERENCES_ID),
+        tx.objectStore(STORE.preferences).get(SINGLE_RECORD_KEY),
       );
       if (!record) return { ...DEFAULT_PREFERENCES };
       // Storage records are untrusted at read time: fall back per field.
@@ -25,7 +23,7 @@ export function createPreferencesRepository(db: IDBDatabase): PreferencesReposit
     async set(patch: Partial<Preferences>): Promise<Preferences> {
       const current = await this.get();
       const next: Preferences = { ...current, ...patch };
-      const record: PreferencesRecord = { id: PREFERENCES_ID, ...next };
+      const record: PreferencesRecord = { id: SINGLE_RECORD_KEY, ...next };
       const tx = db.transaction(STORE.preferences, "readwrite");
       tx.objectStore(STORE.preferences).put(record);
       await transactionDone(tx);

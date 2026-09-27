@@ -24,8 +24,8 @@
 
 ## 5. Atomic application and end-to-end backup loop
 
-- [ ] 5.1 Implement the applier that executes a `PreparedImport` in a single IndexedDB transaction with abort-on-error; verify integration tests prove a successful apply commits all stores together and a simulated mid-apply failure rolls back to exact pre-import contents.
-- [ ] 5.2 Verify the full acceptance loop in an integration test: export a populated database → reset all datasets → import the exported envelope → datasets are equivalent to the pre-reset state; plus importing the same envelope repeatedly leaves record counts unchanged.
+- [x] 5.1 Implement the applier that executes a `PreparedImport` in a single IndexedDB transaction with abort-on-error; verify integration tests prove a successful apply commits all stores together and a simulated mid-apply failure rolls back to exact pre-import contents.
+- [x] 5.2 Verify the full acceptance loop in an integration test: export a populated database → reset all datasets → import the exported envelope → datasets are equivalent to the pre-reset state; plus importing the same envelope repeatedly leaves record counts unchanged.
 
 ## 6. Settings data controls UI
 
