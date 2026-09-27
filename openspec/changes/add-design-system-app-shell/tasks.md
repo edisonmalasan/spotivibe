@@ -2,7 +2,7 @@
 
 ## 1. Setup
 
-- [ ] 1.1 Update `ROADMAP.md` §5 `M1` → `IN PROGRESS`, then verify only the M1 row changed and commit the status update.
+- [x] 1.1 Update `ROADMAP.md` §5 `M1` → `IN PROGRESS`, then verify only the M1 row changed and commit the status update.
 - [ ] 1.2 Add DOM test infrastructure (dev-deps `jsdom`, `@testing-library/react`, `@testing-library/jest-dom`; Vitest jsdom environment + RTL setup file), then verify `npm test` runs the existing env suite plus a DOM smoke test and exits 0.
 
 ## 2. Design tokens from DESIGN.md
