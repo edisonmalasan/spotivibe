@@ -5,12 +5,16 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Static architecture invariants checked against the real source files
- * (M2 task 7.1 + M3 task 6.1) — routes/components/features depend on
+ * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1) — routes/components/features
+ * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
  * stays server- and network-free, UI code never reaches into `src/server`
  * or names raw Innertube/provider-response shapes, the server layer never
- * imports IndexedDB, API routes never return media bytes, and the
- * stored/backup datasets stay inside the whitelist.
+ * imports IndexedDB, API routes never return media bytes, the
+ * stored/backup datasets stay inside the whitelist, the video host stays a
+ * single shell-mounted module, UI code never touches the IFrame API loader
+ * or YT types directly, nothing can capture or decode media, and outbound
+ * links never suppress the referrer.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -310,5 +314,133 @@ describe("architecture: API routes never return media bytes (task 6.1)", () => {
     for (const { file, source } of routes) {
       expect(mediaByteIndicators(source), file).toEqual([]);
     }
+  });
+});
+
+/**
+ * Playback invariants (M4 task 5.1): the video host is imported only by the
+ * shell, UI code depends on the store/engine interface instead of the IFrame
+ * API loader or its YT types, no surface in the app can capture or decode
+ * media (extraction stays prohibited), and outbound links/headers never
+ * suppress the referrer (YouTube embedded-player policy compliance).
+ */
+
+/** True when a specifier reaches the IFrame API loader or its YT types. */
+function targetsPlayerInternals(specifier: string): boolean {
+  if (specifier.includes("/components/player/")) return false; // Spotivibe's own UI folder
+  return /(^|\/)player\/(ytApi|types)(\.tsx?)?$/.test(specifier);
+}
+
+/** Indicators of audio/video capture or decode — extraction surfaces. */
+const EXTRACTION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: "MediaRecorder", pattern: /\bMediaRecorder\b/ },
+  { label: "decodeAudioData", pattern: /\bdecodeAudioData\b/ },
+  { label: "audio element", pattern: /<audio\b/ },
+  { label: "video element", pattern: /<video\b/ },
+];
+
+function extractionIndicators(source: string): string[] {
+  return EXTRACTION_PATTERNS.filter(({ pattern }) => pattern.test(source)).map(
+    ({ label }) => label,
+  );
+}
+
+/** True when source suppresses the referrer (link rel or policy header). */
+function suppressesReferrer(source: string): boolean {
+  return (
+    /\bnoreferrer\b/i.test(source) ||
+    /referrer[-_]?policy["']?\s*[:=]\s*["']?no-referrer/i.test(source)
+  );
+}
+
+/** Next config files next to src — where a Referrer-Policy header would live. */
+function frontendConfigFiles(): Array<{ file: string; source: string }> {
+  const frontendDir = join(srcDir, "..");
+  return readdirSync(frontendDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^next\.config\.(?:ts|js|mjs)$/.test(entry.name))
+    .map((entry) => {
+      const file = join(frontendDir, entry.name);
+      return { file, source: readFileSync(file, "utf8") };
+    });
+}
+
+describe("architecture violation detectors (task 5.1)", () => {
+  it("flags IFrame loader/YT-type imports but passes the engine interface", () => {
+    expect(targetsPlayerInternals("@/player/ytApi")).toBe(true);
+    expect(targetsPlayerInternals("@/player/types")).toBe(true);
+    expect(targetsPlayerInternals("../../player/ytApi")).toBe(true);
+    expect(targetsPlayerInternals("@/player/engine")).toBe(false);
+    expect(targetsPlayerInternals("@/components/player/PlayerHost")).toBe(false);
+    expect(targetsPlayerInternals("@/stores/playerStore")).toBe(false);
+  });
+
+  it("flags capture/decode indicators but passes the iframe player surface", () => {
+    expect(extractionIndicators("const rec = new MediaRecorder(stream);")).toContain(
+      "MediaRecorder",
+    );
+    expect(extractionIndicators("const buf = await ctx.decodeAudioData(raw);")).toContain(
+      "decodeAudioData",
+    );
+    expect(extractionIndicators("return <audio src={url} controls />;")).toContain("audio element");
+    expect(extractionIndicators("return <video src={blob} />;")).toContain("video element");
+    // The YouTube video ID shape and the IFrame embed are not media elements.
+    expect(extractionIndicators('const id = "youtube:<videoId>";')).toEqual([]);
+    expect(extractionIndicators('return <iframe src={embedUrl} allow="autoplay" />;')).toEqual([]);
+  });
+
+  it("flags referrer suppression but passes the compliant watch link", () => {
+    expect(suppressesReferrer('<a rel="noopener noreferrer" href={url} />')).toBe(true);
+    expect(suppressesReferrer('"Referrer-Policy": "no-referrer"')).toBe(true);
+    expect(suppressesReferrer('referrerPolicy="no-referrer"')).toBe(true);
+    expect(suppressesReferrer('<a rel="noopener" target="_blank" href={url} />')).toBe(false);
+    expect(suppressesReferrer('referrerPolicy="origin"')).toBe(false);
+  });
+});
+
+describe("architecture: single persistent player host (task 5.1)", () => {
+  it("is imported only by the AppShell, which the root layout mounts", () => {
+    const importers = readTree(srcDir)
+      .filter(({ source }) =>
+        moduleSpecifiers(source).some((spec) => spec === "@/components/player/PlayerHost"),
+      )
+      .map(({ file }) => file);
+
+    expect(importers.length).toBeGreaterThan(0);
+    for (const file of importers) {
+      expect(/[\\/]components[\\/]layout[\\/]AppShell\.tsx$/.test(file), file).toBe(true);
+    }
+
+    const layout = readFileSync(join(srcDir, "app", "layout.tsx"), "utf8");
+    expect(moduleSpecifiers(layout)).toContain("@/components/layout/AppShell");
+    expect(layout).toMatch(/<AppShell>/);
+  });
+
+  it("keeps UI code off the IFrame API loader and raw YT types", () => {
+    const offenders = uiSourceFiles()
+      .filter(({ source }) => moduleSpecifiers(source).some(targetsPlayerInternals))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: no audio-extraction surfaces (task 5.1)", () => {
+  it("finds no capture or decode indicators anywhere in src", () => {
+    const offenders = readTree(srcDir)
+      .filter(({ source }) => extractionIndicators(source).length > 0)
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: outbound links never suppress the referrer (task 5.1)", () => {
+  it("finds no noreferrer or no-referrer policy in src or the Next config", () => {
+    const files = [...readTree(srcDir), ...frontendConfigFiles()];
+    const offenders = files
+      .filter(({ source }) => suppressesReferrer(source))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
   });
 });

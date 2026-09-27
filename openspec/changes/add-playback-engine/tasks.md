@@ -28,7 +28,7 @@
 
 ## 5. Architecture invariants
 
-- [ ] 5.1 Extend `frontend/tests/architecture.test.ts`: PlayerHost imported only by `AppShell` (which is mounted in the root layout); UI components import store/engine interfaces but never YT types or `ytApi` directly; no audio-extraction surfaces (`MediaRecorder`, `decodeAudioData`, blob-backed `<audio>`/`<video>`); no referrer-suppressing config (`noreferrer` on the watch link, `Referrer-Policy: no-referrer`) — and verify each detector with positive/negative self-tests in the same file
+- [x] 5.1 Extend `frontend/tests/architecture.test.ts`: PlayerHost imported only by `AppShell` (which is mounted in the root layout); UI components import store/engine interfaces but never YT types or `ytApi` directly; no audio-extraction surfaces (`MediaRecorder`, `decodeAudioData`, blob-backed `<audio>`/`<video>`); no referrer-suppressing config (`noreferrer` on the watch link, `Referrer-Policy: no-referrer`) — and verify each detector with positive/negative self-tests in the same file
 
 ## 6. Verification and evidence
 
