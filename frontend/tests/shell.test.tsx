@@ -104,6 +104,14 @@ describe("TopBar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Go forward" }));
     expect(routerMock.forward).toHaveBeenCalledTimes(1);
   });
+
+  it("exposes a settings control with a non-empty accessible name", () => {
+    render(<AppShell>page</AppShell>);
+
+    const settings = screen.getByRole("link", { name: "Settings" });
+    expect(settings.getAttribute("href")).toBe("/settings");
+    expect(settings.getAttribute("aria-label")?.trim().length).toBeGreaterThan(0);
+  });
 });
 
 describe("Sidebar", () => {

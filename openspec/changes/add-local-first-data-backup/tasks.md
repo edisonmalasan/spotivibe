@@ -29,10 +29,10 @@
 
 ## 6. Settings data controls UI
 
-- [ ] 6.1 Add the `/settings` route with the Data controls section (Export backup download, Import backup file picker with replace/merge mode selection); verify UI tests cover export producing a `spotivibe-backup` JSON download, an invalid file surfacing `role="alert"` error feedback with no data change, and replace mode not executing without confirmation.
-- [ ] 6.2 Add Clear listening history, Clear search history, and Reset Spotivibe data with the two-step inline confirmation pattern; verify UI tests assert cancel leaves data intact, confirm executes the scoped clear/reset with `role="status"` feedback, and clears touch only their own dataset.
-- [ ] 6.3 Add the settings control to the top bar's right-hand spacer (accessible name, navigates to `/settings`); verify a shell test asserts the control exists with a non-empty accessible name and that existing top-bar/shell tests still pass unchanged in intent.
-- [ ] 6.4 Implement busy and result feedback for backup operations (indeterminate busy state, success counts, failure copy stating local data is unchanged); verify UI tests cover successful-import feedback and failed-import "data intact" feedback.
+- [x] 6.1 Add the `/settings` route with the Data controls section (Export backup download, Import backup file picker with replace/merge mode selection); verify UI tests cover export producing a `spotivibe-backup` JSON download, an invalid file surfacing `role="alert"` error feedback with no data change, and replace mode not executing without confirmation.
+- [x] 6.2 Add Clear listening history, Clear search history, and Reset Spotivibe data with the two-step inline confirmation pattern; verify UI tests assert cancel leaves data intact, confirm executes the scoped clear/reset with `role="status"` feedback, and clears touch only their own dataset.
+- [x] 6.3 Add the settings control to the top bar's right-hand spacer (accessible name, navigates to `/settings`); verify a shell test asserts the control exists with a non-empty accessible name and that existing top-bar/shell tests still pass unchanged in intent.
+- [x] 6.4 Implement busy and result feedback for backup operations (indeterminate busy state, success counts, failure copy stating local data is unchanged); verify UI tests cover successful-import feedback and failed-import "data intact" feedback.
 
 ## 7. Architecture invariants and evidence
 

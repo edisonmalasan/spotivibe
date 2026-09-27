@@ -1,3 +1,4 @@
+export { APP_VERSION } from "./appVersion";
 export { BACKUP_FORMAT, CURRENT_BACKUP_VERSION, backupEnvelopeSchema } from "./schema";
 export type { BackupData, BackupEnvelope, BackupSession } from "./schema";
 export { collectLocalData, serializeBackup } from "./serialize";
