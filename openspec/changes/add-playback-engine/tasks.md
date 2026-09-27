@@ -2,21 +2,21 @@
 
 ## 1. Foundation — dependency, API loader, types
 
-- [ ] 1.1 Install `zustand` in `frontend/` and verify `npm ls zustand` shows it in dependencies and `npm run typecheck` still exits 0 with an empty-store smoke module compiling
-- [ ] 1.2 Implement `src/player/ytApi.ts` (once-guarded script injection resolving on `onYouTubeIframeAPIReady`) and verify with a Vitest suite asserting exactly one script tag and one resolve under double/concurrent calls and pre-existing `window.YT`
-- [ ] 1.3 Implement `src/player/types.ts` minimal hand-written YT types (Player, PlayerState, event shapes) and verify `npm run typecheck` passes with no `@types/youtube` dependency added
+- [x] 1.1 Install `zustand` in `frontend/` and verify `npm ls zustand` shows it in dependencies and `npm run typecheck` still exits 0 with an empty-store smoke module compiling
+- [x] 1.2 Implement `src/player/ytApi.ts` (once-guarded script injection resolving on `onYouTubeIframeAPIReady`) and verify with a Vitest suite asserting exactly one script tag and one resolve under double/concurrent calls and pre-existing `window.YT`
+- [x] 1.3 Implement `src/player/types.ts` minimal hand-written YT types (Player, PlayerState, event shapes) and verify `npm run typecheck` passes with no `@types/youtube` dependency added
 
 ## 2. `playerStore` — state, actions, resilience logic
 
-- [ ] 2.1 Implement `src/stores/playerStore.ts` with state (current track, status, position, duration, volume/mute, repeat, shuffle, error, queue, queueIndex, failed set) and the bridge interface plus actions (playTrack, play/pause, seek, next, previous, volume/mute, repeat cycle, shuffle toggle) and verify unit tests with a fake bridge covering action→bridge calls, optimistic no-bridge behavior, and status selectors
-- [ ] 2.2 Implement repeat-context advancement, shuffle-order traversal (on/off), previous-restart-near-start, and player-duration override handling as pure helpers on the store and verify unit tests cover repeat off/context/track end-of-track paths, shuffled vs list order, and duration adoption
-- [ ] 2.3 Implement the error taxonomy in the store/engine seam — transient retry with exponential backoff (1s base, 30s cap, 5 attempts/track, reset on success), fatal `{2,100,101,150}` mark-failed-advance, and all-failed settle — and verify fake-timer tests cover backoff schedule, retry reset, skip-with-next, exhaustion settle, and no-infinite-loop when every track fails
+- [x] 2.1 Implement `src/stores/playerStore.ts` with state (current track, status, position, duration, volume/mute, repeat, shuffle, error, queue, queueIndex, failed set) and the bridge interface plus actions (playTrack, play/pause, seek, next, previous, volume/mute, repeat cycle, shuffle toggle) and verify unit tests with a fake bridge covering action→bridge calls, optimistic no-bridge behavior, and status selectors
+- [x] 2.2 Implement repeat-context advancement, shuffle-order traversal (on/off), previous-restart-near-start, and player-duration override handling as pure helpers on the store and verify unit tests cover repeat off/context/track end-of-track paths, shuffled vs list order, and duration adoption
+- [x] 2.3 Implement the error taxonomy in the store/engine seam — transient retry with exponential backoff (1s base, 30s cap, 5 attempts/track, reset on success), fatal `{2,100,101,150}` mark-failed-advance, and all-failed settle — and verify fake-timer tests cover backoff schedule, retry reset, skip-with-next, exhaustion settle, and no-infinite-loop when every track fails
 
 ## 3. Engine — singleton bridge to the IFrame API
 
-- [ ] 3.1 Implement `src/player/engine.ts` (module singleton, idempotent `init`, YT.Player creation, event→store mapping per design table, pending-seek, duration correction, 1s polling only while playing/buffering with single-shot capture on pause) and verify unit tests with a fake YT object driving onStateChange/onError/onReady through the mapping table, double-init returning the same instance, and poll timers starting/stopping correctly
-- [ ] 3.2 Integrate session persistence (debounced writes of queue/index/position/repeat plus flush on visibilitychange/pagehide) and cold-launch restore (cue at saved position, paused, no autoplay) and verify with fake-indexeddb tests that playback writes the M2 session record and a boot with a saved session cues paused at position with the play affordance
-- [ ] 3.3 Implement volume/mute `localStorage` boot preference (read on boot, write on change, apply to bridge) and verify unit tests round-trip values including corrupt/missing keys falling back to defaults
+- [x] 3.1 Implement `src/player/engine.ts` (module singleton, idempotent `init`, YT.Player creation, event→store mapping per design table, pending-seek, duration correction, 1s polling only while playing/buffering with single-shot capture on pause) and verify unit tests with a fake YT object driving onStateChange/onError/onReady through the mapping table, double-init returning the same instance, and poll timers starting/stopping correctly
+- [x] 3.2 Integrate session persistence (debounced writes of queue/index/position/repeat plus flush on visibilitychange/pagehide) and cold-launch restore (cue at saved position, paused, no autoplay) and verify with fake-indexeddb tests that playback writes the M2 session record and a boot with a saved session cues paused at position with the play affordance
+- [x] 3.3 Implement volume/mute `localStorage` boot preference (read on boot, write on change, apply to bridge) and verify unit tests round-trip values including corrupt/missing keys falling back to defaults
 
 ## 4. Host and control surfaces
 
