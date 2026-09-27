@@ -154,7 +154,7 @@ Current baseline syntax / compile check:
 ```bash
 # Static type check and production build — run from the repository root
 cd frontend
-npm run typecheck   # tsc --noEmit (strict mode)
+npm run typecheck   # next typegen && tsc --noEmit (strict mode)
 npm run build       # next build (production build + framework type checking)
 ```
 

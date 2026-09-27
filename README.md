@@ -42,7 +42,7 @@ cd frontend
 npm ci               # clean install from the lockfile
 npm run lint         # ESLint over the source
 npm run format:check # Prettier formatting check
-npm run typecheck    # tsc --noEmit (strict TypeScript)
+npm run typecheck    # next typegen && tsc --noEmit (strict TypeScript)
 npm test             # Vitest unit tests
 npm run build        # Next.js production build
 npm run dev          # development server (http://localhost:3000)
