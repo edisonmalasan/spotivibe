@@ -1,0 +1,243 @@
+{
+  "task": "7.2",
+  "generatedAt": "2026-09-27T12:07:01.134Z",
+  "target": "http://localhost:3210/settings",
+  "origin": "http://localhost:3210",
+  "steps": [
+    {
+      "name": "settings page ready (fresh profile, empty database)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "captured /settings at 390px",
+      "ok": true,
+      "detail": "settings-390.png"
+    },
+    {
+      "name": "captured /settings at 1280px",
+      "ok": true,
+      "detail": "settings-1280.png"
+    },
+    {
+      "name": "imported fixture backup via Import backup file picker",
+      "ok": true,
+      "detail": "Import complete (merge mode): 2 liked tracks, 1 playlist, 1 listening history entry, 1 search entry, preferences updated, session updated."
+    },
+    {
+      "name": "captured post-import success feedback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page reloaded and controls ready again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "export produced a JSON download",
+      "ok": true,
+      "detail": "Backup downloaded — your data stays on this device."
+    },
+    {
+      "name": "download filename is spotivibe-backup-YYYY-MM-DD.json",
+      "ok": true,
+      "detail": "spotivibe-backup-2026-09-27.json"
+    },
+    {
+      "name": "exported envelope format/version valid",
+      "ok": true,
+      "detail": "spotivibe-backup v1, appVersion 0.1.0"
+    },
+    {
+      "name": "export after reload matches the imported backup (data survived reload)",
+      "ok": true,
+      "detail": "six datasets deep-equal"
+    },
+    {
+      "name": "zero console errors during the whole session",
+      "ok": true,
+      "detail": "none"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "settings-390.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "file": "settings-1280.png",
+      "width": 1280,
+      "height": 900
+    },
+    {
+      "file": "settings-import-success-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "supplementary: post-import success feedback"
+    }
+  ],
+  "consoleErrors": [],
+  "pass": true,
+  "fixture": {
+    "preferences": {
+      "languages": [
+        "hi"
+      ],
+      "autoplayNext": true,
+      "reduceMotion": false,
+      "onboardingComplete": true
+    },
+    "likedTracks": [
+      {
+        "trackId": "t1",
+        "track": {
+          "id": "t1",
+          "source": "youtube",
+          "providerId": "yt-t1",
+          "title": "Title t1",
+          "artists": [
+            {
+              "name": "Artist t1"
+            }
+          ],
+          "artwork": [],
+          "category": "music",
+          "capabilities": {
+            "stream": true,
+            "offlineDownload": false
+          }
+        },
+        "likedAt": 1000
+      },
+      {
+        "trackId": "t2",
+        "track": {
+          "id": "t2",
+          "source": "youtube",
+          "providerId": "yt-t2",
+          "title": "Title t2",
+          "artists": [
+            {
+              "name": "Artist t2"
+            }
+          ],
+          "artwork": [],
+          "category": "music",
+          "capabilities": {
+            "stream": true,
+            "offlineDownload": false
+          }
+        },
+        "likedAt": 2000
+      }
+    ],
+    "playlists": [
+      {
+        "id": "p1",
+        "name": "Road Trip",
+        "createdAt": 500,
+        "updatedAt": 600,
+        "tracks": [
+          {
+            "track": {
+              "id": "t1",
+              "source": "youtube",
+              "providerId": "yt-t1",
+              "title": "Title t1",
+              "artists": [
+                {
+                  "name": "Artist t1"
+                }
+              ],
+              "artwork": [],
+              "category": "music",
+              "capabilities": {
+                "stream": true,
+                "offlineDownload": false
+              }
+            },
+            "addedAt": 550
+          }
+        ]
+      }
+    ],
+    "history": [
+      {
+        "id": "e1",
+        "trackId": "t1",
+        "track": {
+          "id": "t1",
+          "source": "youtube",
+          "providerId": "yt-t1",
+          "title": "Title t1",
+          "artists": [
+            {
+              "name": "Artist t1"
+            }
+          ],
+          "artwork": [],
+          "category": "music",
+          "capabilities": {
+            "stream": true,
+            "offlineDownload": false
+          }
+        },
+        "playedAt": 700,
+        "secondsPlayed": 30,
+        "completed": true,
+        "context": "home"
+      }
+    ],
+    "searchHistory": [
+      {
+        "query": "beatles",
+        "normalizedQuery": "beatles",
+        "searchedAt": 800
+      }
+    ],
+    "session": {
+      "queue": [
+        {
+          "id": "t1",
+          "source": "youtube",
+          "providerId": "yt-t1",
+          "title": "Title t1",
+          "artists": [
+            {
+              "name": "Artist t1"
+            }
+          ],
+          "artwork": [],
+          "category": "music",
+          "capabilities": {
+            "stream": true,
+            "offlineDownload": false
+          }
+        }
+      ],
+      "queueIndex": 0,
+      "positionSeconds": 10,
+      "repeatMode": "off",
+      "shuffle": false,
+      "volume": 0.5,
+      "updatedAt": 900
+    }
+  },
+  "importFeedback": "Import complete (merge mode): 2 liked tracks, 1 playlist, 1 listening history entry, 1 search entry, preferences updated, session updated.",
+  "exportFeedback": "Backup downloaded — your data stays on this device.",
+  "exportedFilename": "spotivibe-backup-2026-09-27.json",
+  "roundTrip": {
+    "deepEqual": true,
+    "comparedWith": "order-independent deep equality of the six backup datasets",
+    "exportedDataKeys": [
+      "history",
+      "likedTracks",
+      "playlists",
+      "preferences",
+      "searchHistory",
+      "session"
+    ]
+  }
+}
