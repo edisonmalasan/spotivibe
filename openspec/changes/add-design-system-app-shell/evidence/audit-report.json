@@ -1,6 +1,6 @@
 {
   "base": "http://localhost:3100",
-  "capturedAt": "2026-09-27T07:16:48.911Z",
+  "capturedAt": "2026-09-27T07:59:15.899Z",
   "shots": [
     "home-390.png",
     "search-390.png",
@@ -9,7 +9,9 @@
     "home-820.png",
     "home-1280.png",
     "focus-visible-1280.png",
+    "focus-traversal-1280.png",
     "hover-navarrow-1280.png",
+    "hover-card-1280.png",
     "hover-bottomnav-390.png"
   ],
   "variants": [
@@ -110,9 +112,74 @@
     ],
     "focusTrail": [
       {
+        "stop": 1,
         "tag": "A",
         "name": "Spotivibe",
         "href": "/",
+        "outline": "solid 2px rgb(30, 215, 96)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 2,
+        "tag": "BUTTON",
+        "name": "Go back",
+        "href": null,
+        "outline": "solid 2px rgb(30, 215, 96)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 3,
+        "tag": "BUTTON",
+        "name": "Go forward",
+        "href": null,
+        "outline": "solid 2px rgb(37, 216, 101)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 4,
+        "tag": "INPUT",
+        "name": "Search",
+        "href": null,
+        "outline": "solid 2px rgb(30, 215, 96)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 5,
+        "tag": "BUTTON",
+        "name": "Add to Your Library",
+        "href": null,
+        "outline": "solid 2px rgb(32, 215, 97)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 6,
+        "tag": "A",
+        "name": "Open library",
+        "href": "/library",
+        "outline": "solid 2px rgb(30, 214, 95)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 7,
+        "tag": "A",
+        "name": "Search now",
+        "href": "/search",
+        "outline": "solid 2px rgb(29, 208, 93)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 8,
+        "tag": "A",
+        "name": "Close Now Playing",
+        "href": "/",
+        "outline": "solid 2px rgb(32, 215, 97)",
+        "outlineOffset": "2px"
+      },
+      {
+        "stop": 9,
+        "tag": "A",
+        "name": "Open Now Playing",
+        "href": "/now-playing",
         "outline": "solid 2px rgb(30, 215, 96)",
         "outlineOffset": "2px"
       }
@@ -159,6 +226,26 @@
         "changed": true
       },
       {
+        "target": "sidebar-prompt-card",
+        "selector": "aside .rounded-cards",
+        "viewport": "1280x800",
+        "before": {
+          "bg": "rgb(31, 31, 31)",
+          "color": "rgb(255, 255, 255)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "after": {
+          "bg": "rgb(41, 41, 41)",
+          "color": "rgb(255, 255, 255)",
+          "scale": "none",
+          "transform": "none",
+          "translate": "none"
+        },
+        "changed": true
+      },
+      {
         "target": "player-play-disabled",
         "selector": "[data-testid=\"player-bar\"] button[aria-label=\"Play\"]",
         "viewport": "1280x800",
@@ -197,6 +284,40 @@
           "translate": "none"
         },
         "changed": true
+      }
+    ],
+    "scroll": [
+      {
+        "viewport": "1280x800",
+        "canScroll": true,
+        "scrolledTo": 61,
+        "regionsBefore": {
+          "header": 0,
+          "player": 728,
+          "nav": null
+        },
+        "regionsAfter": {
+          "header": 0,
+          "player": 728,
+          "nav": null
+        },
+        "shellFixed": true
+      },
+      {
+        "viewport": "390x844",
+        "canScroll": true,
+        "scrolledTo": 160,
+        "regionsBefore": {
+          "header": 0,
+          "player": 724,
+          "nav": 780
+        },
+        "regionsAfter": {
+          "header": 0,
+          "player": 724,
+          "nav": 780
+        },
+        "shellFixed": true
       }
     ],
     "disabledControls": [

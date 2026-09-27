@@ -30,7 +30,7 @@
 
 ## 6. Integration verification (M1 acceptance)
 
-- [ ] 6.4 Repair verification findings, then re-run gates and re-capture audit evidence: elevated sidebar prompt cards must hover to `#292929` (code + test + audit target), top-bar/landmark spec prose aligned with the accountless design, route error boundary wiring `ErrorState` (code + test), full keyboard traversal and scroll-contract audit evidence, and stray-file cleanup.
+- [x] 6.4 Repair verification findings, then re-run gates and re-capture audit evidence: elevated sidebar prompt cards must hover to `#292929` (code + test + audit target), top-bar/landmark spec prose aligned with the accountless design, route error boundary wiring `ErrorState` (code + test), full keyboard traversal and scroll-contract audit evidence, and stray-file cleanup.
 - [x] 6.1 Run the full gate sequence from a clean checkout (install → lint → format check → typecheck → unit tests → production build), then verify every command exits 0 and record the results in the Apply PR.
 - [x] 6.2 Perform the DESIGN.md visual audit in a browser at 390px, 820px, and 1280px viewports (rendered screenshots/evidence), then verify: layout follows DESIGN.md, the persistent player region exists on every route/variant, shells are mutually exclusive at the breakpoint, hover/focus/disabled/empty/error states are demonstrable, keyboard focus is visible with accessible names, and no Spotify branding ships.
 - [x] 6.3 After all acceptance criteria pass, update `ROADMAP.md` §5 `M1` → `DONE`, then verify the status table reflects `DONE` for M0 and M1 only and commit the final status update.
