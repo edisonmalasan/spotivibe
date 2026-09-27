@@ -109,7 +109,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M0 | Repository foundation, documentation, quality gates | `DONE` | — |
 | M1 | DESIGN.md-driven design system and application shell | `DONE` | M0 |
 | M2 | Local-first data model, IndexedDB, backup/import foundation | `DONE` | M0 |
-| M3 | Music provider layer and multi-tier discovery | `NOT STARTED` | M0 |
+| M3 | Music provider layer and multi-tier discovery | `IN PROGRESS` | M0 |
 | M4 | Persistent YouTube playback engine | `NOT STARTED` | M1, M3 |
 | M5 | Search experience and result quality | `NOT STARTED` | M1, M3, M4 |
 | M6 | Queue, session persistence, network recovery | `NOT STARTED` | M2, M4 |
