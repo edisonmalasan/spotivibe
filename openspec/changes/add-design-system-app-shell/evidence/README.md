@@ -27,7 +27,7 @@
 | `home-820.png` | Tablet width still uses the compact shell (below `lg` = 1024) |
 | `home-1280.png` | Desktop shell: sidebar + top bar + desktop PlayerBar, no compact shell |
 | `focus-visible-1280.png` | Keyboard focus, stop 1 (logo link): 2px `#1ed760` outline, offset 2px |
-| `focus-traversal-1280.png` | Keyboard focus, final stop (player-region link): same visible outline |
+| `focus-traversal-1280.png` | Keyboard focus, stop 9 — the player-region "Open Now Playing" link: same visible outline while focused |
 | `hover-navarrow-1280.png` | Top-bar nav arrow hover (`#000` → `#292929`) |
 | `hover-card-1280.png` | Elevated sidebar prompt card hover (`#1f1f1f` → `#292929`); the second card shows the resting surface for contrast |
 | `hover-bottomnav-390.png` | Bottom-nav link hover (`#73777c` → `#b3b3b3`) |
@@ -58,8 +58,10 @@
   covering all four regions: top bar (logo, go back, go forward, search box) →
   sidebar (add-to-library, Open library pill, Search now pill) → main content
   (Close Now Playing) → player region (Open Now Playing). **Every stop** reports
-  `outline: solid 2px rgb(30, 215, 96)` (±3 rgb from live color sampling) with
-  `outline-offset: 2px`.
+  `outline: solid 2px` with `outline-offset: 2px`; sampled computed colors range
+  `rgb(28,198,88)`–`rgb(37,216,101)` (taken 120ms after each Tab, before
+  `outline-color` settles) while pixel scans of the saved screenshots show the
+  rendered ring at exactly `rgb(30, 215, 96)` = `#1ed760`.
 - **Disabled state** — all five idle transport controls report
   `disabled: true`, `cursor: default`; the play button renders an iron fill
   with a fog icon. (The first audit round caught a defect here: a base-level

@@ -1,6 +1,6 @@
 {
   "base": "http://localhost:3100",
-  "capturedAt": "2026-09-27T07:59:15.899Z",
+  "capturedAt": "2026-09-27T08:56:02.212Z",
   "shots": [
     "home-390.png",
     "search-390.png",
@@ -124,7 +124,7 @@
         "tag": "BUTTON",
         "name": "Go back",
         "href": null,
-        "outline": "solid 2px rgb(30, 215, 96)",
+        "outline": "solid 2px rgb(32, 215, 97)",
         "outlineOffset": "2px"
       },
       {
@@ -148,7 +148,7 @@
         "tag": "BUTTON",
         "name": "Add to Your Library",
         "href": null,
-        "outline": "solid 2px rgb(32, 215, 97)",
+        "outline": "solid 2px rgb(37, 216, 101)",
         "outlineOffset": "2px"
       },
       {
@@ -156,7 +156,7 @@
         "tag": "A",
         "name": "Open library",
         "href": "/library",
-        "outline": "solid 2px rgb(30, 214, 95)",
+        "outline": "solid 2px rgb(28, 198, 88)",
         "outlineOffset": "2px"
       },
       {
@@ -164,7 +164,7 @@
         "tag": "A",
         "name": "Search now",
         "href": "/search",
-        "outline": "solid 2px rgb(29, 208, 93)",
+        "outline": "solid 2px rgb(28, 198, 88)",
         "outlineOffset": "2px"
       },
       {
@@ -172,7 +172,7 @@
         "tag": "A",
         "name": "Close Now Playing",
         "href": "/",
-        "outline": "solid 2px rgb(32, 215, 97)",
+        "outline": "solid 2px rgb(37, 216, 101)",
         "outlineOffset": "2px"
       },
       {

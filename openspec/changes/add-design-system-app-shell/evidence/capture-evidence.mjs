@@ -289,9 +289,12 @@ async function main() {
     if (info.tag === "BODY") break;
     focusTrail.push({ stop: i + 1, ...info });
     if (i === 0) await shot("focus-visible-1280.png");
+    // Shoot while the player-region stop is actually focused: a shot taken
+    // after the loop would capture focus on BODY (no ring) and contradict the
+    // README caption.
+    if (info.name === "Open Now Playing") await shot("focus-traversal-1280.png");
   }
   report.checks.focusTrail = focusTrail;
-  await shot("focus-traversal-1280.png");
 
   // 4. Hover state changes (real mouse input) at each shell variant. Disabled
   //    controls use `disabled:pointer-events-none`, so the disabled play
