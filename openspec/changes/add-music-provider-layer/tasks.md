@@ -39,7 +39,7 @@
 
 ## 7. Evidence
 
-- [ ] 7.1 Capture M3 evidence against a production build: from a real browser page origin, issue `GET /api/search` (via the dependency-free CDP script approach used for M2) and record response status, normalized shape, and zero console errors; store the script, machine-readable results, and README under `openspec/changes/add-music-provider-layer/evidence/`. If the upstream providers are unreachable from this environment, record the exact network failure and instead record evidence from the fixture-driven suite run against the production build, clearly classified as such.
+- [x] 7.1 Capture M3 evidence against a production build: from a real browser page origin, issue `GET /api/search` (via the dependency-free CDP script approach used for M2) and record response status, normalized shape, and zero console errors; store the script, machine-readable results, and README under `openspec/changes/add-music-provider-layer/evidence/`. If the upstream providers are unreachable from this environment, record the exact network failure and instead record evidence from the fixture-driven suite run against the production build, clearly classified as such. (Captured live 2026-09-27: all 8 steps passed, upstreams reachable — tier ytmusic answered first attempt, no fixture fallback needed.)
 
 ## 8. Final verification
 

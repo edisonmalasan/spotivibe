@@ -1,0 +1,851 @@
+{
+  "task": "7.1",
+  "generatedAt": "2026-09-27T15:13:19.903Z",
+  "origin": "http://localhost:3210",
+  "pageOrigin": "http://localhost:3210/",
+  "query": "daft punk get lucky",
+  "steps": [
+    {
+      "name": "loaded the real app page origin",
+      "ok": true,
+      "detail": "http://localhost:3210/"
+    },
+    {
+      "name": "GET /api/search returns 200 with cache headers",
+      "ok": true,
+      "detail": "status 200, cache-control \"public, max-age=60\", 1172ms"
+    },
+    {
+      "name": "response contains only canonical Track fields (limit honored)",
+      "ok": true,
+      "detail": "10 tracks, first id youtube:4D7u5KF7SP8"
+    },
+    {
+      "name": "diagnostics are the safe subset (tier ids/outcomes/cache state only)",
+      "ok": true,
+      "detail": "tier ytmusic, tiersTried [{\"tier\":\"ytmusic\",\"outcome\":\"ok\"}], cached false"
+    },
+    {
+      "name": "no raw provider/renderer structures cross the API boundary",
+      "ok": true,
+      "detail": "scanned for 8 raw key names"
+    },
+    {
+      "name": "invalid request returns structured 400 invalid_query with no-store",
+      "ok": true,
+      "detail": "status 400, code invalid_query, message \"Invalid input: expected string, received undefined\""
+    },
+    {
+      "name": "repeat query within the TTL is served from the server cache",
+      "ok": true,
+      "detail": "status 200, cached true, identical tracks: true, 25ms"
+    },
+    {
+      "name": "zero console errors during the whole session",
+      "ok": true,
+      "detail": "none (1 expected network log(s) from the 400 probe)"
+    }
+  ],
+  "requests": {
+    "live": {
+      "ok": true,
+      "status": 200,
+      "timeMs": 1172,
+      "cacheControl": "public, max-age=60",
+      "contentType": "application/json",
+      "body": {
+        "tracks": [
+          {
+            "id": "youtube:4D7u5KF7SP8",
+            "source": "youtube",
+            "providerId": "4D7u5KF7SP8",
+            "title": "Get Lucky (feat. Pharrell Williams and Nile Rodgers)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Pharrell Williams"
+              },
+              {
+                "name": "Nile Rodgers"
+              }
+            ],
+            "album": {
+              "id": "MPREb_K8qWMWVqXGi",
+              "title": "Random Access Memories"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 370,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:Rgrt_8mXrK8",
+            "source": "youtube",
+            "providerId": "Rgrt_8mXrK8",
+            "title": "Get Lucky (Radio Edit - feat. Pharrell Williams and Nile Rodgers)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Pharrell Williams"
+              },
+              {
+                "name": "Nile Rodgers"
+              }
+            ],
+            "album": {
+              "id": "MPREb_yw4jv9byKCr",
+              "title": "Get Lucky (Radio Edit - feat. Pharrell Williams and Nile Rodgers)"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/HqegqT4tr2u0IsOqAmUgILJunBwHHkjl9s5L7t02ZFcGsRQpqKtmM7YlkeqzDdXi926mNvAn2UJu48s=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/HqegqT4tr2u0IsOqAmUgILJunBwHHkjl9s5L7t02ZFcGsRQpqKtmM7YlkeqzDdXi926mNvAn2UJu48s=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 249,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:iU7oF4OXZSE",
+            "source": "youtube",
+            "providerId": "iU7oF4OXZSE",
+            "title": "Lose Yourself to Dance (feat. Pharrell Williams)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Pharrell Williams"
+              }
+            ],
+            "album": {
+              "id": "MPREb_K8qWMWVqXGi",
+              "title": "Random Access Memories"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 354,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:khnokW3Mw24",
+            "source": "youtube",
+            "providerId": "khnokW3Mw24",
+            "title": "Instant Crush (feat. Julian Casablancas)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Julian Casablancas"
+              }
+            ],
+            "album": {
+              "id": "MPREb_K8qWMWVqXGi",
+              "title": "Random Access Memories"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 338,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:Jb6gcoR266U",
+            "source": "youtube",
+            "providerId": "Jb6gcoR266U",
+            "title": "Around the World",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              }
+            ],
+            "album": {
+              "id": "MPREb_dMHztPsrDgN",
+              "title": "Homework"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/1gXa4i8m_NecS7xNqLqzxy6rdOWBh_L6U91YYv5ULNdmvvYT1Pr6ld7_SyUs5L52pEQheVyfU9SnXUm9=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/1gXa4i8m_NecS7xNqLqzxy6rdOWBh_L6U91YYv5ULNdmvvYT1Pr6ld7_SyUs5L52pEQheVyfU9SnXUm9=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 430,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:oUGCl2yE4Lg",
+            "source": "youtube",
+            "providerId": "oUGCl2yE4Lg",
+            "title": "Get Lucky",
+            "artists": [
+              {
+                "name": "Halestorm"
+              }
+            ],
+            "album": {
+              "id": "MPREb_SQC7VfA1F5d",
+              "title": "ReAniMate 2.0: The CoVeRs eP"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/2Enn9Dv2FrB_vOIfWPckvt1YAhcthKX9mXeFYI9VMq9eiwLgxAxSZAvH7BL128b61u6AC1U7Vh6sA7Ca=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/2Enn9Dv2FrB_vOIfWPckvt1YAhcthKX9mXeFYI9VMq9eiwLgxAxSZAvH7BL128b61u6AC1U7Vh6sA7Ca=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 189,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:2KPIShmFouY",
+            "source": "youtube",
+            "providerId": "2KPIShmFouY",
+            "title": "Get Lucky",
+            "artists": [
+              {
+                "name": "Funk Punk"
+              }
+            ],
+            "album": {
+              "id": "MPREb_ohDkB6GSTtj",
+              "title": "Get Lucky"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/WZDQ2_16V2MgokgfFBMkoNAZdWfGxuz6CqZt0HubzPyltyCVoY9U2E8NS5R6U8obrCgXk3FurpFnfCs=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/WZDQ2_16V2MgokgfFBMkoNAZdWfGxuz6CqZt0HubzPyltyCVoY9U2E8NS5R6U8obrCgXk3FurpFnfCs=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 250,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:55pBMXnbqxo",
+            "source": "youtube",
+            "providerId": "55pBMXnbqxo",
+            "title": "Get Lucky (We're up All Night)",
+            "artists": [
+              {
+                "name": "Get Lucky"
+              }
+            ],
+            "album": {
+              "id": "MPREb_lWZCBZIWpON",
+              "title": "Get Lucky"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/47lsS8jzvlHKiBtMhoF2zVoPQuWWFzWVvqua4fquJmmhMz9RWwNFPcCOS7OpaAnChhrue8eCSroq7g7d2g=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/47lsS8jzvlHKiBtMhoF2zVoPQuWWFzWVvqua4fquJmmhMz9RWwNFPcCOS7OpaAnChhrue8eCSroq7g7d2g=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 259,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:fa5IWHDbftI",
+            "source": "youtube",
+            "providerId": "fa5IWHDbftI",
+            "title": "One More Time",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              }
+            ],
+            "album": {
+              "id": "MPREb_7ltM34kr0mH",
+              "title": "Discovery"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/qrY7xjdjqL0FEneZKHk845JeeFjdWOgexUa_BhsUxskJ2iflhzpbofqGJZBcPHDGU9JjoZflE4yn3P74=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/qrY7xjdjqL0FEneZKHk845JeeFjdWOgexUa_BhsUxskJ2iflhzpbofqGJZBcPHDGU9JjoZflE4yn3P74=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 321,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:r-YOrFFajsA",
+            "source": "youtube",
+            "providerId": "r-YOrFFajsA",
+            "title": "Get Lucky (feat. Kirk Fletcher)",
+            "artists": [
+              {
+                "name": "Martin Miller"
+              }
+            ],
+            "album": {
+              "id": "MPREb_GSVPNjTcD4S",
+              "title": "Get Lucky"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/aNaCpRKhajCTnGWzf3qYokCLLrZfmCzRqGiiy-iL9aao-d0eNcr5y4ZEgNN_xJkBtl-T_f5_trDiBkyJ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/aNaCpRKhajCTnGWzf3qYokCLLrZfmCzRqGiiy-iL9aao-d0eNcr5y4ZEgNN_xJkBtl-T_f5_trDiBkyJ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 422,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          }
+        ],
+        "diagnostics": {
+          "tier": "ytmusic",
+          "tiersTried": [
+            {
+              "tier": "ytmusic",
+              "outcome": "ok"
+            }
+          ],
+          "cached": false,
+          "resultCount": 10
+        }
+      }
+    },
+    "invalid": {
+      "ok": true,
+      "status": 400,
+      "timeMs": 7,
+      "cacheControl": "no-store",
+      "contentType": "application/json",
+      "body": {
+        "error": {
+          "code": "invalid_query",
+          "message": "Invalid input: expected string, received undefined"
+        }
+      }
+    },
+    "repeat": {
+      "ok": true,
+      "status": 200,
+      "timeMs": 25,
+      "cacheControl": "public, max-age=60",
+      "contentType": "application/json",
+      "body": {
+        "tracks": [
+          {
+            "id": "youtube:4D7u5KF7SP8",
+            "source": "youtube",
+            "providerId": "4D7u5KF7SP8",
+            "title": "Get Lucky (feat. Pharrell Williams and Nile Rodgers)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Pharrell Williams"
+              },
+              {
+                "name": "Nile Rodgers"
+              }
+            ],
+            "album": {
+              "id": "MPREb_K8qWMWVqXGi",
+              "title": "Random Access Memories"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 370,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:Rgrt_8mXrK8",
+            "source": "youtube",
+            "providerId": "Rgrt_8mXrK8",
+            "title": "Get Lucky (Radio Edit - feat. Pharrell Williams and Nile Rodgers)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Pharrell Williams"
+              },
+              {
+                "name": "Nile Rodgers"
+              }
+            ],
+            "album": {
+              "id": "MPREb_yw4jv9byKCr",
+              "title": "Get Lucky (Radio Edit - feat. Pharrell Williams and Nile Rodgers)"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/HqegqT4tr2u0IsOqAmUgILJunBwHHkjl9s5L7t02ZFcGsRQpqKtmM7YlkeqzDdXi926mNvAn2UJu48s=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/HqegqT4tr2u0IsOqAmUgILJunBwHHkjl9s5L7t02ZFcGsRQpqKtmM7YlkeqzDdXi926mNvAn2UJu48s=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 249,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:iU7oF4OXZSE",
+            "source": "youtube",
+            "providerId": "iU7oF4OXZSE",
+            "title": "Lose Yourself to Dance (feat. Pharrell Williams)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Pharrell Williams"
+              }
+            ],
+            "album": {
+              "id": "MPREb_K8qWMWVqXGi",
+              "title": "Random Access Memories"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 354,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:khnokW3Mw24",
+            "source": "youtube",
+            "providerId": "khnokW3Mw24",
+            "title": "Instant Crush (feat. Julian Casablancas)",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              },
+              {
+                "name": "Julian Casablancas"
+              }
+            ],
+            "album": {
+              "id": "MPREb_K8qWMWVqXGi",
+              "title": "Random Access Memories"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/N55arCGj69gtw6thXK8JUPisxoVYiwuIEQ7I6SGlkEyNcSJ7xIWPe76Vuu1SiUqRyx5w9qvR_zV8fV3CWQ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 338,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:Jb6gcoR266U",
+            "source": "youtube",
+            "providerId": "Jb6gcoR266U",
+            "title": "Around the World",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              }
+            ],
+            "album": {
+              "id": "MPREb_dMHztPsrDgN",
+              "title": "Homework"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/1gXa4i8m_NecS7xNqLqzxy6rdOWBh_L6U91YYv5ULNdmvvYT1Pr6ld7_SyUs5L52pEQheVyfU9SnXUm9=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/1gXa4i8m_NecS7xNqLqzxy6rdOWBh_L6U91YYv5ULNdmvvYT1Pr6ld7_SyUs5L52pEQheVyfU9SnXUm9=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 430,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:oUGCl2yE4Lg",
+            "source": "youtube",
+            "providerId": "oUGCl2yE4Lg",
+            "title": "Get Lucky",
+            "artists": [
+              {
+                "name": "Halestorm"
+              }
+            ],
+            "album": {
+              "id": "MPREb_SQC7VfA1F5d",
+              "title": "ReAniMate 2.0: The CoVeRs eP"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/2Enn9Dv2FrB_vOIfWPckvt1YAhcthKX9mXeFYI9VMq9eiwLgxAxSZAvH7BL128b61u6AC1U7Vh6sA7Ca=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/2Enn9Dv2FrB_vOIfWPckvt1YAhcthKX9mXeFYI9VMq9eiwLgxAxSZAvH7BL128b61u6AC1U7Vh6sA7Ca=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 189,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:2KPIShmFouY",
+            "source": "youtube",
+            "providerId": "2KPIShmFouY",
+            "title": "Get Lucky",
+            "artists": [
+              {
+                "name": "Funk Punk"
+              }
+            ],
+            "album": {
+              "id": "MPREb_ohDkB6GSTtj",
+              "title": "Get Lucky"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/WZDQ2_16V2MgokgfFBMkoNAZdWfGxuz6CqZt0HubzPyltyCVoY9U2E8NS5R6U8obrCgXk3FurpFnfCs=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/WZDQ2_16V2MgokgfFBMkoNAZdWfGxuz6CqZt0HubzPyltyCVoY9U2E8NS5R6U8obrCgXk3FurpFnfCs=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 250,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:55pBMXnbqxo",
+            "source": "youtube",
+            "providerId": "55pBMXnbqxo",
+            "title": "Get Lucky (We're up All Night)",
+            "artists": [
+              {
+                "name": "Get Lucky"
+              }
+            ],
+            "album": {
+              "id": "MPREb_lWZCBZIWpON",
+              "title": "Get Lucky"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/47lsS8jzvlHKiBtMhoF2zVoPQuWWFzWVvqua4fquJmmhMz9RWwNFPcCOS7OpaAnChhrue8eCSroq7g7d2g=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/47lsS8jzvlHKiBtMhoF2zVoPQuWWFzWVvqua4fquJmmhMz9RWwNFPcCOS7OpaAnChhrue8eCSroq7g7d2g=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 259,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:fa5IWHDbftI",
+            "source": "youtube",
+            "providerId": "fa5IWHDbftI",
+            "title": "One More Time",
+            "artists": [
+              {
+                "name": "Daft Punk"
+              }
+            ],
+            "album": {
+              "id": "MPREb_7ltM34kr0mH",
+              "title": "Discovery"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/qrY7xjdjqL0FEneZKHk845JeeFjdWOgexUa_BhsUxskJ2iflhzpbofqGJZBcPHDGU9JjoZflE4yn3P74=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/qrY7xjdjqL0FEneZKHk845JeeFjdWOgexUa_BhsUxskJ2iflhzpbofqGJZBcPHDGU9JjoZflE4yn3P74=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 321,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          },
+          {
+            "id": "youtube:r-YOrFFajsA",
+            "source": "youtube",
+            "providerId": "r-YOrFFajsA",
+            "title": "Get Lucky (feat. Kirk Fletcher)",
+            "artists": [
+              {
+                "name": "Martin Miller"
+              }
+            ],
+            "album": {
+              "id": "MPREb_GSVPNjTcD4S",
+              "title": "Get Lucky"
+            },
+            "artwork": [
+              {
+                "url": "https://yt3.googleusercontent.com/aNaCpRKhajCTnGWzf3qYokCLLrZfmCzRqGiiy-iL9aao-d0eNcr5y4ZEgNN_xJkBtl-T_f5_trDiBkyJ=w120-h120-l90-rj",
+                "width": 120,
+                "height": 120
+              },
+              {
+                "url": "https://yt3.googleusercontent.com/aNaCpRKhajCTnGWzf3qYokCLLrZfmCzRqGiiy-iL9aao-d0eNcr5y4ZEgNN_xJkBtl-T_f5_trDiBkyJ=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+              }
+            ],
+            "durationSeconds": 422,
+            "category": "music",
+            "capabilities": {
+              "stream": true,
+              "offlineDownload": false
+            },
+            "qualityScore": 100
+          }
+        ],
+        "diagnostics": {
+          "tier": "ytmusic",
+          "tiersTried": [
+            {
+              "tier": "ytmusic",
+              "outcome": "ok"
+            }
+          ],
+          "cached": true,
+          "resultCount": 10
+        }
+      }
+    }
+  },
+  "consoleErrors": [],
+  "expectedNetworkLogs": [
+    "log: Failed to load resource: the server responded with a status of 400 (Bad Request) [http://localhost:3210/api/search?limit=10]"
+  ],
+  "pass": true,
+  "summary": {
+    "tier": "ytmusic",
+    "resultCount": 10,
+    "firstTrack": {
+      "id": "youtube:4D7u5KF7SP8",
+      "title": "Get Lucky (feat. Pharrell Williams and Nile Rodgers)",
+      "artists": [
+        {
+          "name": "Daft Punk"
+        },
+        {
+          "name": "Pharrell Williams"
+        },
+        {
+          "name": "Nile Rodgers"
+        }
+      ],
+      "durationSeconds": 370,
+      "category": "music"
+    },
+    "responseTimeMs": 1172
+  }
+}
