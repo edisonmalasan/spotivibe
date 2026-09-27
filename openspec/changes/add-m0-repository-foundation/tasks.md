@@ -29,6 +29,6 @@
 
 ## 5. Integration verification (M0 acceptance)
 
-- [ ] 5.1 From a clean checkout run the full gate sequence — clean install → lint → format check → typecheck → unit tests → production build — then verify every command exits 0 and record the results in the Apply PR.
-- [ ] 5.2 Verify M0 acceptance criteria: `frontend/docs/DESIGN.md` exists and is referenced from README; no auth/Supabase/database dependencies exist (`npm ls`/manifest inspection); no Lyrix source was copied wholesale; secrets are not exposed via `NEXT_PUBLIC_*`.
+- [x] 5.1 From a clean checkout run the full gate sequence — clean install → lint → format check → typecheck → unit tests → production build — then verify every command exits 0 and record the results in the Apply PR.
+- [x] 5.2 Verify M0 acceptance criteria: `frontend/docs/DESIGN.md` exists and is referenced from README; no auth/Supabase/database dependencies exist (`npm ls`/manifest inspection); no Lyrix source was copied wholesale; secrets are not exposed via `NEXT_PUBLIC_*`.
 - [ ] 5.3 After all acceptance criteria pass, update `ROADMAP.md` §5 `M0` → `DONE`, then verify the status table reflects `DONE` for M0 only and commit the final status update.
