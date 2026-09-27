@@ -1,0 +1,17 @@
+# Normalize line endings: LF in the repository AND in every working tree.
+# Prettier enforces LF (default endOfLine), so checkouts must not rewrite
+# text files to CRLF regardless of platform or core.autocrlf settings.
+# Without this, `npm run format:check` fails on a fresh Windows checkout.
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.wasm binary
