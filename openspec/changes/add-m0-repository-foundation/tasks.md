@@ -2,22 +2,22 @@
 
 ## 1. Next.js scaffold under `frontend/`
 
-- [ ] 1.1 Scaffold a fresh Next.js + TypeScript app under `frontend/` with App Router, `src/` directory, ESLint, and Tailwind CSS v4 (no Lyrix code), then verify `npm ci` completes cleanly from the committed lockfile.
-- [ ] 1.2 Create the `ROADMAP.md` §7.1 source folders (`src/app`, `src/components/*`, `src/features/*`, `src/server/music/providers`, `src/server/http`, `src/data/*`, `src/stores`, `src/types`, `src/hooks`, `src/lib`, `src/styles`, `tests/`) with placeholders, then verify the resulting tree matches the §7.1 layout (folder listing inspected against the roadmap).
-- [ ] 1.3 Document the chosen package manager (npm) and scaffold/toolchain versions in the scaffold docs (`frontend/README.md` if generated, otherwise root `README.md`), then verify the recorded versions match `node --version`, `npm --version`, and `frontend/package.json`.
+- [x] 1.1 Scaffold a fresh Next.js + TypeScript app under `frontend/` with App Router, `src/` directory, ESLint, and Tailwind CSS v4 (no Lyrix code), then verify `npm ci` completes cleanly from the committed lockfile.
+- [x] 1.2 Create the `ROADMAP.md` §7.1 source folders (`src/app`, `src/components/*`, `src/features/*`, `src/server/music/providers`, `src/server/http`, `src/data/*`, `src/stores`, `src/types`, `src/hooks`, `src/lib`, `src/styles`, `tests/`) with placeholders, then verify the resulting tree matches the §7.1 layout (folder listing inspected against the roadmap).
+- [x] 1.3 Document the chosen package manager (npm) and scaffold/toolchain versions in the scaffold docs (`frontend/README.md` if generated, otherwise root `README.md`), then verify the recorded versions match `node --version`, `npm --version`, and `frontend/package.json`.
 
 ## 2. Repository documents at roadmap-mandated paths
 
-- [ ] 2.1 Relocate `docs/ROADMAP.md` → `ROADMAP.md` with `git mv`, then verify the file exists at the repository root, `docs/ROADMAP.md` no longer exists, and `git status` records a rename (history preserved).
-- [ ] 2.2 Relocate `docs/DESIGN.md` → `frontend/docs/DESIGN.md` with `git mv` after the scaffold creates `frontend/`, then verify the file exists at the mandated path, `git log --follow` still reaches the original commit, and the empty `docs/` directory is gone.
+- [x] 2.1 Relocate `docs/ROADMAP.md` → `ROADMAP.md` with `git mv`, then verify the file exists at the repository root, `docs/ROADMAP.md` no longer exists, and `git status` records a rename (history preserved).
+- [x] 2.2 Relocate `docs/DESIGN.md` → `frontend/docs/DESIGN.md` with `git mv` after the scaffold creates `frontend/`, then verify the file exists at the mandated path, `git log --follow` still reaches the original commit, and the empty `docs/` directory is gone.
 
 ## 3. Quality gates: lint, format, typecheck, tests, env validation
 
-- [ ] 3.1 Add Prettier configuration and a `format:check` script to `frontend/package.json`, then verify `npm run format:check` exits 0 on the scaffolded source.
-- [ ] 3.2 Enforce strict TypeScript with the `@/*` path alias in `frontend/tsconfig.json` and add a `typecheck` script, then verify `npm run typecheck` exits 0.
-- [ ] 3.3 Confirm/extend the ESLint configuration for the project rules, then verify `npm run lint` exits 0.
-- [ ] 3.4 Configure Vitest with a `test` script, then verify `npm test` runs and exits 0 with the project configuration loaded.
-- [ ] 3.5 Implement the `zod`-based environment-validation module (near-empty server-side schema, `NEXT_PUBLIC_*` exposure rule documented) plus `.env.example` containing only actually-needed server-side placeholder values, and verify unit tests covering valid/invalid env inputs pass via `npm test`.
+- [x] 3.1 Add Prettier configuration and a `format:check` script to `frontend/package.json`, then verify `npm run format:check` exits 0 on the scaffolded source.
+- [x] 3.2 Enforce strict TypeScript with the `@/*` path alias in `frontend/tsconfig.json` and add a `typecheck` script, then verify `npm run typecheck` exits 0.
+- [x] 3.3 Confirm/extend the ESLint configuration for the project rules, then verify `npm run lint` exits 0.
+- [x] 3.4 Configure Vitest with a `test` script, then verify `npm test` runs and exits 0 with the project configuration loaded.
+- [x] 3.5 Implement the `zod`-based environment-validation module (near-empty server-side schema, `NEXT_PUBLIC_*` exposure rule documented) plus `.env.example` containing only actually-needed server-side placeholder values, and verify unit tests covering valid/invalid env inputs pass via `npm test`.
 
 ## 4. Repository governance, CI, and status ledger
 
