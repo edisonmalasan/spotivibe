@@ -12,9 +12,9 @@
 
 ## 3. IndexedDB schema, migrations, and repository implementations
 
-- [ ] 3.1 Implement database open + versioned schema v1 (seven stores, keyPaths/indexes from design Decision 2) and the ordered migration registry with `versionchange` handling; verify an integration test proves a synthetic older registry runs steps in ascending order before repositories serve data.
-- [ ] 3.2 Implement the IndexedDB repository implementations for all eight datasets; verify integration tests cover each dataset's create/read/update/list/clear round-trip (and playlist reorder ordering) against the real IndexedDB implementation.
-- [ ] 3.3 Verify data durability at the storage layer: write records, close the database, reopen against the same backing store, and read identical values (reload/browser-restart survival at repository level) in an integration test.
+- [x] 3.1 Implement database open + versioned schema v1 (seven stores, keyPaths/indexes from design Decision 2) and the ordered migration registry with `versionchange` handling; verify an integration test proves a synthetic older registry runs steps in ascending order before repositories serve data.
+- [x] 3.2 Implement the IndexedDB repository implementations for all eight datasets; verify integration tests cover each dataset's create/read/update/list/clear round-trip (and playlist reorder ordering) against the real IndexedDB implementation.
+- [x] 3.3 Verify data durability at the storage layer: write records, close the database, reopen against the same backing store, and read identical values (reload/browser-restart survival at repository level) in an integration test.
 
 ## 4. Backup preparation (pure layer)
 
