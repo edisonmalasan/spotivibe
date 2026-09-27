@@ -21,11 +21,11 @@
 
 ## 4. Repository governance, CI, and status ledger
 
-- [ ] 4.1 Add a root `README.md` that references `ROADMAP.md` and `frontend/docs/DESIGN.md` and lists the verified commands, then verify each documented command runs exactly as written.
-- [ ] 4.2 Add root `ATTRIBUTION.md` implementing the Lyrix MIT attribution mechanism (notice + per-file header rule), then verify the file documents the obligation required by `ROADMAP.md` §9.3.
-- [ ] 4.3 Update `AGENTS.md` → Setup & commands with only the commands actually executed in this change (install, lint, format check, typecheck, test, build) including what each proves and does not prove, then verify by re-running every listed command successfully.
-- [ ] 4.4 Add `.github/workflows/ci.yml` running lint → typecheck → unit tests → production build on push/PR to `main`, then verify the workflow invokes exactly the locally verified scripts (static inspection of the YAML against `package.json`).
-- [ ] 4.5 Update `ROADMAP.md` §5 milestone status table: `M0` → `IN PROGRESS`, then verify the table row renders correctly and no other milestone status changed.
+- [x] 4.1 Add a root `README.md` that references `ROADMAP.md` and `frontend/docs/DESIGN.md` and lists the verified commands, then verify each documented command runs exactly as written.
+- [x] 4.2 Add root `ATTRIBUTION.md` implementing the Lyrix MIT attribution mechanism (notice + per-file header rule), then verify the file documents the obligation required by `ROADMAP.md` §9.3.
+- [x] 4.3 Update `AGENTS.md` → Setup & commands with only the commands actually executed in this change (install, lint, format check, typecheck, test, build) including what each proves and does not prove, then verify by re-running every listed command successfully.
+- [x] 4.4 Add `.github/workflows/ci.yml` running lint → typecheck → unit tests → production build on push/PR to `main`, then verify the workflow invokes exactly the locally verified scripts (static inspection of the YAML against `package.json`).
+- [x] 4.5 Update `ROADMAP.md` §5 milestone status table: `M0` → `IN PROGRESS`, then verify the table row renders correctly and no other milestone status changed.
 
 ## 5. Integration verification (M0 acceptance)
 
