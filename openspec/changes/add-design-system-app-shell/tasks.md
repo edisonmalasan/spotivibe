@@ -7,8 +7,8 @@
 
 ## 2. Design tokens from DESIGN.md
 
-- [ ] 2.1 Implement `frontend/src/styles/tokens.css` (Tailwind v4 `@theme` + CSS custom properties for DESIGN.md colors, typography scale/weights, 4px spacing scale, radius families, shadows, surfaces) imported by `globals.css`, then verify a token unit test asserting the exact DESIGN.md values passes and `npm run build` exits 0.
-- [ ] 2.2 Add base-layer styles (canvas `#000000` background, default typography, visible `:focus-visible` outline, reduced-motion respect) and the breakpoint contract (mobile `<768px`, tablet `768–1023px`, desktop `≥1024px`), then verify a raw-content unit test asserts these base rules and breakpoint values exist and `npm run lint` + `npm test` exit 0.
+- [x] 2.1 Implement `frontend/src/styles/tokens.css` (Tailwind v4 `@theme` + CSS custom properties for DESIGN.md colors, typography scale/weights, 4px spacing scale, radius families, shadows, surfaces) imported by `globals.css`, then verify a token unit test asserting the exact DESIGN.md values passes and `npm run build` exits 0.
+- [x] 2.2 Add base-layer styles (canvas `#000000` background, default typography, visible `:focus-visible` outline, reduced-motion respect) and the breakpoint contract (mobile `<768px`, tablet `768–1023px`, desktop `≥1024px`), then verify a raw-content unit test asserts these base rules and breakpoint values exist and `npm run lint` + `npm test` exit 0.
 
 ## 3. Design-system primitives
 
