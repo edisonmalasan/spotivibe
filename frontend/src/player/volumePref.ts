@@ -27,7 +27,10 @@ export function readVolumePreference(): VolumePreference {
     if (raw === null) return DEFAULT_VOLUME_PREFERENCE;
     const parsed = JSON.parse(raw) as { volume?: unknown; muted?: unknown };
     return {
-      volume: typeof parsed.volume === "number" ? clampVolume(parsed.volume) : DEFAULT_VOLUME_PREFERENCE.volume,
+      volume:
+        typeof parsed.volume === "number"
+          ? clampVolume(parsed.volume)
+          : DEFAULT_VOLUME_PREFERENCE.volume,
       muted: typeof parsed.muted === "boolean" ? parsed.muted : DEFAULT_VOLUME_PREFERENCE.muted,
     };
   } catch {

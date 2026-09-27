@@ -273,7 +273,10 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     seek(seconds) {
       if (!get().currentTrack) return;
       const { durationSeconds } = get();
-      const bounded = Math.max(0, durationSeconds > 0 ? Math.min(seconds, durationSeconds) : seconds);
+      const bounded = Math.max(
+        0,
+        durationSeconds > 0 ? Math.min(seconds, durationSeconds) : seconds,
+      );
       set({ positionSeconds: bounded });
       bridge?.seekTo(bounded);
     },
