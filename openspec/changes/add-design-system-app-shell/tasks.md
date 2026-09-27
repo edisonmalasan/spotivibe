@@ -12,10 +12,10 @@
 
 ## 3. Design-system primitives
 
-- [ ] 3.1 Implement `Button` (filled-white pill + ghost variants, disabled and loading states) and `IconButton` (accessible-name required) in `src/components/design-system/`, then verify component tests cover variants, disabled semantics, loading state, and accessible names passing.
-- [ ] 3.2 Implement `AlbumCard` (square, 6px radius, surface hover shift), `ArtistCard` (circular), and `SectionHeader` in `src/components/design-system/`, then verify component tests cover rendered structure, DESIGN.md text roles (title/artist), and hover class contract passing.
-- [ ] 3.3 Implement `SearchInput` (pill 500px radius, icon + placeholder) and `NavArrowButton` (32px circular, accessible name) in `src/components/design-system/`, then verify component tests cover placeholder/label rendering and accessible names passing.
-- [ ] 3.4 Implement `Skeleton`, `EmptyState`, and `ErrorState` (with retry/recover affordance) in `src/components/design-system/`, then verify component tests cover skeleton rendering, empty copy, and error retry interaction passing.
+- [x] 3.1 Implement `Button` (filled-white pill + ghost variants, disabled and loading states) and `IconButton` (accessible-name required) in `src/components/design-system/`, then verify component tests cover variants, disabled semantics, loading state, and accessible names passing.
+- [x] 3.2 Implement `AlbumCard` (square, 6px radius, surface hover shift), `ArtistCard` (circular), and `SectionHeader` in `src/components/design-system/`, then verify component tests cover rendered structure, DESIGN.md text roles (title/artist), and hover class contract passing.
+- [x] 3.3 Implement `SearchInput` (pill 500px radius, icon + placeholder) and `NavArrowButton` (32px circular, accessible name) in `src/components/design-system/`, then verify component tests cover placeholder/label rendering and accessible names passing.
+- [x] 3.4 Implement `Skeleton`, `EmptyState`, and `ErrorState` (with retry/recover affordance) in `src/components/design-system/`, then verify component tests cover skeleton rendering, empty copy, and error retry interaction passing.
 
 ## 4. Shell layout
 
