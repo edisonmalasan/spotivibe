@@ -96,7 +96,7 @@ export const invidiousProvider: MusicProvider = {
             "User-Agent": BROWSER_USER_AGENT,
           },
           signal: request.signal,
-          timeoutMs: ATTEMPT_TIMEOUT_MS,
+          timeoutMs: request.timeoutMs ?? ATTEMPT_TIMEOUT_MS,
         });
         return parseInvidiousSearch(body);
       } catch (error) {

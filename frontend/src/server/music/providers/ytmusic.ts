@@ -165,7 +165,7 @@ export const ytmusicProvider: MusicProvider = {
           params: SONGS_FILTER_PARAMS,
         }),
         signal: request.signal,
-        timeoutMs: ATTEMPT_TIMEOUT_MS,
+        timeoutMs: request.timeoutMs ?? ATTEMPT_TIMEOUT_MS,
       });
       return parseYtmusicSearch(body);
     } catch (error) {

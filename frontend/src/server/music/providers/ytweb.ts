@@ -118,7 +118,7 @@ export const ytwebProvider: MusicProvider = {
           query: `${request.query} song`,
         }),
         signal: request.signal,
-        timeoutMs: ATTEMPT_TIMEOUT_MS,
+        timeoutMs: request.timeoutMs ?? ATTEMPT_TIMEOUT_MS,
       });
       return parseYtwebSearch(body);
     } catch (error) {

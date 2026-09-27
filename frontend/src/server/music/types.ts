@@ -94,6 +94,11 @@ export interface SearchRequest {
   limit: number;
   /** Incoming request's abort signal — cancellation propagates upstream. */
   signal?: AbortSignal;
+  /**
+   * Per-attempt upstream timeout. Set by the chain from its configured
+   * budget; absent means the tier default.
+   */
+  timeoutMs?: number;
 }
 
 /**

@@ -22,11 +22,11 @@
 
 ## 4. Orchestrator: chain and resilience
 
-- [ ] 4.1 Implement the fixed four-tier chain with failure taxonomy (`timeout | network | http | parse | empty`) and first-usable-tier stop, and verify tests cover: primary success stops the chain; primary failure falls through; a failing middle fallback with later success returns results; all tiers failing produces a structured aggregate error.
-- [ ] 4.2 Implement per-attempt timeout, total request budget, and incoming-request signal propagation into queue waits and upstream fetches, and verify tests show a hung upstream aborts and falls through and that caller abort cancels queued/in-flight work (mocked hanging fetch, fake timers).
-- [ ] 4.3 Implement the bounded outbound-concurrency semaphore (default 4, FIFO) and verify a test observes that concurrent upstream calls never exceed the cap.
-- [ ] 4.4 Implement identical in-flight request deduplication and verify a test shows two concurrent identical searches produce one upstream call with equal responses for both callers.
-- [ ] 4.5 Implement the bounded TTL result cache (60s shared constant with the HTTP layer, ~100 entries, insertion-order eviction) and verify tests cover hit, expiry → refetch, and bound enforcement.
+- [x] 4.1 Implement the fixed four-tier chain with failure taxonomy (`timeout | network | http | parse | empty`) and first-usable-tier stop, and verify tests cover: primary success stops the chain; primary failure falls through; a failing middle fallback with later success returns results; all tiers failing produces a structured aggregate error.
+- [x] 4.2 Implement per-attempt timeout, total request budget, and incoming-request signal propagation into queue waits and upstream fetches, and verify tests show a hung upstream aborts and falls through and that caller abort cancels queued/in-flight work (mocked hanging fetch, short injected timers — native `AbortSignal` clocks are not fakeable).
+- [x] 4.3 Implement the bounded outbound-concurrency semaphore (default 4, FIFO) and verify a test observes that concurrent upstream calls never exceed the cap.
+- [x] 4.4 Implement identical in-flight request deduplication and verify a test shows two concurrent identical searches produce one upstream call with equal responses for both callers.
+- [x] 4.5 Implement the bounded TTL result cache (60s shared constant with the HTTP layer, ~100 entries, insertion-order eviction) and verify tests cover hit, expiry → refetch, and bound enforcement.
 
 ## 5. Search API route
 

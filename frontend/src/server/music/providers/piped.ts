@@ -100,7 +100,7 @@ export const pipedProvider: MusicProvider = {
             "User-Agent": BROWSER_USER_AGENT,
           },
           signal: request.signal,
-          timeoutMs: ATTEMPT_TIMEOUT_MS,
+          timeoutMs: request.timeoutMs ?? ATTEMPT_TIMEOUT_MS,
         });
         return parsePipedSearch(body);
       } catch (error) {
