@@ -8,7 +8,7 @@ M0 delivered the repository foundation (Next.js scaffold, quality gates, CI), bu
 
 - Extract the design tokens defined in `frontend/docs/DESIGN.md` into the Tailwind v4 `@theme` layer and CSS custom properties: surfaces/canvas colors, accent colors, typography scale/weights/families, 4px-based spacing scale, border-radius families (6px content / 9999px actions / 500px inputs), elevation/shadows, and hover/active states.
 - Build reusable UI primitives (not page-specific duplicates): pill/ghost buttons, icon buttons, square album card, circular artist card, section header, search input, navigation arrow, skeleton, empty state, error state, and disabled/loading treatments — each with hover, focus-visible, disabled, and loading behavior.
-- Implement the **desktop shell**: 340px left library/sidebar panel, 64px top navigation bar (search + nav arrows + actions), scrollable main content area, and a persistent bottom player bar slot.
+- Implement the **desktop shell**: 340px left library/sidebar panel, 64px top navigation bar (branding + search + nav arrows), scrollable main content area, and a persistent bottom player bar slot.
 - Implement the **mobile shell** (bottom navigation, compact mini-player slot, expanded Now Playing route) with responsive breakpoints switching between shells.
 - Add Spotivibe branding surfaces (name, wordmark/logo placeholder, icon mark) — **no Spotify logos, assets, or brand copy**.
 - Add placeholder routes for the shell's navigation targets (Home, Search, Library, Now Playing) that render design-system empty/skeleton states only — no search, library, or playback functionality (those belong to M5/M7/M4).
