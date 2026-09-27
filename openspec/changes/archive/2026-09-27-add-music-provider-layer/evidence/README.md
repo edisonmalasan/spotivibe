@@ -62,7 +62,7 @@ cd frontend
 npm run build
 $env:PORT=3210; npm run start    # separate shell
 cd ..
-node openspec/changes/add-music-provider-layer/evidence/cdp-search-check.mjs
+node openspec/changes/archive/2026-09-27-add-music-provider-layer/evidence/cdp-search-check.mjs
 ```
 
 Environment overrides: `SPOTIVIBE_ORIGIN` (default `http://localhost:3210`),
