@@ -6,7 +6,12 @@ import { getLocalData } from "@/data/localData";
 import { makeTrack } from "../helpers/music-fixtures";
 
 const trackA = makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" });
-const trackB = makeTrack({ id: "youtube:bbb", providerId: "bbb", title: "Bravo", durationSeconds: 180 });
+const trackB = makeTrack({
+  id: "youtube:bbb",
+  providerId: "bbb",
+  title: "Bravo",
+  durationSeconds: 180,
+});
 
 const DEBOUNCE = 5;
 

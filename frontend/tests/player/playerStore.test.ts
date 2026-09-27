@@ -16,8 +16,18 @@ import type { SessionSnapshot } from "@/data/repositories";
 import { makeTrack } from "../helpers/music-fixtures";
 
 const trackA = makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" });
-const trackB = makeTrack({ id: "youtube:bbb", providerId: "bbb", title: "Bravo", durationSeconds: 180 });
-const trackC = makeTrack({ id: "youtube:ccc", providerId: "ccc", title: "Charlie", durationSeconds: 90 });
+const trackB = makeTrack({
+  id: "youtube:bbb",
+  providerId: "bbb",
+  title: "Bravo",
+  durationSeconds: 180,
+});
+const trackC = makeTrack({
+  id: "youtube:ccc",
+  providerId: "ccc",
+  title: "Charlie",
+  durationSeconds: 90,
+});
 
 function makeBridge() {
   return {
