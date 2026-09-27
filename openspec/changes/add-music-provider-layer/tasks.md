@@ -30,8 +30,8 @@
 
 ## 5. Search API route
 
-- [ ] 5.1 Read the Next.js route-handler guide in `frontend/node_modules/next/dist/docs/` and implement `frontend/src/app/api/search/route.ts` (`GET`, zod-validated `q`/`limit`, 200 `{ tracks, diagnostics }`, 400 invalid query with no upstream call, 503 all-tiers-failed, `Cache-Control: public, max-age=60` on success and `no-store` on errors); verify integration tests (mocked fetch) cover all status paths, the diagnostics safe subset, and the header behavior.
-- [ ] 5.2 Verify the baseline-keyless scenario: search completes with a completely empty server environment (no provider configuration values) in an integration test.
+- [x] 5.1 Read the Next.js route-handler guide in `frontend/node_modules/next/dist/docs/` and implement `frontend/src/app/api/search/route.ts` (`GET`, zod-validated `q`/`limit`, 200 `{ tracks, diagnostics }`, 400 invalid query with no upstream call, 503 all-tiers-failed, `Cache-Control: public, max-age=60` on success and `no-store` on errors); verify integration tests (mocked fetch) cover all status paths, the diagnostics safe subset, and the header behavior.
+- [x] 5.2 Verify the baseline-keyless scenario: search completes with a completely empty server environment (no provider configuration values) in an integration test.
 
 ## 6. Architecture invariants
 
