@@ -16,7 +16,7 @@ export function SearchInput({
 }: SearchInputProps) {
   return (
     <div
-      className={`flex h-9 w-full items-center gap-2 rounded-inputs bg-graphite px-3 shadow-subtle ${className}`}
+      className={`flex h-9 items-center gap-2 rounded-inputs bg-graphite px-3 shadow-subtle ${className}`}
     >
       <Search className="size-4 shrink-0 text-pure-white" aria-hidden="true" />
       <input

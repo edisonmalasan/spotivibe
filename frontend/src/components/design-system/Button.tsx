@@ -9,7 +9,7 @@ export type ButtonVariant = "pill" | "ghost";
  * Shared so link-styled actions can reuse the exact same contract.
  */
 export const pillButtonClassName =
-  "rounded-buttons bg-pure-white px-3 py-2 text-body-lg font-bold text-void-black transition hover:scale-105";
+  "inline-flex items-center justify-center gap-2 rounded-buttons bg-pure-white px-3 py-2 text-body-lg font-bold text-void-black transition hover:scale-105";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;

@@ -19,9 +19,9 @@
 
 ## 4. Shell layout
 
-- [ ] 4.1 Implement `AppShell` in `src/components/layout/` with the desktop variant (340px sidebar "Your Library" panel, 64px top bar with search slot/nav arrows/actions, scrollable main, bottom player region) mounted from the root layout, then verify component tests assert landmarks (banner/navigation/main/complementary), player-region presence, and the desktop variant class contract passing.
-- [ ] 4.2 Implement the compact variant (bottom navigation with Home/Search/Library items, compact mini-player slot above it) with the mutually-exclusive breakpoint class contract (`hidden lg:flex` / `lg:hidden`), then verify component tests assert the variant class contract, that both variants cannot be simultaneously visible per the contract, and that all nav controls expose accessible names.
-- [ ] 4.3 Implement the `/now-playing` expanded surface reachable from the player region with placeholder artwork/title/control primitives, then verify a component test renders Now Playing from the player-region link with placeholder content passing.
+- [x] 4.1 Implement `AppShell` in `src/components/layout/` with the desktop variant (340px sidebar "Your Library" panel, 64px top bar with search slot/nav arrows/actions, scrollable main, bottom player region) mounted from the root layout, then verify component tests assert landmarks (banner/navigation/main/complementary), player-region presence, and the desktop variant class contract passing.
+- [x] 4.2 Implement the compact variant (bottom navigation with Home/Search/Library items, compact mini-player slot above it) with the mutually-exclusive breakpoint class contract (`hidden lg:flex` / `lg:hidden`), then verify component tests assert the variant class contract, that both variants cannot be simultaneously visible per the contract, and that all nav controls expose accessible names.
+- [x] 4.3 Implement the `/now-playing` expanded surface reachable from the player region with placeholder artwork/title/control primitives, then verify a component test renders Now Playing from the player-region link with placeholder content passing.
 
 ## 5. Branding and placeholder routes
 
