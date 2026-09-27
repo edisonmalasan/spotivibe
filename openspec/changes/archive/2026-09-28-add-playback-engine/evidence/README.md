@@ -77,7 +77,7 @@ cd frontend
 npm run build
 $env:PORT=3210; npm run start    # separate shell; any free port works
 cd ..
-node openspec/changes/add-playback-engine/evidence/cdp-check.mjs
+node openspec/changes/archive/2026-09-28-add-playback-engine/evidence/cdp-check.mjs
 ```
 
 Environment overrides: `SPOTIVIBE_ORIGIN` (default `http://localhost:3210`),
