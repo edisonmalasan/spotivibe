@@ -23,8 +23,8 @@ Policy rechecked 2026-09-28 (YouTube revision 2026-09-14): embedded players need
 *Alternatives:* React context + `useReducer` (rejected: re-renders the whole shell on every 1s position tick without selectors; Zustand is stack-sanctioned); Redux (heavier, no roadmap basis); putting actions directly on `window` (untestable, no reactivity).
 
 Control flow (mirrors Lyrix's proven pattern, adapted):
-- **Actions → engine:** `playerStore` actions call an attached bridge (`setPlaybackBridge(bridge)` / `clearPlaybackBridge()`), a small interface (`cue`, `load`, `play`, `pause`, `seek`, `setVolume`, `setMuted`). `PlayerHost` attaches the singleton engine on mount and detaches on unmount. When no bridge is attached (SSR, tests without host), actions still mutate optimistic state and no-op the bridge call.
-- **Events → store:** the engine subscribes to store changes it must react to (`currentTrack` identity → cue/load; `volume`/`muted` → apply) and writes status/position/duration/error back via reserved setters (`_setStatus`, `_setPosition`, `_setDuration`, `_setError` — underscore-prefixed as engine-only).
+- **Actions → engine:** `playerStore` actions call an attached bridge (`setPlaybackBridge(bridge)` / `clearPlaybackBridge()`), a deliberately small interface (`play`, `pause`, `seekTo`, `setVolume`, `setMuted`). Loads/cues do **not** pass through the bridge: they travel as `LoadRequest` tokens (videoId, startSeconds, mode, monotonically increasing token) that the engine observes via its own store subscription. A newer token always supersedes an older one, and restore-before-attach ordering can never lose a load (the engine picks up a pre-existing request on `attach()`). `PlayerHost` attaches the singleton engine when the dock mounts and suspends it on unmount; when no bridge is attached (SSR, tests without host), actions still mutate optimistic state and no-op the bridge call.
+- **Events → store:** the engine subscribes to store changes it must react to (the `LoadRequest` token above) and writes status/position/duration/error back via reserved setters (`_setStatus`, `_setPosition`, `_setDuration`, `_setError` — underscore-prefixed as engine-only). Volume/mute deliberately are **not** mirrored in the subscription: they flow through the bridge (user actions) and `onReady` (pre-ready changes) — a subscription path would apply every change twice.
 - **Tests** attach a fake bridge and/or drive fake YT events; no real network in unit tests.
 
 ### 2. Singleton engine + once-guarded API loader (`src/player/`)
@@ -64,10 +64,10 @@ Store `status: "idle" | "loading" | "playing" | "buffering" | "paused" | "error"
 
 ### 5. Session persistence + cold-launch restore (no autoplay)
 
-- **Write:** debounced (≈2s) `sessionRepository.set({queue, queueIndex, positionSeconds, repeatMode})` triggered by track change, repeat change, and position ticks (each poll updates a `lastPersistedPosition`; flush also on `visibilitychange → hidden` / `pagehide`). Import path untouched — no schema/whitelist changes (local-data spec unmodified).
-- **Read (boot):** `PlayerHost` effect: `sessionRepository.get()` → if `queue[queueIndex]` exists, set store (`queue`, `index`, `repeatMode`, `currentTrack`) and `cueVideoById(id, startSeconds: positionSeconds)` — status `paused`, no `play`. Play button therefore shows the play affordance (spec scenario).
-- **Shuffle** is *not* in the snapshot schema ⇒ session-only (resets to off on cold launch); documented in §Open Questions as intentionally deferred to M6 rather than a schema change.
-- **Volume/mute:** `localStorage` key `spotivibe.volume` (`{volume, muted}`) — AGENTS allows `localStorage` for tiny boot-time preferences; adding volume to the IndexedDB `preferences` dataset would modify the local-data/backup schemas (out of scope). Reapplied on boot.
+- **Write:** debounced (≈2s) `sessionRepository.set({queue, queueIndex, positionSeconds, repeatMode, shuffle, volume})` triggered by track change, repeat/shuffle change, and position ticks (each poll updates a `lastPersistedPosition`; flush also on `visibilitychange → hidden` / `pagehide`). Import path untouched — no schema/whitelist changes (the M2 session schema already carries `shuffle` and `volume` fields; the earlier assumption that shuffle was absent was wrong).
+- **Read (boot):** `PlayerHost` effect: `sessionRepository.get()` → if `queue[queueIndex]` exists and playback has not already started, set store (`queue`, `index`, `repeatMode`, `shuffle`, `currentTrack`) and `cueVideoById(id, startSeconds: positionSeconds)` — status `paused`, no `play`. Play button therefore shows the play affordance (spec scenario).
+- **Shuffle** persists with the session snapshot (schema field exists — no schema change); restore rebuilds the play order from it.
+- **Volume/mute:** `localStorage` key `spotivibe.volume` (`{volume, muted}`) — AGENTS allows `localStorage` for tiny boot-time preferences; adding volume to the IndexedDB `preferences` dataset would modify the local-data/backup schemas (out of scope). Reapplied on boot *before* the async session restore. The snapshot's `volume` (0..1) is written for export fidelity but restore deliberately does not read it — the `localStorage` boot preference is authoritative per the approved spec.
 
 ### 6. Compliant video surface: single fixed dock, both shell variants
 
@@ -89,7 +89,7 @@ Store `status: "idle" | "loading" | "playing" | "buffering" | "paused" | "error"
   - progress: `role="slider"` bar; click/drag seeks (`seek(seconds)`); shows `position / duration` from store.
   - **new controls (spec):** shuffle toggle, repeat cycle (`off → context → track`), mute + volume slider (desktop PlayerBar + Now Playing; compact keeps mute only if space demands — decide by fitting the M1 layout; Now Playing gets the full set).
   - error banner: when `status === "error"` show the failure message (and Now Playing offers retry via Play).
-  - attribution: "Watch on YouTube" link (`https://www.youtube.com/watch?v=<videoId>`, `target="_blank" rel="noopener noreferrer"` — outbound link *from* our page, referrer sent, allowed) near the dock and on Now Playing.
+  - attribution: "Watch on YouTube" link (`https://www.youtube.com/watch?v=<videoId>`, `target="_blank" rel="noopener"` — deliberately **not** `noreferrer`: the embedded-player policy requires the browser to send `Referer`, so the referrer is never suppressed) near the dock and on Now Playing.
 - The Now Playing page also renders `data-testid` placeholders the dock overlays around; keep M1 tests green where behavior is unchanged (idle placeholders), update expectations only where the spec changed behavior (disabled → enabled controls).
 
 ### 8. Player params & compliance posture
@@ -99,7 +99,7 @@ Store `status: "idle" | "loading" | "playing" | "buffering" | "paused" | "error"
 ## Risks / Trade-offs
 
 - [StrictMode double effects re-create the player] → module-scope singleton + idempotent `init()`; loader once-guard; verified by loader/host tests with double invocation.
-- [Volume drift between store and YT events (YT echoes volume/mute events)] → engine treats its own `setVolume` as authoritative echo: apply-on-change subscription only when values differ from the player's last known value; no event loop.
+- [Volume drift between store and YT events (YT echoes volume/mute events)] → volume/mute are applied from exactly two places (bridge calls for user actions, `handleReady` for pre-ready changes) and never mirrored from a store subscription, so there is no apply→echo→apply loop by construction; re-attach after suspend re-applies the store values idempotently.
 - [Debounced persistence loses last seconds on kill] → flush on `visibilitychange`/`pagehide`; acceptable residual (<2s) loss documented in spec scenario wording ("during use").
 - [Dock overlays content on small screens] → dock sits above the bottom stack and the Now Playing page adds bottom padding while active; policy requires visibility, and M9 owns presentation polish.
 - [Fake YT in tests diverges from real player behavior] → CDP evidence against a production build with the real IFrame API (import backup → restore → trusted click → navigate → assert single connected iframe, ≥200×200, `elementsFromPoint` center = iframe, zero console errors); unit tests cover taxonomy/limits with fakes.
@@ -113,4 +113,7 @@ Additive: new modules + zustand install; existing M1 surfaces change from static
 ## Open Questions
 
 - Whether Now Playing gains a large video stage (docked → full-stage) — presentation-only; deferred to M9, does not alter the ≥200×200 contract.
-- Whether shuffle state should persist — currently session-only (snapshot schema has no field); M6 owns queue/session persistence extensions and can add it there.
+
+Resolved during implementation:
+
+- Shuffle persistence — the M2 session snapshot schema already carried `shuffle` (and `volume`), so shuffle persists with the session and restores with the play order; no schema change was needed.
