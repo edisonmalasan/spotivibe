@@ -8,7 +8,8 @@
  *   - per-viewport shell variant visibility (mutual exclusion checks)
  *   - persistent-player proof across client-side route navigation
  *     (DOM marker survives Next.js Link navigation => no remount)
- *   - keyboard focus-visible outlines (real Tab key input)
+ *   - the scroll contract (main scrolls, shell regions stay fixed)
+ *   - full keyboard focus traversal (real Tab key input, every stop outlined)
  *   - hover state changes (real mouse input)
  *   - disabled transport controls, empty-state copy, accessible names
  *     (Accessibility.getFullAXTree), branding scan, console/page errors
@@ -250,11 +251,12 @@ async function main() {
     });
   }
 
-  // 3. Keyboard focus-visible (real Tab input) at 1280.
+  // 3. Keyboard focus traversal (real Tab input) at 1280 on /now-playing, so
+  //    the stops cover top bar → sidebar → main content → player region.
   await setViewport(1280, 800, false);
-  await go(BASE + "/");
+  await go(BASE + "/now-playing");
   const focusTrail = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 10; i++) {
     await send("Input.dispatchKeyEvent", {
       type: "rawKeyDown",
       key: "Tab",
@@ -284,11 +286,12 @@ async function main() {
         });
       })()`),
     );
-    focusTrail.push(info);
-    if (info.outline && !info.outline.startsWith("none")) break;
+    if (info.tag === "BODY") break;
+    focusTrail.push({ stop: i + 1, ...info });
+    if (i === 0) await shot("focus-visible-1280.png");
   }
   report.checks.focusTrail = focusTrail;
-  await shot("focus-visible-1280.png");
+  await shot("focus-traversal-1280.png");
 
   // 4. Hover state changes (real mouse input) at each shell variant. Disabled
   //    controls use `disabled:pointer-events-none`, so the disabled play
@@ -296,6 +299,7 @@ async function main() {
   const hoverTargets = [
     { name: "topbar-nav-arrow", sel: "header button", w: 1280, h: 800, mobile: false, shot: "hover-navarrow-1280.png" },
     { name: "sidebar-pill-cta", sel: 'aside a[href="/library"]', w: 1280, h: 800, mobile: false },
+    { name: "sidebar-prompt-card", sel: "aside .rounded-cards", w: 1280, h: 800, mobile: false, shot: "hover-card-1280.png" },
     { name: "player-play-disabled", sel: '[data-testid="player-bar"] button[aria-label="Play"]', w: 1280, h: 800, mobile: false },
     { name: "bottomnav-link", sel: 'nav[aria-label="Primary"] a[href="/search"]', w: 390, h: 844, mobile: true, shot: "hover-bottomnav-390.png" },
   ];
@@ -330,6 +334,48 @@ async function main() {
       changed: JSON.stringify(before) !== JSON.stringify(after),
     });
     if (t.shot) await shot(t.shot);
+  }
+
+  // 4b. Scroll contract (spec R2 scenario): main scrolls while the shell
+  //     regions stay fixed — checked at 1280px (scenario width) and 390px.
+  report.checks.scroll = [];
+  for (const v of [
+    { w: 1280, h: 800, mobile: false },
+    { w: 390, h: 844, mobile: true },
+  ]) {
+    await setViewport(v.w, v.h, v.mobile);
+    await go(BASE + "/");
+    const r = JSON.parse(
+      await evalJs(`(() => {
+        const visTop = (sels) => {
+          for (const s of sels) {
+            const el = document.querySelector(s);
+            if (el && getComputedStyle(el).display !== "none") return Math.round(el.getBoundingClientRect().top);
+          }
+          return null;
+        };
+        const regionTops = () => ({
+          header: visTop(["header"]),
+          player: visTop(['[data-testid="player-bar"]', '[data-testid="mini-player"]']),
+          nav: visTop(['nav[aria-label="Primary"]'])
+        });
+        const main = document.querySelector("main");
+        const canScroll = main.scrollHeight > main.clientHeight;
+        const before = regionTops();
+        main.scrollTop = 160;
+        const scrolledTo = main.scrollTop;
+        const after = regionTops();
+        main.scrollTop = 0;
+        return JSON.stringify({
+          canScroll,
+          scrolledTo,
+          regionsBefore: before,
+          regionsAfter: after,
+          shellFixed: JSON.stringify(before) === JSON.stringify(after)
+        });
+      })()`),
+    );
+    report.checks.scroll.push({ viewport: `${v.w}x${v.h}`, ...r });
   }
 
   // 5. Disabled transport controls + accessible names + branding at desktop.
