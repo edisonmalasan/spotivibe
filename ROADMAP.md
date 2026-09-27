@@ -2,7 +2,7 @@
 
 > **Status:** Source of truth for product scope, architecture, implementation order, and release criteria  
 > **Version:** 1.0  
-> **Last updated:** 2026-09-26  
+> **Last updated:** 2026-09-27  
 > **Project type:** Accountless, local-first, installable music PWA  
 > **Primary deployment target:** Vercel Hobby / free hosting  
 > **Primary media source:** YouTube / YouTube Music metadata + YouTube IFrame playback  
@@ -106,7 +106,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 
 | ID | Milestone | Status | Depends on |
 |---|---|---|---|
-| M0 | Repository foundation, documentation, quality gates | `NOT STARTED` | — |
+| M0 | Repository foundation, documentation, quality gates | `DONE` | — |
 | M1 | DESIGN.md-driven design system and application shell | `NOT STARTED` | M0 |
 | M2 | Local-first data model, IndexedDB, backup/import foundation | `NOT STARTED` | M0 |
 | M3 | Music provider layer and multi-tier discovery | `NOT STARTED` | M0 |

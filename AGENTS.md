@@ -57,9 +57,9 @@ Pin versions when exact versions matter.
 - Backend / server: Next.js route handlers/serverless functions only by default; no standalone Express server unless `ROADMAP.md` is explicitly amended.
 - Database / storage: IndexedDB is canonical for user-owned data; Cache API/service-worker caches for PWA assets/metadata; `localStorage` only for tiny boot-time preferences where appropriate; no cloud user database.
 - ORM / data access: No ORM planned; repository abstractions isolate IndexedDB and backup/import persistence details from components.
-- Package manager: Not yet selected or verified; choose and record during M0 before relying on package-manager-specific commands.
-- Build tooling: Next.js/TypeScript build pipeline; linting, formatting, strict type checking, environment validation, and CI are required by M0 but exact tools/commands are not yet verified.
-- Testing: Unit, integration, provider/parser, persistence/migration, player/queue, and release-critical browser/E2E coverage are required by the roadmap; exact test runner(s) are not yet selected/verified.
+- Package manager: **npm** (selected and verified during M0; lockfile `frontend/package-lock.json`; no pnpm/yarn/bun lockfiles).
+- Build tooling: Next.js/TypeScript build pipeline under `frontend/`; ESLint (`npm run lint`), Prettier (`npm run format:check`), strict TypeScript (`npm run typecheck`), zod-based environment validation, Vitest (`npm test`), and GitHub Actions CI (`.github/workflows/ci.yml`) — all selected and verified during M0.
+- Testing: Vitest is the selected unit test runner (verified in M0). Integration, provider/parser, persistence/migration, player/queue, and release-critical browser/E2E coverage are required by the roadmap and are **not yet added**.
 - Infra / deploy: Vercel Hobby/free hosting target for the single Next.js application; client-side local storage/personalization is used to minimize server infrastructure.
 - External services: YouTube IFrame Player API; YouTube Music Innertube (primary discovery); YouTube Web Innertube, Invidious, and Piped as fallbacks; no baseline YouTube Data API key; optional Sentry is deferred and non-required.
 - Specification workflow: OpenSpec
@@ -135,40 +135,44 @@ Delete sections that genuinely do not apply.
 Current entry point:
 
 ```bash
-# N/A — no start/development command has been verified yet; M0 repository scaffolding has not been completed.
+# Development server — run from the repository root
+cd frontend
+npm run dev
+# Serves http://localhost:3000 (falls back to the next free port if 3000 is busy)
 ```
 
 Current dependency manifest / install command:
 
 ```bash
-# N/A — no dependency install command has been verified yet; the package manager is not yet selected.
+# Clean dependency install from the lockfile — run from the repository root
+cd frontend
+npm ci
 ```
 
 Current baseline syntax / compile check:
 
 ```bash
-# N/A — no syntax/type-check/build command has been verified yet; add only after successful M0 execution.
+# Static type check and production build — run from the repository root
+cd frontend
+npm run typecheck   # next typegen && tsc --noEmit (strict mode)
+npm run build       # next build (production build + framework type checking)
 ```
 
-<!--
-Optional project/runtime installation prerequisite:
-
-No project-specific runtime/tool version is verified yet.
+Project runtime prerequisite (verified 2026-09-27 on Windows):
 
 ```bash
-# N/A — not yet verified.
+node --version      # v26.10.0
+npm --version       # 12.1.0
 ```
 
-Verified 2026-09-26: no repository setup/install/build/test command has been executed or verified yet; this section intentionally records no executable claim.
-
-Document unusual PATH behavior, executable paths, OS requirements, or other
-important setup constraints here.
--->
+CI uses Node 26 on `ubuntu-latest` (`.github/workflows/ci.yml`). Development
+environment: Windows/PowerShell locally. Port 3000 may be occupied by another
+process; `next dev` then selects the next free port.
 
 Important:
 
-- The supported development/runtime environment is `not yet fully verified/pinned; target is a modern Node.js environment compatible with the selected Next.js version plus current evergreen desktop/mobile browsers and Vercel serverless deployment`.
-- Executed dependency/package consistency check: `N/A — no project dependency manifest/package-manager workflow has been verified yet`.
+- The supported development/runtime environment is `Node.js v26.10.0 + npm 12.1.0 with Next.js 16.3.6, targeting current evergreen desktop/mobile browsers and Vercel serverless deployment`.
+- Executed dependency/package consistency check: `cd frontend && npm ci` (executed successfully 2026-09-27; installs from `package-lock.json` with 386 packages audited, 0 vulnerabilities reported).
 - Run risky, state-mutating, legacy, or preservation checks in an appropriate disposable environment when required.
 - No verified automated test, lint, type-check, build, or runtime command exists unless it is explicitly listed in this section.
 - Do not invent commands in this file.
@@ -185,21 +189,25 @@ utility, generator, test suite, asset processor, schema checker, etc.
 Do not retain examples that do not apply to the project.
 -->
 
-### Verified project tool: No project-specific tool/check verified yet
+### Verified project tool: `frontend/` quality gates (npm scripts)
 
-Verified on `N/A — repository/toolchain not yet bootstrapped`:
+Verified on `2026-09-27` (Windows local; commands run from the repository root with `cd frontend`):
 
 ```bash
-# N/A — no verified project-tool command yet.
-# N/A — no verified project-tool test command yet.
+npm ci               # clean install from frontend/package-lock.json
+npm run lint         # eslint (flat config, eslint-config-next)
+npm run format:check # prettier --check .
+npm run typecheck    # tsc --noEmit
+npm test             # vitest run
+npm run build        # next build
+npm run dev          # next dev (dev server; verified serving HTTP 200)
 ```
 
-See `ROADMAP.md` for the planned M0 quality gates; no executable project-tool documentation exists yet for invocation, exit codes,
-evidence classification, containment, and limitations.
+Exit codes: `npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, and `npm run build` each exited `0` on 2026-09-27; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `npm test` executed 1 test file / 4 assertions (environment validation). `.github/workflows/ci.yml` runs `npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, and `npm run build` on push/PR to `main`.
 
-These commands establish `nothing yet; this entry is an explicit placeholder state until a project tool is actually executed successfully`.
+These commands establish `that dependencies install from the lockfile, ESLint reports no errors, formatting is consistent, strict TypeScript compiles, the current unit tests pass, a production Next.js build succeeds, and the dev server starts and serves the app`.
 
-They do **not** establish `that dependencies install, the application starts, TypeScript compiles, tests pass, the PWA builds, or runtime behavior is correct`.
+They do **not** establish `that product features behave correctly, that provider/player/persistence flows work (not yet implemented), that end-to-end or browser tests pass (test suites not yet added), that the CI workflow itself has run green on GitHub (first run happens when this branch's PR is opened), or that a Vercel deployment succeeds`.
 
 <!--
 Duplicate the "Verified project tool" section as required.

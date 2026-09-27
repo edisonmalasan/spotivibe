@@ -1,0 +1,14 @@
+# Build/output artifacts
+.next/
+out/
+build/
+node_modules/
+next-env.d.ts
+
+# Lockfiles and generated agent files
+package-lock.json
+AGENTS.md
+CLAUDE.md
+
+# Documentation (prose formatting is intentionally untouched)
+*.md
