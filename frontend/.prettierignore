@@ -12,3 +12,6 @@ CLAUDE.md
 
 # Documentation (prose formatting is intentionally untouched)
 *.md
+
+# Raw captured provider fixtures (byte-exact provenance, never reformatted)
+tests/fixtures/
