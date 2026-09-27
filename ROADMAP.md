@@ -110,7 +110,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M1 | DESIGN.md-driven design system and application shell | `DONE` | M0 |
 | M2 | Local-first data model, IndexedDB, backup/import foundation | `DONE` | M0 |
 | M3 | Music provider layer and multi-tier discovery | `DONE` | M0 |
-| M4 | Persistent YouTube playback engine | `NOT STARTED` | M1, M3 |
+| M4 | Persistent YouTube playback engine | `DONE` | M1, M3 |
 | M5 | Search experience and result quality | `NOT STARTED` | M1, M3, M4 |
 | M6 | Queue, session persistence, network recovery | `NOT STARTED` | M2, M4 |
 | M7 | Library, liked songs, and local playlists | `NOT STARTED` | M1, M2, M4 |
@@ -1158,19 +1158,19 @@ This section prevents roadmap phases from accidentally shipping without importan
 
 ## Player
 
-- [ ] Single persistent YT player instance.
-- [ ] Visible/compliant playback surface.
-- [ ] Play/pause.
-- [ ] Previous/next.
-- [ ] Seek/progress.
-- [ ] Volume/mute.
-- [ ] Shuffle.
-- [ ] Repeat off/all/one.
-- [ ] Retry/backoff.
-- [ ] Skip unavailable tracks.
+- [x] Single persistent YT player instance.
+- [x] Visible/compliant playback surface.
+- [x] Play/pause.
+- [x] Previous/next.
+- [x] Seek/progress.
+- [x] Volume/mute.
+- [x] Shuffle.
+- [x] Repeat off/all/one.
+- [x] Retry/backoff.
+- [x] Skip unavailable tracks.
 - [ ] Pre-cue next where safe.
-- [ ] Session restoration.
-- [ ] YouTube attribution.
+- [x] Session restoration.
+- [x] YouTube attribution.
 
 ## Queue / Radio
 

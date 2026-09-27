@@ -3,6 +3,7 @@ import { MiniPlayer } from "@/components/layout/MiniPlayer";
 import { PlayerBar } from "@/components/layout/PlayerBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
+import { PlayerHost } from "@/components/player/PlayerHost";
 import type { ReactNode } from "react";
 
 /**
@@ -28,6 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <MiniPlayer />
         <BottomNav />
       </div>
+      <PlayerHost />
     </div>
   );
 }
