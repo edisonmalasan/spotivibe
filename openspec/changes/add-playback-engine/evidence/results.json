@@ -1,0 +1,235 @@
+{
+  "task": "6.3",
+  "generatedAt": "2026-09-27T17:54:08.891Z",
+  "origin": "http://localhost:3210",
+  "target": "http://localhost:3210/settings",
+  "steps": [
+    {
+      "name": "settings page ready on a fresh profile",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "imported backup fixture (session dataset included)",
+      "ok": true,
+      "detail": "Import complete (merge mode): 1 liked track, 1 playlist, 1 listening history entry, 1 search entry, preferences updated, session updated."
+    },
+    {
+      "name": "session restored: dock + iframe present, transport shows the Play affordance",
+      "ok": true,
+      "detail": "control=Play disabled=false"
+    },
+    {
+      "name": "restored position displayed at the saved 0:04 (cue at position)",
+      "ok": true,
+      "detail": "position=0:04, duration=0:19"
+    },
+    {
+      "name": "exactly one IFrame API script and one player iframe",
+      "ok": true,
+      "detail": "apiScripts=1, iframes=1, src=https://www.youtube.com/embed/?controls=0&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3210&widgetid=1&forigin=http%3A%2F%2Flocalhost%3A3210%2Fsettings&aoriginsup=1&vf=6"
+    },
+    {
+      "name": "volume boot preference applied (default 80)",
+      "ok": true,
+      "detail": "volume=80"
+    },
+    {
+      "name": "no autoplay: transport still shows Play at the saved position after 3s",
+      "ok": true,
+      "detail": "control=Play, position=0:04"
+    },
+    {
+      "name": "desktop dock surface measures ≥200×200 (expected 400×225)",
+      "ok": true,
+      "detail": "400×225"
+    },
+    {
+      "name": "elementsFromPoint at dock center returns the player (no overlay)",
+      "ok": true,
+      "detail": "[\"IFRAME\",\"DIV\",\"DIV\",\"MAIN\"]"
+    },
+    {
+      "name": "compact dock surface measures ≥200×200",
+      "ok": true,
+      "detail": "218×200"
+    },
+    {
+      "name": "trusted click on Play: controls switch to the Pause affordance",
+      "ok": true,
+      "detail": "control=Pause"
+    },
+    {
+      "name": "real playback: position advances past the restore point",
+      "ok": true,
+      "detail": "position=0:05"
+    },
+    {
+      "name": "Home: same connected iframe + synchronized control",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/\"}"
+    },
+    {
+      "name": "Search: same connected iframe + synchronized control",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/search\"}"
+    },
+    {
+      "name": "Library: same connected iframe + synchronized control",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/library\"}"
+    },
+    {
+      "name": "Now Playing: same connected iframe + synchronized control",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/now-playing\"}"
+    },
+    {
+      "name": "playback continued across navigation",
+      "ok": true,
+      "detail": "position 5s → 6s"
+    },
+    {
+      "name": "Now Playing attribution links the watch page in a new tab without referrer suppression",
+      "ok": true,
+      "detail": "href=https://www.youtube.com/watch?v=jNQXAC9IVRw target=_blank rel=noopener"
+    },
+    {
+      "name": "Now Playing page controls synchronized with the store",
+      "ok": true,
+      "detail": "page control=Pause"
+    },
+    {
+      "name": "zero console errors during the whole session",
+      "ok": true,
+      "detail": "none"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "restore-docked-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "session restored, cued paused at 0:04"
+    },
+    {
+      "file": "restore-docked-390.png",
+      "width": 390,
+      "height": 844,
+      "note": "compact shell dock (above MiniPlayer + BottomNav)"
+    },
+    {
+      "file": "playing-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "playback running, PlayerBar synchronized"
+    },
+    {
+      "file": "nowplaying-playing-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Now Playing route, same player, attribution visible"
+    }
+  ],
+  "consoleErrors": [],
+  "autoplayBlocked": false,
+  "pass": true,
+  "browser": "Edg/154.0.4258.37",
+  "fixtureSession": {
+    "queue": [
+      {
+        "id": "youtube:jNQXAC9IVRw",
+        "source": "youtube",
+        "providerId": "jNQXAC9IVRw",
+        "title": "Me at the zoo",
+        "artists": [
+          {
+            "name": "jawed"
+          }
+        ],
+        "artwork": [
+          {
+            "url": "https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg"
+          }
+        ],
+        "category": "music",
+        "capabilities": {
+          "stream": true,
+          "offlineDownload": false
+        },
+        "durationSeconds": 19
+      }
+    ],
+    "queueIndex": 0,
+    "positionSeconds": 4,
+    "repeatMode": "off",
+    "shuffle": false,
+    "volume": 0.5,
+    "updatedAt": 900
+  },
+  "importFeedback": "Import complete (merge mode): 1 liked track, 1 playlist, 1 listening history entry, 1 search entry, preferences updated, session updated.",
+  "afterRestore": {
+    "control": "Play",
+    "controlDisabled": false,
+    "position": "0:04",
+    "duration": "0:19",
+    "error": null,
+    "volume": "80",
+    "dock": true,
+    "iframe": true,
+    "iframeSrc": "https://www.youtube.com/embed/?controls=0&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3210&widgetid=1&forigin=http%3A%2F%2Flocalhost%3A3210%2Fsettings&aoriginsup=1&vf=6",
+    "iframeCount": 1,
+    "iframeApiScripts": 1,
+    "attributionHref": null,
+    "attributionTarget": null,
+    "attributionRel": null
+  },
+  "threeSecondsAfterRestore": {
+    "control": "Play",
+    "controlDisabled": false,
+    "position": "0:04",
+    "duration": "0:19",
+    "error": null,
+    "volume": "80",
+    "dock": true,
+    "iframe": true,
+    "iframeSrc": "https://www.youtube.com/embed/?controls=0&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3210&widgetid=1&forigin=http%3A%2F%2Flocalhost%3A3210%2Fsettings&aoriginsup=1&vf=6",
+    "iframeCount": 1,
+    "iframeApiScripts": 1,
+    "attributionHref": null,
+    "attributionTarget": null,
+    "attributionRel": null
+  },
+  "desktopHitTest": {
+    "topIsIframe": true,
+    "stack": [
+      "IFRAME",
+      "DIV",
+      "DIV",
+      "MAIN"
+    ]
+  },
+  "trustedClick": {
+    "x": 640,
+    "y": 853,
+    "w": 40,
+    "h": 40
+  },
+  "playingPosition": "0:05",
+  "finalState": {
+    "control": "Pause",
+    "controlDisabled": false,
+    "position": "0:06",
+    "duration": "0:19",
+    "error": null,
+    "volume": "80",
+    "dock": true,
+    "iframe": true,
+    "iframeSrc": "https://www.youtube.com/embed/?controls=0&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=http%3A%2F%2Flocalhost%3A3210&widgetid=1&forigin=http%3A%2F%2Flocalhost%3A3210%2Fsettings&aoriginsup=1&vf=6",
+    "iframeCount": 1,
+    "iframeApiScripts": 1,
+    "attributionHref": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    "attributionTarget": "_blank",
+    "attributionRel": "noopener"
+  }
+}
