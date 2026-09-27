@@ -22,7 +22,7 @@ The shell SHALL be styled exclusively through design tokens extracted from `fron
 
 ### Requirement: Desktop shell layout
 
-At viewports of 1024px and wider, the shell SHALL render a 340px-wide left library sidebar (`#121212`), a 64px-tall top navigation bar (`#000000`) containing the branding area, the search input, and back/forward navigation arrows (account and upgrade call-to-action controls are permanently out of scope for this accountless product), a vertically scrollable main content region, and the persistent player region at the bottom of the viewport.
+At viewports of 1024px and wider, the shell SHALL render a 340px-wide left library sidebar (`#121212`), a 64px-tall top navigation bar (`#000000`) containing the branding area, the search input, back/forward navigation arrows, and a settings control (account and upgrade call-to-action controls are permanently out of scope for this accountless product), a vertically scrollable main content region, and the persistent player region at the bottom of the viewport.
 
 #### Scenario: Wide viewport renders the two-column shell
 
