@@ -2,13 +2,13 @@
 
 ## 1. Setup and test infrastructure
 
-- [ ] 1.1 Add the `fake-indexeddb` dev dependency to `frontend/package.json` and verify a clean `npm ci` succeeds and the existing suite (`npm test`) still passes untouched.
-- [ ] 1.2 Wire IndexedDB test support into the Vitest environment (import `fake-indexeddb/auto` for data-layer tests) and verify a smoke test that opens a database, creates a store, writes and reads a record passes.
+- [x] 1.1 Add the `fake-indexeddb` dev dependency to `frontend/package.json` and verify a clean `npm ci` succeeds and the existing suite (`npm test`) still passes untouched.
+- [x] 1.2 Wire IndexedDB test support into the Vitest environment (import `fake-indexeddb/auto` for data-layer tests) and verify a smoke test that opens a database, creates a store, writes and reads a record passes.
 
 ## 2. Domain records and repository interfaces
 
-- [ ] 2.1 Define the persisted record types for all datasets (track snapshot, playlist with ordered tracks, listening event, search entry, preferences, session snapshot, cached metadata) in `frontend/src/data/repositories` and verify `npm run typecheck` passes.
-- [ ] 2.2 Define the repository interfaces for the eight datasets (CRUD/list/clear; playlists include add/remove/reorder; preferences and session single-record get/set) and verify `npm run typecheck` passes with no implementation present yet.
+- [x] 2.1 Define the persisted record types for all datasets (track snapshot, playlist with ordered tracks, listening event, search entry, preferences, session snapshot, cached metadata) in `frontend/src/data/repositories` and verify `npm run typecheck` passes.
+- [x] 2.2 Define the repository interfaces for the eight datasets (CRUD/list/clear; playlists include add/remove/reorder; preferences and session single-record get/set) and verify `npm run typecheck` passes with no implementation present yet.
 
 ## 3. IndexedDB schema, migrations, and repository implementations
 
