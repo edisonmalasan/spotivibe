@@ -16,9 +16,9 @@
 
 ## 3. Shared normalization, filtering, and scoring
 
-- [ ] 3.1 Implement candidate→`Track` normalization (duration text parsing `M:SS`/`H:MM:SS`, artwork pick with `i.ytimg.com` fallback, artist-name joining, category marker preference + duration heuristic, `capabilities { stream: true, offlineDownload: false }`) and verify unit tests cover present/absent durations and fallback artwork.
-- [ ] 3.2 Implement the centralized title/duration filter (reaction/vlog/interview/unboxing, Shorts markers, remix/mashup/slowed+reverb/8D/bass-boosted/nonstop/DJ-mix/megamix; music 60–14400s and podcast 120–14400s only when duration is present; missing duration survives with penalty) and verify unit tests exercise every rejection class plus missing-duration survival.
-- [ ] 3.3 Implement duplicate collapse (exact by `providerId`, near-duplicate by normalized title + first artist) and the deterministic 0–100 `qualityScore` with stable descending ordering, and verify unit tests cover both dedupe paths, ordering, and score penalties.
+- [x] 3.1 Implement candidate→`Track` normalization (duration text parsing `M:SS`/`H:MM:SS`, artwork pick with `i.ytimg.com` fallback, artist-name joining, category marker preference + duration heuristic, `capabilities { stream: true, offlineDownload: false }`) and verify unit tests cover present/absent durations and fallback artwork.
+- [x] 3.2 Implement the centralized title/duration filter (reaction/vlog/interview/unboxing, Shorts markers, remix/mashup/slowed+reverb/8D/bass-boosted/nonstop/DJ-mix/megamix; music 60–14400s and podcast 120–14400s only when duration is present; missing duration survives with penalty) and verify unit tests exercise every rejection class plus missing-duration survival.
+- [x] 3.3 Implement duplicate collapse (exact by `providerId`, near-duplicate by normalized title + first artist) and the deterministic 0–100 `qualityScore` with stable descending ordering, and verify unit tests cover both dedupe paths, ordering, and score penalties.
 
 ## 4. Orchestrator: chain and resilience
 
