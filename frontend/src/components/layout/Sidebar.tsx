@@ -34,7 +34,10 @@ export function Sidebar() {
       </div>
       <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4">
         {libraryPrompts.map((prompt) => (
-          <div key={prompt.title} className="flex flex-col gap-2 rounded-cards bg-graphite p-3">
+          <div
+            key={prompt.title}
+            className="flex flex-col gap-2 rounded-cards bg-graphite p-3 transition-colors hover:bg-smoke"
+          >
             <h3 className="text-body-lg font-bold text-pure-white">{prompt.title}</h3>
             <p className="text-body-lg font-regular text-mist">{prompt.description}</p>
             <Link href={prompt.href} className={`mt-1 self-start ${pillButtonClassName}`}>

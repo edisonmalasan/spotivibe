@@ -63,7 +63,7 @@ describe("ArtistCard", () => {
     expect(name.className).toContain("text-pure-white");
 
     expect(screen.getByText("Artist")).toBeInTheDocument();
-    expect(screen.getByText("Artist").className).toContain("text-[12px]");
+    expect(screen.getByText("Artist").className).toContain("text-label");
     expect(screen.getByText("Artist").className).toContain("text-mist");
 
     const avatar = container.querySelector("article > div");
@@ -100,7 +100,7 @@ describe("SectionHeader", () => {
 
     expect(link).toHaveAttribute("href", "/search");
     expect(link.className).toContain("text-mist");
-    expect(link.className).toContain("text-[12px]");
+    expect(link.className).toContain("text-label");
     expect(link.className).toContain("hover:text-pure-white");
   });
 

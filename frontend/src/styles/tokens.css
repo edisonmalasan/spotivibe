@@ -52,6 +52,8 @@
   --text-link--line-height: 1.2;
   --text-heading: 24px;
   --text-heading--line-height: 1.2;
+  /* 12px label links (DESIGN.md component specs: section "Show all" link, artist "Artist" label) */
+  --text-label: 12px;
   --leading-caption: 1.2;
   --leading-body-lg: 1.33;
   --leading-link: 1.2;

@@ -21,7 +21,7 @@ export function ArtistCard({ name, label = "Artist", className = "" }: ArtistCar
       </div>
       <div className="flex flex-col gap-1">
         <h3 className="text-body-lg font-semibold text-pure-white">{name}</h3>
-        <span className="text-[12px] font-regular text-mist">{label}</span>
+        <span className="text-label font-regular text-mist">{label}</span>
       </div>
     </article>
   );

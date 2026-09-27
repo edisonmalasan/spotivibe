@@ -69,6 +69,17 @@ describe("AppShell", () => {
     const compact = container.querySelector('[data-testid="compact-shell"]')!;
     expect(compact.className).toContain("lg:hidden");
   });
+
+  it("scrolls main content while the shell regions stay fixed", () => {
+    const { container } = render(<AppShell>long page</AppShell>);
+    const shell = container.firstElementChild!;
+
+    expect(shell.className).toContain("h-dvh");
+    expect(shell.className).toContain("overflow-hidden");
+
+    const main = container.querySelector("main")!;
+    expect(main.className).toContain("overflow-y-auto");
+  });
 });
 
 describe("TopBar", () => {
@@ -121,6 +132,15 @@ describe("Sidebar", () => {
       "href",
       "/search",
     );
+  });
+
+  it("hovers the elevated prompt cards to the #292929 card-hover surface", () => {
+    render(<AppShell>page</AppShell>);
+    const card = screen.getByRole("heading", { name: "Start your library" }).parentElement!;
+
+    expect(card.className).toContain("bg-graphite");
+    expect(card.className).toContain("transition-colors");
+    expect(card.className).toContain("hover:bg-smoke");
   });
 });
 

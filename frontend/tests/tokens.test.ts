@@ -44,6 +44,7 @@ describe("design tokens (extracted from frontend/docs/DESIGN.md)", () => {
     expect(token("--text-link--line-height")).toBe("1.2");
     expect(token("--text-heading")).toBe("24px");
     expect(token("--text-heading--line-height")).toBe("1.2");
+    expect(token("--text-label")).toBe("12px");
     expect(token("--font-weight-regular")).toBe("400");
     expect(token("--font-weight-semibold")).toBe("600");
     expect(token("--font-weight-bold")).toBe("700");

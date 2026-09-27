@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import RouteError from "@/app/error";
 import { EmptyState } from "@/components/design-system/EmptyState";
 import { ErrorState } from "@/components/design-system/ErrorState";
 import { Skeleton } from "@/components/design-system/Skeleton";
@@ -96,5 +97,18 @@ describe("ErrorState", () => {
 
     expect(screen.getByRole("heading", { name: "Playback failed" })).toBeInTheDocument();
     expect(screen.getByText("Check your connection.")).toBeInTheDocument();
+  });
+});
+
+describe("Route error boundary", () => {
+  it("surfaces a recoverable error state and retries through the router reset", () => {
+    let resets = 0;
+    render(<RouteError error={new Error("render failed")} reset={() => (resets += 1)} />);
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(resets).toBe(1);
   });
 });
