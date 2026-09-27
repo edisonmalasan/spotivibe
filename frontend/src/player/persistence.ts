@@ -24,10 +24,30 @@ function snapshotOf(state: ReturnType<typeof usePlayerStore.getState>): SessionS
   };
 }
 
+/**
+ * Cold-boot restore: re-apply the volume/mute boot preference, then load the
+ * persisted session so the current track comes back cued paused (never
+ * autoplay — spec: session persistence without autoplay). Restore is skipped
+ * when storage is unavailable or playback already started while it loaded;
+ * either way failures are logged, not thrown.
+ */
+export async function restorePlaybackSession(): Promise<void> {
+  usePlayerStore.getState().applyVolumePreference();
+  if (typeof indexedDB === "undefined") return; // storage unavailable (tests, locked-down browsers)
+  try {
+    const data = await getLocalData();
+    const session = await data.session.get();
+    const store = usePlayerStore.getState();
+    if (session && store.currentTrack === null) {
+      store.restoreSession(session);
+    }
+  } catch (error: unknown) {
+    console.warn("[playback] session restore skipped:", error);
+  }
+}
+
 /** Subscribe the session repository to store changes; returns a detacher. */
-export function attachSessionPersistence(
-  options: { debounceMs?: number } = {},
-): () => void {
+export function attachSessionPersistence(options: { debounceMs?: number } = {}): () => void {
   const debounceMs = options.debounceMs ?? SESSION_DEBOUNCE_MS;
   let timer: ReturnType<typeof setTimeout> | null = null;
   // Serialize writes so overlapping debounced flushes cannot interleave.
