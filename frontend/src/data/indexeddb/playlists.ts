@@ -1,8 +1,4 @@
-import type {
-  PlaylistRecord,
-  PlaylistTrackEntry,
-  PlaylistsRepository,
-} from "@/data/repositories";
+import type { PlaylistRecord, PlaylistTrackEntry, PlaylistsRepository } from "@/data/repositories";
 import { LocalDataError } from "@/data/repositories";
 import { requestToPromise, transactionDone } from "./idb";
 import { STORE } from "./schema";

@@ -18,8 +18,7 @@ export function createPreferencesRepository(db: IDBDatabase): PreferencesReposit
         languages: record.languages ?? DEFAULT_PREFERENCES.languages,
         autoplayNext: record.autoplayNext ?? DEFAULT_PREFERENCES.autoplayNext,
         reduceMotion: record.reduceMotion ?? DEFAULT_PREFERENCES.reduceMotion,
-        onboardingComplete:
-          record.onboardingComplete ?? DEFAULT_PREFERENCES.onboardingComplete,
+        onboardingComplete: record.onboardingComplete ?? DEFAULT_PREFERENCES.onboardingComplete,
       };
     },
 
