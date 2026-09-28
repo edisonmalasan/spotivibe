@@ -3,11 +3,13 @@
 import { Button } from "@/components/design-system/Button";
 import { EmptyState } from "@/components/design-system/EmptyState";
 import { ErrorState } from "@/components/design-system/ErrorState";
+import type { Track } from "@/data/repositories";
 import { SearchBrowseEmpty } from "@/features/search/SearchBrowseEmpty";
 import { SearchResults } from "@/features/search/SearchResults";
 import { SearchSkeletons } from "@/features/search/SearchSkeletons";
 import { useSearchController, type SearchSurface } from "@/features/search/useSearchController";
 import { buildSearchUrl } from "@/lib/searchUrl";
+import { usePlayerStore } from "@/stores/playerStore";
 import { useSearchStore } from "@/stores/searchStore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -32,6 +34,7 @@ export function SearchView() {
   const searchParams = useSearchParams();
   const query = useSearchStore((state) => state.query);
   const setQuery = useSearchStore((state) => state.setQuery);
+  const playTrack = usePlayerStore((state) => state.playTrack);
   const param = searchParams.get("q") ?? "";
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { surface, retry } = useSearchController(query);
@@ -66,7 +69,15 @@ export function SearchView() {
     };
   }, [query, param, router]);
 
-  return <SearchSurfaceView surface={surface} query={query} retry={retry} onRefine={setQuery} />;
+  return (
+    <SearchSurfaceView
+      surface={surface}
+      query={query}
+      retry={retry}
+      onRefine={setQuery}
+      onPlay={playTrack}
+    />
+  );
 }
 
 /**
@@ -78,12 +89,15 @@ function SearchSurfaceView({
   query,
   retry,
   onRefine,
+  onPlay,
 }: {
   surface: SearchSurface;
   query: string;
   retry(): void;
   /** Refine action for artist/album selection (query := entity name). */
   onRefine(name: string): void;
+  /** Activate a result within its result set as playback context (design §9). */
+  onPlay(track: Track, context: Track[]): void;
 }): ReactNode {
   const trimmed = query.trim();
   switch (surface.status) {
@@ -97,7 +111,14 @@ function SearchSurfaceView({
         </div>
       );
     case "results":
-      return <SearchResults tracks={surface.tracks} query={trimmed} onRefine={onRefine} />;
+      return (
+        <SearchResults
+          tracks={surface.tracks}
+          query={trimmed}
+          onRefine={onRefine}
+          onPlay={onPlay}
+        />
+      );
     case "empty":
       return surface.origin === "offline" ? (
         <EmptyState
@@ -125,7 +146,12 @@ function SearchSurfaceView({
             </p>
             {surface.origin === "error" && <Button onClick={retry}>Try again</Button>}
           </div>
-          <SearchResults tracks={surface.tracks} query={trimmed} onRefine={onRefine} />
+          <SearchResults
+            tracks={surface.tracks}
+            query={trimmed}
+            onRefine={onRefine}
+            onPlay={onPlay}
+          />
         </>
       );
     case "error":
