@@ -20,7 +20,18 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-describe("placeholder routes", () => {
+// The search route mounts the client SearchView, which reads the router.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    back: vi.fn(),
+    forward: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+  }),
+  useSearchParams: () => new URLSearchParams(""),
+}));
+
+describe("route shells", () => {
   it("renders home with section chrome, cover skeletons, and an empty state", () => {
     render(<HomePage />);
 
@@ -33,12 +44,14 @@ describe("placeholder routes", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders search with only an empty state", () => {
+  it("renders search in its browse state with no result surface", () => {
     render(<SearchPage />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Search" })).toBeInTheDocument();
     expect(screen.getByText("Search for music")).toBeInTheDocument();
+    expect(screen.getByText("Find songs, artists, albums, and more to play.")).toBeInTheDocument();
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+    expect(screen.queryAllByRole("list")).toHaveLength(0);
   });
 
   it("renders library with only an empty state", () => {
