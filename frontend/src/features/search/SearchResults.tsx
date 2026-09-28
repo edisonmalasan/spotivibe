@@ -3,8 +3,10 @@ import type { Track } from "@/data/repositories";
 import { AlbumTile } from "@/features/search/AlbumTile";
 import { ArtistTile } from "@/features/search/ArtistTile";
 import { deriveResults } from "@/features/search/derive";
+import { ResultMenu } from "@/features/search/ResultMenu";
 import { SongRow } from "@/features/search/SongRow";
 import { TopResultCard } from "@/features/search/TopResultCard";
+import { useLikedTracks } from "@/features/search/useLikedTracks";
 
 interface SearchResultsProps {
   tracks: Track[];
@@ -12,18 +14,33 @@ interface SearchResultsProps {
   query: string;
   /** Refine action for artist/album selection (query := entity name). */
   onRefine: (name: string) => void;
-  /** Present once playback is wired; activates a song with its context. */
-  onPlay?: (track: Track, context: Track[]) => void;
+  /** Activate a song with its result set as playback context (design §9). */
+  onPlay: (track: Track, context: Track[]) => void;
 }
 
 /**
  * Result surface (design §10): desktop puts Top Result + Songs in the left
  * column and derived Artists + Albums in the right; compact stacks the same
- * sections vertically. Every section renders only where it has entries, and
- * all four sections derive from the canonical `Track[]` alone.
+ * sections vertically. Every section renders only where it has entries, all
+ * four sections derive from the canonical `Track[]` alone, and every song
+ * result carries its context menu (like/playlist/navigation actions).
  */
 export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResultsProps) {
   const { songs, artists, albums, topResult } = deriveResults(tracks, query);
+  const { likedIds, toggleLike } = useLikedTracks();
+  const topTrack = topResult?.kind === "track" ? topResult.track : null;
+
+  function menuFor(track: Track, context: Track[]) {
+    return (
+      <ResultMenu
+        track={track}
+        isLiked={likedIds?.has(track.id) ?? false}
+        onPlay={() => onPlay(track, context)}
+        onToggleLike={() => void toggleLike(track)}
+        onRefine={onRefine}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-6">
@@ -34,11 +51,8 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
             <TopResultCard
               top={topResult}
               onSelect={onRefine}
-              onPlay={
-                onPlay && topResult.kind === "track"
-                  ? () => onPlay(topResult.track, songs)
-                  : undefined
-              }
+              onPlay={topTrack ? () => onPlay(topTrack, songs) : undefined}
+              menu={topTrack ? menuFor(topTrack, songs) : undefined}
             />
           </section>
         )}
@@ -49,7 +63,8 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
               <SongRow
                 key={track.id}
                 track={track}
-                onPlay={onPlay ? () => onPlay(track, songs) : undefined}
+                onPlay={() => onPlay(track, songs)}
+                trailing={menuFor(track, songs)}
               />
             ))}
           </ul>

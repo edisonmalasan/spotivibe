@@ -1,6 +1,7 @@
 import { Play, User } from "lucide-react";
 import { formatClock } from "@/components/player/formatClock";
 import type { TopResult } from "@/features/search/derive";
+import type { ReactNode } from "react";
 
 interface TopResultCardProps {
   top: TopResult;
@@ -8,6 +9,8 @@ interface TopResultCardProps {
   onSelect: (name: string) => void;
   /** Present once playback is wired; only meaningful for a track top. */
   onPlay?: () => void;
+  /** Context-menu slot for a track top (song results expose the menu). */
+  menu?: ReactNode;
 }
 
 /**
@@ -15,7 +18,7 @@ interface TopResultCardProps {
  * as Top Result"). Track tops play; artist/album tops refine the query —
  * both stay within canonical Track metadata (no entity pages yet).
  */
-export function TopResultCard({ top, onSelect, onPlay }: TopResultCardProps) {
+export function TopResultCard({ top, onSelect, onPlay, menu }: TopResultCardProps) {
   if (top.kind === "track") {
     const { track } = top;
     const artistText = track.artists.map((artist) => artist.name).join(", ");
@@ -36,16 +39,19 @@ export function TopResultCard({ top, onSelect, onPlay }: TopResultCardProps) {
         <p className="truncate text-body-lg font-regular text-mist">{artistText}</p>
         <div className="mt-4 flex items-center justify-between gap-3">
           <span className="text-label font-bold uppercase text-mist">Song</span>
-          {onPlay && (
-            <button
-              type="button"
-              aria-label={`Play ${track.title}`}
-              onClick={onPlay}
-              className="grid size-10 place-items-center rounded-full bg-spotify-green text-void-black transition hover:scale-105"
-            >
-              <Play className="size-5 fill-current" aria-hidden="true" />
-            </button>
-          )}
+          <span className="flex items-center gap-2">
+            {menu}
+            {onPlay && (
+              <button
+                type="button"
+                aria-label={`Play ${track.title}`}
+                onClick={onPlay}
+                className="grid size-10 place-items-center rounded-full bg-spotify-green text-void-black transition hover:scale-105"
+              >
+                <Play className="size-5 fill-current" aria-hidden="true" />
+              </button>
+            )}
+          </span>
         </div>
         {track.durationSeconds !== undefined && (
           <p className="mt-2 text-body text-mist tabular-nums">
