@@ -33,7 +33,7 @@ npm run build
 $env:PORT='3210'; npm run start
 
 # 3. From the repository root, in another terminal
-node openspec/changes/add-search-experience/evidence/cdp-check.mjs
+node openspec/changes/archive/2026-09-28-add-search-experience/evidence/cdp-check.mjs
 
 # 4. Stop the server (Ctrl+C in terminal 2), or:
 Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
@@ -70,7 +70,7 @@ record (steps, notes, screenshots, `consoleErrors`).
 | 8 | Offline local-library fallback | PASS | Emulated offline → `navigator.onLine=false`, notice `Offline — showing matches from your library.`, local track `Blinding Lights` listed, `requestsDuringOffline=0`, online restored (`true`) |
 | 9 | Zero console errors + screenshots ≥ 4 | PASS | `consoleErrors=[]`, `pageErrors=[]`, `failedRequests=[]`, 7 screenshots written |
 
-Spec coverage: every scenario in `openspec/changes/add-search-experience/specs/search/spec.md`
+Spec coverage: every scenario in `openspec/changes/archive/2026-09-28-add-search-experience/specs/search/spec.md`
 (focus, URL-authoritative query, stale ordering, empty query, loading, no results,
 remote/local/both provider messaging, recents add/remove/clear/persistence,
 context menu open/play/like/playlist/artist/album/dismiss, playback + navigation
