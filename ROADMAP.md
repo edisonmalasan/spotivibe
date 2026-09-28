@@ -111,7 +111,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M2 | Local-first data model, IndexedDB, backup/import foundation | `DONE` | M0 |
 | M3 | Music provider layer and multi-tier discovery | `DONE` | M0 |
 | M4 | Persistent YouTube playback engine | `DONE` | M1, M3 |
-| M5 | Search experience and result quality | `NOT STARTED` | M1, M3, M4 |
+| M5 | Search experience and result quality | `DONE` | M1, M3, M4 |
 | M6 | Queue, session persistence, network recovery | `NOT STARTED` | M2, M4 |
 | M7 | Library, liked songs, and local playlists | `NOT STARTED` | M1, M2, M4 |
 | M8 | Home, discovery, trending, languages, and curated surfaces | `NOT STARTED` | M3, M5, M7 |
@@ -1147,11 +1147,11 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] YouTube Web Innertube fallback.
 - [x] Invidious fallback.
 - [x] Piped fallback.
-- [ ] Local library fallback/search.
-- [ ] Debounce + abort stale requests.
+- [x] Local library fallback/search.
+- [x] Debounce + abort stale requests.
 - [x] Music quality/remix filtering.
 - [x] Duplicate handling.
-- [ ] Search history.
+- [x] Search history.
 - [ ] Artist navigation.
 - [ ] Album navigation where metadata supports it.
 - [ ] Podcast search/category.
