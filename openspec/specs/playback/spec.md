@@ -22,7 +22,7 @@ The YouTube IFrame Player API SHALL be loaded at most once per page session rega
 
 ### Requirement: Store-backed playback state and control synchronization
 
-Playback state — current track, status (idle/loading/buffering/playing/paused/error), position, duration, volume, mute, repeat mode, shuffle, and error — SHALL be held in a single client-side store. Player events are the source of truth for status and position: the store SHALL follow the player, and UI controls SHALL render from the store so they always reflect actual player state. User activations of store actions SHALL reach the player. State that outlives the page (track, queue, position, repeat) SHALL be derived from the persisted session on boot.
+Playback state SHALL be held in two coordinated client-side stores with a one-way dependency: transport state — current track, status (idle/loading/buffering/playing/paused/error), position, duration, volume, mute, and error — in the player store, and queue state — context list, current index, traversal order, played history, source label, repeat mode, and shuffle — in the dedicated queue store, with the player store depending on the queue store and never the reverse. Player events are the source of truth for status and position: the stores SHALL follow the player, and UI controls SHALL render from the stores so they always reflect actual player state. User activations of store actions SHALL reach the player. State that outlives the page (track, queue, position, repeat) SHALL be derived from the persisted session on boot.
 
 #### Scenario: Player state changes update the visible controls
 
@@ -39,9 +39,14 @@ Playback state — current track, status (idle/loading/buffering/playing/paused/
 - **WHEN** the user navigates between routes while a track is playing
 - **THEN** the persistent controls continue to show and manipulate the live player state with no stale or reset values
 
+#### Scenario: The stores stay split and one-directional
+
+- **WHEN** the playback stores are inspected
+- **THEN** the player store holds no queue membership/order fields, the queue store imports no player store, and queue-only operations (add/remove/reorder) leave transport state untouched
+
 ### Requirement: Track playback lifecycle
 
-Playing a track SHALL load it into the player, optionally accepting the surrounding list of tracks as playback context. Play, pause, seek, next, and previous SHALL operate on that context. When a track ends, advancement SHALL follow the repeat mode: `track` replays the current track from the start, `context` continues to the next track (wrapping to the beginning at the end of the list), and `off` advances to the next track or, at the end of the list, settles into a stable stopped state.
+Playing a track SHALL load it into the player, optionally accepting the surrounding list of tracks as playback context (adopted by the queue store as the queue with its source label). Play, pause, seek, next, and previous SHALL operate on that context. When a track ends, advancement SHALL follow the repeat mode: `track` replays the current track from the start, `context` continues to the next track (wrapping to the beginning at the end of the list), and `off` advances to the next track or, at the end of the list, settles into a stable stopped state; the finished track is recorded to the queue's played history. Previous SHALL restart the current track when more than a few seconds have elapsed, and otherwise return to the most recently played track that still exists in the queue, falling back to context order (and finally to a restart) when no history entry applies.
 
 #### Scenario: Playing a track starts it in the player
 
@@ -62,6 +67,11 @@ Playing a track SHALL load it into the player, optionally accepting the surround
 
 - **WHEN** previous is activated while more than a few seconds into a track
 - **THEN** the player seeks to the start of the current track rather than jumping context
+
+#### Scenario: Previous within the opening returns to the last played track
+
+- **WHEN** previous is activated within the opening seconds of a track and the played history contains a track that still exists in the queue
+- **THEN** playback returns to that most recently played track at its start
 
 ### Requirement: Authoritative duration correction
 
@@ -102,7 +112,7 @@ Transient player errors SHALL be retried with exponential backoff up to a bounde
 
 ### Requirement: Unplayable track handling
 
-Fatal player errors — invalid parameter (2), deleted/unavailable video (100), and embedding-restricted videos (101, 150) — SHALL mark the current track as failed and, when a next track exists in the context, advance to it after surfacing the error. When no unfailed track remains, playback SHALL settle into a stable error state. Repeated failures MUST NOT produce an infinite skip or reload loop, and a failed track MUST NOT wedge navigation or controls.
+Fatal player errors — invalid parameter (2), deleted/unavailable video (100), and embedding-restricted videos (101, 150) — SHALL mark the current track as failed and, when a next track exists in the context, advance to it after surfacing the error. When no unfailed track remains, playback SHALL settle into a stable error state. Repeated failures MUST NOT produce an infinite skip or reload loop, and a failed track MUST NOT wedge navigation or controls. While the browser is offline, failures MUST NOT be recorded as track failures and MUST NOT advance the queue: the current track stays unfailed and the queue stays intact for reconnect recovery.
 
 #### Scenario: An unplayable track is marked and skipped
 
@@ -114,9 +124,14 @@ Fatal player errors — invalid parameter (2), deleted/unavailable video (100), 
 - **WHEN** every track in the context has failed
 - **THEN** playback stops in a stable, recoverable error state and controls remain operable (no infinite advance/reload cycle)
 
+#### Scenario: Failures while offline do not consume the queue
+
+- **WHEN** playback fails while the browser reports offline
+- **THEN** no track is added to the failed set, no advance occurs, and the queue/current/position remain intact for recovery when connectivity returns
+
 ### Requirement: Session persistence without autoplay
 
-The playback session (context list, current index, position, repeat mode) SHALL be persisted to the local session repository with debounced writes plus a flush when the page is hidden or closed. On a cold launch the session SHALL be restored: the current track is cued at the saved position and shown as paused with the position reflected in the controls. The engine MUST NOT initiate playback without an explicit user action — no sound before a user gesture.
+The playback session (context list, current index, position, repeat mode, shuffle traversal order, played history, and queue source) SHALL be persisted to the local session repository with debounced writes plus a flush when the page is hidden or closed; the added fields are optional in stored/exported snapshots so previously written sessions remain valid. On a cold launch the session SHALL be restored: the current track is cued at the saved position and shown as paused with the position reflected in the controls, and the restored queue, traversal order, history, and source are reapplied when present (falling back to derived defaults for snapshots that predate them). The engine MUST NOT initiate playback without an explicit user action — no sound before a user gesture.
 
 #### Scenario: Cold launch restores the track without starting playback
 
@@ -126,7 +141,12 @@ The playback session (context list, current index, position, repeat mode) SHALL 
 #### Scenario: Playback progress is persisted during use
 
 - **WHEN** playback proceeds (and when the page is hidden or closed)
-- **THEN** the current track, index, position, and repeat mode are written to the local session store so a subsequent launch can restore them
+- **THEN** the current track, index, position, repeat mode, traversal order, played history, and queue source are written to the local session store so a subsequent launch can restore them
+
+#### Scenario: A snapshot without the newer fields restores cleanly
+
+- **WHEN** a session snapshot written before this change (queue/index/position/repeat only) is restored
+- **THEN** the queue and current track restore as before, with history, traversal order, and source derived as empty/defaults, and no error occurs
 
 ### Requirement: Visible compliant playback surface
 
