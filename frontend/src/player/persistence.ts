@@ -68,10 +68,17 @@ export function attachSessionPersistence(options: { debounceMs?: number } = {}):
       timer = null;
     }
     const snapshot = snapshotOf(usePlayerStore.getState(), useQueueStore.getState());
-    if (!snapshot) return; // nothing playing ⇒ nothing to persist
     writeChain = writeChain
       .then(() => getLocalData())
       .then(async (data) => {
+        if (!snapshot) {
+          // Nothing restorable (never played, or the queue was removed to a
+          // clean stop): clear the record so a reload cannot resurrect a
+          // removed queue (design §6). Restorable sessions stay anchored to a
+          // current track — the restore contract requires one.
+          await data.session.clear();
+          return;
+        }
         await data.session.set(snapshot);
       })
       .catch((error: unknown) => {
@@ -101,6 +108,7 @@ export function attachSessionPersistence(options: { debounceMs?: number } = {}):
       state.queueIndex !== previous.queueIndex ||
       state.repeatMode !== previous.repeatMode ||
       state.shuffle !== previous.shuffle ||
+      state.playOrder !== previous.playOrder ||
       state.history !== previous.history ||
       state.source !== previous.source
     ) {

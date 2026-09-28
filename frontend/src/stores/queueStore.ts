@@ -256,18 +256,20 @@ export const useQueueStore = create<QueueState>()((set, get) => ({
     const next = [...history];
     for (let i = next.length - 1; i >= 0; i--) {
       const entry = next[i];
-      // Newest first; scan backwards from the current position so a duplicate
-      // identity in the played region resolves unambiguously (design §3).
+      // Newest first; prefer the region behind the pointer so a duplicate
+      // identity resolves unambiguously, then check the ahead region — under
+      // shuffle a played track often sits at a higher queue index than the
+      // current one (design §3). The current entry itself is never a target.
       let found = -1;
-      for (let candidate = queueIndex - 1; candidate >= 0; candidate--) {
-        if (sameQueueIdentity(queue[candidate], entry.track)) {
-          found = candidate;
-          break;
-        }
+      for (let candidate = queueIndex - 1; candidate >= 0 && found === -1; candidate--) {
+        if (sameQueueIdentity(queue[candidate], entry.track)) found = candidate;
+      }
+      for (let candidate = queue.length - 1; candidate > queueIndex && found === -1; candidate--) {
+        if (sameQueueIdentity(queue[candidate], entry.track)) found = candidate;
       }
       if (found === -1) {
-        // The entry's track no longer exists behind the pointer (removed or
-        // unreachable): drop it and try the next-oldest entry.
+        // The entry's track no longer exists anywhere in the queue (removed
+        // while played): drop it and try the next-oldest entry.
         next.splice(i, 1);
         continue;
       }
@@ -295,7 +297,7 @@ export const useQueueStore = create<QueueState>()((set, get) => ({
   },
 
   remove(index) {
-    const { queue, queueIndex, playOrder } = get();
+    const { queue, queueIndex, playOrder, repeatMode } = get();
     if (!Number.isInteger(index) || index < 0 || index >= queue.length) {
       return { currentRemoved: false, nextIndex: null };
     }
@@ -304,8 +306,14 @@ export const useQueueStore = create<QueueState>()((set, get) => ({
     if (removingCurrent) {
       // Continuation = traversal successor (design §4); resolve it against the
       // pre-removal queue, then translate through the splice shift below.
+      // The traversal is circular under repeat context everywhere else
+      // (next()/ended), so the successor wraps to the first non-current entry
+      // there too — only a genuinely exhausted traversal stops cleanly.
       const position = playOrder.indexOf(queueIndex);
-      const successor = position !== -1 ? playOrder[position + 1] : undefined;
+      let successor = position !== -1 ? playOrder[position + 1] : undefined;
+      if (successor === undefined && position !== -1 && repeatMode === "context") {
+        successor = playOrder.find((value) => value !== queueIndex);
+      }
       if (successor !== undefined) {
         nextIndex = successor > index ? successor - 1 : successor;
       }

@@ -162,6 +162,21 @@ describe("session persistence", () => {
     expect(record!.positionSeconds).toBe(0);
   });
 
+  it("clears the persisted session after a clean stop so nothing resurrects (design §6)", async () => {
+    detach = attachSessionPersistence({ debounceMs: DEBOUNCE });
+
+    state().playTrack(trackA, [trackA]);
+    await sleep(DEBOUNCE + 30);
+    expect(await sessionRecord()).not.toBeNull(); // session persisted while active
+
+    // Remove the only current entry: no successor → clean stop (idle/null).
+    usePlayerStore.getState().removeFromQueue(0);
+    expect(state().currentTrack).toBeNull();
+
+    await sleep(DEBOUNCE + 30);
+    expect(await sessionRecord()).toBeNull(); // a reload cannot resurrect it
+  });
+
   it("writes nothing while no track is active and nothing after detaching", async () => {
     detach = attachSessionPersistence({ debounceMs: DEBOUNCE });
     state().setVolume(70); // state change without a track

@@ -86,4 +86,35 @@ describe("collectLocalData", () => {
       repos.close();
     }
   });
+
+  it("carries the M6 queue-session extension through export (task 5.1)", async () => {
+    const repos = await createRepositories({ name: "export-collect-session-m6" });
+    try {
+      await repos.session.set({
+        queue: [makeTrack("q1")],
+        queueIndex: 0,
+        positionSeconds: 42,
+        repeatMode: "context",
+        shuffle: true,
+        volume: 0.7,
+        history: [{ track: makeTrack("played"), playedAt: 123 }],
+        playOrder: [0],
+        source: "search",
+      });
+
+      const data = await collectLocalData(repos);
+
+      expect(data.session).not.toBeNull();
+      expect(data.session!.history?.map((entry) => entry.track.id)).toEqual(["played"]);
+      expect(data.session!.history?.[0]?.playedAt).toBe(123);
+      expect(data.session!.playOrder).toEqual([0]);
+      expect(data.session!.source).toBe("search");
+
+      // The extended session still validates against the backup schema.
+      const envelope = serializeBackup(data, { exportedAt: FIXED_EXPORTED_AT });
+      expect(() => backupEnvelopeSchema.parse(envelope)).not.toThrow();
+    } finally {
+      repos.close();
+    }
+  });
 });

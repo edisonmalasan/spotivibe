@@ -198,6 +198,29 @@ describe("history-aware previous (task 4.2)", () => {
     expect(historyIds()).toEqual([]);
   });
 
+  it("jumps to a played entry that sits ahead of the pointer under shuffle", () => {
+    // Shuffled traversal A(0) -> C(2) -> B(1): current B; A and C already
+    // played — C's queue index (2) is AHEAD of the pointer (1), so a scan
+    // limited to the played region would drop it and land on the wrong track.
+    useQueueStore.setState({
+      queue: [trackA, trackB, trackC],
+      queueIndex: 1,
+      playOrder: [0, 2, 1],
+      shuffle: true,
+      history: [
+        { track: trackA, playedAt: 1_000 },
+        { track: trackC, playedAt: 1_001 },
+      ],
+    });
+    usePlayerStore.setState({ currentTrack: trackB, status: "playing", positionSeconds: 1 });
+
+    playerState().previous();
+
+    expect(queueState().queueIndex).toBe(2); // C — the most recently played track
+    expect(playerState().currentTrack).toEqual(trackC);
+    expect(historyIds()).toEqual([trackA.id]); // C consumed, A still pending
+  });
+
   it("falls back to a context step-back when history is exhausted", () => {
     playerState().playTrack(trackB, [trackA, trackB]);
     seedHistory("gone"); // only entry is unresolvable → exhausted

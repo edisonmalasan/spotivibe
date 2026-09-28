@@ -62,8 +62,18 @@ describe("Queue surface", () => {
     expect(within(nowPlaying).getByText("Alpha")).toBeInTheDocument();
     expect(within(nowPlaying).getByText("Daft Punk")).toBeInTheDocument();
     expect(within(nowPlaying).getByText("4:09")).toBeInTheDocument();
-    // Read-only section: the current entry has no remove/move affordances.
-    expect(within(nowPlaying).queryByRole("button")).toBeNull();
+    // Canonical artwork thumbnail renders on the row.
+    expect(within(nowPlaying).getByTestId("queue-row").querySelector("img")).toHaveAttribute(
+      "src",
+      "https://example.test/art.jpg",
+    );
+    // The current entry's remove path (design §4): remove only — the current
+    // entry is never a reorder target.
+    expect(
+      within(nowPlaying).getByRole("button", { name: "Remove from queue" }),
+    ).toBeInTheDocument();
+    expect(within(nowPlaying).queryByRole("button", { name: "Move up" })).toBeNull();
+    expect(within(nowPlaying).queryByRole("button", { name: "Move down" })).toBeNull();
 
     const upcoming = screen.getByRole("region", { name: "Next & upcoming" });
     expect(rowIds(upcoming)).toEqual(["youtube:bbb", "youtube:ccc", "youtube:ddd"]);
@@ -130,6 +140,38 @@ describe("Queue surface", () => {
     // Queue edits are transport-neutral: current track and status unchanged.
     expect(usePlayerStore.getState().currentTrack).toBe(alpha);
     expect(usePlayerStore.getState().status).toBe("paused");
+  });
+
+  it("removes the now-playing entry from its own row and continues with the next", () => {
+    seed();
+
+    render(<QueueView />);
+
+    const nowPlaying = screen.getByRole("region", { name: "Now playing" });
+    fireEvent.click(within(nowPlaying).getByRole("button", { name: "Remove from queue" }));
+
+    // Continuation: the traversal successor becomes current, pointer intact —
+    // the removal click is the user gesture for continue-or-stop (design §4).
+    expect(queueIds()).toEqual(["youtube:bbb", "youtube:ccc", "youtube:ddd"]);
+    expect(usePlayerStore.getState().currentTrack).toEqual(beta);
+    expect(useQueueStore.getState().queueIndex).toBe(0);
+    expect(usePlayerStore.getState().status).not.toBe("idle");
+  });
+
+  it("stops cleanly when the now-playing entry is the only queued track", () => {
+    useQueueStore.setState({ queue: [alpha], queueIndex: 0, playOrder: [0], history: [] });
+    usePlayerStore.setState({ currentTrack: alpha, status: "playing" });
+
+    render(<QueueView />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove from queue" }));
+
+    // No successor: idle, no error, nothing starts on its own (no autoplay).
+    expect(queueIds()).toEqual([]);
+    expect(usePlayerStore.getState().currentTrack).toBeNull();
+    expect(usePlayerStore.getState().status).toBe("idle");
+    expect(usePlayerStore.getState().errorMessage).toBeNull();
+    expect(usePlayerStore.getState().loadRequest).toBeNull();
   });
 
   it("moves an entry with the move controls without disturbing playback", () => {

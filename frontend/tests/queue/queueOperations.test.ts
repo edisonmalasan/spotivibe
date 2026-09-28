@@ -127,6 +127,21 @@ describe("remove — pointer integrity (task 3.2)", () => {
     expect(playerState().currentTrack?.title).toBe(title);
   }
 
+  it("wraps to the first entry under repeat context when the successor runs out", () => {
+    playerState().playTrack(trackC, [trackA, trackB, trackC]); // current = last in order
+    queueState().cycleRepeat(); // off -> context: the traversal is circular
+
+    playerState().removeFromQueue(2);
+
+    // The successor wraps to the first traversal entry — matching next()/ended
+    // semantics; only a genuinely exhausted traversal stops cleanly.
+    expect(queueState().queue.map((t) => t.title)).toEqual(["Alpha", "Bravo"]);
+    expect(queueState().playOrder).toEqual([0, 1]);
+    expectCurrentIntact("Alpha"); // pointer and transport both landed on A
+    expect(playerState().loadRequest?.videoId).toBe(trackA.providerId);
+    expect(playerState().errorMessage).toBeNull();
+  });
+
   it("removing after the current entry splices only and keeps pointers", () => {
     playerState().playTrack(trackA, ALL);
     const before = transport();

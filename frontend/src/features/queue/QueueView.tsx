@@ -20,7 +20,8 @@ const SOURCE_LABEL: Record<QueueSource, string> = {
 /**
  * Queue surface (design §5, spec "Queue surface"): the queue route's view.
  * Three sections — Now playing, Next & upcoming (traversal order), Recently
- * played (read-only) — plus the source label and an empty state. Upcoming
+ * played (read-only) — plus the source label and an empty state. The Now
+ * playing row exposes remove (its continuation path, design §4); upcoming
  * rows expose remove/move controls and native drag; drag and keyboard both
  * call the same `reorder`, so both paths produce the identical order. The
  * surface only edits queue state (via `playerStore.removeFromQueue` for the
@@ -87,7 +88,9 @@ export function QueueView() {
             <section aria-label="Now playing" className="flex flex-col">
               <SectionHeader title="Now playing" />
               <ul className="flex flex-col gap-2">
-                <QueueRow track={queue[queueIndex]} />
+                {/* The current entry's remove path (design §4): the removal
+                    click is the user gesture for continue-or-stop. */}
+                <QueueRow track={queue[queueIndex]} onRemove={() => removeFromQueue(queueIndex)} />
               </ul>
             </section>
           )}
@@ -99,20 +102,15 @@ export function QueueView() {
             ) : (
               <ul className="flex flex-col gap-2">
                 {upcoming.map((queueAt, upcomingPosition) => (
+                  // Handlers are unconditional for upcoming rows — a row
+                  // participates in moving; boundary safety comes from the
+                  // disabled flags (reorder also guards out-of-range).
                   <QueueRow
                     key={queueAt}
                     track={queue[queueAt]}
                     onRemove={() => removeFromQueue(queueAt)}
-                    onMoveUp={
-                      upcomingPosition > 0
-                        ? () => reorder(upcomingPosition, upcomingPosition - 1)
-                        : undefined
-                    }
-                    onMoveDown={
-                      upcomingPosition < upcoming.length - 1
-                        ? () => reorder(upcomingPosition, upcomingPosition + 1)
-                        : undefined
-                    }
+                    onMoveUp={() => reorder(upcomingPosition, upcomingPosition - 1)}
+                    onMoveDown={() => reorder(upcomingPosition, upcomingPosition + 1)}
                     canMoveUp={upcomingPosition > 0}
                     canMoveDown={upcomingPosition < upcoming.length - 1}
                     onDragStart={startDrag(upcomingPosition)}
