@@ -37,6 +37,7 @@ describe("libraryStore hydration (task 1.1)", () => {
     const state = useLibraryStore.getState();
     expect(state.hydrated).toBe(true);
     expect([...state.likedIds]).toEqual([trackA.id]);
+    expect(state.likedTracks.map((track) => track.id)).toEqual([trackA.id]);
     expect(state.playlists).toHaveLength(1);
     expect(state.playlists[0]?.name).toBe("Road Trip");
     expect(state.playlists[0]?.tracks.map((entry) => entry.track.id)).toEqual([trackB.id]);
@@ -78,7 +79,20 @@ describe("libraryStore hydration (task 1.1)", () => {
     const state = useLibraryStore.getState();
     expect(state.hydrated).toBe(false);
     expect(state.likedIds.size).toBe(0);
+    expect(state.likedTracks).toHaveLength(0);
     expect(state.playlists).toHaveLength(0);
+  });
+
+  it("keeps liked records newest-first (spec ordering for the liked surface)", async () => {
+    await repositories.likedTracks.like(trackA, 1_000);
+    await repositories.likedTracks.like(trackB, 2_000); // liked later — first
+
+    await useLibraryStore.getState().hydrate();
+
+    expect(useLibraryStore.getState().likedTracks.map((track) => track.id)).toEqual([
+      trackB.id,
+      trackA.id,
+    ]);
   });
 });
 
@@ -89,10 +103,12 @@ describe("libraryStore actions (task 1.2)", () => {
     await useLibraryStore.getState().toggleLike(trackA);
     expect(await repositories.likedTracks.isLiked(trackA.id)).toBe(true);
     expect(useLibraryStore.getState().likedIds.has(trackA.id)).toBe(true);
+    expect(useLibraryStore.getState().likedTracks.map((track) => track.id)).toEqual([trackA.id]);
 
     await useLibraryStore.getState().toggleLike(trackA);
     expect(await repositories.likedTracks.isLiked(trackA.id)).toBe(false);
     expect(useLibraryStore.getState().likedIds.has(trackA.id)).toBe(false);
+    expect(useLibraryStore.getState().likedTracks).toHaveLength(0);
   });
 
   it("creates a playlist with an immutable id and no tracks", async () => {

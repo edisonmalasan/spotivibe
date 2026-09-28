@@ -32,8 +32,8 @@
 
 ## 6. Liked Songs surface
 
-- [ ] 6.1 Build `/library/liked`: hero (accent tile, count), filter, list presentation with per-row play and unlike, and the list/grid view toggle — verify: component tests cover row metadata, unlike removing the row and clearing like state elsewhere, filter behavior, the toggle's `aria-pressed` and grid rendering, and the empty state (`npm test`).
-- [ ] 6.2 Implement the shared bulk-play helpers `playAll` / `shufflePlay` (non-empty → `playTrack(..., "library")`, shuffle ensured on; empty → disabled/inert) and wire Liked Songs controls — verify: tests assert context adoption with source `library` (queue surface label), shuffle on after activation, disabled controls with zero tracks, and no autoplay on mount (`npm test`).
+- [x] 6.1 Build `/library/liked`: hero (accent tile, count), filter, list presentation with per-row play and unlike, and the list/grid view toggle — verify: component tests cover row metadata, unlike removing the row and clearing like state elsewhere, filter behavior, the toggle's `aria-pressed` and grid rendering, and the empty state (`npm test`).
+- [x] 6.2 Implement the shared bulk-play helpers `playAll` / `shufflePlay` (non-empty → `playTrack(..., "library")`, shuffle ensured on; empty → disabled/inert) and wire Liked Songs controls — verify: tests assert context adoption with source `library` (queue surface label), shuffle on after activation, disabled controls with zero tracks, and no autoplay on mount (`npm test`).
 
 ## 7. Playlist detail surface
 

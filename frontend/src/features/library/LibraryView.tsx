@@ -2,12 +2,13 @@
 
 import { Heart } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/design-system/Button";
 import { EmptyState } from "@/components/design-system/EmptyState";
 import { SearchInput } from "@/components/design-system/SearchInput";
 import { PlaylistCover } from "@/components/playlist/PlaylistCover";
 import { filterPlaylists, libraryFilterMatches } from "@/features/library/libraryFilter";
+import { useLibraryReady } from "@/features/library/useLibraryReady";
 import { ImportPlaylistDialog } from "@/features/playlists/ImportPlaylistDialog";
 import {
   PlaylistFormDialog,
@@ -34,26 +35,9 @@ export function LibraryView() {
   const [query, setQuery] = useState("");
   const [dialog, setDialog] = useState<HostedDialog>(null);
   /** True once the shared library read has settled (or failed) on mount. */
-  const [resolved, setResolved] = useState(false);
+  const resolved = useLibraryReady();
   const createTriggerRef = useRef<HTMLSpanElement>(null);
   const importTriggerRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void useLibraryStore
-      .getState()
-      .hydrate()
-      .catch((error: unknown) => {
-        // Storage unavailable: fall through to the empty surface below.
-        console.warn("[library] library unavailable:", error);
-      })
-      .finally(() => {
-        if (!cancelled) setResolved(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   /** Dismiss a dialog and hand focus back to the header control that opened it. */
   function closeDialog(opened: Exclude<HostedDialog, null>): void {

@@ -30,6 +30,12 @@ export interface CreateFromResolvedInput extends CreatePlaylistInput {
 export interface LibraryState {
   /** Liked track ids (canonical `Track.id`), for cheap cross-surface checks. */
   likedIds: ReadonlySet<string>;
+  /**
+   * Full liked records newest-first (repository `likedAt` order — the spec's
+   * Liked Songs ordering), so the collection surface renders and plays back
+   * without reaching past the store for record data.
+   */
+  likedTracks: Track[];
   /** All playlists (repository order: most recently updated first). */
   playlists: PlaylistRecord[];
   /** True once the first successful read has settled. */
@@ -77,6 +83,7 @@ function emptyLikedIds(): ReadonlySet<string> {
 
 export const initialLibraryState = {
   likedIds: emptyLikedIds(),
+  likedTracks: [] as Track[],
   playlists: [] as PlaylistRecord[],
   hydrated: false,
 };
@@ -88,6 +95,7 @@ export function resetLibraryStore(): void {
   likedRefresh = 0;
   useLibraryStore.setState({
     likedIds: emptyLikedIds(),
+    likedTracks: [],
     playlists: [],
     hydrated: false,
   });
@@ -100,11 +108,16 @@ let likedRefresh = 0;
 
 async function readLibrary(): Promise<{
   likedIds: ReadonlySet<string>;
+  likedTracks: Track[];
   playlists: PlaylistRecord[];
 }> {
   const data = await getLocalData();
   const [liked, playlists] = await Promise.all([data.likedTracks.list(), data.playlists.list()]);
-  return { likedIds: new Set(liked.map((record) => record.trackId)), playlists };
+  return {
+    likedIds: new Set(liked.map((record) => record.trackId)),
+    likedTracks: liked.map((record) => record.track),
+    playlists,
+  };
 }
 
 export const useLibraryStore = create<LibraryState>()((set) => ({
@@ -135,7 +148,11 @@ export const useLibraryStore = create<LibraryState>()((set) => ({
     const token = ++likedRefresh;
     const records = await data.likedTracks.list();
     if (token === likedRefresh)
-      set({ likedIds: new Set(records.map((r) => r.trackId)), hydrated: true });
+      set({
+        likedIds: new Set(records.map((r) => r.trackId)),
+        likedTracks: records.map((r) => r.track),
+        hydrated: true,
+      });
   },
 
   async createPlaylist(input) {
