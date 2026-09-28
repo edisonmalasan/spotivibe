@@ -119,6 +119,26 @@ export interface QueueState {
   setContext(track: Track, context: Track[] | undefined, source?: QueueSource): number;
   /** Point the current index at `queue[index]` (no history side effects). */
   setQueueIndex(index: number): void;
+  /**
+   * Append `track` to the queue when its identity is not already current or
+   * upcoming (design §4). Never touches transport; returns whether it was
+   * accepted.
+   */
+  enqueue(track: Track): boolean;
+  /**
+   * Remove `queue[index]` with pointer integrity: before the current entry
+   * shifts the index down, after it leaves pointers untouched, and removing
+   * the current entry reports the traversal successor so `playerStore` can
+   * orchestrate the continuation (load it, or `nextIndex: null` → clean stop).
+   */
+  remove(index: number): RemoveResult;
+  /**
+   * Move the entry at position `from` to position `to` within the displayed
+   * upcoming sequence (design §4): rewrites the queue's tail region and
+   * rebuilds `playOrder` so both stores stay consistent under either shuffle
+   * state. The current entry is never a reorder target.
+   */
+  reorder(from: number, to: number): boolean;
   toggleShuffle(): void;
   cycleRepeat(): void;
   /**
@@ -131,6 +151,14 @@ export interface QueueState {
     shuffle: boolean;
     repeatMode: RepeatMode;
   };
+}
+
+/** Outcome of `remove()` — drives the transport side of a current-track removal. */
+export interface RemoveResult {
+  /** True when the removed entry was the current one (`index === queueIndex`). */
+  currentRemoved: boolean;
+  /** New index of the entry to continue with; `null` → clean stop (no successor). */
+  nextIndex: number | null;
 }
 
 /**
@@ -188,6 +216,95 @@ export const useQueueStore = create<QueueState>()((set, get) => ({
   setQueueIndex(index) {
     if (index < 0 || index >= get().queue.length) return;
     set({ queueIndex: index });
+  },
+
+  enqueue(track) {
+    const { queue, queueIndex, playOrder } = get();
+    // Duplicate protection covers the current entry and everything after it
+    // (design §4); already-played entries may legitimately be queued again.
+    const start = Math.max(queueIndex, 0);
+    for (let i = start; i < queue.length; i++) {
+      if (sameQueueIdentity(queue[i], track)) return false;
+    }
+    const nextQueue = [...queue, track];
+    // Always append to the traversal tail: identity order needs the new index
+    // too, and a shuffled order keeps the current entry first either way.
+    set({ queue: nextQueue, playOrder: [...playOrder, nextQueue.length - 1] });
+    return true;
+  },
+
+  remove(index) {
+    const { queue, queueIndex, playOrder } = get();
+    if (!Number.isInteger(index) || index < 0 || index >= queue.length) {
+      return { currentRemoved: false, nextIndex: null };
+    }
+    const removingCurrent = index === queueIndex;
+    let nextIndex: number | null = null;
+    if (removingCurrent) {
+      // Continuation = traversal successor (design §4); resolve it against the
+      // pre-removal queue, then translate through the splice shift below.
+      const position = playOrder.indexOf(queueIndex);
+      const successor = position !== -1 ? playOrder[position + 1] : undefined;
+      if (successor !== undefined) {
+        nextIndex = successor > index ? successor - 1 : successor;
+      }
+    }
+    const reindex = (value: number): number => (value > index ? value - 1 : value);
+    const nextQueue = queue.filter((_, i) => i !== index);
+    const nextPlayOrder = playOrder.filter((value) => value !== index).map(reindex);
+    // Pointer integrity: before → shift down; after → untouched; current →
+    // hand the pointer to the continuation (or -1: no current, clean stop).
+    let nextQueueIndex = index < queueIndex ? queueIndex - 1 : queueIndex;
+    if (removingCurrent) nextQueueIndex = nextIndex ?? -1;
+    set({ queue: nextQueue, queueIndex: nextQueueIndex, playOrder: nextPlayOrder });
+    return { currentRemoved: removingCurrent, nextIndex };
+  },
+
+  reorder(from, to) {
+    const { queue, queueIndex, playOrder, shuffle } = get();
+    const length = queue.length;
+    if (length === 0 || from === to) return false;
+    const currentPos = playOrder.indexOf(queueIndex);
+    // Displayed upcoming = traversal entries after the current one (the whole
+    // order when there is no current entry — `queueIndex === -1`).
+    const ahead = currentPos === -1 ? [] : playOrder.slice(0, currentPos);
+    const upcoming = currentPos === -1 ? playOrder : playOrder.slice(currentPos + 1);
+    if (from < 0 || from >= upcoming.length || to < 0 || to >= upcoming.length) return false;
+
+    const moved = [...upcoming];
+    const [entry] = moved.splice(from, 1);
+    moved.splice(to, 0, entry);
+
+    // Rewrite the queue's tail slots (everything after the current entry) so
+    // the array order reflects the manual order: first the moved sequence's
+    // after-current entries in moved order, then the traversal-behind ones
+    // (design §4 — behind-current queue entries are otherwise untouched).
+    const tailSlots: number[] = [];
+    for (let i = queueIndex + 1; i < length; i++) tailSlots.push(i);
+    const tailValues = [
+      ...moved.filter((value) => value > queueIndex),
+      ...ahead.filter((value) => value > queueIndex),
+    ];
+    if (tailValues.length !== tailSlots.length) return false; // broken invariant
+    const nextQueue = [...queue];
+    const newIndexOf = new Map<number, number>();
+    tailSlots.forEach((slot, i) => {
+      nextQueue[slot] = queue[tailValues[i]];
+      newIndexOf.set(tailValues[i], slot);
+    });
+    const map = (value: number): number => newIndexOf.get(value) ?? value;
+    // Rebuild the traversal order so display and queue stay consistent: the
+    // moved upcoming sequence right after the current entry (traversal-behind
+    // entries keep their side of the pointer), or sequential identity when
+    // shuffle is off — a manual order outranks the shuffled permutation until
+    // the next context load or shuffle toggle.
+    const nextPlayOrder = shuffle
+      ? currentPos === -1
+        ? moved.map(map)
+        : [...ahead.map(map), queueIndex, ...moved.map(map)]
+      : Array.from({ length }, (_, i) => i);
+    set({ queue: nextQueue, playOrder: nextPlayOrder });
+    return true;
   },
 
   toggleShuffle() {

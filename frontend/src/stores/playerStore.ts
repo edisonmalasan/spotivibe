@@ -94,6 +94,13 @@ export interface PlayerState {
   seek(seconds: number): void;
   next(): void;
   previous(): void;
+  /**
+   * Remove `queue[index]`, orchestrating the transport half when the removed
+   * entry is the current one (design §4): continue with the traversal
+   * successor (the removal click is the user gesture), or issue a clean stop
+   * when there is none. Queue-only removals never touch transport.
+   */
+  removeFromQueue(index: number): void;
   setVolume(volume: number): void;
   toggleMute(): void;
   /** Re-apply the persisted volume/mute boot preference (client boot only). */
@@ -234,6 +241,30 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
         return;
       }
       requestTrack(target, "load", 0, true);
+    },
+
+    removeFromQueue(index) {
+      // Removing the current entry is the only branch with transport meaning,
+      // and only while something is actually playing (an idle queue edit must
+      // never start playback — no autoplay).
+      const hasCurrent = get().currentTrack !== null;
+      const { currentRemoved, nextIndex } = useQueueStore.getState().remove(index);
+      if (!currentRemoved || !hasCurrent) return;
+      const queue = useQueueStore.getState().queue;
+      if (nextIndex !== null && queue[nextIndex]) {
+        requestTrack(nextIndex, "load", 0, true);
+        return;
+      }
+      // Clean stop: no successor (design §4) — idle, no error, no autoplay.
+      set({
+        status: "idle",
+        currentTrack: null,
+        positionSeconds: 0,
+        durationSeconds: 0,
+        errorMessage: null,
+        loadRequest: null,
+      });
+      bridge?.pause();
     },
 
     setVolume(volume) {
