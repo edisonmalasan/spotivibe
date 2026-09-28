@@ -21,10 +21,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // The controller reaches the repository through the local-data accessor; the
-// repository itself is covered by repositories.test.ts.
+// repository itself is covered by repositories.test.ts. The local-fallback
+// branches read these three lists too, so the mock answers them as empty.
 vi.mock("@/data/localData", () => ({
   getLocalData: async () => ({
     searchHistory: { record: mocks.record },
+    likedTracks: { list: async () => [] },
+    playlists: { list: async () => [] },
+    listeningHistory: { list: async () => [] },
   }),
 }));
 
@@ -52,6 +56,13 @@ async function flush(): Promise<void> {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+    // The fallback branches read the (mocked) local-data accessor through a
+    // few async hops; yield macrotask turns so they settle deterministically.
+    for (let turn = 0; turn < 12; turn += 1) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
   });
 }
 

@@ -98,6 +98,14 @@ async function flush(): Promise<void> {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+    // Local-fallback branches read IndexedDB, and fake-indexeddb completes its
+    // transactions on setImmediate turns (never faked here) — yield a bounded
+    // number of them so repository reads settle under fake timers.
+    for (let turn = 0; turn < 12; turn += 1) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
   });
 }
 
