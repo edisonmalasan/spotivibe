@@ -172,6 +172,33 @@ describe("like action (task 5.2)", () => {
     });
     expect(await repositories.likedTracks.list()).toHaveLength(0);
   });
+
+  it("shows the persisted like after the surface remounts (spec: like survives reload)", async () => {
+    stubSuccessfulFetch([trackA, trackB]);
+    nav.q = "radio";
+    const first = render(<SearchPage />);
+    await screen.findByTestId("search-results");
+
+    fireEvent.click(openMenuFor("Karma Police"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Save to Liked Songs" }));
+    await waitFor(async () => {
+      expect(await repositories.likedTracks.isLiked(trackA.id)).toBe(true);
+    });
+
+    // Simulated reload: tear the whole surface down and mount it fresh, so
+    // nothing from the previous mount's state survives.
+    first.unmount();
+    render(<SearchPage />);
+    await screen.findByTestId("search-results");
+
+    // useLikedTracks re-reads likedTracks.list() on mount, so the fresh menu
+    // reflects the persisted like (label flips once the read settles).
+    fireEvent.click(openMenuFor("Karma Police"));
+    expect(
+      await screen.findByRole("menuitem", { name: "Remove from Liked Songs" }),
+    ).toBeInTheDocument();
+    expect(await repositories.likedTracks.list()).toHaveLength(1);
+  });
 });
 
 describe("playlist picker (task 5.3)", () => {

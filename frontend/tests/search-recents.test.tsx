@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLocalData, type RepositorySet } from "@/data/localData";
 import { RecentSearches } from "@/features/search/RecentSearches";
 
@@ -21,6 +21,10 @@ let repositories: RepositorySet;
 beforeEach(async () => {
   repositories = await getLocalData();
   await repositories.resetAll();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 /** Record queries oldest-first with distinct timestamps so order is stable. */
@@ -94,5 +98,34 @@ describe("recent searches browse surface (task 6.3)", () => {
     render(<RecentSearches onSelect={vi.fn()} />);
     expect(await screen.findByText("Search for music")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Recent searches" })).not.toBeInTheDocument();
+  });
+
+  it("never carries list, remove, or clear over the network", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    await seed("alpha", "beta");
+
+    const onSelect = vi.fn();
+    render(<RecentSearches onSelect={onSelect} />);
+    await screen.findByRole("heading", { name: "Recent searches" });
+    expect(entryRows()).toHaveLength(2); // list read
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove beta" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "beta" })).not.toBeInTheDocument();
+    });
+    expect((await repositories.searchHistory.list()).map((entry) => entry.normalizedQuery)).toEqual(
+      ["alpha"],
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    await screen.findByText("Search for music");
+    expect(await repositories.searchHistory.list()).toEqual([]);
+
+    // Search history must never leave the device (spec "Local-first search
+    // history"). Selection is deliberately not exercised here: activating a
+    // recent search legitimately issues a search request.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

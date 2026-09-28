@@ -222,6 +222,39 @@ describe("search request orchestration (task 2.1)", () => {
     expect(result.current.surface).toEqual({ status: "results", tracks: [trackB] });
   });
 
+  it("never lets an older response overwrite results already rendered for the newer query", async () => {
+    const { calls } = stubDeferredFetch();
+    const { result } = mountController();
+
+    act(() => useSearchStore.getState().setQuery("old"));
+    await advance(SEARCH_DEBOUNCE_MS);
+    act(() => useSearchStore.getState().setQuery("new"));
+    await advance(SEARCH_DEBOUNCE_MS);
+    expect(calls).toHaveLength(2);
+
+    // The newer query settles and renders first ...
+    await act(async () => {
+      calls[1].resolve([trackB]);
+    });
+    await flush();
+    expect(result.current.surface).toEqual({ status: "results", tracks: [trackB] });
+
+    // ... and only then does the superseded response arrive (abort landed
+    // while it was resolved-but-unsettled) — it must never replace the
+    // results already on screen.
+    expect(calls[0].signal.aborted).toBe(true);
+    await act(async () => {
+      calls[0].resolve([trackA]);
+    });
+    await flush();
+    expect(result.current.surface).toEqual({ status: "results", tracks: [trackB] });
+
+    await advance(10_000);
+    await flush();
+    expect(result.current.surface).toEqual({ status: "results", tracks: [trackB] });
+    expect(result.current.surface).not.toEqual({ status: "results", tracks: [trackA] });
+  });
+
   it("collapses rapid typing into one request carrying only the final query", async () => {
     const fetchMock = stubSuccessfulFetch([trackB]);
     const { result } = mountController();

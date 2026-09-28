@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Track } from "@/data/repositories";
+import type { LikedTrackRecord, Track } from "@/data/repositories";
 import {
   SEARCH_DEBOUNCE_MS,
   SETTLE_RECORD_MS,
@@ -12,21 +12,23 @@ import { makeTrack } from "./helpers/music-fixtures";
 /**
  * Task 6.2 (design §7): a result set that the remote answered with settles
  * for 1.5 s and is then recorded through the search-history repository;
- * changing the query first cancels the window, and error/offline surfaces
- * never record.
+ * changing the query or unmounting the route first cancels the window, and
+ * error/offline/local-fallback surfaces never record.
  */
 
 const mocks = vi.hoisted(() => ({
   record: vi.fn(),
+  // The local-fallback branch reads the liked list — tests seed it to steer
+  // the surface between `error` (empty) and `local` (matches).
+  likedTracks: [] as LikedTrackRecord[],
 }));
 
 // The controller reaches the repository through the local-data accessor; the
-// repository itself is covered by repositories.test.ts. The local-fallback
-// branches read these three lists too, so the mock answers them as empty.
+// repository itself is covered by repositories.test.ts.
 vi.mock("@/data/localData", () => ({
   getLocalData: async () => ({
     searchHistory: { record: mocks.record },
-    likedTracks: { list: async () => [] },
+    likedTracks: { list: async () => mocks.likedTracks },
     playlists: { list: async () => [] },
     listeningHistory: { list: async () => [] },
   }),
@@ -85,6 +87,7 @@ beforeEach(() => {
   resetSearchStore();
   online = true;
   mocks.record.mockClear();
+  mocks.likedTracks = [];
   vi.useFakeTimers({ toFake: [...FAKED_TIMERS] });
 });
 
@@ -146,6 +149,22 @@ describe("settle recording (task 6.2)", () => {
     expect(mocks.record).toHaveBeenCalledWith("beta");
   });
 
+  it("cancels the pending record when the route unmounts first", async () => {
+    stubFetch(async () => okResponse([trackA]));
+    const { unmount } = mountController();
+
+    act(() => useSearchStore.getState().setQuery("radio"));
+    await passDebounce(); // results rendered — the settle window is open
+    expect(mocks.record).not.toHaveBeenCalled();
+
+    unmount(); // route left before the window elapsed
+    await advance(SETTLE_RECORD_MS);
+    expect(mocks.record).not.toHaveBeenCalled();
+
+    await advance(10_000);
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
   it("never records a failed search", async () => {
     stubFetch(async () => {
       throw new Error("boom");
@@ -156,6 +175,29 @@ describe("settle recording (task 6.2)", () => {
     await passDebounce();
     await advance(10_000);
 
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
+  it("never records a local-fallback surface after the remote fails", async () => {
+    // Seed the one local match so the failure settles as `local`, not `error`.
+    mocks.likedTracks = [{ trackId: trackA.id, track: trackA, likedAt: 1 }];
+    const fetchMock = stubFetch(async () => {
+      throw new Error("boom");
+    });
+    const { result } = mountController();
+
+    act(() => useSearchStore.getState().setQuery("karma"));
+    await passDebounce();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.surface).toEqual({
+      status: "local",
+      tracks: [trackA],
+      origin: "error",
+    });
+
+    // The fallback surface is not a remote settle — no window ever opens.
+    await advance(10_000);
     expect(mocks.record).not.toHaveBeenCalled();
   });
 

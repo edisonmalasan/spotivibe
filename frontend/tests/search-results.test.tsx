@@ -158,3 +158,20 @@ describe("artist and album tiles (task 3.3)", () => {
     expect(onRefine).toHaveBeenCalledWith("Random Access Memories");
   });
 });
+
+describe("duplicate videos collapse in the DOM (task 3.2)", () => {
+  it("renders one row for a video the response listed twice", () => {
+    // SearchView feeds raw API tracks into SearchResults, which derives
+    // internally — so a response carrying the same video twice (same id) or
+    // the same providerId under a re-encoded id reaches this surface verbatim.
+    const reencoded = { ...instantCrush, id: "youtube:reencoded-bbb" };
+    renderResults([getLucky, getLucky, reencoded, instantCrush], "x");
+
+    const songs = screen.getByTestId("search-results");
+    // Four response entries → two rows: the same video never appears twice.
+    expect(within(songs).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(songs).getAllByRole("button", { name: "Play Get Lucky" })).toHaveLength(1);
+    expect(within(songs).getAllByText("Get Lucky")).toHaveLength(1);
+    expect(within(songs).getAllByText("Instant Crush")).toHaveLength(1);
+  });
+});
