@@ -219,17 +219,26 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
         repeatMode === "context",
       );
       if (target === null) return; // end of list with repeat off: stay put
+      useQueueStore.getState().advanceTo(target); // history + pointer (design §3)
       requestTrack(target, "load", 0, true);
     },
 
     previous() {
       const queueState = useQueueStore.getState();
       if (queueState.queue.length === 0 || !get().currentTrack) return;
-      // Past the threshold, "previous" restarts the current track (spec).
+      // (1) Past the threshold, "previous" restarts the current track (spec).
       if (get().positionSeconds > NEXT_RESTART_THRESHOLD) {
         get().seek(0);
         return;
       }
+      // (2) Newest history entry that still resolves in the queue → jump back,
+      // consuming the entry (design §3); unresolvable entries were dropped.
+      const jump = queueState.historyJump();
+      if (jump !== null) {
+        requestTrack(jump, "load", 0, true);
+        return;
+      }
+      // (3) History exhausted → context step-back; (4) nothing → restart.
       const { queue, queueIndex, playOrder, repeatMode } = useQueueStore.getState();
       const circular = repeatMode === "context";
       const target =
@@ -342,6 +351,7 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
         set({ status: "paused" });
         return "stopped";
       }
+      useQueueStore.getState().advanceTo(target); // records the finished track
       requestTrack(target, "load", 0);
       return "advanced";
     },
@@ -360,6 +370,7 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
       // any remaining unfailed track is preferable to wedging playback (spec).
       const target = findNextUnfailed(playOrder, queue, queueIndex, get().failedTrackIds, true);
       if (target === null) return "settled";
+      useQueueStore.getState().advanceTo(target); // failed-skip records too (§3)
       requestTrack(target, "load", 0);
       return "advanced";
     },

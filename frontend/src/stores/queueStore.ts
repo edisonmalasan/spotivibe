@@ -120,6 +120,19 @@ export interface QueueState {
   /** Point the current index at `queue[index]` (no history side effects). */
   setQueueIndex(index: number): void;
   /**
+   * Record the finished current entry onto the bounded history stack and move
+   * the pointer to `target` (design §3). Skips recording when the target is
+   * the replayed track itself (repeat-`track`).
+   */
+  advanceTo(target: number): void;
+  /**
+   * Resolve the newest history entry against the queue by scanning backwards
+   * from the current position, popping what it consumes (design §3): returns
+   * the queue index to jump to, dropping unresolvable entries; `null` when
+   * history is exhausted (caller falls back to context step-back).
+   */
+  historyJump(): number | null;
+  /**
    * Append `track` to the queue when its identity is not already current or
    * upcoming (design §4). Never touches transport; returns whether it was
    * accepted.
@@ -152,6 +165,13 @@ export interface QueueState {
     repeatMode: RepeatMode;
   };
 }
+
+/**
+ * Bounded played-history stack (design §2) — session playback bookkeeping
+ * only, never the M11 listening-history dataset and never a blocker for
+ * insertion; the oldest entry is dropped on overflow.
+ */
+export const HISTORY_LIMIT = 50;
 
 /** Outcome of `remove()` — drives the transport side of a current-track removal. */
 export interface RemoveResult {
@@ -216,6 +236,47 @@ export const useQueueStore = create<QueueState>()((set, get) => ({
   setQueueIndex(index) {
     if (index < 0 || index >= get().queue.length) return;
     set({ queueIndex: index });
+  },
+
+  advanceTo(target) {
+    const { queue, queueIndex, history } = get();
+    const finished = queue[queueIndex];
+    if (target !== queueIndex && finished) {
+      const next = [...history, { track: finished, playedAt: Date.now() }];
+      // Bounded: drop the oldest entry beyond the limit (design §2).
+      set({
+        history: next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next,
+      });
+    }
+    if (target >= 0 && target < queue.length && target !== queueIndex) set({ queueIndex: target });
+  },
+
+  historyJump() {
+    const { history, queue, queueIndex } = get();
+    const next = [...history];
+    for (let i = next.length - 1; i >= 0; i--) {
+      const entry = next[i];
+      // Newest first; scan backwards from the current position so a duplicate
+      // identity in the played region resolves unambiguously (design §3).
+      let found = -1;
+      for (let candidate = queueIndex - 1; candidate >= 0; candidate--) {
+        if (sameQueueIdentity(queue[candidate], entry.track)) {
+          found = candidate;
+          break;
+        }
+      }
+      if (found === -1) {
+        // The entry's track no longer exists behind the pointer (removed or
+        // unreachable): drop it and try the next-oldest entry.
+        next.splice(i, 1);
+        continue;
+      }
+      // Jump: pop this entry (and anything newer, already dropped above).
+      set({ history: next.slice(0, i), queueIndex: found });
+      return found;
+    }
+    if (next.length !== history.length) set({ history: next }); // drops persisted
+    return null;
   },
 
   enqueue(track) {
