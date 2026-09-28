@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import type { Track } from "@/data/repositories";
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

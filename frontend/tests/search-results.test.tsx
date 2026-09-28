@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SearchResults } from "@/features/search/SearchResults";
@@ -41,8 +42,9 @@ const untitled = makeTrack({
 
 function renderResults(tracks: ReturnType<typeof makeTrack>[], query: string) {
   const onRefine = vi.fn();
-  render(<SearchResults tracks={tracks} query={query} onRefine={onRefine} />);
-  return { onRefine };
+  const onPlay = vi.fn();
+  render(<SearchResults tracks={tracks} query={query} onRefine={onRefine} onPlay={onPlay} />);
+  return { onRefine, onPlay };
 }
 
 function section(name: string): HTMLElement {
