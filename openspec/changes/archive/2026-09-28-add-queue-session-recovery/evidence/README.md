@@ -129,7 +129,7 @@ cd frontend
 npm run build
 $env:SPOTIVIBE_ORIGIN='http://localhost:3210'; npm run start -- -p 3210   # separate shell
 cd ..
-node openspec/changes/add-queue-session-recovery/evidence/cdp-check.mjs
+node openspec/changes/archive/2026-09-28-add-queue-session-recovery/evidence/cdp-check.mjs
 ```
 
 Environment overrides: `SPOTIVIBE_ORIGIN` (default `http://localhost:3210`),
