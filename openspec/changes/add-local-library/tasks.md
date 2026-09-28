@@ -26,9 +26,9 @@
 
 ## 5. Library surface
 
-- [ ] 5.1 Replace the `/library` placeholder with the real surface: header with Create playlist and Import playlist actions, Liked Songs card (count), playlist grid (cover, name, count), empty state, and not-found-free navigation to detail/liked routes — verify: `routes.test.tsx` library cases and new component tests assert sections, counts, navigation targets, and the empty state (`npm test`).
-- [ ] 5.2 Add the library filter (pure matcher over playlist names + liked entry) and its input with a no-matches state — verify: unit tests cover the matcher matrix (case-insensitive, no match, clear restores) and a component test shows filtering and restoring (`npm test`).
-- [ ] 5.3 Add the Create playlist dialog (name required, optional description, busy/failure states, focus contract) wired to `libraryStore` from the library header — verify: tests assert creation persists, the new playlist appears in the surface immediately, validation blocks empty names, and the dialog a11y contract holds (`npm test`).
+- [x] 5.1 Replace the `/library` placeholder with the real surface: header with Create playlist and Import playlist actions, Liked Songs card (count), playlist grid (cover, name, count), empty state, and not-found-free navigation to detail/liked routes — verify: `routes.test.tsx` library cases and new component tests assert sections, counts, navigation targets, and the empty state (`npm test`).
+- [x] 5.2 Add the library filter (pure matcher over playlist names + liked entry) and its input with a no-matches state — verify: unit tests cover the matcher matrix (case-insensitive, no match, clear restores) and a component test shows filtering and restoring (`npm test`).
+- [x] 5.3 Add the Create playlist dialog (name required, optional description, busy/failure states, focus contract) wired to `libraryStore` from the library header — verify: tests assert creation persists, the new playlist appears in the surface immediately, validation blocks empty names, and the dialog a11y contract holds (`npm test`).
 
 ## 6. Liked Songs surface
 
