@@ -88,7 +88,7 @@ Activating a song result SHALL start persistent playback through the playback en
 
 ### Requirement: Result context actions
 
-Each song result SHALL expose a context menu with: play, like/unlike, add to local playlist, go to artist, and go to album (where album metadata exists). Like/unlike SHALL persist to the local liked-tracks repository and reflect current state when results render. Add to local playlist SHALL let the user pick an existing local playlist or create a new one inline, then append the track. Go to artist and go to album SHALL refine the search to that artist/album name. The menu SHALL be operable by keyboard with a visible focus state and an accessible name per control.
+Each song result SHALL expose a context menu with: play, like/unlike, add to queue, add to local playlist, go to artist, and go to album (where album metadata exists). Like/unlike SHALL persist to the local liked-tracks repository and reflect current state when results render. Add to queue SHALL append the track to the end of the queue per the queue capability's insertion rules (including its duplicate protection) without disturbing current playback. Add to local playlist SHALL let the user pick an existing local playlist or create a new one inline, then append the track. Go to artist and go to album SHALL refine the search to that artist/album name. The menu SHALL be operable by keyboard with a visible focus state and an accessible name per control.
 
 #### Scenario: Like persists locally
 
@@ -109,6 +109,11 @@ Each song result SHALL expose a context menu with: play, like/unlike, add to loc
 
 - **WHEN** the user activates "go to artist" or "go to album" on a result
 - **THEN** the search query becomes that artist/album name and results update accordingly
+
+#### Scenario: Add to queue appends without disturbing playback
+
+- **WHEN** the user activates "Add to queue" on a result while a track is playing
+- **THEN** the result track is appended to the end of the queue (once — duplicate protection applies), the menu closes, and the current track, status, and position are unchanged
 
 ### Requirement: Local-first search history
 
