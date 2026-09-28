@@ -66,7 +66,7 @@ export function SearchView() {
     };
   }, [query, param, router]);
 
-  return <SearchSurfaceView surface={surface} query={query} retry={retry} />;
+  return <SearchSurfaceView surface={surface} query={query} retry={retry} onRefine={setQuery} />;
 }
 
 /**
@@ -77,10 +77,13 @@ function SearchSurfaceView({
   surface,
   query,
   retry,
+  onRefine,
 }: {
   surface: SearchSurface;
   query: string;
   retry(): void;
+  /** Refine action for artist/album selection (query := entity name). */
+  onRefine(name: string): void;
 }): ReactNode {
   const trimmed = query.trim();
   switch (surface.status) {
@@ -94,7 +97,7 @@ function SearchSurfaceView({
         </div>
       );
     case "results":
-      return <SearchResults tracks={surface.tracks} />;
+      return <SearchResults tracks={surface.tracks} query={trimmed} onRefine={onRefine} />;
     case "empty":
       return surface.origin === "offline" ? (
         <EmptyState
@@ -122,7 +125,7 @@ function SearchSurfaceView({
             </p>
             {surface.origin === "error" && <Button onClick={retry}>Try again</Button>}
           </div>
-          <SearchResults tracks={surface.tracks} />
+          <SearchResults tracks={surface.tracks} query={trimmed} onRefine={onRefine} />
         </>
       );
     case "error":
