@@ -29,10 +29,17 @@ beforeEach(() => {
   nav.q = "";
   nav.replace.mockClear();
   vi.useFakeTimers({ toFake: [...FAKED_TIMERS] });
+  // This file owns URL sync; requests are left pending on purpose so the
+  // surface stays deterministic (no real network call is ever made).
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise<Response>(() => {})),
+  );
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("search page URL sync (task 1.3)", () => {
@@ -41,9 +48,9 @@ describe("search page URL sync (task 1.3)", () => {
     render(<SearchPage />);
 
     expect(query()).toBe("bohemian rhapsody");
+    expect(screen.getByTestId("search-loading")).toBeInTheDocument();
     vi.advanceTimersByTime(300);
     expect(nav.replace).not.toHaveBeenCalled(); // param adopted, no echo
-    expect(screen.getByText("Search for music")).toBeInTheDocument();
   });
 
   it("adopts the previous query when back/forward changes the param", () => {
@@ -93,5 +100,6 @@ describe("search page URL sync (task 1.3)", () => {
 
     expect(query()).toBe("");
     expect(nav.replace).not.toHaveBeenCalled();
+    expect(screen.getByText("Search for music")).toBeInTheDocument(); // browse
   });
 });
