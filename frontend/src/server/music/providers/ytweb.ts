@@ -1,8 +1,23 @@
 import { fetchJson } from "@/server/http/fetchJson";
 import { ProviderError } from "../errors";
 import { parseDurationText } from "../normalize";
-import type { ArtworkCandidate, MusicProvider, ProviderCandidate } from "../types";
-import { ATTEMPT_TIMEOUT_MS, collectNodes, JSON_HEADERS, wrapFailure } from "./support";
+import {
+  type ArtworkCandidate,
+  type MusicProvider,
+  type PlaylistEntry,
+  type PlaylistRequest,
+  type PlaylistResolution,
+  type PlaylistResolver,
+  type ProviderCandidate,
+} from "../types";
+import {
+  ATTEMPT_TIMEOUT_MS,
+  collectNodes,
+  collectPlaylistEntries,
+  JSON_HEADERS,
+  wrapFailure,
+  type PlaylistEntryPage,
+} from "./support";
 
 /**
  * Tier 2 — YouTube Web Innertube (secondary discovery provider,
@@ -121,6 +136,289 @@ export const ytwebProvider: MusicProvider = {
         timeoutMs: request.timeoutMs ?? ATTEMPT_TIMEOUT_MS,
       });
       return parseYtwebSearch(body);
+    } catch (error) {
+      throw wrapFailure("ytweb", error);
+    }
+  },
+};
+
+/* ------------------------------------------------------------------ *
+ * Playlist import (ROADMAP M7, design decision 9).
+ * ------------------------------------------------------------------ */
+
+const WEB_BROWSE_URL = "https://www.youtube.com/youtubei/v1/browse";
+
+/** ERROR alerts carrying this pattern are YouTube's definitive missing/private answer. */
+const UNAVAILABLE_ALERT_PATTERN = /does not exist|private|not available|unavailable|deleted/i;
+
+const DURATION_TEXT = /^\d{1,3}:\d{2}(?::\d{2})?$/;
+
+interface ThumbnailSource {
+  url?: unknown;
+  width?: unknown;
+  height?: unknown;
+}
+
+interface MetadataPart {
+  text?: { content?: unknown };
+  commandRuns?: Array<{
+    onTap?: { innertubeCommand?: { browseEndpoint?: { browseId?: unknown } } };
+  }>;
+  navigationEndpoint?: { browseEndpoint?: { browseId?: unknown } };
+}
+
+interface LockupLike {
+  contentId?: unknown;
+  contentType?: unknown;
+  metadata?: {
+    lockupMetadataViewModel?: {
+      title?: { content?: unknown };
+      metadata?: {
+        contentMetadataViewModel?: { metadataRows?: Array<{ metadataParts?: MetadataPart[] }> };
+      };
+    };
+  };
+  contentImage?: {
+    thumbnailViewModel?: {
+      image?: { sources?: ThumbnailSource[] };
+      overlays?: Array<{
+        thumbnailBottomOverlayViewModel?: {
+          badges?: Array<{ thumbnailBadgeViewModel?: { text?: unknown } }>;
+        };
+      }>;
+    };
+  };
+}
+
+interface AlertLike {
+  type?: unknown;
+  text?: { runs?: Array<{ text?: unknown }> };
+}
+
+interface PlaylistMetadataLike {
+  playlistMetadataRenderer?: { title?: unknown; description?: unknown };
+}
+
+interface MicroformatPlaylistLike {
+  microformatDataRenderer?: { title?: unknown; description?: unknown };
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Collect playlist rows and the continuation token from one response.
+ * First pages store rows under `sectionListRenderer` (wrapped in an item
+ * section); continuations append them via `appendContinuationItemsAction`.
+ * Only these in-scope item arrays are walked — sidebar/header lockups are
+ * never playlist rows and are not visited.
+ */
+function collectYtwebPlaylistItems(body: unknown): {
+  lockups: LockupLike[];
+  continuation?: string;
+} {
+  const lockups: LockupLike[] = [];
+  let continuation: string | undefined;
+
+  const visit = (items: unknown): void => {
+    if (!Array.isArray(items)) return;
+    for (const raw of items) {
+      if (raw === null || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      if (item.lockupViewModel !== null && typeof item.lockupViewModel === "object") {
+        const lockup = item.lockupViewModel as LockupLike;
+        // Non-video lockups (channel/playlist) are not playlist rows.
+        const contentType = typeof lockup.contentType === "string" ? lockup.contentType : undefined;
+        if (contentType === undefined || contentType === "LOCKUP_CONTENT_TYPE_VIDEO") {
+          lockups.push(lockup);
+        }
+        continue;
+      }
+      if (item.itemSectionRenderer !== null && typeof item.itemSectionRenderer === "object") {
+        visit((item.itemSectionRenderer as Record<string, unknown>).contents);
+        continue;
+      }
+      if (
+        continuation === undefined &&
+        item.continuationItemRenderer !== null &&
+        typeof item.continuationItemRenderer === "object"
+      ) {
+        const node = item.continuationItemRenderer as {
+          continuationEndpoint?: { continuationCommand?: { token?: unknown } };
+        };
+        const token = node.continuationEndpoint?.continuationCommand?.token;
+        if (typeof token === "string") continuation = token;
+      }
+    }
+  };
+
+  for (const section of collectNodes(body, "sectionListRenderer", 4)) visit(section.contents);
+  for (const action of collectNodes(body, "appendContinuationItemsAction", 4)) {
+    visit(action.continuationItems);
+  }
+
+  return { lockups, ...(continuation !== undefined ? { continuation } : {}) };
+}
+
+/**
+ * Convert one `lockupViewModel` row into a playlist entry; rows without a
+ * resolvable video become `null` (skipped + counted, design decision 9).
+ */
+function lockupToEntry(lockup: LockupLike): PlaylistEntry {
+  const videoId = optionalString(lockup.contentId) ?? "";
+  const model = lockup.metadata?.lockupMetadataViewModel;
+  const title = optionalString(model?.title?.content) ?? "";
+  if (!videoId || !title) return null;
+
+  let artistText: string | undefined;
+  let artistId: string | undefined;
+  const part = model?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0];
+  const text = optionalString(part?.text?.content);
+  if (text !== undefined) {
+    artistText = text;
+    artistId =
+      optionalString(part?.commandRuns?.[0]?.onTap?.innertubeCommand?.browseEndpoint?.browseId) ??
+      optionalString(part?.navigationEndpoint?.browseEndpoint?.browseId);
+  }
+
+  // Duration is the thumbnail's bottom-overlay badge ("3:12:22").
+  let durationSeconds: number | undefined;
+  for (const overlay of lockup.contentImage?.thumbnailViewModel?.overlays ?? []) {
+    for (const badge of overlay.thumbnailBottomOverlayViewModel?.badges ?? []) {
+      const badgeText = badge.thumbnailBadgeViewModel?.text;
+      if (typeof badgeText === "string" && DURATION_TEXT.test(badgeText)) {
+        durationSeconds = parseDurationText(badgeText);
+        break;
+      }
+    }
+    if (durationSeconds !== undefined) break;
+  }
+
+  const artwork: ArtworkCandidate[] = (
+    lockup.contentImage?.thumbnailViewModel?.image?.sources ?? []
+  )
+    .filter(
+      (source): source is { url: string; width?: number; height?: number } =>
+        typeof source.url === "string" && source.url.length > 0,
+    )
+    .map((source) => ({
+      url: source.url,
+      width: typeof source.width === "number" ? source.width : undefined,
+      height: typeof source.height === "number" ? source.height : undefined,
+    }));
+
+  return {
+    videoId,
+    title,
+    artistText,
+    artistId,
+    artwork,
+    durationSeconds,
+    tier: "ytweb",
+  };
+}
+
+/** One parsed playlist page (first page or continuation). */
+export interface YtwebPlaylistPage extends PlaylistEntryPage {
+  title?: string;
+  description?: string;
+}
+
+/**
+ * Parse a YouTube Web Innertube playlist response (pure — fixture-tested,
+ * no network). Handles first pages (`sectionListRenderer`) and continuation
+ * responses (`appendContinuationItemsAction`).
+ *
+ * Definitive classification (design decision 9): an ERROR alert matching
+ * {@link UNAVAILABLE_ALERT_PATTERN}, or a contents-less response whose
+ * microformat carries no title, is YouTube's missing/private answer → kind
+ * `unavailable`.
+ *
+ * @throws {ProviderError} kind `parse` when the body is not an object or
+ * carries nothing recognizable.
+ */
+export function parseYtwebPlaylistPage(body: unknown): YtwebPlaylistPage {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new ProviderError("ytweb", "parse", "ytweb: playlist response body is not an object");
+  }
+  const record = body as Record<string, unknown>;
+
+  const alerts = collectNodes(body, "alertRenderer", 5) as unknown as AlertLike[];
+  for (const alert of alerts) {
+    if (alert.type !== "ERROR") continue;
+    const text = (alert.text?.runs ?? []).map((run) => run.text ?? "").join("");
+    if (UNAVAILABLE_ALERT_PATTERN.test(text)) {
+      throw new ProviderError("ytweb", "unavailable", `ytweb: playlist unavailable: ${text}`);
+    }
+  }
+
+  const { lockups, continuation } = collectYtwebPlaylistItems(body);
+  const entries = lockups.map(lockupToEntry);
+
+  const metadata = (record.metadata as PlaylistMetadataLike | undefined)?.playlistMetadataRenderer;
+  const microformat = (record.microformat as MicroformatPlaylistLike | undefined)
+    ?.microformatDataRenderer;
+  const title = optionalString(metadata?.title) ?? optionalString(microformat?.title);
+  const description =
+    optionalString(metadata?.description) ?? optionalString(microformat?.description);
+
+  if (entries.length === 0 && continuation === undefined && title === undefined) {
+    if (microformat !== undefined && microformat.title === undefined) {
+      throw new ProviderError("ytweb", "unavailable", "ytweb: playlist is missing or private");
+    }
+    throw new ProviderError(
+      "ytweb",
+      "parse",
+      "ytweb: playlist response carried no playlist content",
+    );
+  }
+
+  return {
+    ...(title !== undefined ? { title } : {}),
+    ...(description !== undefined ? { description } : {}),
+    entries,
+    ...(continuation !== undefined ? { continuation } : {}),
+  };
+}
+
+/** Playlist resolution tier — see {@link parseYtwebPlaylistPage}. */
+export const ytwebPlaylistResolver: PlaylistResolver = {
+  id: "ytweb",
+  async resolvePlaylist(request: PlaylistRequest): Promise<PlaylistResolution> {
+    try {
+      const meta: { title?: string; description?: string } = {};
+      const { entries, truncated } = await collectPlaylistEntries(async (continuation) => {
+        const body = await fetchJson<unknown>(WEB_BROWSE_URL, {
+          method: "POST",
+          headers: JSON_HEADERS,
+          body: JSON.stringify(
+            continuation === undefined
+              ? { context: WEB_CONTEXT, browseId: `VL${request.playlistId}` }
+              : { context: WEB_CONTEXT, continuation },
+          ),
+          signal: request.signal,
+          timeoutMs: request.timeoutMs ?? ATTEMPT_TIMEOUT_MS,
+        });
+        const page = parseYtwebPlaylistPage(body);
+        if (continuation === undefined) {
+          if (page.title === undefined) {
+            throw new ProviderError("ytweb", "parse", "ytweb: playlist response carried no title");
+          }
+          meta.title = page.title;
+          meta.description = page.description;
+        }
+        return page;
+      });
+      if (meta.title === undefined) {
+        throw new ProviderError("ytweb", "parse", "ytweb: playlist response carried no title");
+      }
+      return {
+        title: meta.title,
+        ...(meta.description !== undefined ? { description: meta.description } : {}),
+        entries,
+        truncated,
+      };
     } catch (error) {
       throw wrapFailure("ytweb", error);
     }
