@@ -2,9 +2,9 @@
 
 ## 1. Library store foundation
 
-- [ ] 1.1 Create `frontend/src/stores/libraryStore.ts` holding `likedIds`, `playlists`, `hydrated` with idempotent `hydrate()` and `resetLibraryStore()` — verify: unit tests cover hydration populating both collections from fake-indexeddb repositories, double-hydrate not duplicating state, and reset isolation (`npm test`).
-- [ ] 1.2 Add repository-first actions: `toggleLike`, `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `removeTrackFromPlaylist`, `reorderPlaylistTrack`, and `addTrackToPlaylist` returning `"added" | "duplicate"` — verify: tests cover like persistence, create/rename preserving ID/tracks/order, delete, the duplicate matrix (present → `"duplicate"` with unchanged playlist; absent → appended), reorder results, a failing repository write leaving state unchanged, and transport fields untouched after every action (`npm test`).
-- [ ] 1.3 Add `createPlaylistFromResolved({ name, description, tracks })` writing sequentially in order with rollback on mid-sequence failure — verify: tests assert the created playlist's tracks match the input order, and a simulated write failure removes the partial playlist and rejects (`npm test`).
+- [x] 1.1 Create `frontend/src/stores/libraryStore.ts` holding `likedIds`, `playlists`, `hydrated` with idempotent `hydrate()` and `resetLibraryStore()` — verify: unit tests cover hydration populating both collections from fake-indexeddb repositories, double-hydrate not duplicating state, and reset isolation (`npm test`).
+- [x] 1.2 Add repository-first actions: `toggleLike`, `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `removeTrackFromPlaylist`, `reorderPlaylistTrack`, and `addTrackToPlaylist` returning `"added" | "duplicate"` — verify: tests cover like persistence, create/rename preserving ID/tracks/order, delete, the duplicate matrix (present → `"duplicate"` with unchanged playlist; absent → appended), reorder results, a failing repository write leaving state unchanged, and transport fields untouched after every action (`npm test`).
+- [x] 1.3 Add `createPlaylistFromResolved({ name, description, tracks })` writing sequentially in order with rollback on mid-sequence failure — verify: tests assert the created playlist's tracks match the input order, and a simulated write failure removes the partial playlist and rejects (`npm test`).
 
 ## 2. Shared surface wiring
 
