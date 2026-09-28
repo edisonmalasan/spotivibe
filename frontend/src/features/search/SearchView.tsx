@@ -75,7 +75,7 @@ export function SearchView() {
       query={query}
       retry={retry}
       onRefine={setQuery}
-      onPlay={playTrack}
+      onPlay={(track, context) => playTrack(track, context, "search")}
     />
   );
 }

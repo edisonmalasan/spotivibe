@@ -10,6 +10,7 @@ import {
 import type { YtNamespace, YtPlayer, YtPlayerOptions } from "@/player/types";
 import { YT_STATE } from "@/player/types";
 import { initialPlayerState, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 import { makeTrack } from "../helpers/music-fixtures";
 
 const trackA = makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" });
@@ -268,8 +269,8 @@ describe("engine: ended handling", () => {
   it("replays the current track under repeat track", async () => {
     const { engine } = makeEngine();
     state().playTrack(trackA, [trackA, trackB]);
-    state().cycleRepeat();
-    state().cycleRepeat(); // track
+    useQueueStore.getState().cycleRepeat();
+    useQueueStore.getState().cycleRepeat(); // track
     await microtasks();
     const player = playerOf(engine);
 

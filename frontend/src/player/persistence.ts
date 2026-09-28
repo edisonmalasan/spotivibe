@@ -1,26 +1,31 @@
 import type { SessionSnapshot } from "@/data/repositories";
 import { getLocalData } from "@/data/localData";
 import { usePlayerStore } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 
 /**
- * Session persistence for ROADMAP M4: debounced writes of the playback
+ * Session persistence for ROADMAP M4/M6: debounced writes of the playback
  * session (queue, index, position, repeat, shuffle, volume) through M2's
  * session repository, plus an immediate flush when the page is hidden or
  * closed. Pure subscription logic — the store stays free of data-layer
- * imports, so store tests need no IndexedDB.
+ * imports, so store tests need no IndexedDB. Queue fields are read from
+ * `queueStore` (the M6 two-store split); both stores schedule writes.
  */
 
 export const SESSION_DEBOUNCE_MS = 2000;
 
-function snapshotOf(state: ReturnType<typeof usePlayerStore.getState>): SessionSnapshot | null {
-  if (!state.currentTrack || state.queue.length === 0) return null;
+function snapshotOf(
+  player: ReturnType<typeof usePlayerStore.getState>,
+  queue: ReturnType<typeof useQueueStore.getState>,
+): SessionSnapshot | null {
+  if (!player.currentTrack || queue.queue.length === 0) return null;
   return {
-    queue: state.queue,
-    queueIndex: state.queueIndex,
-    positionSeconds: state.positionSeconds,
-    repeatMode: state.repeatMode,
-    shuffle: state.shuffle,
-    volume: state.volume / 100, // store 0..100 → snapshot 0..1
+    queue: queue.queue,
+    queueIndex: queue.queueIndex,
+    positionSeconds: player.positionSeconds,
+    repeatMode: queue.repeatMode,
+    shuffle: queue.shuffle,
+    volume: player.volume / 100, // store 0..100 → snapshot 0..1
   };
 }
 
@@ -58,7 +63,7 @@ export function attachSessionPersistence(options: { debounceMs?: number } = {}):
       clearTimeout(timer);
       timer = null;
     }
-    const snapshot = snapshotOf(usePlayerStore.getState());
+    const snapshot = snapshotOf(usePlayerStore.getState(), useQueueStore.getState());
     if (!snapshot) return; // nothing playing ⇒ nothing to persist
     writeChain = writeChain
       .then(() => getLocalData())
@@ -77,14 +82,21 @@ export function attachSessionPersistence(options: { debounceMs?: number } = {}):
     timer = setTimeout(flush, debounceMs);
   };
 
-  const unsubscribe = usePlayerStore.subscribe((state, previous) => {
+  const unsubscribePlayer = usePlayerStore.subscribe((state, previous) => {
+    if (
+      state.positionSeconds !== previous.positionSeconds ||
+      state.volume !== previous.volume ||
+      state.currentTrack !== previous.currentTrack
+    ) {
+      schedule();
+    }
+  });
+  const unsubscribeQueue = useQueueStore.subscribe((state, previous) => {
     if (
       state.queue !== previous.queue ||
       state.queueIndex !== previous.queueIndex ||
-      state.positionSeconds !== previous.positionSeconds ||
       state.repeatMode !== previous.repeatMode ||
-      state.shuffle !== previous.shuffle ||
-      state.volume !== previous.volume
+      state.shuffle !== previous.shuffle
     ) {
       schedule();
     }
@@ -98,7 +110,8 @@ export function attachSessionPersistence(options: { debounceMs?: number } = {}):
   window.addEventListener("pagehide", handlePageHide);
 
   return () => {
-    unsubscribe();
+    unsubscribePlayer();
+    unsubscribeQueue();
     document.removeEventListener("visibilitychange", handleVisibility);
     window.removeEventListener("pagehide", handlePageHide);
     if (timer) {

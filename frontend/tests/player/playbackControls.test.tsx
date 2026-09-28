@@ -14,11 +14,16 @@ import {
   type PlaybackBridge,
 } from "@/stores/playerStore";
 import { makeTrack } from "../helpers/music-fixtures";
+import { useQueueStore } from "@/stores/queueStore";
 
 const track = makeTrack({ id: "youtube:aaa", providerId: "aaa" });
 
 function state() {
   return usePlayerStore.getState();
+}
+
+function queueState() {
+  return useQueueStore.getState();
 }
 
 function makeBridge() {
@@ -94,11 +99,11 @@ describe("ShuffleToggle", () => {
     expect(button).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(button);
-    expect(state().shuffle).toBe(true);
+    expect(queueState().shuffle).toBe(true);
     expect(button).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(button);
-    expect(state().shuffle).toBe(false);
+    expect(queueState().shuffle).toBe(false);
     expect(button).toHaveAttribute("aria-pressed", "false");
   });
 });
@@ -111,19 +116,19 @@ describe("RepeatToggle", () => {
     expect(off).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(off);
-    expect(state().repeatMode).toBe("context");
+    expect(queueState().repeatMode).toBe("context");
     const all = screen.getByRole("button", { name: "Repeat: All" });
     expect(all).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(all);
-    expect(state().repeatMode).toBe("track");
+    expect(queueState().repeatMode).toBe("track");
     expect(screen.getByRole("button", { name: "Repeat: One" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Repeat: One" }));
-    expect(state().repeatMode).toBe("off");
+    expect(queueState().repeatMode).toBe("off");
     expect(screen.getByRole("button", { name: "Repeat: Off" })).toHaveAttribute(
       "aria-pressed",
       "false",

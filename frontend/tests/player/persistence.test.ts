@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { attachSessionPersistence } from "@/player/persistence";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 import { getLocalData } from "@/data/localData";
 import { makeTrack } from "../helpers/music-fixtures";
 
@@ -61,7 +62,7 @@ describe("session persistence", () => {
     detach = attachSessionPersistence({ debounceMs: DEBOUNCE });
 
     state().playTrack(trackA, [trackA, trackB]);
-    state().cycleRepeat(); // off -> context
+    useQueueStore.getState().cycleRepeat(); // off -> context
     state()._setPosition(33);
     state().setVolume(55);
 

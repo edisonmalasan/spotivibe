@@ -6,6 +6,7 @@ import SearchPage from "@/app/search/page";
 import { PlayerBar } from "@/components/layout/PlayerBar";
 import { SEARCH_DEBOUNCE_MS } from "@/features/search/useSearchController";
 import { resetPlayerStore, setPlaybackBridge, usePlayerStore } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 import { resetSearchStore, useSearchStore } from "@/stores/searchStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
@@ -129,8 +130,10 @@ describe("playback from search results (task 4.1)", () => {
     expect(state.status).toBe("loading");
     expect(state.loadRequest).toMatchObject({ videoId: "bbb", mode: "load" });
     // Full result set is the queue context, clicked track is current.
-    expect(state.queue.map((track) => track.id)).toEqual([trackA.id, trackB.id]);
-    expect(state.queueIndex).toBe(1);
+    expect(useQueueStore.getState().queue.map((track) => track.id)).toEqual([trackA.id, trackB.id]);
+    expect(useQueueStore.getState().queueIndex).toBe(1);
+    // The queue knows where the context came from (M6 queue surface).
+    expect(useQueueStore.getState().source).toBe("search");
 
     // The player region reflects the activated track.
     expect(bar).toHaveTextContent("Weird Fishes");
@@ -140,8 +143,8 @@ describe("playback from search results (task 4.1)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Play Karma Police" }));
     state = usePlayerStore.getState();
     expect(state.currentTrack?.id).toBe(trackA.id);
-    expect(state.queueIndex).toBe(0);
-    expect(state.queue.map((track) => track.id)).toEqual([trackA.id, trackB.id]);
+    expect(useQueueStore.getState().queueIndex).toBe(0);
+    expect(useQueueStore.getState().queue.map((track) => track.id)).toEqual([trackA.id, trackB.id]);
   });
 });
 
