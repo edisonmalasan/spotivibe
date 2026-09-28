@@ -8,9 +8,9 @@
 
 ## 2. Shared surface wiring
 
-- [ ] 2.1 Move `features/search/SongRow.tsx` to `frontend/src/components/track/SongRow.tsx` (`git mv`) and update all imports — verify: `npm test` passes with search/queue suites importing the relocated component and no reference to the old path remains (`git grep`).
-- [ ] 2.2 Rewire `features/search/useLikedTracks.ts` and `PlaylistPicker.tsx` onto `libraryStore` (live state, store-based add with inline "Already in playlist" feedback, inline create via the store) — verify: updated `search-menu` tests cover like persisting through the store, a like toggled elsewhere reflecting without remount, appending to an existing playlist, inline creation, and the new duplicate scenario from the search delta — playlist unchanged with feedback (`npm test`).
-- [ ] 2.3 Replace the disabled heart on `frontend/src/app/now-playing/page.tsx` with a functional `libraryStore`-backed like toggle — verify: now-playing tests assert filled/outline state by `likedIds`, the accessible name switching Save/Remove, and the like appearing in the liked set without a reload (`npm test`).
+- [x] 2.1 Move `features/search/SongRow.tsx` to `frontend/src/components/track/SongRow.tsx` (`git mv`) and update all imports — verify: `npm test` passes with search/queue suites importing the relocated component and no reference to the old path remains (`git grep`).
+- [x] 2.2 Rewire `features/search/useLikedTracks.ts` and `PlaylistPicker.tsx` onto `libraryStore` (live state, store-based add with inline "Already in playlist" feedback, inline create via the store) — verify: updated `search-menu` tests cover like persisting through the store, a like toggled elsewhere reflecting without remount, appending to an existing playlist, inline creation, and the new duplicate scenario from the search delta — playlist unchanged with feedback (`npm test`).
+- [x] 2.3 Replace the disabled heart on `frontend/src/app/now-playing/page.tsx` with a functional `libraryStore`-backed like toggle — verify: now-playing tests assert filled/outline state by `likedIds`, the accessible name switching Save/Remove, and the like appearing in the liked set without a reload (`npm test`).
 
 ## 3. Playlist import — server
 

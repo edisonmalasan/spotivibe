@@ -4,7 +4,7 @@ import { AlbumTile } from "@/features/search/AlbumTile";
 import { ArtistTile } from "@/features/search/ArtistTile";
 import { deriveResults } from "@/features/search/derive";
 import { ResultMenu } from "@/features/search/ResultMenu";
-import { SongRow } from "@/features/search/SongRow";
+import { SongRow } from "@/components/track/SongRow";
 import { TopResultCard } from "@/features/search/TopResultCard";
 import { useLikedTracks } from "@/features/search/useLikedTracks";
 

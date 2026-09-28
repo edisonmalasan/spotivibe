@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SearchPage from "@/app/search/page";
 import type { Track } from "@/data/repositories";
 import { getLocalData, type RepositorySet } from "@/data/localData";
+import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { useQueueStore } from "@/stores/queueStore";
 import { resetSearchStore, useSearchStore } from "@/stores/searchStore";
@@ -83,6 +84,7 @@ let repositories: RepositorySet;
 beforeEach(async () => {
   resetSearchStore();
   resetPlayerStore();
+  resetLibraryStore();
   nav.q = "";
   repositories = await getLocalData();
   await repositories.resetAll();
@@ -201,6 +203,19 @@ describe("like action (task 5.2)", () => {
     ).toBeInTheDocument();
     expect(await repositories.likedTracks.list()).toHaveLength(1);
   });
+
+  it("reflects a like toggled elsewhere without a remount (design §11)", async () => {
+    await renderResults();
+
+    // Another surface (e.g. Now Playing) likes the track through the store.
+    await useLibraryStore.getState().toggleLike(trackB);
+
+    fireEvent.click(openMenuFor("Weird Fishes"));
+    expect(
+      await screen.findByRole("menuitem", { name: "Remove from Liked Songs" }),
+    ).toBeInTheDocument();
+    expect(await repositories.likedTracks.isLiked(trackB.id)).toBe(true);
+  });
 });
 
 describe("add to queue (task 7.1)", () => {
@@ -267,6 +282,27 @@ describe("playlist picker (task 5.3)", () => {
     const playlists = await repositories.playlists.list();
     expect(playlists.map((entry) => entry.name)).toEqual(["Fresh Mix"]);
     expect(playlists[0].tracks.map((entry) => entry.track.id)).toEqual([trackA.id]);
+  });
+
+  it("reports a duplicate add without changing the playlist (design §11)", async () => {
+    const playlist = await repositories.playlists.create({ name: "Road Trip" });
+    await repositories.playlists.addTrack(playlist.id, trackA);
+    await renderResults();
+
+    fireEvent.click(openMenuFor("Karma Police"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add to playlist" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add to playlist" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Road Trip" }));
+
+    // The picker stays open and reports the duplicate inline.
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(/Already in playlist/);
+    const stored = await repositories.playlists.get(playlist.id);
+    expect(stored?.tracks.map((entry) => entry.track.id)).toEqual([trackA.id]);
+
+    // Dismissing returns focus to the trigger as with any other close path.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("dismisses on Escape and on the close control, returning focus to the trigger", async () => {

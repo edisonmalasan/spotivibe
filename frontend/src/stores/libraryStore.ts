@@ -134,7 +134,8 @@ export const useLibraryStore = create<LibraryState>()((set) => ({
     // Repository first, UI second — re-read so concurrent toggles converge.
     const token = ++likedRefresh;
     const records = await data.likedTracks.list();
-    if (token === likedRefresh) set({ likedIds: new Set(records.map((r) => r.trackId)) });
+    if (token === likedRefresh)
+      set({ likedIds: new Set(records.map((r) => r.trackId)), hydrated: true });
   },
 
   async createPlaylist(input) {
@@ -223,5 +224,5 @@ async function refreshPlaylists(): Promise<void> {
 }
 
 function setPlaylists(playlists: PlaylistRecord[]): void {
-  useLibraryStore.setState({ playlists });
+  useLibraryStore.setState({ playlists, hydrated: true });
 }

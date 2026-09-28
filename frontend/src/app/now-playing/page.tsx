@@ -8,10 +8,12 @@ import {
   VolumeControls,
 } from "@/components/player/PlaybackControls";
 import { ProgressSlider } from "@/components/player/ProgressSlider";
+import { useLibraryStore } from "@/stores/libraryStore";
 import { usePlayerStore } from "@/stores/playerStore";
 import { ChevronDown, Heart, ListMusic, Music2, SkipBack, SkipForward } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 /**
  * Expanded Now Playing route (spec: store-backed playback state and control
@@ -28,6 +30,14 @@ export default function NowPlayingPage() {
   const errorMessage = usePlayerStore((state) => state.errorMessage);
   const previous = usePlayerStore((state) => state.previous);
   const next = usePlayerStore((state) => state.next);
+  const likedIds = useLibraryStore((state) => state.likedIds);
+  const hydrate = useLibraryStore((state) => state.hydrate);
+  const toggleLike = useLibraryStore((state) => state.toggleLike);
+  const isLiked = currentTrack != null && likedIds?.has(currentTrack.id) === true;
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   const artworkUrl = currentTrack?.artwork[0]?.url;
   const artistText = currentTrack
@@ -87,8 +97,14 @@ export default function NowPlayingPage() {
         <ProgressSlider />
 
         <div className="flex items-center gap-4">
-          <IconButton label="Save to Liked Songs" disabled>
-            <Heart className="size-5" aria-hidden="true" />
+          <IconButton
+            label={isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"}
+            disabled={!currentTrack}
+            onClick={() => {
+              if (currentTrack) void toggleLike(currentTrack);
+            }}
+          >
+            <Heart className={isLiked ? "size-5 fill-current" : "size-5"} aria-hidden="true" />
           </IconButton>
           <IconButton label="Previous track" disabled={!currentTrack} onClick={() => previous()}>
             <SkipBack className="size-5" aria-hidden="true" />
