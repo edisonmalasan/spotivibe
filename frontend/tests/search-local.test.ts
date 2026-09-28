@@ -45,8 +45,11 @@ beforeEach(async () => {
 
 /** Seed every local source, deliberately overlapping the same track ids. */
 async function seedLibrary(): Promise<void> {
-  await repositories.likedTracks.like(likedA);
-  await repositories.likedTracks.like(likedB);
+  // Explicit likedAt values: likedTracks.list() is newest-first, and two
+  // quick likes can share a Date.now() millisecond — the stable sort would
+  // then fall back to key order and flip the expected sequence.
+  await repositories.likedTracks.like(likedA, 2_000);
+  await repositories.likedTracks.like(likedB, 1_000);
 
   const playlist = await repositories.playlists.create({ name: "Mix" });
   await repositories.playlists.addTrack(playlist.id, likedA); // already liked
