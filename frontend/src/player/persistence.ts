@@ -26,6 +26,10 @@ function snapshotOf(
     repeatMode: queue.repeatMode,
     shuffle: queue.shuffle,
     volume: player.volume / 100, // store 0..100 → snapshot 0..1
+    // M6 queue/session extension (design §6) — reapplied by restoreQueue.
+    history: queue.history,
+    playOrder: queue.playOrder,
+    source: queue.source,
   };
 }
 
@@ -96,7 +100,9 @@ export function attachSessionPersistence(options: { debounceMs?: number } = {}):
       state.queue !== previous.queue ||
       state.queueIndex !== previous.queueIndex ||
       state.repeatMode !== previous.repeatMode ||
-      state.shuffle !== previous.shuffle
+      state.shuffle !== previous.shuffle ||
+      state.history !== previous.history ||
+      state.source !== previous.source
     ) {
       schedule();
     }

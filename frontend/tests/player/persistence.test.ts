@@ -13,6 +13,7 @@ const trackB = makeTrack({
   title: "Bravo",
   durationSeconds: 180,
 });
+const trackC = makeTrack({ id: "youtube:ccc", providerId: "ccc", title: "Charlie" });
 
 const DEBOUNCE = 5;
 
@@ -113,6 +114,52 @@ describe("session persistence", () => {
 
     await sleep(30);
     expect(await sessionRecord()).not.toBeNull();
+  });
+
+  it("persists history, play order, and source (task 5.1)", async () => {
+    detach = attachSessionPersistence({ debounceMs: DEBOUNCE });
+
+    state().playTrack(trackA, [trackA, trackB], "search");
+    state().next(); // records the finished track into history
+
+    await sleep(DEBOUNCE + 30);
+    const record = await sessionRecord();
+    expect(record).not.toBeNull();
+    expect(record!.source).toBe("search");
+    expect(record!.playOrder).toEqual([0, 1]);
+    expect(record!.history).toHaveLength(1);
+    expect(record!.history![0].track.id).toBe(trackA.id);
+    expect(typeof record!.history![0].playedAt).toBe("number");
+  });
+
+  it("flushes a queue-only edit through the queue subscription (task 5.2)", async () => {
+    detach = attachSessionPersistence({ debounceMs: DEBOUNCE });
+
+    state().playTrack(trackA, [trackA, trackB]);
+    await sleep(DEBOUNCE + 30);
+    expect((await sessionRecord())!.queue).toHaveLength(2);
+
+    useQueueStore.getState().enqueue(trackC); // queue edit, no player change
+    await sleep(DEBOUNCE + 30);
+    expect((await sessionRecord())!.queue.map((track) => track.id)).toEqual([
+      trackA.id,
+      trackB.id,
+      trackC.id,
+    ]);
+  });
+
+  it("pagehide captures queue edits (task 5.2)", async () => {
+    detach = attachSessionPersistence({ debounceMs: 60_000 }); // never fires
+
+    state().playTrack(trackA, [trackA, trackB]);
+    useQueueStore.getState().enqueue(trackC);
+    window.dispatchEvent(new Event("pagehide"));
+
+    await sleep(30);
+    const record = await sessionRecord();
+    expect(record).not.toBeNull();
+    expect(record!.queue.map((track) => track.id)).toEqual([trackA.id, trackB.id, trackC.id]);
+    expect(record!.positionSeconds).toBe(0);
   });
 
   it("writes nothing while no track is active and nothing after detaching", async () => {

@@ -158,6 +158,40 @@ describe("session restore (no autoplay)", () => {
     });
   });
 
+  it("reapplies history, play order, and source from a current snapshot", () => {
+    state().restoreSession({
+      ...snapshot,
+      queue: [trackA, trackB, trackC],
+      queueIndex: 1,
+      playOrder: [1, 2, 0],
+      history: [{ track: trackA, playedAt: 123 }],
+      source: "search",
+    });
+
+    expect(state().currentTrack).toEqual(trackB);
+    expect(queueState().playOrder).toEqual([1, 2, 0]);
+    expect(queueState().history).toEqual([{ track: trackA, playedAt: 123 }]);
+    expect(queueState().source).toBe("search");
+  });
+
+  it("restores an old-shape snapshot with empty history, derived order, unknown source", () => {
+    state().restoreSession(snapshot); // pre-M6 shape: no M6 keys
+
+    expect(state().status).toBe("paused");
+    expect(state().currentTrack).toEqual(trackB);
+    expect(queueState().history).toEqual([]);
+    expect(queueState().playOrder).toEqual([0, 1]); // derived via buildPlayOrder
+    expect(queueState().source).toBe("unknown");
+  });
+
+  it("falls back to a derived play order when the snapshot order is not a permutation", () => {
+    state().restoreSession({ ...snapshot, playOrder: [1, 1] }); // duplicate index
+
+    expect(queueState().playOrder).toEqual([0, 1]);
+    expect(state().currentTrack).toEqual(trackB);
+    expect(state().status).toBe("paused");
+  });
+
   it("ignores invalid snapshots (empty queue or out-of-range index)", () => {
     state().restoreSession({ ...snapshot, queue: [], queueIndex: 0 });
     expect(state().currentTrack).toBeNull();

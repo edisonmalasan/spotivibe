@@ -114,6 +114,11 @@ const sessionSchema = z.strictObject({
   shuffle: z.boolean(),
   volume: z.number().min(0).max(1),
   updatedAt: z.number(),
+  // M6 queue/session extension — optional so pre-M6 exports validate
+  // unchanged (design §6; no new dataset, so whitelists stay valid).
+  history: z.array(z.strictObject({ track: trackSchema, playedAt: z.number() })).optional(),
+  playOrder: z.array(z.number()).optional(),
+  source: z.enum(["search", "browse", "library", "queue", "unknown"]).optional(),
 });
 
 export const backupEnvelopeSchema = z.strictObject({
