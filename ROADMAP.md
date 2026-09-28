@@ -1226,13 +1226,13 @@ This section prevents roadmap phases from accidentally shipping without importan
 
 ## Local-First / PWA
 
-- [ ] IndexedDB repositories.
-- [ ] IndexedDB migrations.
-- [ ] Versioned JSON export.
-- [ ] Validated JSON import.
-- [ ] Merge import.
-- [ ] Replace import.
-- [ ] Clear/reset controls.
+- [x] IndexedDB repositories.
+- [x] IndexedDB migrations.
+- [x] Versioned JSON export.
+- [x] Validated JSON import.
+- [x] Merge import.
+- [x] Replace import.
+- [x] Clear/reset controls.
 - [ ] Web App Manifest.
 - [ ] Service Worker.
 - [ ] Installable standalone app.
