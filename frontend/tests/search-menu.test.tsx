@@ -5,6 +5,7 @@ import SearchPage from "@/app/search/page";
 import type { Track } from "@/data/repositories";
 import { getLocalData, type RepositorySet } from "@/data/localData";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 import { resetSearchStore, useSearchStore } from "@/stores/searchStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
@@ -118,6 +119,7 @@ describe("result menu (task 5.1)", () => {
     expect(items.map((item) => item.textContent)).toEqual([
       "Play",
       "Save to Liked Songs",
+      "Add to queue",
       "Add to playlist",
       "Go to artist",
       "Go to album",
@@ -198,6 +200,34 @@ describe("like action (task 5.2)", () => {
       await screen.findByRole("menuitem", { name: "Remove from Liked Songs" }),
     ).toBeInTheDocument();
     expect(await repositories.likedTracks.list()).toHaveLength(1);
+  });
+});
+
+describe("add to queue (task 7.1)", () => {
+  it("appends once with duplicate protection, closes the menu, and leaves playback untouched", async () => {
+    await renderResults();
+
+    // A track is already playing with its own context (spec scenario).
+    usePlayerStore.getState().playTrack(trackA, [trackA]);
+    usePlayerStore.setState({ positionSeconds: 42 });
+    const statusBefore = usePlayerStore.getState().status;
+
+    fireEvent.click(openMenuFor("Weird Fishes"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add to queue" }));
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(useQueueStore.getState().queue.map((entry) => entry.id)).toEqual([trackA.id, trackB.id]);
+
+    // Duplicate protection: the same result again appends nothing.
+    fireEvent.click(openMenuFor("Weird Fishes"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add to queue" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(useQueueStore.getState().queue).toHaveLength(2);
+
+    const after = usePlayerStore.getState();
+    expect(after.currentTrack?.id).toBe(trackA.id);
+    expect(after.status).toBe(statusBefore);
+    expect(after.positionSeconds).toBe(42);
   });
 });
 
