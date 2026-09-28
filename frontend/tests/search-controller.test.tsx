@@ -267,7 +267,9 @@ describe("search surface rendering (tasks 2.2 and 3.3)", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByTestId("search-results")).toBeInTheDocument();
     expect(screen.getByText("Karma Police")).toBeInTheDocument();
-    expect(screen.getByText("Daft Punk")).toBeInTheDocument();
+    // Artist text inside the song row (the derived Artists section repeats the
+    // name as its own heading, so scope this to the row list).
+    expect(screen.getByTestId("search-results")).toHaveTextContent("Daft Punk");
     expect(screen.getByText("4:09")).toBeInTheDocument();
   });
 
