@@ -22,7 +22,7 @@
 
 ## 4. Playlist import — client
 
-- [ ] 4.1 Add the typed playlist API module and `features/playlists/ImportPlaylistDialog.tsx` (idle → resolving → success/error states, error-message mapping for invalid/unavailable/upstream/offline, success feedback with imported + skipped + truncated counts, navigate to the new detail route) — verify: component tests cover each state transition, the error mapping table, resolution-failure leaving the playlist list untouched, and dialog a11y (role/Escape/focus return) (`npm test`).
+- [x] 4.1 Add the typed playlist API module and `features/playlists/ImportPlaylistDialog.tsx` (idle → resolving → success/error states, error-message mapping for invalid/unavailable/upstream/offline, success feedback with imported + skipped + truncated counts, navigate to the new detail route) — verify: component tests cover each state transition, the error mapping table, resolution-failure leaving the playlist list untouched, and dialog a11y (role/Escape/focus return) (`npm test`).
 
 ## 5. Library surface
 
