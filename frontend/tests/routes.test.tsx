@@ -3,7 +3,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
 import LibraryPage from "@/app/library/page";
+import QueuePage from "@/app/queue/page";
 import SearchPage from "@/app/search/page";
+import { resetQueueStore } from "@/stores/queueStore";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -62,6 +64,16 @@ describe("route shells", () => {
     expect(
       screen.getByText("Songs, albums, and playlists you save will appear here."),
     ).toBeInTheDocument();
+  });
+
+  it("renders the queue route with its empty state", () => {
+    resetQueueStore();
+
+    render(<QueuePage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Queue" })).toBeInTheDocument();
+    expect(screen.getByText("Nothing queued yet")).toBeInTheDocument();
+    expect(screen.queryAllByRole("region")).toHaveLength(0);
   });
 
   it("introduces no functional search, library, or playback controls", () => {

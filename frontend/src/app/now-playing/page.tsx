@@ -11,6 +11,7 @@ import { ProgressSlider } from "@/components/player/ProgressSlider";
 import { usePlayerStore } from "@/stores/playerStore";
 import { ChevronDown, Heart, ListMusic, Music2, SkipBack, SkipForward } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 /**
  * Expanded Now Playing route (spec: store-backed playback state and control
@@ -22,6 +23,7 @@ import Link from "next/link";
  * docked video surface while a track is active.
  */
 export default function NowPlayingPage() {
+  const router = useRouter();
   const currentTrack = usePlayerStore((state) => state.currentTrack);
   const errorMessage = usePlayerStore((state) => state.errorMessage);
   const previous = usePlayerStore((state) => state.previous);
@@ -95,7 +97,7 @@ export default function NowPlayingPage() {
           <IconButton label="Next track" disabled={!currentTrack} onClick={() => next()}>
             <SkipForward className="size-5" aria-hidden="true" />
           </IconButton>
-          <IconButton label="Queue" disabled>
+          <IconButton label="Queue" onClick={() => router.push("/queue")}>
             <ListMusic className="size-5" aria-hidden="true" />
           </IconButton>
         </div>

@@ -4,6 +4,8 @@ import NowPlayingPage from "@/app/now-playing/page";
 import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
+const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+
 vi.mock("next/link", () => ({
   default: ({
     href,
@@ -19,10 +21,15 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ back: vi.fn(), forward: vi.fn(), push, replace: vi.fn() }),
+}));
+
 beforeEach(() => {
   resetPlayerStore();
   localStorage.clear();
   clearPlaybackBridge();
+  push.mockClear();
 });
 
 describe("Now Playing surface", () => {
@@ -36,7 +43,7 @@ describe("Now Playing surface", () => {
     expect(container.querySelector('[class*="rounded-images"] svg')).not.toBeNull();
   });
 
-  it("exposes disabled transport, like, and queue control placeholders", () => {
+  it("exposes disabled transport and like placeholders with an active queue control", () => {
     render(<NowPlayingPage />);
 
     const play = screen.getByRole("button", { name: "Play" });
@@ -46,7 +53,14 @@ describe("Now Playing surface", () => {
     expect(screen.getByRole("button", { name: "Previous track" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Next track" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save to Liked Songs" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Queue" })).toBeDisabled();
+
+    // The queue control is an enabled navigation placeholder (design §5).
+    const queue = screen.getByRole("button", { name: "Queue" });
+    expect(queue).toBeEnabled();
+
+    queue.click();
+
+    expect(push).toHaveBeenCalledWith("/queue");
   });
 
   it("renders a zeroed seekable progress track", () => {

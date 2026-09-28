@@ -4,6 +4,8 @@ import { PlayerBar } from "@/components/layout/PlayerBar";
 import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { makeTrack } from "../helpers/music-fixtures";
 
+const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+
 vi.mock("next/link", () => ({
   default: ({
     href,
@@ -19,7 +21,13 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ back: vi.fn(), forward: vi.fn(), push, replace: vi.fn() }),
+}));
+
 const track = makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" });
+const second = makeTrack({ id: "youtube:bbb", providerId: "bbb", title: "Beta" });
+const third = makeTrack({ id: "youtube:ccc", providerId: "ccc", title: "Gamma" });
 
 function state() {
   return usePlayerStore.getState();
@@ -29,6 +37,7 @@ beforeEach(() => {
   resetPlayerStore();
   localStorage.clear();
   clearPlaybackBridge();
+  push.mockClear();
 });
 
 describe("PlayerBar", () => {
@@ -85,5 +94,25 @@ describe("PlayerBar", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Playback failed. Try another track.");
     expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Next track" })).toBeEnabled();
+  });
+
+  it("navigates to the queue route from the queue control when empty", () => {
+    render(<PlayerBar />);
+
+    const queueButton = screen.getByRole("button", { name: "Queue, empty" });
+    expect(queueButton).toBeEnabled();
+
+    queueButton.click();
+
+    expect(push).toHaveBeenCalledWith("/queue");
+  });
+
+  it("counts upcoming entries in traversal order in the queue control name", () => {
+    state().playTrack(track, [track, second, third]);
+
+    render(<PlayerBar />);
+
+    // Current entry is Alpha → two upcoming in traversal order.
+    expect(screen.getByRole("button", { name: "Queue, 2 upcoming" })).toBeInTheDocument();
   });
 });
