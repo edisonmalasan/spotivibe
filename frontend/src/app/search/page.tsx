@@ -1,17 +1,20 @@
-import { EmptyState } from "@/components/design-system/EmptyState";
+import { SearchBrowseEmpty } from "@/features/search/SearchBrowseEmpty";
+import { SearchView } from "@/features/search/SearchView";
+import { Suspense } from "react";
 
 /**
- * M1 placeholder route: shell chrome plus an empty state. Search results,
- * query handling, and playback arrive with M5.
+ * M5 search route: shell chrome plus the client search surface. `SearchView`
+ * reads `useSearchParams`, so it must sit behind a Suspense boundary for the
+ * route to stay statically prerenderable (Next.js CSR-bailout rule); the
+ * fallback is the same browse copy the controller shows with an empty query.
  */
 export default function SearchPage() {
   return (
     <div className="flex flex-col gap-8 px-6 py-6">
       <h1 className="sr-only">Search</h1>
-      <EmptyState
-        title="Search for music"
-        description="Find songs, artists, albums, and more to play."
-      />
+      <Suspense fallback={<SearchBrowseEmpty />}>
+        <SearchView />
+      </Suspense>
     </div>
   );
 }
