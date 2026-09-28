@@ -167,6 +167,28 @@ describe("SearchHistoryRepository", () => {
     await repo.clear();
     expect(await repo.list()).toEqual([]);
   });
+
+  it("removes exactly one entry, is a no-op for unknown or empty queries", async () => {
+    const repo = (await freshRepositories()).searchHistory;
+    await repo.record("Beatles");
+    await sleep(3);
+    await repo.record("Radiohead");
+    await sleep(3);
+    await repo.record("Daft Punk");
+
+    // Raw query in, normalized internally (symmetric with `record`).
+    await repo.remove("  beatles ");
+    expect((await repo.list()).map((e) => e.normalizedQuery)).toEqual(["daft punk", "radiohead"]); // the others stay newest-first
+
+    await repo.remove("unknown query"); // no-op for an unknown identity
+    expect(await repo.list()).toHaveLength(2);
+
+    await repo.remove("   "); // no-op: nothing normalizes to an empty key
+    expect(await repo.list()).toHaveLength(2);
+
+    await repo.clear();
+    expect(await repo.list()).toEqual([]);
+  });
 });
 
 describe("PreferencesRepository", () => {
