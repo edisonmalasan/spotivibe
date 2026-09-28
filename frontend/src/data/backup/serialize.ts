@@ -52,6 +52,11 @@ export async function collectLocalData(repos: Repositories): Promise<BackupData>
           shuffle: session.shuffle,
           volume: session.volume,
           updatedAt: session.updatedAt,
+          // M6 additions (optional in the schema — absent when the stored
+          // record predates them).
+          ...(session.history ? { history: session.history } : {}),
+          ...(session.playOrder ? { playOrder: session.playOrder } : {}),
+          ...(session.source ? { source: session.source } : {}),
         }
       : null,
   };

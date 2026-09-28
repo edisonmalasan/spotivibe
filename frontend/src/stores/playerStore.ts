@@ -1,15 +1,28 @@
 import { create } from "zustand";
-import type { RepeatMode, SessionSnapshot, Track } from "@/data/repositories";
+import type { QueueSource, SessionSnapshot, Track } from "@/data/repositories";
 import { readVolumePreference, writeVolumePreference } from "@/player/volumePref";
+import { useNetworkStore } from "@/stores/networkStore";
+import {
+  findNextUnfailed,
+  findPreviousUnfailed,
+  resetQueueStore,
+  useQueueStore,
+} from "@/stores/queueStore";
 
 /**
- * `playerStore` (ROADMAP M4): the single client-side source of truth for
- * playback state. The store is pure state + transitions — it never imports
- * the YouTube IFrame API. It talks to the player only through the injected
- * {@link PlaybackBridge} (engine → attached by the persistent player host),
- * which keeps every transition unit-testable with a fake bridge.
+ * `playerStore` (ROADMAP M4/M6): the transport half of playback state —
+ * current track, status, position, duration, volume, mute, errors, and load
+ * requests. The queue half (membership, index, traversal order, history,
+ * source, shuffle/repeat) lives in `queueStore` (design §1): this store is
+ * the orchestration façade the engine and controls use, and it depends on the
+ * queue store — never the reverse. The store is pure state + transitions —
+ * it never imports the YouTube IFrame API. It talks to the player only
+ * through the injected {@link PlaybackBridge} (engine → attached by the
+ * persistent player host), which keeps every transition unit-testable with a
+ * fake bridge.
  *
- * Layering: components → playerStore → PlaybackBridge → engine → IFrame API.
+ * Layering: components → playerStore → queueStore; playerStore →
+ * PlaybackBridge → engine → IFrame API.
  */
 
 export type PlaybackStatus = "idle" | "loading" | "playing" | "buffering" | "paused" | "error";
@@ -42,6 +55,19 @@ export type FailureOutcome = "advanced" | "settled";
 /** Previous restarts the current track once playback is past this point. */
 export const RESTART_THRESHOLD_SECONDS = 3;
 
+/** Offline parking copy (design §9) — replaces a failure message while offline. */
+export const OFFLINE_PARKED_MESSAGE = "You're offline — playback will resume when you reconnect.";
+
+/**
+ * The offline half of the suppression funnel (design §9): the network store
+ * is authoritative when the monitor is running, with `navigator.onLine` as
+ * the fallback before it initializes.
+ */
+function isOffline(): boolean {
+  if (useNetworkStore.getState().connection === "offline") return true;
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 let bridge: PlaybackBridge | null = null;
 let loadToken = 0;
 
@@ -58,86 +84,9 @@ export function getPlaybackBridge(): PlaybackBridge | null {
   return bridge;
 }
 
-/**
- * Traversal order over queue indices. With shuffle on, the current track
- * comes first and the rest are shuffled — `previous`/`next` follow this order.
- */
-export function buildPlayOrder(length: number, currentIndex: number, shuffle: boolean): number[] {
-  const list = Array.from({ length }, (_, index) => index);
-  if (!shuffle || length <= 1) return list;
-  const rest = list.filter((index) => index !== currentIndex);
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [rest[i], rest[j]] = [rest[j], rest[i]];
-  }
-  return [currentIndex, ...rest];
-}
-
-function isFailed(track: Track | undefined, failedTrackIds: string[]): boolean {
-  return track !== undefined && failedTrackIds.includes(track.id);
-}
-
-/**
- * First unfailed queue index after `fromIndex` in traversal order. `circular`
- * wraps past the end (repeat context / failure chains — failures only ever
- * grow, so circular failure search terminates); otherwise it stops at the end.
- */
-export function findNextUnfailed(
-  playOrder: number[],
-  queue: Track[],
-  fromIndex: number,
-  failedTrackIds: string[],
-  circular: boolean,
-): number | null {
-  const start = playOrder.indexOf(fromIndex);
-  if (start === -1) return null;
-  const steps = circular ? playOrder.length : playOrder.length - 1;
-  for (let step = 1; step <= steps; step++) {
-    let position = start + step;
-    if (position >= playOrder.length) {
-      if (!circular) break; // bounded order: no wrap past the end
-      position %= playOrder.length;
-    }
-    const candidate = playOrder[position];
-    if (!isFailed(queue[candidate], failedTrackIds)) return candidate;
-  }
-  return null;
-}
-
-/** First unfailed queue index before `fromIndex` in traversal order. */
-export function findPreviousUnfailed(
-  playOrder: number[],
-  queue: Track[],
-  fromIndex: number,
-  failedTrackIds: string[],
-  circular: boolean,
-): number | null {
-  const start = playOrder.indexOf(fromIndex);
-  if (start === -1) return null;
-  const steps = circular ? playOrder.length : playOrder.length - 1;
-  for (let step = 1; step <= steps; step++) {
-    let position = start - step;
-    if (position < 0) {
-      if (!circular) break; // bounded order: no wrap before the start
-      position = ((position % playOrder.length) + playOrder.length) % playOrder.length;
-    }
-    const candidate = playOrder[position];
-    if (!isFailed(queue[candidate], failedTrackIds)) return candidate;
-  }
-  return null;
-}
-
 export interface PlayerState {
-  // --- playback context (mirrors the M2 SessionSnapshot) ---
-  queue: Track[];
-  queueIndex: number;
+  // --- transport only (queue membership lives in queueStore) ---
   currentTrack: Track | null;
-  /** Traversal order over `queue` indices (list order, or shuffled). */
-  playOrder: number[];
-  repeatMode: RepeatMode;
-  shuffle: boolean;
-
-  // --- player state/status ---
   status: PlaybackStatus;
   positionSeconds: number;
   /** 0 until known; corrected from the player when it is authoritative. */
@@ -149,17 +98,25 @@ export interface PlayerState {
   loadRequest: LoadRequest | null;
 
   // --- user-facing actions ---
-  /** Load `track` (optionally within a surrounding list) and start it. */
-  playTrack(track: Track, context?: Track[]): void;
+  /**
+   * Load `track` (optionally within a surrounding list) and start it,
+   * adopting the context and its `source` into `queueStore`.
+   */
+  playTrack(track: Track, context?: Track[], source?: QueueSource): void;
   play(): void;
   pause(): void;
   seek(seconds: number): void;
   next(): void;
   previous(): void;
+  /**
+   * Remove `queue[index]`, orchestrating the transport half when the removed
+   * entry is the current one (design §4): continue with the traversal
+   * successor (the removal click is the user gesture), or issue a clean stop
+   * when there is none. Queue-only removals never touch transport.
+   */
+  removeFromQueue(index: number): void;
   setVolume(volume: number): void;
   toggleMute(): void;
-  cycleRepeat(): void;
-  toggleShuffle(): void;
   /** Re-apply the persisted volume/mute boot preference (client boot only). */
   applyVolumePreference(): void;
   /** Restore a persisted session, cued paused at the saved position (no autoplay). */
@@ -177,12 +134,7 @@ export interface PlayerState {
 const NEXT_RESTART_THRESHOLD = RESTART_THRESHOLD_SECONDS;
 
 export const initialPlayerState = {
-  queue: [] as Track[],
-  queueIndex: 0,
   currentTrack: null as Track | null,
-  playOrder: [] as number[],
-  repeatMode: "off" as RepeatMode,
-  shuffle: false,
   status: "idle" as PlaybackStatus,
   positionSeconds: 0,
   durationSeconds: 0,
@@ -196,6 +148,7 @@ export const initialPlayerState = {
 /** Reset store data (and the bridge) — test isolation and hot-reload hygiene. */
 export function resetPlayerStore(): void {
   clearPlaybackBridge();
+  resetQueueStore(); // queue state belongs to the paired queue store
   usePlayerStore.setState({ ...initialPlayerState, volume: 80, muted: false });
 }
 
@@ -207,11 +160,10 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     startSeconds: number,
     clearError = false,
   ): void {
-    const { queue } = get();
-    const track = queue[index];
+    const track = useQueueStore.getState().queue[index];
     if (!track) return;
+    useQueueStore.getState().setQueueIndex(index);
     set({
-      queueIndex: index,
       currentTrack: track,
       positionSeconds: startSeconds,
       durationSeconds: track.durationSeconds ?? 0,
@@ -229,21 +181,10 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
   return {
     ...initialPlayerState,
 
-    playTrack(track, context) {
-      const list = context && context.length > 0 ? context : [track];
-      let index = list.findIndex((entry) => entry.id === track.id);
-      const queue = [...list];
-      if (index === -1) {
-        // Defensive: keep queue/queueIndex coherent when the caller's context
-        // does not contain the clicked track (session restore reads both).
-        queue.push(track);
-        index = queue.length - 1;
-      }
+    playTrack(track, context, source = "unknown") {
+      useQueueStore.getState().setContext(track, context, source);
       set({
-        queue,
-        queueIndex: index,
         currentTrack: track,
-        playOrder: buildPlayOrder(queue.length, index, get().shuffle),
         status: "loading",
         positionSeconds: 0,
         durationSeconds: track.durationSeconds ?? 0,
@@ -282,30 +223,40 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     },
 
     next() {
-      const { queue, queueIndex, playOrder, failedTrackIds, repeatMode } = get();
+      const { queue, queueIndex, playOrder, repeatMode } = useQueueStore.getState();
       if (queue.length === 0) return;
       const target = findNextUnfailed(
         playOrder,
         queue,
         queueIndex,
-        failedTrackIds,
+        get().failedTrackIds,
         repeatMode === "context",
       );
       if (target === null) return; // end of list with repeat off: stay put
+      useQueueStore.getState().advanceTo(target); // history + pointer (design §3)
       requestTrack(target, "load", 0, true);
     },
 
     previous() {
-      const { queue, queueIndex, playOrder, failedTrackIds, repeatMode, positionSeconds } = get();
-      if (queue.length === 0 || !get().currentTrack) return;
-      // Past the threshold, "previous" restarts the current track (spec).
-      if (positionSeconds > NEXT_RESTART_THRESHOLD) {
+      const queueState = useQueueStore.getState();
+      if (queueState.queue.length === 0 || !get().currentTrack) return;
+      // (1) Past the threshold, "previous" restarts the current track (spec).
+      if (get().positionSeconds > NEXT_RESTART_THRESHOLD) {
         get().seek(0);
         return;
       }
+      // (2) Newest history entry that still resolves in the queue → jump back,
+      // consuming the entry (design §3); unresolvable entries were dropped.
+      const jump = queueState.historyJump();
+      if (jump !== null) {
+        requestTrack(jump, "load", 0, true);
+        return;
+      }
+      // (3) History exhausted → context step-back; (4) nothing → restart.
+      const { queue, queueIndex, playOrder, repeatMode } = useQueueStore.getState();
       const circular = repeatMode === "context";
       const target =
-        findPreviousUnfailed(playOrder, queue, queueIndex, failedTrackIds, circular) ??
+        findPreviousUnfailed(playOrder, queue, queueIndex, get().failedTrackIds, circular) ??
         // At the start of a bounded order, previous restarts the current track.
         queueIndex;
       if (target === queueIndex) {
@@ -313,6 +264,30 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
         return;
       }
       requestTrack(target, "load", 0, true);
+    },
+
+    removeFromQueue(index) {
+      // Removing the current entry is the only branch with transport meaning,
+      // and only while something is actually playing (an idle queue edit must
+      // never start playback — no autoplay).
+      const hasCurrent = get().currentTrack !== null;
+      const { currentRemoved, nextIndex } = useQueueStore.getState().remove(index);
+      if (!currentRemoved || !hasCurrent) return;
+      const queue = useQueueStore.getState().queue;
+      if (nextIndex !== null && queue[nextIndex]) {
+        requestTrack(nextIndex, "load", 0, true);
+        return;
+      }
+      // Clean stop: no successor (design §4) — idle, no error, no autoplay.
+      set({
+        status: "idle",
+        currentTrack: null,
+        positionSeconds: 0,
+        durationSeconds: 0,
+        errorMessage: null,
+        loadRequest: null,
+      });
+      bridge?.pause();
     },
 
     setVolume(volume) {
@@ -329,21 +304,6 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
       bridge?.setMuted(muted);
     },
 
-    cycleRepeat() {
-      const order: RepeatMode[] = ["off", "context", "track"];
-      const nextMode = order[(order.indexOf(get().repeatMode) + 1) % order.length];
-      set({ repeatMode: nextMode });
-    },
-
-    toggleShuffle() {
-      const shuffle = !get().shuffle;
-      const { queue, queueIndex } = get();
-      set({
-        shuffle,
-        playOrder: buildPlayOrder(queue.length, queueIndex, shuffle),
-      });
-    },
-
     applyVolumePreference() {
       const preference = readVolumePreference();
       set({ volume: preference.volume, muted: preference.muted });
@@ -352,21 +312,18 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     restoreSession(snapshot) {
       const { queue, queueIndex } = snapshot;
       if (queue.length === 0 || queueIndex < 0 || queueIndex >= queue.length) return;
+      useQueueStore.getState().restoreQueue(snapshot);
+      const track = queue[queueIndex];
       set({
-        queue: [...queue],
-        queueIndex,
-        currentTrack: queue[queueIndex],
-        playOrder: buildPlayOrder(queue.length, queueIndex, snapshot.shuffle),
-        repeatMode: snapshot.repeatMode,
-        shuffle: snapshot.shuffle,
+        currentTrack: track,
         status: "paused", // cued, play affordance — never autoplay (spec)
         positionSeconds: Math.max(0, snapshot.positionSeconds),
-        durationSeconds: queue[queueIndex].durationSeconds ?? 0,
+        durationSeconds: track.durationSeconds ?? 0,
         errorMessage: null,
         failedTrackIds: [],
         loadRequest: {
           token: ++loadToken,
-          videoId: queue[queueIndex].providerId,
+          videoId: track.providerId,
           startSeconds: Math.max(0, snapshot.positionSeconds),
           mode: "cue",
         },
@@ -390,17 +347,17 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     },
 
     _onEnded() {
-      const { repeatMode } = get();
+      const { repeatMode } = useQueueStore.getState();
       if (repeatMode === "track") {
         set({ positionSeconds: 0, status: "buffering" });
         return "replay";
       }
-      const { queue, queueIndex, playOrder, failedTrackIds } = get();
+      const { queue, queueIndex, playOrder } = useQueueStore.getState();
       const target = findNextUnfailed(
         playOrder,
         queue,
         queueIndex,
-        failedTrackIds,
+        get().failedTrackIds,
         repeatMode === "context",
       );
       if (target === null) {
@@ -408,11 +365,19 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
         set({ status: "paused" });
         return "stopped";
       }
+      useQueueStore.getState().advanceTo(target); // records the finished track
       requestTrack(target, "load", 0);
       return "advanced";
     },
 
     _markFailed(message) {
+      // Offline suppression (design §9): park without consuming the track —
+      // the failed set never grows offline, so reconnect cannot inherit a
+      // burned queue, and no advance is scheduled while offline.
+      if (isOffline()) {
+        set({ status: "error", errorMessage: OFFLINE_PARKED_MESSAGE });
+        return;
+      }
       const track = get().currentTrack;
       const failedTrackIds = track
         ? [...new Set([...get().failedTrackIds, track.id])]
@@ -421,13 +386,67 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     },
 
     _advanceAfterFailure() {
-      const { queue, queueIndex, playOrder, failedTrackIds } = get();
+      // Offline (design §9): stay parked on the same track — no advance, no
+      // failed-set growth; the reconnect path retries it (initNetworkRecovery).
+      if (isOffline()) {
+        set({ status: "error", errorMessage: OFFLINE_PARKED_MESSAGE });
+        return "settled";
+      }
+      const { queue, queueIndex, playOrder } = useQueueStore.getState();
       // Circular on purpose: the failed set only grows, so this terminates;
       // any remaining unfailed track is preferable to wedging playback (spec).
-      const target = findNextUnfailed(playOrder, queue, queueIndex, failedTrackIds, true);
+      const target = findNextUnfailed(playOrder, queue, queueIndex, get().failedTrackIds, true);
       if (target === null) return "settled";
+      useQueueStore.getState().advanceTo(target); // failed-skip records too (§3)
       requestTrack(target, "load", 0);
       return "advanced";
     },
   };
 });
+
+let recoveryTeardown: (() => void) | null = null;
+
+/** Whether the reconnect-recovery subscription is currently active. */
+export function isNetworkRecoveryActive(): boolean {
+  return recoveryTeardown !== null;
+}
+
+/**
+ * Reconnect recovery (design §9): on a transition **to** `online`, inspect the
+ * transport once — `status ∈ {error, loading, buffering}` with a current track
+ * issues exactly one `loadRequest` (`mode: "load"`, resuming at the current
+ * position); `playing` / `paused` / `idle` take no action (paused and idle
+ * never resume on their own, and playing is unaffected). One retry per
+ * transition; a failed retry surfaces through the normal error path. Idempotent:
+ * a second init attaches no second subscription and returns a no-op teardown.
+ */
+export function initNetworkRecovery(): () => void {
+  if (recoveryTeardown) return () => {};
+  let previous = useNetworkStore.getState().connection;
+  const unsubscribe = useNetworkStore.subscribe((state) => {
+    const next = state.connection;
+    const becameOnline = previous !== "online" && next === "online";
+    previous = next;
+    if (!becameOnline) return;
+    const { currentTrack, status, positionSeconds } = usePlayerStore.getState();
+    if (!currentTrack) return;
+    if (status !== "error" && status !== "loading" && status !== "buffering") return;
+    // Exactly one reload at the stored position — same track, same lineage.
+    const startSeconds = Math.max(0, positionSeconds);
+    usePlayerStore.setState({
+      status: "loading",
+      errorMessage: null,
+      loadRequest: {
+        token: ++loadToken,
+        videoId: currentTrack.providerId,
+        startSeconds,
+        mode: "load",
+      },
+    });
+  });
+  recoveryTeardown = () => {
+    unsubscribe();
+    recoveryTeardown = null;
+  };
+  return recoveryTeardown;
+}

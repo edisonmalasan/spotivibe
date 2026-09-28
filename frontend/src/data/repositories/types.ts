@@ -136,6 +136,16 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
 export type RepeatMode = "off" | "context" | "track";
 
+/** Where the current queue context came from (M6 queue surface label). */
+export type QueueSource = "search" | "browse" | "library" | "queue" | "unknown";
+
+/** One played entry on the bounded queue-history stack (M6 bookkeeping). */
+export interface QueueHistoryEntry {
+  track: Track;
+  /** Epoch milliseconds when the entry finished (or was skipped). */
+  playedAt: number;
+}
+
 /** Queue/session fields persisted without the single-record bookkeeping. */
 export interface SessionSnapshot {
   queue: Track[];
@@ -147,6 +157,12 @@ export interface SessionSnapshot {
   shuffle: boolean;
   /** 0..1 */
   volume: number;
+  /** Bounded played-history stack (optional — pre-M6 snapshots omit it). */
+  history?: QueueHistoryEntry[];
+  /** Traversal order over `queue` indices (optional — pre-M6 snapshots omit it). */
+  playOrder?: number[];
+  /** Queue source label (optional — pre-M6 snapshots omit it). */
+  source?: QueueSource;
 }
 
 /** Persisted queue/session record (keyPath `id`); consumed by M6. */

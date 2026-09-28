@@ -5,7 +5,7 @@ import {
   type BackupMigration,
   type RawEnvelope,
 } from "@/data/backup";
-import { encode, makeBackupData, makeEnvelope } from "./helpers/backup-fixtures";
+import { encode, makeBackupData, makeEnvelope, makeTrack } from "./helpers/backup-fixtures";
 
 /**
  * Task 4.2: import preparation — malformed input, foreign formats, newer
@@ -101,6 +101,42 @@ describe("prepareImport", () => {
         expect(result.error.issues.join(" ")).toContain("offlineDownload");
       }
     }
+  });
+
+  it("accepts a session carrying the M6 queue fields (task 5.1)", () => {
+    const data = makeBackupData();
+    data.session = {
+      ...data.session!,
+      history: [{ track: makeTrack("t1"), playedAt: 950 }],
+      playOrder: [0],
+      source: "search",
+    };
+
+    const result = prepareImport(encode(makeEnvelope(data)));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.envelope.data.session?.source).toBe("search");
+  });
+
+  it("still accepts an old-shape session without the M6 queue fields (task 5.1)", () => {
+    const data = makeBackupData(); // fixture session has no M6 keys
+    expect(data.session).not.toHaveProperty("history");
+    expect(data.session).not.toHaveProperty("playOrder");
+    expect(data.session).not.toHaveProperty("source");
+
+    expect(prepareImport(encode(makeEnvelope(data))).ok).toBe(true);
+  });
+
+  it("rejects malformed M6 queue fields in a session", () => {
+    const tampered = JSON.parse(encode(makeEnvelope())) as {
+      data: { session: { source: string; playOrder: string } };
+    };
+    tampered.data.session.source = "nowhere";
+    tampered.data.session.playOrder = "not-an-array";
+
+    const result = prepareImport(encode(tampered));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("invalid-records");
   });
 
   it("migrates an older supported version before validating the result", () => {

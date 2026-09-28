@@ -1,4 +1,5 @@
 import { BottomNav } from "@/components/layout/BottomNav";
+import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import { MiniPlayer } from "@/components/layout/MiniPlayer";
 import { PlayerBar } from "@/components/layout/PlayerBar";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -8,9 +9,9 @@ import type { ReactNode } from "react";
 
 /**
  * Single shell instance mounted in the root layout: the top bar, both variant
- * sidebars, and the player regions live outside the page's `children`, so
- * Next.js layout persistence guarantees the player never remounts across
- * route navigation.
+ * sidebars, the connection banner, and the player regions live outside the
+ * page's `children`, so Next.js layout persistence guarantees the player never
+ * remounts across route navigation.
  *
  * Variants (CSS-only, design.md): mobile <768px, tablet 768–1023px, desktop
  * ≥1024px — sidebar + desktop PlayerBar render at lg+, the compact
@@ -29,6 +30,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <MiniPlayer />
         <BottomNav />
       </div>
+      {/* Connectivity status: shell-global, fixed clear of the player regions. */}
+      <ConnectionBanner />
       <PlayerHost />
     </div>
   );

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Static architecture invariants checked against the real source files
- * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1) —
+ * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1) —
  * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
@@ -15,8 +15,9 @@ import { describe, expect, it } from "vitest";
  * stored/backup datasets stay inside the whitelist, the video host stays a
  * single shell-mounted module, UI code never touches the IFrame API loader
  * or YT types directly, nothing can capture or decode media, outbound
- * links never suppress the referrer, and the search feature stays
- * client-side and repository-mediated.
+ * links never suppress the referrer, the search feature stays
+ * client-side and repository-mediated, and the queue/transport store split
+ * keeps queue state free of transport dependencies.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -509,5 +510,87 @@ describe("architecture: search stays client-side and repository-mediated (task 8
       .map(({ file }) => file);
 
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Queue-split invariants (M6 task 9.1, design §1/§10): `queueStore` must never
+ * import `playerStore` or the engine (only `playerStore` → `queueStore` is
+ * allowed), and the transport store's initial state must carry no queue
+ * membership fields — the whole two-store split rests on these two rules.
+ */
+
+/** Violations of the queue → transport dependency rule, as labels. */
+function queueStoreViolations(source: string): string[] {
+  const violations: string[] = [];
+  for (const specifier of moduleSpecifiers(source)) {
+    if (/(^|[\\/])playerStore(\.tsx?)?$/.test(specifier)) violations.push("playerStore import");
+    if (specifier.includes("player/engine")) violations.push("engine import");
+  }
+  return violations;
+}
+
+/** Queue membership fields that must never live on `PlayerState`. */
+const QUEUE_MEMBERSHIP_FIELDS = [
+  "queue",
+  "queueIndex",
+  "playOrder",
+  "history",
+  "shuffle",
+  "repeatMode",
+];
+
+/** Top-level keys of `export const initialPlayerState = { ... };`. */
+function transportStateKeys(source: string): string[] {
+  const block = source.match(/export const initialPlayerState = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+  return [...block.matchAll(/^\s*(\w+):/gm)].map((match) => match[1]);
+}
+
+/** Queue membership fields present in an `initialPlayerState` block. */
+function queueMembershipFieldsIn(source: string): string[] {
+  const keys = new Set(transportStateKeys(source));
+  return QUEUE_MEMBERSHIP_FIELDS.filter((field) => keys.has(field));
+}
+
+describe("architecture violation detectors (task 9.1)", () => {
+  it("flags playerStore and engine imports from a queue module but passes real queue dependencies", () => {
+    expect(queueStoreViolations('import { usePlayerStore } from "@/stores/playerStore";')).toEqual([
+      "playerStore import",
+    ]);
+    expect(queueStoreViolations('import { usePlayerStore } from "./playerStore";')).toEqual([
+      "playerStore import",
+    ]);
+    expect(queueStoreViolations('import { getPlaybackEngine } from "@/player/engine";')).toEqual([
+      "engine import",
+    ]);
+    expect(queueStoreViolations('const engine = await import("../../player/engine");')).toEqual([
+      "engine import",
+    ]);
+    expect(
+      queueStoreViolations('import { useNetworkStore } from "@/stores/networkStore";'),
+    ).toEqual([]);
+    expect(queueStoreViolations('import type { Track } from "@/data/repositories";')).toEqual([]);
+  });
+
+  it("flags queue membership fields in a transport initial state but passes the real shape", () => {
+    const violating = `export const initialPlayerState = {\n  currentTrack: null,\n  queue: [] as Track[],\n  shuffle: false,\n  status: "idle" as PlaybackStatus,\n};`;
+    expect(queueMembershipFieldsIn(violating)).toEqual(["queue", "shuffle"]);
+
+    const clean = `export const initialPlayerState = {\n  currentTrack: null as Track | null,\n  status: "idle" as PlaybackStatus,\n  failedTrackIds: [] as string[],\n};`;
+    expect(queueMembershipFieldsIn(clean)).toEqual([]);
+  });
+});
+
+describe("architecture: the queue/transport split holds (task 9.1)", () => {
+  it("keeps queueStore free of playerStore and engine imports", () => {
+    const queueSource = readFileSync(join(srcDir, "stores", "queueStore.ts"), "utf8");
+    expect(queueSource.length).toBeGreaterThan(0);
+    expect(queueStoreViolations(queueSource)).toEqual([]);
+  });
+
+  it("keeps queue membership fields out of the transport store's initial state", () => {
+    const playerSource = readFileSync(join(srcDir, "stores", "playerStore.ts"), "utf8");
+    expect(transportStateKeys(playerSource).length).toBeGreaterThan(0);
+    expect(queueMembershipFieldsIn(playerSource)).toEqual([]);
   });
 });

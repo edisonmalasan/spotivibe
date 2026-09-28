@@ -112,7 +112,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M3 | Music provider layer and multi-tier discovery | `DONE` | M0 |
 | M4 | Persistent YouTube playback engine | `DONE` | M1, M3 |
 | M5 | Search experience and result quality | `DONE` | M1, M3, M4 |
-| M6 | Queue, session persistence, network recovery | `NOT STARTED` | M2, M4 |
+| M6 | Queue, session persistence, network recovery | `DONE` | M2, M4 |
 | M7 | Library, liked songs, and local playlists | `NOT STARTED` | M1, M2, M4 |
 | M8 | Home, discovery, trending, languages, and curated surfaces | `NOT STARTED` | M3, M5, M7 |
 | M9 | Artist pages, album pages, Now Playing, related content | `NOT STARTED` | M4, M5, M8 |
@@ -1174,10 +1174,10 @@ This section prevents roadmap phases from accidentally shipping without importan
 
 ## Queue / Radio
 
-- [ ] Add/remove/reorder.
-- [ ] Current/next/upcoming/history.
-- [ ] Duplicate protection.
-- [ ] Auto-advance.
+- [x] Add/remove/reorder.
+- [x] Current/next/upcoming/history.
+- [x] Duplicate protection.
+- [x] Auto-advance.
 - [ ] Queue autofill.
 - [ ] Track Radio.
 - [ ] Artist Radio.
@@ -1239,7 +1239,7 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [ ] Offline app shell.
 - [ ] Offline library metadata.
 - [ ] PWA update flow.
-- [ ] Online/offline indicators.
+- [x] Online/offline indicators.
 
 ---
 

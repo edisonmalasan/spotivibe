@@ -1,16 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RESTART_THRESHOLD_SECONDS,
-  buildPlayOrder,
   clearPlaybackBridge,
-  findNextUnfailed,
-  findPreviousUnfailed,
   initialPlayerState,
   resetPlayerStore,
   setPlaybackBridge,
   usePlayerStore,
   type PlaybackBridge,
 } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 import { DEFAULT_VOLUME_PREFERENCE } from "@/player/volumePref";
 import type { SessionSnapshot } from "@/data/repositories";
 import { makeTrack } from "../helpers/music-fixtures";
@@ -43,6 +41,11 @@ function state() {
   return usePlayerStore.getState();
 }
 
+/** Queue half of playback state (M6 two-store split). */
+function queueState() {
+  return useQueueStore.getState();
+}
+
 beforeEach(() => {
   resetPlayerStore();
   localStorage.clear();
@@ -55,8 +58,8 @@ describe("playerStore actions and bridge dispatch", () => {
 
     expect(state().status).toBe("loading");
     expect(state().currentTrack).toEqual(trackB);
-    expect(state().queue).toHaveLength(3);
-    expect(state().queueIndex).toBe(1);
+    expect(queueState().queue).toHaveLength(3);
+    expect(queueState().queueIndex).toBe(1);
     expect(state().durationSeconds).toBe(180); // metadata duration until corrected
     expect(state().loadRequest).toMatchObject({
       videoId: "bbb",
@@ -69,8 +72,8 @@ describe("playerStore actions and bridge dispatch", () => {
   it("playTrack keeps queue/index coherent when the context lacks the track", () => {
     state().playTrack(trackC, [trackA, trackB]);
 
-    expect(state().queueIndex).toBe(2);
-    expect(state().queue[2]).toEqual(trackC);
+    expect(queueState().queueIndex).toBe(2);
+    expect(queueState().queue[2]).toEqual(trackC);
     expect(state().currentTrack).toEqual(trackC);
   });
 
@@ -145,14 +148,48 @@ describe("session restore (no autoplay)", () => {
 
     expect(state().status).toBe("paused"); // play affordance — no autoplay
     expect(state().currentTrack).toEqual(trackB);
-    expect(state().queueIndex).toBe(1);
+    expect(queueState().queueIndex).toBe(1);
     expect(state().positionSeconds).toBe(42);
-    expect(state().repeatMode).toBe("context");
+    expect(queueState().repeatMode).toBe("context");
     expect(state().loadRequest).toMatchObject({
       videoId: "bbb",
       startSeconds: 42,
       mode: "cue",
     });
+  });
+
+  it("reapplies history, play order, and source from a current snapshot", () => {
+    state().restoreSession({
+      ...snapshot,
+      queue: [trackA, trackB, trackC],
+      queueIndex: 1,
+      playOrder: [1, 2, 0],
+      history: [{ track: trackA, playedAt: 123 }],
+      source: "search",
+    });
+
+    expect(state().currentTrack).toEqual(trackB);
+    expect(queueState().playOrder).toEqual([1, 2, 0]);
+    expect(queueState().history).toEqual([{ track: trackA, playedAt: 123 }]);
+    expect(queueState().source).toBe("search");
+  });
+
+  it("restores an old-shape snapshot with empty history, derived order, unknown source", () => {
+    state().restoreSession(snapshot); // pre-M6 shape: no M6 keys
+
+    expect(state().status).toBe("paused");
+    expect(state().currentTrack).toEqual(trackB);
+    expect(queueState().history).toEqual([]);
+    expect(queueState().playOrder).toEqual([0, 1]); // derived via buildPlayOrder
+    expect(queueState().source).toBe("unknown");
+  });
+
+  it("falls back to a derived play order when the snapshot order is not a permutation", () => {
+    state().restoreSession({ ...snapshot, playOrder: [1, 1] }); // duplicate index
+
+    expect(queueState().playOrder).toEqual([0, 1]);
+    expect(state().currentTrack).toEqual(trackB);
+    expect(state().status).toBe("paused");
   });
 
   it("ignores invalid snapshots (empty queue or out-of-range index)", () => {
@@ -171,26 +208,26 @@ describe("traversal: next/previous, repeat, shuffle, duration", () => {
     state().playTrack(trackA, [trackA, trackB, trackC]);
 
     state().next();
-    expect(state().queueIndex).toBe(1);
+    expect(queueState().queueIndex).toBe(1);
     expect(state().currentTrack).toEqual(trackB);
     expect(state().loadRequest).toMatchObject({ videoId: "bbb", mode: "load" });
 
     state().next();
-    expect(state().queueIndex).toBe(2);
+    expect(queueState().queueIndex).toBe(2);
 
     state().next(); // end of list, repeat off: no-op
-    expect(state().queueIndex).toBe(2);
+    expect(queueState().queueIndex).toBe(2);
     expect(state().currentTrack).toEqual(trackC);
   });
 
   it("next wraps to the first track under repeat context", () => {
     state().playTrack(trackA, [trackA, trackB, trackC]);
-    state().cycleRepeat(); // off -> context
+    queueState().cycleRepeat(); // off -> context
 
     state().next();
     state().next();
     state().next();
-    expect(state().queueIndex).toBe(0); // wrapped past the end
+    expect(queueState().queueIndex).toBe(0); // wrapped past the end
   });
 
   it("previous restarts the current track once past the threshold", () => {
@@ -201,7 +238,7 @@ describe("traversal: next/previous, repeat, shuffle, duration", () => {
 
     state().previous();
 
-    expect(state().queueIndex).toBe(1);
+    expect(queueState().queueIndex).toBe(1);
     expect(state().positionSeconds).toBe(0);
     expect(bridge.seekTo).toHaveBeenCalledWith(0);
   });
@@ -211,11 +248,11 @@ describe("traversal: next/previous, repeat, shuffle, duration", () => {
     state()._setPosition(1);
 
     state().previous();
-    expect(state().queueIndex).toBe(0);
+    expect(queueState().queueIndex).toBe(0);
     expect(state().currentTrack).toEqual(trackA);
 
     state().previous(); // at the start of a bounded order: restart current
-    expect(state().queueIndex).toBe(0);
+    expect(queueState().queueIndex).toBe(0);
     expect(state().positionSeconds).toBe(0);
   });
 
@@ -224,45 +261,45 @@ describe("traversal: next/previous, repeat, shuffle, duration", () => {
       makeTrack({ id: `youtube:t${i}`, providerId: `t${i}`, title: `T${i}` }),
     );
     state().playTrack(many[0], many);
-    expect(state().playOrder).toEqual(many.map((_, i) => i));
+    expect(queueState().playOrder).toEqual(many.map((_, i) => i));
 
-    state().toggleShuffle();
-    const order = state().playOrder;
+    queueState().toggleShuffle();
+    const order = queueState().playOrder;
     expect(order).toHaveLength(10);
     expect([...order].sort((a, b) => a - b)).toEqual(Array.from({ length: 10 }, (_, i) => i));
     expect(order[0]).toBe(0); // current track plays first
 
     state().next();
-    expect(state().queueIndex).toBe(order[1]); // next follows the shuffled order
+    expect(queueState().queueIndex).toBe(order[1]); // next follows the shuffled order
 
-    state().toggleShuffle();
-    expect(state().playOrder).toEqual(Array.from({ length: 10 }, (_, i) => i));
+    queueState().toggleShuffle();
+    expect(queueState().playOrder).toEqual(Array.from({ length: 10 }, (_, i) => i));
     // Back in list order, the next advance is strict index + 1 from here.
-    const before = state().queueIndex;
+    const before = queueState().queueIndex;
     state().next();
-    expect(state().queueIndex).toBe(Math.min(before + 1, 9));
+    expect(queueState().queueIndex).toBe(Math.min(before + 1, 9));
   });
 
   it("cycleRepeat walks off -> context -> track -> off", () => {
-    expect(state().repeatMode).toBe("off");
-    state().cycleRepeat();
-    expect(state().repeatMode).toBe("context");
-    state().cycleRepeat();
-    expect(state().repeatMode).toBe("track");
-    state().cycleRepeat();
-    expect(state().repeatMode).toBe("off");
+    expect(queueState().repeatMode).toBe("off");
+    queueState().cycleRepeat();
+    expect(queueState().repeatMode).toBe("context");
+    queueState().cycleRepeat();
+    expect(queueState().repeatMode).toBe("track");
+    queueState().cycleRepeat();
+    expect(queueState().repeatMode).toBe("off");
   });
 
   it("onEnded replays under repeat track, advances otherwise, stops at the end", () => {
     state().playTrack(trackA, [trackA, trackB]);
 
-    state().cycleRepeat();
-    state().cycleRepeat(); // track
+    queueState().cycleRepeat();
+    queueState().cycleRepeat(); // track
     expect(state()._onEnded()).toBe("replay");
     expect(state().positionSeconds).toBe(0);
     expect(state().status).toBe("buffering");
 
-    state().cycleRepeat(); // off
+    queueState().cycleRepeat(); // off
     expect(state()._onEnded()).toBe("advanced");
     expect(state().currentTrack).toEqual(trackB);
 
@@ -308,7 +345,7 @@ describe("failure handling", () => {
     state()._markFailed("boom");
 
     expect(state()._advanceAfterFailure()).toBe("advanced");
-    expect(state().queueIndex).toBe(0);
+    expect(queueState().queueIndex).toBe(0);
   });
 
   it("settles into a stable error state when every track has failed", () => {
@@ -392,33 +429,5 @@ describe("volume and mute boot preference", () => {
     state().applyVolumePreference();
     expect(state().volume).toBe(DEFAULT_VOLUME_PREFERENCE.volume);
     expect(state().muted).toBe(DEFAULT_VOLUME_PREFERENCE.muted);
-  });
-});
-
-describe("pure traversal helpers", () => {
-  const queue = [trackA, trackB, trackC];
-
-  it("buildPlayOrder returns identity for list order and a current-first shuffle", () => {
-    expect(buildPlayOrder(3, 1, false)).toEqual([0, 1, 2]);
-    const shuffled = buildPlayOrder(3, 1, true);
-    expect(shuffled[0]).toBe(1);
-    expect([...shuffled].sort((a, b) => a - b)).toEqual([0, 1, 2]);
-    expect(buildPlayOrder(1, 0, true)).toEqual([0]);
-  });
-
-  it("findNextUnfailed respects the circular flag and skips failures", () => {
-    const order = [0, 1, 2];
-    expect(findNextUnfailed(order, queue, 2, [], false)).toBeNull();
-    expect(findNextUnfailed(order, queue, 2, [], true)).toBe(0);
-    expect(findNextUnfailed(order, queue, 0, [trackB.id], false)).toBe(2);
-    expect(findNextUnfailed(order, queue, 0, [trackB.id, trackC.id], false)).toBeNull();
-  });
-
-  it("findPreviousUnfailed walks backward and wraps only when circular", () => {
-    const order = [0, 1, 2];
-    expect(findPreviousUnfailed(order, queue, 1, [], false)).toBe(0);
-    expect(findPreviousUnfailed(order, queue, 0, [], false)).toBeNull();
-    expect(findPreviousUnfailed(order, queue, 0, [], true)).toBe(2);
-    expect(findPreviousUnfailed(order, queue, 2, [trackA.id], false)).toBe(1);
   });
 });

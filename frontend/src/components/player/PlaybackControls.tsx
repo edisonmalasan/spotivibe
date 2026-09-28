@@ -3,6 +3,7 @@
 import { IconButton } from "@/components/design-system/IconButton";
 import type { RepeatMode } from "@/data/repositories";
 import { usePlayerStore } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 import { Pause, Play, Repeat, Repeat1, Shuffle, Volume2, VolumeX } from "lucide-react";
 
 /**
@@ -51,8 +52,8 @@ export function PlayPauseButton({ size = "sm" }: { size?: "sm" | "md" }) {
 }
 
 export function ShuffleToggle() {
-  const shuffle = usePlayerStore((state) => state.shuffle);
-  const toggleShuffle = usePlayerStore((state) => state.toggleShuffle);
+  const shuffle = useQueueStore((state) => state.shuffle);
+  const toggleShuffle = useQueueStore((state) => state.toggleShuffle);
   return (
     <IconButton
       label="Shuffle"
@@ -67,8 +68,8 @@ export function ShuffleToggle() {
 }
 
 export function RepeatToggle() {
-  const repeatMode = usePlayerStore((state) => state.repeatMode);
-  const cycleRepeat = usePlayerStore((state) => state.cycleRepeat);
+  const repeatMode = useQueueStore((state) => state.repeatMode);
+  const cycleRepeat = useQueueStore((state) => state.cycleRepeat);
   const Icon = repeatMode === "track" ? Repeat1 : Repeat;
   return (
     <IconButton

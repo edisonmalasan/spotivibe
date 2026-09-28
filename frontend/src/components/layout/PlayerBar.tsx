@@ -9,8 +9,10 @@ import {
 } from "@/components/player/PlaybackControls";
 import { ProgressSlider } from "@/components/player/ProgressSlider";
 import { usePlayerStore } from "@/stores/playerStore";
+import { useQueueStore } from "@/stores/queueStore";
 import { Heart, ListMusic, Music2, SkipBack, SkipForward } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 /**
  * Desktop player slot (72px, void-black) below the content area (spec:
@@ -19,17 +21,30 @@ import Link from "next/link";
  * real title/artist, seekable progress, transport, shuffle/repeat, and
  * volume/mute — all dispatching store actions. Errors surface in the subtitle
  * slot (role="alert") so controls stay visible and operable alongside them.
+ * The queue control navigates to `/queue` with its upcoming count in the
+ * accessible name (design §5).
  */
 export function PlayerBar() {
+  const router = useRouter();
   const currentTrack = usePlayerStore((state) => state.currentTrack);
   const errorMessage = usePlayerStore((state) => state.errorMessage);
   const previous = usePlayerStore((state) => state.previous);
   const next = usePlayerStore((state) => state.next);
+  const queueLength = useQueueStore((state) => state.queue.length);
+  const queueIndex = useQueueStore((state) => state.queueIndex);
+  const playOrder = useQueueStore((state) => state.playOrder);
 
   const artworkUrl = currentTrack?.artwork[0]?.url;
   const artistText = currentTrack
     ? currentTrack.artists.map((artist) => artist.name).join(", ") || "Unknown artist"
     : "";
+
+  // Upcoming count in traversal order (design §5): entries after the current
+  // one, or the whole list when nothing is current; empty → "Queue, empty".
+  const position = playOrder.indexOf(queueIndex);
+  const upcomingCount =
+    queueIndex >= 0 && position !== -1 ? playOrder.length - 1 - position : queueLength;
+  const queueLabel = upcomingCount > 0 ? `Queue, ${upcomingCount} upcoming` : "Queue, empty";
 
   return (
     <div
@@ -86,7 +101,7 @@ export function PlayerBar() {
         <IconButton label="Save to Liked Songs" disabled>
           <Heart className="size-5" aria-hidden="true" />
         </IconButton>
-        <IconButton label="Queue" disabled>
+        <IconButton label={queueLabel} onClick={() => router.push("/queue")}>
           <ListMusic className="size-5" aria-hidden="true" />
         </IconButton>
         <VolumeControls />

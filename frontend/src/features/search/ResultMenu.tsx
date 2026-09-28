@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IconButton } from "@/components/design-system/IconButton";
 import type { Track } from "@/data/repositories";
 import { PlaylistPicker } from "@/features/search/PlaylistPicker";
+import { useQueueStore } from "@/stores/queueStore";
 
 interface ResultMenuProps {
   track: Track;
@@ -24,8 +25,9 @@ const itemClassName =
  * Feature-local per-result context menu (design §8 — no shared menu primitive
  * until another feature needs one): `IconButton` trigger with
  * `aria-haspopup`/`aria-expanded`, `role="menu"` items in DOM order
- * (plain buttons, so Tab reaches each), Escape and outside-click close, and
- * "Add to playlist" opens the feature-local picker dialog.
+ * (plain buttons, so Tab reaches each), Escape and outside-click close,
+ * "Add to queue" appends through the queue store, and "Add to playlist"
+ * opens the feature-local picker dialog.
  */
 export function ResultMenu({ track, isLiked, onPlay, onToggleLike, onRefine }: ResultMenuProps) {
   const [open, setOpen] = useState(false);
@@ -115,6 +117,21 @@ export function ResultMenu({ track, isLiked, onPlay, onToggleLike, onRefine }: R
             onClick={() => activate(onToggleLike)}
           >
             {isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={itemClassName}
+            onClick={() =>
+              // Queue insertion with duplicate protection (M6 task 7.1) — the
+              // store rejects identities already current/upcoming; playback
+              // state is never touched by `enqueue`.
+              activate(() => {
+                useQueueStore.getState().enqueue(track);
+              })
+            }
+          >
+            Add to queue
           </button>
           <button
             type="button"
