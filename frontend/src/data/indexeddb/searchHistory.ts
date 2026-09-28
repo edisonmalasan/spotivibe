@@ -35,5 +35,14 @@ export function createSearchHistoryRepository(db: IDBDatabase): SearchHistoryRep
       tx.objectStore(STORE.searchHistory).clear();
       await transactionDone(tx);
     },
+
+    async remove(query: string): Promise<void> {
+      const trimmed = query.trim();
+      if (trimmed === "") return; // nothing normalizes to an empty key: no-op
+      const tx = db.transaction(STORE.searchHistory, "readwrite");
+      // keyPath delete on the normalized identity (symmetric with `record`).
+      tx.objectStore(STORE.searchHistory).delete(trimmed.toLowerCase());
+      await transactionDone(tx);
+    },
   };
 }

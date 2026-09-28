@@ -1,0 +1,446 @@
+{
+  "task": "8.3",
+  "change": "add-search-experience",
+  "milestone": "M5",
+  "generatedAt": "2026-09-28T06:20:46.822Z",
+  "origin": "http://localhost:3210",
+  "target": "http://localhost:3210/",
+  "queries": {
+    "typed": "never gonna give you up",
+    "superseded": "bohemian rhapsody",
+    "final": "imagine john lennon",
+    "nonsense": "zzqqxxyy12345unique"
+  },
+  "steps": [
+    {
+      "name": "Home renders with the top-bar search input",
+      "ok": true,
+      "detail": "path=/"
+    },
+    {
+      "name": "top-bar search input focused on Home",
+      "ok": true,
+      "detail": "focused=true"
+    },
+    {
+      "name": "focus retained on the searchbox after navigation began (R1)",
+      "ok": true,
+      "detail": "path=/search value=\"never gonna \" sameElement=true"
+    },
+    {
+      "name": "typed value has no dropped characters",
+      "ok": true,
+      "detail": "value=\"never gonna give you up\" expected=\"never gonna give you up\""
+    },
+    {
+      "name": "searchbox still the active element after typing completed",
+      "ok": true,
+      "detail": "focused=true sameAsStamp=true stampConnected=true"
+    },
+    {
+      "name": "URL becomes /search?q=<typed query> and the input keeps the value",
+      "ok": true,
+      "detail": "path=/search q=\"never gonna give you up\" value=\"never gonna give you up\""
+    },
+    {
+      "name": "Search route renders real remote results for the query",
+      "ok": true,
+      "detail": "rows=20 top=true first=\"Never Gonna Give You UpRick AstleyWhenever You Need Somebody3:34\""
+    },
+    {
+      "name": "clearing the input returns the surface to the browse state",
+      "ok": true,
+      "detail": "browseTitle=\"Search for music\" q=null"
+    },
+    {
+      "name": "rapid typing settles on the final query's results",
+      "ok": true,
+      "detail": "rows=19 top=false first=\"ImagineJohn LennonImagine3:08\""
+    },
+    {
+      "name": "no superseded-query titles rendered (sampled twice, 1.5 s apart)",
+      "ok": true,
+      "detail": "supersededMatches sampleA=[] sampleB=[]"
+    },
+    {
+      "name": "a /api/search request was issued for the final query (fetch spy)",
+      "ok": true,
+      "detail": "finalRequest=/api/search?q=imagine%20john%20lennon&limit=20 supersededRequest=/api/search?q=bohemian%20rhapsody&limit=20"
+    },
+    {
+      "name": "trusted click on a song result starts playback (transport → Pause)",
+      "ok": true,
+      "detail": "control=Pause error=null"
+    },
+    {
+      "name": "player region shows the clicked track",
+      "ok": true,
+      "detail": "title=\"Imagine\""
+    },
+    {
+      "name": "YouTube iframe exists after activating the result",
+      "ok": true,
+      "detail": "dock=true iframes=1 youtube=1"
+    },
+    {
+      "name": "playback position advances (real remote playback)",
+      "ok": true,
+      "detail": "0:01 → 0:03"
+    },
+    {
+      "name": "exactly one IFrame API script and one YouTube iframe total",
+      "ok": true,
+      "detail": "apiScripts=1 youtubeIframes=1 totalIframes=1"
+    },
+    {
+      "name": "Home: SAME connected iframe + playback not interrupted",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/\"}"
+    },
+    {
+      "name": "Search: SAME connected iframe + playback not interrupted",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/search\"}"
+    },
+    {
+      "name": "Library: SAME connected iframe + playback not interrupted",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/library\"}"
+    },
+    {
+      "name": "Now Playing: SAME connected iframe + playback not interrupted",
+      "ok": true,
+      "detail": "{\"same\":true,\"connected\":true,\"control\":\"Pause\",\"path\":\"/now-playing\"}"
+    },
+    {
+      "name": "playback continued across the whole navigation (position not reset)",
+      "ok": true,
+      "detail": "position 3s → 4s control=Pause"
+    },
+    {
+      "name": "single IFrame API script / single YouTube iframe at the end of the route sequence",
+      "ok": true,
+      "detail": "apiScripts=1 youtubeIframes=1 totalIframes=1"
+    },
+    {
+      "name": "deep link /search?q=... seeds the top-bar input with the URL query",
+      "ok": true,
+      "detail": "q=\"never gonna give you up\" value=\"never gonna give you up\""
+    },
+    {
+      "name": "deep-linked query searches and renders results",
+      "ok": true,
+      "detail": "rows=20 top=true first=\"Never Gonna Give You UpRick AstleyWhenever You Need Somebody3:34\""
+    },
+    {
+      "name": "no autoplay: transport still offers Play before any click on the fresh load",
+      "ok": true,
+      "detail": "control=Play position=0:04 dock=true iframe=true"
+    },
+    {
+      "name": "no autoplay: position static after 3 s (no playback started by the search surface)",
+      "ok": true,
+      "detail": "control=Play position 0:04 → 0:04"
+    },
+    {
+      "name": "exactly one IFrame API script and one YouTube iframe on the deep link",
+      "ok": true,
+      "detail": "apiScripts=1 youtubeIframes=1"
+    },
+    {
+      "name": "top-bar input still focused/adapted state intact (value matches URL)",
+      "ok": true,
+      "detail": "value=\"never gonna give you up\""
+    },
+    {
+      "name": "context menu opens with accessible names (Play, like toggle, Add to playlist, Go to artist)",
+      "ok": true,
+      "detail": "[\"Play\",\"Save to Liked Songs\",\"Add to playlist\",\"Go to artist\",\"Go to album\"]"
+    },
+    {
+      "name": "like activated → reopened menu shows the liked state",
+      "ok": true,
+      "detail": "[\"Play\",\"Remove from Liked Songs\",\"Add to playlist\",\"Go to artist\",\"Go to album\"]"
+    },
+    {
+      "name": "settled queries appear in Recent searches after clearing the input",
+      "ok": true,
+      "detail": "[\"never gonna give you up\",\"imagine john lennon\"]"
+    },
+    {
+      "name": "remove-one deletes exactly that entry and leaves the rest",
+      "ok": true,
+      "detail": "removed=\"never gonna give you up\" now=[\"imagine john lennon\"]"
+    },
+    {
+      "name": "remaining recents survive reload (R7)",
+      "ok": true,
+      "detail": "[\"imagine john lennon\"]"
+    },
+    {
+      "name": "clear-all empties the recent-searches list",
+      "ok": true,
+      "detail": "heading=false browseEmpty=true"
+    },
+    {
+      "name": "clear-all survives reload (stays empty)",
+      "ok": true,
+      "detail": "heading=false browseEmpty=true"
+    },
+    {
+      "name": "zero-match response renders the empty state naming the query (zero-track response stubbed at the CDP Fetch boundary)",
+      "ok": true,
+      "detail": "emptyTitle=\"No results for \\\"zzqqxxyy12345unique\\\"\" stubbedRequests=1 liveProviderRows=2"
+    },
+    {
+      "name": "CDP offline emulation is reflected by navigator.onLine",
+      "ok": true,
+      "detail": "navigator.onLine=false"
+    },
+    {
+      "name": "offline notice renders with local matches for the liked track",
+      "ok": true,
+      "detail": "notice=\"Offline — showing matches from your library.\" rows=1 top=true first=\"Never Gonna Give You UpRick AstleyWhenever You Need Somebody3:34\""
+    },
+    {
+      "name": "NO /api/search request issued while offline (fetch spy)",
+      "ok": true,
+      "detail": "newRequests=[] totalBefore=2"
+    },
+    {
+      "name": "network restored (navigator.onLine back to true)",
+      "ok": true,
+      "detail": "navigator.onLine=true"
+    },
+    {
+      "name": "zero console errors for the whole session",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "at least four screenshots captured",
+      "ok": true,
+      "detail": "7: search-playing-1280.png, search-results-1280.png, search-context-menu-1280.png, search-liked-state-1280.png, search-recents-1280.png, search-empty-1280.png, search-offline-fallback-1280.png"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "search-playing-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "song result playing, PlayerBar shows the track"
+    },
+    {
+      "file": "search-results-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "results view for \"never gonna give you up\" (topResult=true)"
+    },
+    {
+      "file": "search-context-menu-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "context menu open for \"Never Gonna Give You Up\""
+    },
+    {
+      "file": "search-liked-state-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "liked state for \"Never Gonna Give You Up\""
+    },
+    {
+      "file": "search-recents-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "browse state with recent searches"
+    },
+    {
+      "file": "search-empty-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "empty state naming \"zzqqxxyy12345unique\""
+    },
+    {
+      "file": "search-offline-fallback-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "offline local fallback for a liked track"
+    }
+  ],
+  "consoleErrors": [],
+  "notes": {
+    "fetchErrors": [],
+    "remoteEmptyState": {
+      "liveProviderResponse": {
+        "rows": 2,
+        "emptyTitle": null,
+        "first": "How many songs did you know?😀 #subscribe #songSujata1:01"
+      },
+      "whyStubbed": "Live YouTube search returns fuzzy matches for any text (probes recorded in README), and /api/search returns 503 for an all-empty provider chain — a 200 with tracks:[] is unreachable against the real provider, so the zero-track response for this step was supplied via CDP Fetch.respondWithResponse.",
+      "observedAfterStub": {
+        "rows": 0,
+        "texts": [],
+        "loading": false,
+        "topResult": false,
+        "emptyTitle": "No results for \"zzqqxxyy12345unique\"",
+        "offlineEmptyTitle": null,
+        "errorTitle": null,
+        "browseTitle": null,
+        "notice": null,
+        "inputValue": "zzqqxxyy12345unique",
+        "focused": true,
+        "sameAsStamp": true,
+        "stampConnected": true,
+        "path": "/search",
+        "q": "zzqqxxyy12345unique"
+      },
+      "stubbedRequestsServed": 1
+    },
+    "offlineEmulation": {
+      "command": "Network.emulateNetworkConditions {offline:true, latency:0, downloadThroughput:0, uploadThroughput:0}",
+      "navigatorOnLineAfterEmulation": false,
+      "navigatorOnLineAfterRestore": true,
+      "requestsAfterReconnect": [
+        "/api/search?q=Never%20Gonna%20Give%20You%20Up&limit=20"
+      ]
+    }
+  },
+  "pass": true,
+  "browser": "Edg/154.0.4258.37",
+  "step1": {
+    "final": {
+      "rows": 20,
+      "texts": [
+        "Never Gonna Give You UpRick AstleyWhenever You Need Somebody3:34",
+        "La La La (Never Give It Up)SeptemberSeptember3:19",
+        "Never, Never Gonna Give Ya UpBarry WhiteStone Gon'7:57",
+        "Never Gonna Give You Up (2022 Remaster)Rick AstleyWhenever You Need Somebody (Deluxe Edition - 2022 Remaster)3:34",
+        "Never Gonna Give You UpTheRealSullyGOtama-Tunes, Vol. 13:35",
+        "NEVER GONNA GIVE YOU UPKEVIN JOHNSONSUPER EUROBEAT VOL.1493:58",
+        "Never Gonna Give You Up (R&B Version)Jay DiggsNever Gonna Give You Up (R&B Version)3:25",
+        "Never Gonna Give You UpLyn CollinsThink (About It)3:07"
+      ],
+      "loading": false,
+      "topResult": true,
+      "emptyTitle": null,
+      "offlineEmptyTitle": null,
+      "errorTitle": null,
+      "browseTitle": null,
+      "notice": null,
+      "inputValue": "never gonna give you up",
+      "focused": true,
+      "sameAsStamp": true,
+      "stampConnected": true,
+      "path": "/search",
+      "q": "never gonna give you up"
+    },
+    "requests": [
+      "/api/search?q=never%20gonna%20give%20you%20up&limit=20"
+    ]
+  },
+  "step2": {
+    "sampleA": [
+      "ImagineJohn LennonImagine3:08",
+      "Imagine (Ultimate Mix)John LennonGIMME SOME TRUTH. (Deluxe)3:03",
+      "Power To The People (Ultimate Mix)John LennonImagine (The Ultimate Collection)3:27",
+      "Instant Karma! (We All Shine On) (Ultimate Mix)John Lennon, Yoko OnoInstant Karma! (We All Shine On) (Ultimate Mix)3:23",
+      "Imagine (made famous by John Lennon)Omnibus Media Karaoke TracksPop Hits 23:04",
+      "Imagine (Live)John Legend歌手2026 第6期3:28",
+      "ImagineRandy Crawford With YellowjacketsBest Of Randy Crawford5:38",
+      "ImagineRoyal Philharmonic OrchestraRPO Performs Lennon & McCartney3:37"
+    ],
+    "sampleB": [
+      "ImagineJohn LennonImagine3:08",
+      "Imagine (Ultimate Mix)John LennonGIMME SOME TRUTH. (Deluxe)3:03",
+      "Power To The People (Ultimate Mix)John LennonImagine (The Ultimate Collection)3:27",
+      "Instant Karma! (We All Shine On) (Ultimate Mix)John Lennon, Yoko OnoInstant Karma! (We All Shine On) (Ultimate Mix)3:23",
+      "Imagine (made famous by John Lennon)Omnibus Media Karaoke TracksPop Hits 23:04",
+      "Imagine (Live)John Legend歌手2026 第6期3:28",
+      "ImagineRandy Crawford With YellowjacketsBest Of Randy Crawford5:38",
+      "ImagineRoyal Philharmonic OrchestraRPO Performs Lennon & McCartney3:37"
+    ],
+    "requests": [
+      "/api/search?q=never%20gonna%20give%20you%20up&limit=20",
+      "/api/search?q=bohemian%20rhapsody&limit=20",
+      "/api/search?q=imagine%20john%20lennon&limit=20"
+    ]
+  },
+  "step3": {
+    "clickedTitle": "Imagine",
+    "clickPoint": {
+      "x": 555,
+      "y": 169,
+      "w": 358.5,
+      "h": 40
+    },
+    "positionStart": "0:01",
+    "positionAdvance": "0:03"
+  },
+  "step4": {
+    "sample": {
+      "control": "Play",
+      "position": "0:04",
+      "duration": "3:08",
+      "title": "Imagine",
+      "error": null,
+      "dock": true,
+      "iframe": true,
+      "iframeCount": 1,
+      "youtubeIframes": 1,
+      "totalIframes": 1,
+      "iframeApiScripts": 1
+    },
+    "after3s": {
+      "control": "Play",
+      "position": "0:04",
+      "duration": "3:08",
+      "title": "Imagine",
+      "error": null,
+      "dock": true,
+      "iframe": true,
+      "iframeCount": 1,
+      "youtubeIframes": 1,
+      "totalIframes": 1,
+      "iframeApiScripts": 1
+    },
+    "topResult": true
+  },
+  "step5": {
+    "triggerLabel": "More options for Never Gonna Give You Up",
+    "menuTitle": "Never Gonna Give You Up",
+    "menuItems": [
+      "Play",
+      "Save to Liked Songs",
+      "Add to playlist",
+      "Go to artist",
+      "Go to album"
+    ],
+    "itemsAfterLike": [
+      "Play",
+      "Remove from Liked Songs",
+      "Add to playlist",
+      "Go to artist",
+      "Go to album"
+    ]
+  },
+  "step6": {
+    "initialEntries": [
+      "never gonna give you up",
+      "imagine john lennon"
+    ],
+    "removed": "never gonna give you up",
+    "hydratedAfterFirstReload": true,
+    "afterReload": [
+      "imagine john lennon"
+    ],
+    "hydratedAfterClearReload": true
+  },
+  "step7": {
+    "emptyTitle": "No results for \"zzqqxxyy12345unique\"",
+    "stubbedRequests": 1
+  },
+  "step8": {
+    "likedTitle": "Never Gonna Give You Up",
+    "requestsDuringOffline": []
+  }
+}

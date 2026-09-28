@@ -66,6 +66,8 @@ export interface SearchHistoryRepository {
   record(query: string): Promise<SearchEntryRecord>;
   /** Entries newest-first; `limit` caps the number returned. */
   list(limit?: number): Promise<SearchEntryRecord[]>;
+  /** Remove one entry by raw query (normalized internally); unknown/empty is a no-op. */
+  remove(query: string): Promise<void>;
   clear(): Promise<void>;
 }
 

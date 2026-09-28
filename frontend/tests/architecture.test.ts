@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Static architecture invariants checked against the real source files
- * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1) — routes/components/features
+ * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1) —
+ * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
  * stays server- and network-free, UI code never reaches into `src/server`
@@ -13,8 +14,9 @@ import { describe, expect, it } from "vitest";
  * imports IndexedDB, API routes never return media bytes, the
  * stored/backup datasets stay inside the whitelist, the video host stays a
  * single shell-mounted module, UI code never touches the IFrame API loader
- * or YT types directly, nothing can capture or decode media, and outbound
- * links never suppress the referrer.
+ * or YT types directly, nothing can capture or decode media, outbound
+ * links never suppress the referrer, and the search feature stays
+ * client-side and repository-mediated.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -439,6 +441,71 @@ describe("architecture: outbound links never suppress the referrer (task 5.1)", 
     const files = [...readTree(srcDir), ...frontendConfigFiles()];
     const offenders = files
       .filter(({ source }) => suppressesReferrer(source))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Search-feature invariants (M5 task 8.1): `features/search` is client-side
+ * and repository-mediated — it imports no `src/server` module, names no raw
+ * provider shape, and never reaches the IndexedDB implementation or the
+ * `indexedDB` global (feature code reads local data through the repository
+ * interfaces; `fake-indexeddb` belongs to tests only).
+ */
+
+/** True when a specifier loads the fake-indexeddb shim or source uses the global. */
+function accessesIndexedDbGlobal(source: string): boolean {
+  return (
+    moduleSpecifiers(source).some((specifier) => specifier.startsWith("fake-indexeddb")) ||
+    /\bindexedDB\b/.test(source)
+  );
+}
+
+/** The rules `features/search` must satisfy (task 8.1), as violation labels. */
+function searchArchitectureViolations(source: string): string[] {
+  const violations: string[] = [];
+  if (moduleSpecifiers(source).some(targetsServerModule)) violations.push("src/server import");
+  if (mentionsRawProviderShape(source)) violations.push("raw provider shape");
+  if (hasDirectIndexedDbImport(source)) violations.push("IndexedDB implementation import");
+  if (accessesIndexedDbGlobal(source)) violations.push("indexedDB global access");
+  return violations;
+}
+
+describe("architecture violation detectors (task 8.1)", () => {
+  it("flags server imports, provider shapes, and IndexedDB access but passes repository-mediated code", () => {
+    expect(
+      searchArchitectureViolations('import { runSearch } from "@/server/music/search";'),
+    ).toEqual(["src/server import"]);
+    expect(
+      searchArchitectureViolations("const node: MusicResponsiveListItemRenderer = input;"),
+    ).toEqual(["raw provider shape"]);
+    expect(
+      searchArchitectureViolations('import { createRepositories } from "@/data/indexeddb";'),
+    ).toEqual(["IndexedDB implementation import"]);
+    expect(searchArchitectureViolations('import "fake-indexeddb/auto";')).toEqual([
+      "indexedDB global access",
+    ]);
+    expect(searchArchitectureViolations('const open = indexedDB.open("spotivibe");')).toEqual([
+      "indexedDB global access",
+    ]);
+    // Repository-mediated search code carries no violation.
+    expect(
+      searchArchitectureViolations(
+        'import { getLocalData } from "@/data/localData";\nimport type { Track } from "@/data/repositories";',
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("architecture: search stays client-side and repository-mediated (task 8.1)", () => {
+  it("finds no server, provider-shape, or IndexedDB violations in features/search", () => {
+    const files = readTree(join(srcDir, "features", "search"));
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(({ source }) => searchArchitectureViolations(source).length > 0)
       .map(({ file }) => file);
 
     expect(offenders).toEqual([]);
