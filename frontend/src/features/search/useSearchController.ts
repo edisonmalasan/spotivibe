@@ -3,6 +3,7 @@
 import type { Track } from "@/data/repositories";
 import { getLocalData } from "@/data/localData";
 import { fetchSearchResults } from "@/features/search/searchApi";
+import { loadLocalLibrary, searchLocalLibrary } from "@/features/search/localSearch";
 import { useEffect, useRef, useState } from "react";
 
 /** Debounce between a query change and its request (design §4). */
@@ -111,6 +112,20 @@ export function useSearchController(query: string): SearchController {
       }, SETTLE_RECORD_MS);
     }
 
+    /**
+     * Local-library matches for the current query (design §6). `null` means
+     * storage itself was unavailable, so the caller degrades to its non-local
+     * surface instead of showing an empty fallback as if nothing matched.
+     */
+    async function localMatches(): Promise<Track[] | null> {
+      try {
+        return searchLocalLibrary(await loadLocalLibrary(), trimmed);
+      } catch (error) {
+        console.warn("[search] local fallback read failed:", error);
+        return null;
+      }
+    }
+
     /** Issue the request for this effect's trimmed query. */
     async function execute(): Promise<void> {
       cancel(); // supersede anything pending or in flight before this request
@@ -125,8 +140,14 @@ export function useSearchController(query: string): SearchController {
       }
       try {
         if (!navigator.onLine) {
-          // Offline at request time: no remote request is issued at all (spec).
-          settle({ status: "empty", origin: "offline" });
+          // Offline at request time: no remote request is issued at all (spec);
+          // the local library answers the query instead (design §6).
+          const matches = await localMatches();
+          settle(
+            matches !== null && matches.length > 0
+              ? { status: "local", tracks: matches, origin: "offline" }
+              : { status: "empty", origin: "offline" },
+          );
           return;
         }
         const tracks = await fetchSearchResults(trimmed, controller.signal);
@@ -134,7 +155,15 @@ export function useSearchController(query: string): SearchController {
           tracks.length > 0 ? { status: "results", tracks } : { status: "empty", origin: "remote" },
         );
       } catch {
-        settle({ status: "error" }); // aborted/superseded runs fail the guard
+        if (controller.signal.aborted) return; // superseded request: no fallback work
+        // Remote failure (design §6): local matches with a notice, or the
+        // retryable error state when the local library has nothing either.
+        const matches = await localMatches();
+        settle(
+          matches !== null && matches.length > 0
+            ? { status: "local", tracks: matches, origin: "error" }
+            : { status: "error" },
+        );
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
       }
