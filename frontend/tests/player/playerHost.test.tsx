@@ -3,7 +3,13 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlayerHost } from "@/components/player/PlayerHost";
 import { getLocalData } from "@/data/localData";
-import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { isNetworkMonitorActive, resetNetworkStore, useNetworkStore } from "@/stores/networkStore";
+import {
+  clearPlaybackBridge,
+  isNetworkRecoveryActive,
+  resetPlayerStore,
+  usePlayerStore,
+} from "@/stores/playerStore";
 import { makeTrack } from "../helpers/music-fixtures";
 
 const { attach, suspend } = vi.hoisted(() => ({
@@ -35,6 +41,7 @@ async function seedSession() {
 
 beforeEach(() => {
   resetPlayerStore();
+  resetNetworkStore();
   localStorage.clear();
   clearPlaybackBridge();
   attach.mockClear();
@@ -127,5 +134,60 @@ describe("PlayerHost boot and video surface", () => {
     await waitFor(() => expect(attach).toHaveBeenCalled());
     expect(state().status).not.toBe("paused"); // user's loading state intact
     expect(state().currentTrack).toEqual(track); // same track, not reset
+  });
+});
+
+describe("PlayerHost network wiring (task 8.5)", () => {
+  function setOnLine(value: boolean): void {
+    Object.defineProperty(window.navigator, "onLine", { configurable: true, get: () => value });
+  }
+
+  it("initializes the monitor and recovery once and detaches them on unmount", () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+
+    const { unmount } = render(<PlayerHost />);
+
+    // Both cross-cutting inits run once on mount (design §9).
+    expect(isNetworkMonitorActive()).toBe(true);
+    expect(isNetworkRecoveryActive()).toBe(true);
+    expect(addSpy.mock.calls.filter(([type]) => type === "online")).toHaveLength(1);
+    expect(addSpy.mock.calls.filter(([type]) => type === "offline")).toHaveLength(1);
+    addSpy.mockRestore();
+
+    unmount();
+    expect(isNetworkMonitorActive()).toBe(false);
+    expect(isNetworkRecoveryActive()).toBe(false);
+
+    // Detached: connectivity events no longer write the store.
+    const before = useNetworkStore.getState().connection;
+    setOnLine(false);
+    window.dispatchEvent(new Event("offline"));
+    expect(useNetworkStore.getState().connection).toBe(before);
+    setOnLine(true);
+  });
+
+  it("recovers playback on reconnect while mounted and stops after unmount", () => {
+    const { unmount } = render(<PlayerHost />);
+    usePlayerStore.setState({
+      currentTrack: track,
+      status: "error",
+      errorMessage: "Playback failed: 150",
+      positionSeconds: 42,
+      loadRequest: null,
+    });
+
+    useNetworkStore.getState().setConnection("offline");
+    useNetworkStore.getState().setConnection("online");
+
+    const retry = state().loadRequest;
+    expect(retry).toMatchObject({ videoId: "aaa", startSeconds: 42, mode: "load" });
+    expect(state().status).toBe("loading");
+    expect(state().errorMessage).toBeNull();
+    expect(retry!.token).toBeGreaterThan(0);
+
+    unmount();
+    useNetworkStore.getState().setConnection("offline");
+    useNetworkStore.getState().setConnection("online");
+    expect(state().loadRequest?.token).toBe(retry!.token); // no further retries
   });
 });

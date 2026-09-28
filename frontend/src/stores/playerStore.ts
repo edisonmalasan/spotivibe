@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { QueueSource, SessionSnapshot, Track } from "@/data/repositories";
 import { readVolumePreference, writeVolumePreference } from "@/player/volumePref";
+import { useNetworkStore } from "@/stores/networkStore";
 import {
   findNextUnfailed,
   findPreviousUnfailed,
@@ -53,6 +54,19 @@ export type FailureOutcome = "advanced" | "settled";
 
 /** Previous restarts the current track once playback is past this point. */
 export const RESTART_THRESHOLD_SECONDS = 3;
+
+/** Offline parking copy (design §9) — replaces a failure message while offline. */
+export const OFFLINE_PARKED_MESSAGE = "You're offline — playback will resume when you reconnect.";
+
+/**
+ * The offline half of the suppression funnel (design §9): the network store
+ * is authoritative when the monitor is running, with `navigator.onLine` as
+ * the fallback before it initializes.
+ */
+function isOffline(): boolean {
+  if (useNetworkStore.getState().connection === "offline") return true;
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
 
 let bridge: PlaybackBridge | null = null;
 let loadToken = 0;
@@ -357,6 +371,13 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     },
 
     _markFailed(message) {
+      // Offline suppression (design §9): park without consuming the track —
+      // the failed set never grows offline, so reconnect cannot inherit a
+      // burned queue, and no advance is scheduled while offline.
+      if (isOffline()) {
+        set({ status: "error", errorMessage: OFFLINE_PARKED_MESSAGE });
+        return;
+      }
       const track = get().currentTrack;
       const failedTrackIds = track
         ? [...new Set([...get().failedTrackIds, track.id])]
@@ -365,6 +386,12 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     },
 
     _advanceAfterFailure() {
+      // Offline (design §9): stay parked on the same track — no advance, no
+      // failed-set growth; the reconnect path retries it (initNetworkRecovery).
+      if (isOffline()) {
+        set({ status: "error", errorMessage: OFFLINE_PARKED_MESSAGE });
+        return "settled";
+      }
       const { queue, queueIndex, playOrder } = useQueueStore.getState();
       // Circular on purpose: the failed set only grows, so this terminates;
       // any remaining unfailed track is preferable to wedging playback (spec).
@@ -376,3 +403,50 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     },
   };
 });
+
+let recoveryTeardown: (() => void) | null = null;
+
+/** Whether the reconnect-recovery subscription is currently active. */
+export function isNetworkRecoveryActive(): boolean {
+  return recoveryTeardown !== null;
+}
+
+/**
+ * Reconnect recovery (design §9): on a transition **to** `online`, inspect the
+ * transport once — `status ∈ {error, loading, buffering}` with a current track
+ * issues exactly one `loadRequest` (`mode: "load"`, resuming at the current
+ * position); `playing` / `paused` / `idle` take no action (paused and idle
+ * never resume on their own, and playing is unaffected). One retry per
+ * transition; a failed retry surfaces through the normal error path. Idempotent:
+ * a second init attaches no second subscription and returns a no-op teardown.
+ */
+export function initNetworkRecovery(): () => void {
+  if (recoveryTeardown) return () => {};
+  let previous = useNetworkStore.getState().connection;
+  const unsubscribe = useNetworkStore.subscribe((state) => {
+    const next = state.connection;
+    const becameOnline = previous !== "online" && next === "online";
+    previous = next;
+    if (!becameOnline) return;
+    const { currentTrack, status, positionSeconds } = usePlayerStore.getState();
+    if (!currentTrack) return;
+    if (status !== "error" && status !== "loading" && status !== "buffering") return;
+    // Exactly one reload at the stored position — same track, same lineage.
+    const startSeconds = Math.max(0, positionSeconds);
+    usePlayerStore.setState({
+      status: "loading",
+      errorMessage: null,
+      loadRequest: {
+        token: ++loadToken,
+        videoId: currentTrack.providerId,
+        startSeconds,
+        mode: "load",
+      },
+    });
+  });
+  recoveryTeardown = () => {
+    unsubscribe();
+    recoveryTeardown = null;
+  };
+  return recoveryTeardown;
+}
