@@ -4,7 +4,7 @@ import { Button } from "@/components/design-system/Button";
 import { EmptyState } from "@/components/design-system/EmptyState";
 import { ErrorState } from "@/components/design-system/ErrorState";
 import type { Track } from "@/data/repositories";
-import { SearchBrowseEmpty } from "@/features/search/SearchBrowseEmpty";
+import { RecentSearches } from "@/features/search/RecentSearches";
 import { SearchResults } from "@/features/search/SearchResults";
 import { SearchSkeletons } from "@/features/search/SearchSkeletons";
 import { useSearchController, type SearchSurface } from "@/features/search/useSearchController";
@@ -102,7 +102,7 @@ function SearchSurfaceView({
   const trimmed = query.trim();
   switch (surface.status) {
     case "browse":
-      return <SearchBrowseEmpty />;
+      return <RecentSearches onSelect={onRefine} />;
     case "loading":
       return (
         <div data-testid="search-loading" role="status">

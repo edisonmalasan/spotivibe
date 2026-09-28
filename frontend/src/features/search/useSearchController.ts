@@ -1,11 +1,15 @@
 "use client";
 
 import type { Track } from "@/data/repositories";
+import { getLocalData } from "@/data/localData";
 import { fetchSearchResults } from "@/features/search/searchApi";
 import { useEffect, useRef, useState } from "react";
 
 /** Debounce between a query change and its request (design §4). */
 export const SEARCH_DEBOUNCE_MS = 300;
+
+/** How long a settled result set must stay active before it is recorded (§7). */
+export const SETTLE_RECORD_MS = 1500;
 
 /**
  * The search surface state model (design §5). Exactly one variant renders at a
@@ -60,6 +64,7 @@ export function useSearchController(query: string): SearchController {
   const seqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runRef = useRef<() => void>(() => {});
   const trimmed = query.trim();
 
@@ -74,9 +79,36 @@ export function useSearchController(query: string): SearchController {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      if (recordTimerRef.current !== null) {
+        // Query change/unmount abandons the settle window before recording.
+        clearTimeout(recordTimerRef.current);
+        recordTimerRef.current = null;
+      }
       seqRef.current += 1; // a response for an older sequence may never render
       abortRef.current?.abort();
       abortRef.current = null;
+    }
+
+    /**
+     * Start the settle window (design §7) for a result set the remote
+     * actually answered with: results and remote empties record after
+     * {@link SETTLE_RECORD_MS}; errors, offline surfaces, and local fallbacks
+     * never do. The record goes through the repository only.
+     */
+    function scheduleRecord(text: string, settled: SettledOutcome["surface"]): void {
+      const recordable =
+        settled.status === "results" || (settled.status === "empty" && settled.origin === "remote");
+      if (!recordable) return;
+      if (recordTimerRef.current !== null) {
+        clearTimeout(recordTimerRef.current);
+        recordTimerRef.current = null;
+      }
+      recordTimerRef.current = setTimeout(() => {
+        recordTimerRef.current = null;
+        void getLocalData()
+          .then((data) => data.searchHistory.record(text))
+          .catch((error: unknown) => console.warn("[search] history record failed:", error));
+      }, SETTLE_RECORD_MS);
     }
 
     /** Issue the request for this effect's trimmed query. */
@@ -89,6 +121,7 @@ export function useSearchController(query: string): SearchController {
       function settle(surface: SettledOutcome["surface"]): void {
         if (seq !== seqRef.current || controller.signal.aborted) return;
         setOutcome({ trimmed, surface });
+        scheduleRecord(trimmed, surface);
       }
       try {
         if (!navigator.onLine) {
