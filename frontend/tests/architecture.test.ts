@@ -47,8 +47,19 @@ function walk(dir: string): string[] {
   });
 }
 
+/**
+ * Directory reads, memoized per directory for the same reason as
+ * {@link uiSourceFiles}: the coverage proofs read their own subtree inside every
+ * assertion, and re-walking it each time is pure repeated I/O.
+ */
+const readTreeCache = new Map<string, Array<{ file: string; source: string }>>();
+
 function readTree(dir: string): Array<{ file: string; source: string }> {
-  return walk(dir).map((file) => ({ file, source: readFileSync(file, "utf8") }));
+  const cached = readTreeCache.get(dir);
+  if (cached) return cached;
+  const files = walk(dir).map((file) => ({ file, source: readFileSync(file, "utf8") }));
+  readTreeCache.set(dir, files);
+  return files;
 }
 
 /** Every module specifier referenced by import/export statements. */
@@ -83,10 +94,28 @@ function hasServerReferenceOrFetch(source: string): boolean {
  * route modules under src/app/api are transport code and legitimately
  * import `src/server`, so they are excluded from this sweep.
  */
+/**
+ * The swept UI files, read once per test process.
+ *
+ * Every rule in this file sweeps the same tree, and the M8/M9 coverage proofs call
+ * the sweep again *inside* each assertion, so an un-memoized read re-reads the
+ * whole `app`/`components`/`features`/`stores` tree dozens of times per file. That
+ * made the suite's runtime depend on how many other workers were competing for the
+ * disk, and an I/O-bound assertion then started tripping the default 5s timeout
+ * intermittently — a flaky gate, observed in a clean-clone run of M9 task 8.4.
+ *
+ * The cache is safe because no test writes a source file: the coverage proofs
+ * substitute violating content as in-memory `{ file, source }` objects rather than
+ * editing the tree, so the cached reads cannot go stale mid-run. Assertions are
+ * unchanged — only the repeated I/O is removed.
+ */
+let uiSourceFilesCache: Array<{ file: string; source: string }> | undefined;
+
 function uiSourceFiles(): Array<{ file: string; source: string }> {
-  return ["app", "components", "features", "stores"]
+  uiSourceFilesCache ??= ["app", "components", "features", "stores"]
     .flatMap((dir) => readTree(join(srcDir, dir)))
     .filter(({ file }) => !/[\\/]api(?:[\\/][^\\/]+)*[\\/]route\.tsx?$/.test(file));
+  return uiSourceFilesCache;
 }
 
 /**
@@ -1023,6 +1052,10 @@ describe("architecture violation detectors (M8 task 8.1)", () => {
 });
 
 describe("architecture: the M8 discovery surfaces stay repository-mediated (M8 task 8.1)", () => {
+  // I/O-bound by nature: these coverage proofs walk real source trees, so they get
+  // an explicit timeout instead of inheriting the 5s default. On a loaded machine
+  // the default was the difference between a green gate and a spurious failure
+  // (seen in M9's clean-clone verification). The assertions are unchanged.
   it("sweeps every M8 surface directory", () => {
     for (const dir of M8_SURFACE_DIRECTORIES) {
       const files = readTree(join(srcDir, dir));
@@ -1034,7 +1067,7 @@ describe("architecture: the M8 discovery surfaces stay repository-mediated (M8 t
         dir,
       ).toBe(true);
     }
-  });
+  }, 30_000);
 
   it("flags a leak in any M8 surface — the sweep is proven, not assumed", () => {
     // Substitute a violating source for every real file in the sweep: if a rule
@@ -1278,7 +1311,7 @@ describe("architecture: the M9 catalog surfaces stay repository-mediated (M9 tas
         .map(({ file }) => file)
         .sort(),
     ).toEqual(real.map(({ file }) => file).sort());
-  });
+  }, 30_000);
 
   it("flags a leak in any M9 surface — the sweep is proven, not assumed", () => {
     // Substitute a violating source for every real M9 file: if a rule did not
@@ -1308,7 +1341,7 @@ describe("architecture: the M9 catalog surfaces stay repository-mediated (M9 tas
     expect(
       injected.filter(({ source }) => mentionsRawProviderShape(source)).map(({ file }) => file),
     ).toEqual(expected);
-  });
+  }, 30_000);
 
   it("finds no IndexedDB, server, or provider-shape leak in the M9 surfaces", () => {
     const files = M9_SURFACE_DIRECTORIES.flatMap((dir) => readTree(join(srcDir, dir)));
