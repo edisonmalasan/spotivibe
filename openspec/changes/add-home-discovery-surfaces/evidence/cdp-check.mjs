@@ -84,7 +84,9 @@ function extractConstants() {
   };
   return {
     onboardingLabel: pick(/LANGUAGE_ONBOARDING_LABEL = "([^"]+)"/, onboarding, "onboarding label"),
-    confirmLabel: pick(/confirmLabel = "([^"]+)"/, picker, "confirm label"),
+    // The onboarding supplies its own confirm label; the picker's default prop
+    // value is not what renders, so the usage site is the source of truth.
+    confirmLabel: pick(/confirmLabel="([^"]+)"/, onboarding, "onboarding confirm label"),
     pickerHint: pick(/LANGUAGE_PICKER_HINT = "([^"]+)"/, picker, "picker hint"),
     discoverOffline: pick(/OFFLINE_NOTICE =\s*\n?\s*"([^"]+)"/, discover, "discover offline copy"),
     languageSummaryLabel: pick(/LANGUAGE_SUMMARY_LABEL = "([^"]+)"/, discover, "language summary label"),
@@ -540,20 +542,28 @@ async function main() {
     // STEP 2 — select three languages and confirm
     // ====================================================================
     for (const name of SELECTED_LANGUAGES) {
-      await trustedClickJs(
-        `document.querySelector(${JSON.stringify(ONBOARDING_DIALOG)})?.querySelector('input[type="checkbox"][aria-label=${JSON.stringify(name)}]')`,
-        `language checkbox ${name}`,
-      );
+      // The picker pre-selects the default language, so a blind click would
+      // *remove* it. Only click a box that is not already checked.
+      const box = `document.querySelector(${JSON.stringify(ONBOARDING_DIALOG)})?.querySelector('input[type="checkbox"][aria-label=${JSON.stringify(name)}]')`;
+      const already = await evaluate(`(${box})?.checked ?? null`);
+      if (already === null) throw new Error(`language checkbox missing: ${name}`);
+      if (!already) await trustedClickJs(box, `language checkbox ${name}`);
     }
     const picked = await evaluate(
       `document.querySelector('[data-testid="language-picker-count"]')?.textContent ?? ''`,
+    );
+    const allChecked = await evaluate(
+      `(${SELECTED_LANGUAGES.map(
+        (name) =>
+          `document.querySelector('input[type="checkbox"][aria-label=${JSON.stringify(name)}]')?.checked === true`,
+      ).join(" && ")})`,
     );
     await trustedClickJs(buttonByText(COPY.confirmLabel), "confirm languages");
     await waitFor("onboarding closed", `!document.querySelector(${JSON.stringify(ONBOARDING_DIALOG)})`, Boolean, 15000);
     step(
       "multi-language selection confirms and closes onboarding",
-      true,
-      `selected=${SELECTED_LANGUAGES.join("+")}, count line="${picked}"`,
+      allChecked,
+      `selected=${SELECTED_LANGUAGES.join("+")}, allChecked=${allChecked}, count line="${picked}"`,
     );
 
     // ====================================================================
@@ -700,6 +710,10 @@ async function main() {
       `(() => ({
         bar: document.querySelector('[data-testid="player-bar"]')?.textContent ?? '',
         control: document.querySelector('[data-testid="player-bar"] button[aria-label="Pause"]') ? 'Pause' : 'Play',
+        iframes: document.querySelectorAll('iframe').length,
+        apiScripts: [...document.querySelectorAll('script')].filter((s) =>
+          (s.src ?? '').includes('youtube.com/iframe_api'),
+        ).length,
       }))()`,
       (state) => state.bar.includes(played.label.replace(/^Play /, "").split(" by ")[0]),
       30000,
@@ -708,6 +722,24 @@ async function main() {
       "shelf activation starts real playback",
       playback.control === "Pause",
       `control=${playback.control}, bar="${playback.bar.replace(/\s+/g, " ").trim().slice(0, 90)}"`,
+    );
+    // The one-iframe / one-API-script invariant is a property of *active
+    // playback*: the embed is created asynchronously after the transport
+    // reports the track, and released once no track is loaded, so it is
+    // asserted here — after waiting for the embed to actually exist.
+    const embedCount = await waitFor(
+      "player embed created",
+      `document.querySelectorAll('iframe').length`,
+      (count) => count >= 1,
+      20000,
+    ).catch(() => 0);
+    const embedApiScripts = await evaluate(
+      `[...document.querySelectorAll('script')].filter((s) => (s.src ?? '').includes('youtube.com/iframe_api')).length`,
+    );
+    step(
+      "active playback keeps exactly one player iframe and one IFrame API script",
+      embedCount === 1 && embedApiScripts === 1,
+      `iframes=${embedCount}, apiScripts=${embedApiScripts} while playing`,
     );
     await goto("/queue", `!!document.querySelector('main')`, "queue surface");
     const queueLabel = await waitFor(
@@ -721,11 +753,17 @@ async function main() {
       queueLabel.includes(COPY.queueBrowse),
       `label "${COPY.queueBrowse}" present on /queue`,
     );
-    // Pause so the run stays deterministic and the session stops advancing.
-    await clickElement(
-      `document.querySelector('[data-testid="player-bar"] button[aria-label="Pause"]')`,
-      "Pause",
-    );
+    // Pause so the run stays deterministic. Best-effort: a live YouTube track
+    // can already have stopped by this point (the queue surface reloads the
+    // player region), and the run records which happened rather than failing on
+    // an absent control.
+    const pauseOutcome = await evaluate(`(() => {
+      const bar = document.querySelector('[data-testid="player-bar"]');
+      const pause = bar?.querySelector('button[aria-label="Pause"]');
+      if (pause) { pause.click(); return 'paused'; }
+      return bar ? 'already-stopped' : 'no-player-bar';
+    })()`);
+    results.notes.pauseOutcome = pauseOutcome;
     await delay(500);
 
     // ====================================================================
@@ -947,7 +985,7 @@ async function main() {
     );
 
     // ====================================================================
-    // STEP 16 — exactly one player iframe / one IFrame API script
+    // STEP 16 — the IFrame API is still loaded exactly once at the end
     // ====================================================================
     const player = await evaluate(
       `(() => ({
@@ -959,9 +997,9 @@ async function main() {
       }))()`,
     );
     step(
-      "exactly one player iframe and one IFrame API script",
-      player.iframes === 1 && player.apiScripts === 1,
-      `iframes=${player.iframes}, apiScripts=${player.apiScripts}, control=${player.control}`,
+      "the IFrame API is still loaded exactly once at the end of the run",
+      player.apiScripts === 1,
+      `apiScripts=${player.apiScripts}, iframes now=${player.iframes} (the embed is released once no track is loaded), control=${player.control}`,
     );
 
     // ====================================================================
