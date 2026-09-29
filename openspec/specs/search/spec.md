@@ -88,7 +88,7 @@ Activating a song result SHALL start persistent playback through the playback en
 
 ### Requirement: Result context actions
 
-Each song result SHALL expose a context menu with: play, like/unlike, add to queue, add to local playlist, go to artist, and go to album (where album metadata exists). Like/unlike SHALL persist to the local liked-tracks repository and reflect current state when results render. Add to queue SHALL append the track to the end of the queue per the queue capability's insertion rules (including its duplicate protection) without disturbing current playback. Add to local playlist SHALL let the user pick an existing local playlist or create a new one inline, then append the track. Go to artist and go to album SHALL refine the search to that artist/album name. The menu SHALL be operable by keyboard with a visible focus state and an accessible name per control.
+Each song result SHALL expose a context menu with: play, like/unlike, add to queue, add to local playlist, go to artist, and go to album (where album metadata exists). Like/unlike SHALL persist to the local liked-tracks repository and reflect current state when results render. Add to queue SHALL append the track to the end of the queue per the queue capability's insertion rules (including its duplicate protection) without disturbing current playback. Add to local playlist SHALL let the user pick an existing local playlist or create a new one inline, then append the track — unless the playlist already contains it, in which case the playlist is unchanged and the picker reports that the track is already there, per the library capability's duplicate rule. Go to artist and go to album SHALL refine the search to that artist/album name. The menu SHALL be operable by keyboard with a visible focus state and an accessible name per control.
 
 #### Scenario: Like persists locally
 
@@ -114,6 +114,11 @@ Each song result SHALL expose a context menu with: play, like/unlike, add to que
 
 - **WHEN** the user activates "Add to queue" on a result while a track is playing
 - **THEN** the result track is appended to the end of the queue (once — duplicate protection applies), the menu closes, and the current track, status, and position are unchanged
+
+#### Scenario: Adding a track already in the playlist does not duplicate it
+
+- **WHEN** the user adds a result to a local playlist that already contains that track
+- **THEN** the playlist's tracks and order are unchanged, and the picker reports that the track is already in the playlist
 
 ### Requirement: Local-first search history
 
