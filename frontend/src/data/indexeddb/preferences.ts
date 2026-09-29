@@ -17,6 +17,10 @@ export function createPreferencesRepository(db: IDBDatabase): PreferencesReposit
         autoplayNext: record.autoplayNext ?? DEFAULT_PREFERENCES.autoplayNext,
         reduceMotion: record.reduceMotion ?? DEFAULT_PREFERENCES.reduceMotion,
         onboardingComplete: record.onboardingComplete ?? DEFAULT_PREFERENCES.onboardingComplete,
+        // M10: a record written before autofill existed has no field, so it
+        // falls back per field like every other one — otherwise autofill would
+        // silently read as off for every existing install.
+        autofillQueue: record.autofillQueue ?? DEFAULT_PREFERENCES.autofillQueue,
       };
     },
 

@@ -32,6 +32,9 @@ describe("preferencesStore hydration", () => {
     expect(state.onboardingComplete).toBe(DEFAULT_PREFERENCES.onboardingComplete);
     expect(state.autoplayNext).toBe(DEFAULT_PREFERENCES.autoplayNext);
     expect(state.reduceMotion).toBe(DEFAULT_PREFERENCES.reduceMotion);
+    // M10: autofill is on by default (design §6), and the store reports it
+    // before hydration so a surface never has to wait on storage to render it.
+    expect(state.autofillQueue).toBe(DEFAULT_PREFERENCES.autofillQueue);
   });
 
   it("reads stored preferences from the repository", async () => {
@@ -40,6 +43,7 @@ describe("preferencesStore hydration", () => {
       autoplayNext: false,
       reduceMotion: true,
       onboardingComplete: true,
+      autofillQueue: false,
     });
 
     await usePreferencesStore.getState().hydrate();
@@ -50,6 +54,7 @@ describe("preferencesStore hydration", () => {
     expect(state.onboardingComplete).toBe(true);
     expect(state.autoplayNext).toBe(false);
     expect(state.reduceMotion).toBe(true);
+    expect(state.autofillQueue).toBe(false);
   });
 
   it("falls back to the default language when nothing is stored yet", async () => {
@@ -157,12 +162,32 @@ describe("preferencesStore writes", () => {
   });
 
   it("keeps unrelated preferences when languages change", async () => {
-    await repositories.preferences.set({ autoplayNext: false, reduceMotion: true });
+    await repositories.preferences.set({
+      autoplayNext: false,
+      reduceMotion: true,
+      autofillQueue: false,
+    });
 
     await usePreferencesStore.getState().setLanguages(["ta"]);
 
     const stored = await repositories.preferences.get();
     expect(stored).toMatchObject({ languages: ["ta"], autoplayNext: false, reduceMotion: true });
+  });
+
+  it("persists the autofill setting through the repository and reflects it", async () => {
+    // M10 task 5.1: the same repository-first write as every other preference,
+    // so the value the refill engine reads is the value the device accepted.
+    await usePreferencesStore.getState().setAutofillQueue(false);
+
+    expect((await repositories.preferences.get()).autofillQueue).toBe(false);
+    expect(usePreferencesStore.getState().autofillQueue).toBe(false);
+
+    resetPreferencesStore();
+    await usePreferencesStore.getState().hydrate();
+    expect(usePreferencesStore.getState().autofillQueue).toBe(false);
+
+    await usePreferencesStore.getState().setAutofillQueue(true);
+    expect((await repositories.preferences.get()).autofillQueue).toBe(true);
   });
 
   it("leaves state and storage unchanged when the write fails", async () => {

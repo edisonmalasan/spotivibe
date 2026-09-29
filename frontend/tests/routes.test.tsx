@@ -12,11 +12,13 @@ import QueuePage from "@/app/queue/page";
 import SearchPage from "@/app/search/page";
 import type { Track } from "@/data/repositories";
 import { CIRCULAR_WINDOW } from "@/features/home/homeSections";
+import { resetRefillChannel } from "@/features/personalization/RefillAgent";
 import { resetHistoryStore } from "@/stores/historyStore";
 import { resetLibraryStore } from "@/stores/libraryStore";
 import { resetPreferencesStore } from "@/stores/preferencesStore";
 import { resetQueueStore } from "@/stores/queueStore";
 import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { resetRadioStore, useRadioStore } from "@/stores/radioStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
 /**
@@ -44,6 +46,15 @@ import { makeTrack } from "./helpers/music-fixtures";
  * their own coverage (`library-surface.test.tsx`, `search-*.test.tsx`,
  * `home-view.test.tsx`, `discover-view.test.tsx`); what is asserted here is the
  * route contract each one is mounted behind.
+ *
+ * M10 extends two of those route contracts: `/now-playing` gains the radio
+ * action and indicator, and `/queue` gains the radio source label. Neither is
+ * new surface area in the DOM sense — a radio is a *mode of the one queue* — so
+ * what is pinned here is that the routes expose them at all and read them from
+ * the stores the rest of the app reads, while the behavioural coverage (starting
+ * a radio, ending one, refilling, retrying) stays with the features
+ * (`radio-entry-points.test.tsx`, `refill-agent.test.tsx`,
+ * `start-radio.test.ts`).
  */
 
 // Cold route renders plus several awaited shelves can exceed the 1s default.
@@ -174,12 +185,20 @@ beforeEach(() => {
   // history, onboarding not yet confirmed — the states a first run really has.
   // The transport store is reset too: the Now Playing surface and the catalog
   // pages both read it, so a current track must never leak between cases.
+  // M10 adds two more sources of cross-case state on the same routes: the radio
+  // store (the Now Playing indicator and the queue's radio label both read it)
+  // and the refill-failure channel, which is module state rather than a store
+  // because it is shared between the app shell and the queue surface. A radio
+  // left running — or a failure left published — would make a later case read as
+  // a radio-mode route that never started one.
   resetLibraryStore();
   resetQueueStore();
   resetPlayerStore();
   clearPlaybackBridge();
   resetHistoryStore();
   resetPreferencesStore();
+  resetRadioStore();
+  resetRefillChannel();
   push.mockClear();
   stubDiscovery();
 });
@@ -420,5 +439,101 @@ describe("route shells: Now Playing after the M9 presentation layer", () => {
     // playing track.
     expect(await screen.findByRole("heading", { name: "More Like This" })).toBeInTheDocument();
     expect(screen.getByTestId("more-like-this")).toBeInTheDocument();
+
+    // M10's radio action on the same transport row, with a current track to
+    // seed it from. It is an enabled action rather than a disabled affordance,
+    // which is the distinction the spec makes: the route *can* start this one.
+    expect(screen.getByRole("button", { name: "Start track radio" })).toBeEnabled();
+    expect(screen.getByTestId("now-playing-radio")).toBeInTheDocument();
+    // An ordinary queue is not a radio: the indicator follows the radio store,
+    // and nothing has started one in this case.
+    expect(screen.queryByTestId("now-playing-radio-indicator")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("now-playing-radio-failure")).not.toBeInTheDocument();
+  });
+
+  it("omits the radio action entirely with no current track — it cannot seed one (M10)", async () => {
+    stubCatalogApi();
+    // No `playTrack` call: this is the idle route, exactly as a first run has it.
+    render(<NowPlayingPage />);
+
+    // The M1 idle contract is unchanged by M10: the heading, the placeholder
+    // title, and the guidance copy all still stand.
+    expect(screen.getByRole("heading", { level: 1, name: "Now Playing" })).toBeInTheDocument();
+    expect(screen.getByTestId("now-playing-title")).toHaveTextContent("Nothing playing");
+    expect(screen.getByText("Choose something to start")).toBeInTheDocument();
+
+    // The radio action is *absent*, not disabled: a radio needs an identity, and
+    // a disabled control would offer an action this route cannot perform.
+    expect(screen.queryByRole("button", { name: "Start track radio" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("now-playing-radio")).not.toBeInTheDocument();
+    // With no radio and no failure there is nothing to announce.
+    expect(screen.queryByTestId("now-playing-radio-indicator")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("now-playing-radio-failure")).not.toBeInTheDocument();
+    // The rest of the transport row is intact: omitting one control did not
+    // remove the ones beside it.
+    expect(screen.getByRole("button", { name: "Save to Liked Songs" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next track" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Queue" })).toBeEnabled();
+  });
+
+  it("reflects the radio store in its indicator, and follows it to the end (M10)", async () => {
+    stubCatalogApi();
+    usePlayerStore.getState().playTrack(NOW_PLAYING_TRACK, [NOW_PLAYING_TRACK]);
+    // Start a radio the way the app does — through the store, not a local flag.
+    useRadioStore.getState().startRadio({ kind: "track", track: NOW_PLAYING_TRACK });
+    render(<NowPlayingPage />);
+
+    // The indicator appears because the *store* says a radio is running, and it
+    // announces itself as text rather than through an icon alone.
+    const indicator = screen.getByTestId("now-playing-radio-indicator");
+    expect(indicator).toHaveTextContent("Radio");
+    expect(screen.getByText("Radio")).toBeInTheDocument();
+    // A running radio is not a failure to offer: no retry line beside it.
+    expect(screen.queryByTestId("now-playing-radio-failure")).not.toBeInTheDocument();
+
+    // `"ended"` is the one status that is not a radio — material exhausted — so
+    // the indicator goes with it. This proves the surface reads the store rather
+    // than latching a boolean at mount.
+    await act(async () => {
+      useRadioStore.getState().setStatus("ended");
+    });
+    expect(screen.queryByTestId("now-playing-radio-indicator")).not.toBeInTheDocument();
+    // Ending a radio does not remove the action: the same track can seed another.
+    expect(screen.getByRole("button", { name: "Start track radio" })).toBeEnabled();
+  });
+});
+
+describe("route shells: the M10 radio queue source", () => {
+  it("labels the queue as a radio when a radio seeded it (M10)", async () => {
+    stubCatalogApi();
+    // The start path's own ordering: the radio is registered, then the ordinary
+    // queue adopts the batch under `source: "radio"` — the single transport call
+    // every entry point makes.
+    useRadioStore.getState().startRadio({ kind: "track", track: NOW_PLAYING_TRACK });
+    usePlayerStore
+      .getState()
+      .playTrack(NOW_PLAYING_TRACK, [NOW_PLAYING_TRACK, FEED_TRACK], "radio");
+    render(<QueuePage />);
+
+    // A radio is a *mode of this one queue*, so the queue route renders the same
+    // regions it always does — with the radio source label in its header.
+    expect(screen.getByRole("heading", { level: 1, name: "Queue" })).toBeInTheDocument();
+    expect(screen.getByText("From radio")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Now playing" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Next & upcoming" })).toBeInTheDocument();
+    // The M6 empty state is gone now that the queue has entries.
+    expect(screen.queryByText("Nothing queued yet")).not.toBeInTheDocument();
+  });
+
+  it("reports no source at all for an ordinary queue (M10)", () => {
+    stubCatalogApi();
+    usePlayerStore.getState().playTrack(NOW_PLAYING_TRACK, [NOW_PLAYING_TRACK]);
+    render(<QueuePage />);
+
+    // The pre-M10 contract, unchanged: an unrecorded source is simply not
+    // labelled, rather than being labelled "Unknown source".
+    expect(screen.getByRole("heading", { level: 1, name: "Queue" })).toBeInTheDocument();
+    expect(screen.queryByText("From radio")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unknown source")).not.toBeInTheDocument();
   });
 });

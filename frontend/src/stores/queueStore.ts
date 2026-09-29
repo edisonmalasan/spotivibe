@@ -139,6 +139,29 @@ export interface QueueState {
    */
   enqueue(track: Track): boolean;
   /**
+   * **Grow** the queue while it plays (M10 task 2.2, spec `queue` — "Queue growth
+   * by refill and autofill"): insert `tracks` directly after the current
+   * traversal position, so they play next.
+   *
+   * Deliberately the *only* growth operation, and never a self-trigger: the
+   * queue store does not decide it is running low — the radio/autofill engine
+   * does, and calls this. Unlike every other mutation here it preserves, rather
+   * than rebuilds, the user's ordering:
+   *
+   * - the current track, `queueIndex`, `history`, `shuffle`, `repeatMode`, and
+   *   the recorded `source` are all untouched;
+   * - the existing `playOrder` keeps its relative sequence — the new indices are
+   *   spliced in after the current one, so even under shuffle the appended
+   *   tracks are what actually plays next;
+   * - the existing array entries keep their relative order (they shift by the
+   *   number of insertions made ahead of them, and the pointer does not move);
+   * - any track already in the queue is refused, by `id` or by source+providerId
+   *   through the same {@link sameQueueIdentity} rule every other path uses, so
+   *   a repeated call is a no-op and a response that re-serves a queued track
+   *   cannot duplicate it.
+   */
+  appendUpcoming(tracks: readonly Track[]): AppendResult;
+  /**
    * Remove `queue[index]` with pointer integrity: before the current entry
    * shifts the index down, after it leaves pointers untouched, and removing
    * the current entry reports the traversal successor so `playerStore` can
@@ -179,6 +202,22 @@ export interface RemoveResult {
   currentRemoved: boolean;
   /** New index of the entry to continue with; `null` → clean stop (no successor). */
   nextIndex: number | null;
+}
+
+/**
+ * Outcome of `appendUpcoming()` (M10 task 2.2).
+ *
+ * `appended` is what entered the queue, in the order it was appended; `skipped`
+ * is what the duplicate rule refused. The engine reports the difference rather
+ * than a bare boolean so a refill that resolved *only* already-queued material
+ * is observable as "nothing new" — the case that ends a radio gracefully
+ * instead of appending a track the user already has queued.
+ */
+export interface AppendResult {
+  /** The tracks that entered the queue, in append order. */
+  appended: Track[];
+  /** The tracks refused because their identity is already in the queue. */
+  skipped: Track[];
 }
 
 /**
@@ -294,6 +333,49 @@ export const useQueueStore = create<QueueState>()((set, get) => ({
     // too, and a shuffled order keeps the current entry first either way.
     set({ queue: nextQueue, playOrder: [...playOrder, nextQueue.length - 1] });
     return true;
+  },
+
+  appendUpcoming(tracks) {
+    const { queue, playOrder, queueIndex } = get();
+    const appended: Track[] = [];
+    const skipped: Track[] = [];
+    // The duplicate rule covers the *whole* queue, not just the current-or-upcoming
+    // region `enqueue` scans: a refill must not reintroduce a track the listener
+    // already has in front of them. Identity of everything already queued plus
+    // everything accepted in this call, so a response that repeats itself is
+    // deduped too and a repeated call is a no-op.
+    const present = [...queue];
+    for (const track of tracks) {
+      if (present.some((entry) => sameQueueIdentity(entry, track))) {
+        skipped.push(track);
+        continue;
+      }
+      present.push(track);
+      appended.push(track);
+    }
+    if (appended.length === 0) return { appended, skipped };
+
+    // Insert after the current entry in the array and after the current entry's
+    // position in the traversal, so the growth plays *next* under either shuffle
+    // state. Without a current entry (an empty queue, or a stopped one) there is
+    // no position to follow and the growth goes to the end of both.
+    const currentPos = playOrder.indexOf(queueIndex);
+    const hasCurrent = queueIndex >= 0 && queueIndex < queue.length && currentPos !== -1;
+    const at = hasCurrent ? queueIndex + 1 : queue.length;
+    const nextQueue = [...queue.slice(0, at), ...appended, ...queue.slice(at)];
+    // Growing the array in the middle moves every later index along, so the
+    // traversal is shifted with it — the *sequence* is what is preserved, not the
+    // numbers, and the growth then takes the position right after the current one.
+    const inserted = appended.map((_, offset) => at + offset);
+    const shifted = playOrder.map((value) => (value >= at ? value + inserted.length : value));
+    const insertAt = hasCurrent ? currentPos + 1 : shifted.length;
+    // Only `queue`/`playOrder` move: the pointer, history, source, shuffle, and
+    // repeat are the user's state, not this operation's business.
+    set({
+      queue: nextQueue,
+      playOrder: [...shifted.slice(0, insertAt), ...inserted, ...shifted.slice(insertAt)],
+    });
+    return { appended, skipped };
   },
 
   remove(index) {

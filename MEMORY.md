@@ -1,84 +1,60 @@
 # MEMORY.md — Spotivibe session handoff (untracked working note, NOT part of the product)
 
-> This file is a progress ledger for long sessions. It is intentionally left
-> uncommitted and must never be staged into a commit or a PR.
+> Progress ledger for long sessions. Intentionally uncommitted; never stage it.
 
 ## Objective
 
-Finish the remaining roadmap milestones **autonomously**, following the
-`AGENTS.md` OpenSpec lifecycle for each (Propose → Apply → Sync → Archive, one
-remote branch + PR per stage, merge commits only) and keeping `ROADMAP.md`
-milestone status + §11 checklist items current at every transition.
+Finish the remaining roadmap milestones autonomously, following the `AGENTS.md`
+OpenSpec lifecycle per milestone (Propose → Apply → Sync → Archive; one remote
+branch + PR per stage; merge commits only) and keeping `ROADMAP.md` current.
 
-## Completed milestones (M0–M8) — all `DONE`, all stages merged
+## Completed
 
-| Milestone | Change (archived) | Apply PR / merge |
+| Milestone | Change (archived) | PRs / merges |
 |---|---|---|
-| M0–M6 | `openspec/changes/archive/2026-09-2{7,8}-*` | merged earlier |
-| M7 | `2026-09-29-add-local-library` | #30 / `5cf27fd` |
-| M8 | `2026-09-29-add-home-discovery-surfaces` | #34 / `4f1ddae` (sync #35, archive #36) |
+| M0–M8 | `openspec/changes/archive/2026-09-2*-*` | merged earlier |
+| **M9** | `2026-09-29-add-artist-catalog-pages` | #37 propose `a51f587`, #38 apply `67c144e`, #39 sync `7d0dd86`, #40 archive `0de10e0` |
+| **M10** | `add-radio-and-local-personalization` | #41 propose `e99435a` (Apply in progress) |
 
-Baseline after M8: **91 test files / 1107 tests**; all six gates green in a clean
-clone; browser evidence harness pattern lives in each archived change's
-`evidence/cdp-check.mjs` (dependency-free CDP driver, `results.json` with
-`"pass": true`, screenshots, disclosure README).
+Baseline after M9: **102 test files / 1436 tests**; all six gates green in a clean
+clone. Main specs: `catalog` (new) + `app-shell`/`discovery`/`music-provider`/`search`/
+`queue` updated. 10 archived changes.
 
-## Current state — M9 in progress
+## M9 highlights worth remembering
+- Server `src/server/music/catalog.ts` + `/api/artist|/album|/similar`; ≤2 seeds,
+  sequential, `CATALOG_*` budgets; `unresolvable` vs `upstream` split.
+- A provider id is **never** rendered as a release title: `AlbumView.title` is
+  optional, derived from *confirmed* album metadata; unconfirmed → neutral
+  "Unconfirmed release" + `data-metadata-incomplete` attribute.
+- `isProviderEntityId` / `normalizeEntityText` live in `src/lib/entityKeys.ts`
+  (both catalog routes share them; a release id is `MPREb_…` — underscore rule).
+- Evidence harness: `openspec/changes/archive/2026-09-29-add-artist-catalog-pages/evidence/`
+  (`cdp-check.mjs`, `results.json` `pass: true`, 32 steps, README with 10 disclosures).
 
-Change: `add-artist-catalog-pages` (Propose merged: PR #37 / `a51f587`).
-Branch: `feat/catalog-pages` (created + pushed). Roadmap M9 = `IN PROGRESS`.
+## M10 state
+- Branch: create `feat/radio-personalization` from updated `main`; Roadmap M10 = `IN PROGRESS`.
+- Deltas: ADDED `radio` + `personalization` (new capabilities), ADDED `music-provider`
+  requirement (radio feed), MODIFIED `queue`/`search`/`app-shell`.
+- Apply waves used: (1) server radio feed + radio client API ‖ taste profile/scorer/radioStore,
+  (2) queue growth + radio source + refill/autofill engine ‖ entry points + autofill setting,
+  (3) architecture + route contracts, (4) root: gates, CDP evidence, roadmap, clean clone, PR.
+- Evidence harness must be written fresh for M10; the M9 harness is the template, and its
+  README's "what the script is" + disclosures structure is the pattern to copy.
 
-**Wave 1 DONE (uncommitted):**
-- Server: `frontend/src/server/music/catalog.ts`, routes `api/artist`,
-  `api/album`, `api/similar`; tests `music-catalog.test.ts`, `catalog-route.test.ts`
-  (99 tests). Bounds: ≤2 seeds, sequential, `CATALOG_SEED_TIMEOUT_MS=10_000`,
-  `CATALOG_FEED_BUDGET_MS=20_000`. `unresolvable` vs `upstream` distinction.
-  Risk noted: name-keyed artist requests credit-filter results, so an unusual
-  channel name can 404 — loosen `creditsArtist`, not the client, if evidence shows it.
-- Client artist surface: `features/artist/{artistKeys,artistApi,ArtistView,likedByArtist}.ts*`,
-  `app/artist/[key]/page.tsx`; tests `artist-{keys,api,view}` (72 tests).
-  Exports: `isProviderEntityId`, `artistRequestKey`, `artistHref`,
-  `albumHrefFor` (TEMPORARY duplicate — see below), `normalizeEntityText`,
-  `ArtistApiError`, `fetchArtist`, `likedTracksByArtist`.
-
-**Open integration decision (root):** the album feature will own the canonical
-`albumHref` in `features/album/albumKeys.ts`; delete `albumHrefFor` from
-`features/artist/artistKeys.ts` and repoint `ArtistView` to import the canonical
-one (agent even wrote a test pinning format compatibility).
-
-**Remaining M9 work (waves):**
-- Wave 2: (C) album surface — `features/album/*`, `app/album/[key]/page.tsx`;
-  (D) related content + Now Playing presentation — generalize
-  `useDiscoveryShelf` with a `fetchTracks` override, More Like This shelf via
-  `/api/similar`, artwork-derived background, reduced-motion marquee.
-- Wave 3: (E) entry points repointed (M5 search artist/album tiles, result menu
-  go-to-artist/album, M8 Home artist cards); (F) architecture rules +
-  `tests/routes.test.tsx` (tasks 7.1/7.2).
-- Wave 4 (root): tick tasks, run six gates, build + run CDP evidence harness
-  (write `evidence/cdp-check.mjs` for M9), tick 8.2/8.3, roadmap M9 → DONE +
-  §11 ticks, clean-clone re-verify (8.4), push, PR, `gh pr checks --watch`,
-  `gh pr merge --merge --delete-branch`.
-- Then Sync (specs deltas: ADDED `catalog`, ADDED `music-provider` requirement,
-  MODIFIED `app-shell` Now Playing) and Archive.
-
-Then continue M10 → M15 the same way (radio/autofill, history/stats/streaks/
-Smart Mixes, podcasts, PWA/offline, hardening, release validation/deploy).
-
-## Hard-won lessons (apply to every milestone)
-
-1. **Encode PowerShell edits with explicit UTF-8.** `Get-Content`/`Set-Content`
-   round-trips are lossy for `—`/`§`; `[System.IO.File]::WriteAllText` with a
-   UTF8 encoding object is safe. Prefer the edit/write tools for spec files.
-2. **Bound provider fan-out.** The M8 verifier found 80 simultaneous chain calls
-   against a 4-slot limiter whose 8 s budget started before slot acquisition →
-   mass shelf timeouts. Every new endpoint: ≤2–8 seeds, sequential, per-seed +
-   feed budget, and a client-side cap on concurrent requests.
-3. **Run an independent verification subagent before merging**; fix every
-   CRITICAL and acknowledge warnings in the PR body. If the *spec* is wrong
-   (e.g. the unsatisfiable DESIGN.md shelf-rhythm rule, or the `limit`
-   parameter), amend the artifact and record why — do not bend the code.
-4. **Evidence harness assertions must be source-verified**: extract copy/test ids
-   from the sources at startup, and remember `IconButton` puts its label in
-   `aria-label` only; wait for async embed creation before counting iframes.
-5. One milestone per orchestration run unless continuous execution is
-   explicitly requested (it is, for this stretch).
+## Hard-won lessons
+1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
+   `[System.IO.File]::WriteAllText` must use an explicit `New-Object System.Text.UTF8Encoding($false)`;
+   prefer the edit/write tools. Inside double-quoted PowerShell strings, `` `r `` is a
+   carriage return — a backtick-quoted word like `` `rows= `` silently corrupts text.
+2. **Bound provider fan-out.** ≤2 seeds per request, sequential, per-seed + request budgets,
+   a client-side cap. Background refill must be latched (one in flight).
+3. **Run an independent verification subagent before merging**; fix every CRITICAL, and
+   amend the *spec* (not the code) when the spec is wrong — record the rationale in design.md.
+4. **Evidence harness assertions must be source-verified**: extract copy from the sources,
+   `IconButton` puts its label in `aria-label` only, skeleton rows look like real rows (count
+   controls, not rows), and a backtick inside a comment inside a template literal breaks the file.
+5. **`openspec validate` requires MODIFIED blocks to retain existing scenario *names*** —
+   a scenario-level rename is not expressible; retain the name and disclose inline.
+6. **The clean-clone gate (task x.4) earns its keep**: it caught a flaky architecture test
+   (repeated full-tree reads tripping vitest's 5s default). Memoize tree reads; give I/O-bound
+   sweep proofs an explicit timeout rather than weakening assertions.

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { attachSessionPersistence } from "@/player/persistence";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { useQueueStore } from "@/stores/queueStore";
+import { resetRadioStore, useRadioStore } from "@/stores/radioStore";
 import { getLocalData } from "@/data/localData";
 import { makeTrack } from "../helpers/music-fixtures";
 
@@ -46,6 +47,7 @@ let detach: (() => void) | null = null;
 
 beforeEach(async () => {
   resetPlayerStore();
+  resetRadioStore();
   localStorage.clear();
   clearVisibilityOverride();
   const data = await getLocalData();
@@ -191,5 +193,38 @@ describe("session persistence", () => {
 
     await sleep(DEBOUNCE + 30);
     expect(await sessionRecord()).toBeNull(); // detacher stopped all writes
+  });
+
+  it("persists the radio's identity with the queue it belongs to", async () => {
+    // M10: a radio is a mode of the queue, so the queue's own snapshot has to
+    // carry which radio it is. Without this a reload returns a queue still
+    // labelled "From radio" whose refill silently degrades to autofill.
+    resetRadioStore();
+    detach = attachSessionPersistence({ debounceMs: DEBOUNCE });
+
+    state().playTrack(trackA, [trackA, trackB], "radio");
+    useRadioStore.getState().startRadio({ kind: "track", track: trackA });
+    useRadioStore.getState().advanceVariant();
+
+    await sleep(DEBOUNCE + 30);
+    const record = await sessionRecord();
+    expect(record!.radio).toEqual({
+      seed: {
+        kind: "track",
+        trackId: trackA.id,
+        title: trackA.title,
+        artist: trackA.artists[0]?.name,
+      },
+      variant: 1,
+    });
+  });
+
+  it("persists no radio at all when none is running", async () => {
+    resetRadioStore();
+    detach = attachSessionPersistence({ debounceMs: DEBOUNCE });
+
+    state().playTrack(trackA, [trackA, trackB]);
+    await sleep(DEBOUNCE + 30);
+    expect((await sessionRecord())!.radio).toBeUndefined();
   });
 });

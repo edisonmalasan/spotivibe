@@ -19,6 +19,12 @@ import { DEFAULT_LANGUAGE, normalizeLanguageCodes } from "@/lib/languages";
  * through the shared catalog, so it is never empty (a fresh install reads as
  * `[DEFAULT_LANGUAGE]` while the repository still holds `[]`). That guarantee is
  * what lets a discovery request always carry at least one catalog code.
+ *
+ * **M10 adds `autofillQueue`** (spec `radio` — "Queue autofill"; design §6).
+ * It follows the existing pattern exactly — a field on `Preferences`, a default
+ * drawn from `DEFAULT_PREFERENCES`, the same repository-first write, and no new
+ * storage path — so the Settings toggle, the backup envelope, and the refill
+ * engine all read the same one value.
  */
 
 export interface PreferencesState {
@@ -30,6 +36,12 @@ export interface PreferencesState {
   autoplayNext: boolean;
   /** UI/accessibility preference: honor reduced-motion requests. */
   reduceMotion: boolean;
+  /**
+   * Whether an ordinary queue may be topped up with more tracks before it ends
+   * (M10, default on). Radio is *not* gated by this: a radio only starts from
+   * an explicit user gesture.
+   */
+  autofillQueue: boolean;
   /** True once the first successful read has settled. */
   hydrated: boolean;
 
@@ -43,6 +55,13 @@ export interface PreferencesState {
   setLanguages(codes: readonly string[]): Promise<void>;
   /** Persist the selection and mark first-run onboarding complete in one write. */
   completeOnboarding(codes: readonly string[]): Promise<void>;
+  /**
+   * Persist the queue-autofill setting. Repository-first like every other
+   * write: a failed write rejects and leaves the stored value — and therefore
+   * the effective one — exactly as it was, so the toggle can never show a state
+   * the device did not accept.
+   */
+  setAutofillQueue(enabled: boolean): Promise<void>;
 }
 
 /** Store defaults before hydration — never claim a preference was read. */
@@ -51,6 +70,7 @@ export const initialPreferencesState = {
   onboardingComplete: DEFAULT_PREFERENCES.onboardingComplete,
   autoplayNext: DEFAULT_PREFERENCES.autoplayNext,
   reduceMotion: DEFAULT_PREFERENCES.reduceMotion,
+  autofillQueue: DEFAULT_PREFERENCES.autofillQueue,
   hydrated: false,
 };
 
@@ -77,6 +97,7 @@ function applyPreferences(preferences: Preferences): void {
     onboardingComplete: preferences.onboardingComplete,
     autoplayNext: preferences.autoplayNext,
     reduceMotion: preferences.reduceMotion,
+    autofillQueue: preferences.autofillQueue,
     hydrated: true,
   });
 }
@@ -114,5 +135,9 @@ export const usePreferencesStore = create<PreferencesState>()(() => ({
 
   async completeOnboarding(codes) {
     await writePreferences({ languages: normalizeLanguageCodes(codes), onboardingComplete: true });
+  },
+
+  async setAutofillQueue(enabled) {
+    await writePreferences({ autofillQueue: enabled });
   },
 }));

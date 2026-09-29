@@ -8,12 +8,20 @@ import { usePlayerStore } from "@/stores/playerStore";
 import { useQueueStore } from "@/stores/queueStore";
 import { useState, type DragEvent } from "react";
 
-/** Display labels for the recorded queue source (design §1 — shown in the header). */
+/**
+ * Display labels for the recorded queue source (design §1 — shown in the header).
+ *
+ * `radio` (M10) is a mode of this same queue, not a second queue: the label
+ * reports the recorded source and keeps reporting it while a radio keeps
+ * refilling, which is what makes "a radio is a mode of the one queue" (design
+ * §1) visible rather than asserted.
+ */
 const SOURCE_LABEL: Record<QueueSource, string> = {
   search: "From search",
   browse: "From browse",
   library: "From your library",
   queue: "From queue",
+  radio: "From radio",
   unknown: "Unknown source",
 };
 

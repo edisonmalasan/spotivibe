@@ -7,6 +7,7 @@ import { IconButton } from "@/components/design-system/IconButton";
 import type { Track } from "@/data/repositories";
 import { albumHrefFromRelease } from "@/features/album/albumKeys";
 import { artistHref } from "@/features/artist/artistKeys";
+import { startTrackRadio } from "@/features/personalization/startRadio";
 import { PlaylistPicker } from "@/features/search/PlaylistPicker";
 import { useQueueStore } from "@/stores/queueStore";
 
@@ -43,8 +44,15 @@ function nonBlank(value: string | undefined): string | undefined {
  * `aria-haspopup`/`aria-expanded`, `role="menu"` items in DOM order
  * (plain buttons, so Tab reaches each), Escape and outside-click close,
  * "Add to queue" appends through the queue store, "Add to playlist"
- * opens the feature-local picker dialog, and "Go to artist"/"Go to album"
- * open the real catalog surfaces (M9 task 6.1) rather than refining the query.
+ * opens the feature-local picker dialog, "Go to artist"/"Go to album"
+ * open the real catalog surfaces (M9 task 6.1) rather than refining the query,
+ * and M10's "Start track radio" hands the result to the radio engine.
+ *
+ * The radio item is the last one, after the navigation items, because it is the
+ * only item that *replaces* what plays rather than editing or navigating: the
+ * menu closes first (through the same `activate` every other item uses) and the
+ * request runs after, so the user sees the menu dismiss immediately instead of
+ * waiting on the network. Every existing item keeps its position and behavior.
  */
 export function ResultMenu({ track, isLiked, onPlay, onToggleLike }: ResultMenuProps) {
   const router = useRouter();
@@ -193,6 +201,27 @@ export function ResultMenu({ track, isLiked, onPlay, onToggleLike }: ResultMenuP
               Go to album
             </button>
           )}
+          {/*
+            M10 (spec `search` — "Result context actions"): a track radio seeded
+            by this result. The engine replaces the queue with the radio's own
+            tracks and starts playback once; the menu closes before the request
+            is issued, and a refused start leaves the existing queue untouched.
+          */}
+          <button
+            type="button"
+            role="menuitem"
+            className={itemClassName}
+            onClick={() =>
+              activate(() => {
+                // Fire-and-forget by design: the outcome is not a menu concern,
+                // and the engine reports a failure through the non-blocking
+                // refill affordance rather than a dialog in a closed menu.
+                void startTrackRadio(track);
+              })
+            }
+          >
+            Start track radio
+          </button>
         </div>
       )}
 

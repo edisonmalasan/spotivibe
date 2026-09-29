@@ -120,6 +120,16 @@ export interface Preferences {
   reduceMotion: boolean;
   /** Onboarding completion flag. */
   onboardingComplete: boolean;
+  /**
+   * Playback preference (M10, spec `radio` — "Queue autofill"; design §6): let
+   * an ordinary queue be topped up with more tracks before it runs out.
+   *
+   * **Default on**, and the only setting radio behaviour has: autofill spends
+   * provider requests on the user's behalf, so it must be switchable; a radio
+   * only ever starts from an explicit "Start … radio" gesture, so it is never
+   * automatic and needs no opt-out.
+   */
+  autofillQueue: boolean;
 }
 
 /** Preferences store record (keyPath `id`). */
@@ -132,12 +142,19 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autoplayNext: true,
   reduceMotion: false,
   onboardingComplete: false,
+  autofillQueue: true,
 };
 
 export type RepeatMode = "off" | "context" | "track";
 
-/** Where the current queue context came from (M6 queue surface label). */
-export type QueueSource = "search" | "browse" | "library" | "queue" | "unknown";
+/**
+ * Where the current queue context came from (M6 queue surface label).
+ *
+ * `radio` (M10) is a *mode of the one queue* (design §1), not a second player:
+ * the tracks live in this same store, so an existing entry and a radio-refilled
+ * one are the same kind of thing and every queue surface works on day one.
+ */
+export type QueueSource = "search" | "browse" | "library" | "queue" | "radio" | "unknown";
 
 /** One played entry on the bounded queue-history stack (M6 bookkeeping). */
 export interface QueueHistoryEntry {
@@ -161,8 +178,37 @@ export interface SessionSnapshot {
   history?: QueueHistoryEntry[];
   /** Traversal order over `queue` indices (optional — pre-M6 snapshots omit it). */
   playOrder?: number[];
-  /** Queue source label (optional — pre-M6 snapshots omit it). */
+  /** Queue source label (optional - pre-M6 snapshots omit it). */
   source?: QueueSource;
+  /**
+   * The active radio's identity and rotation counter (optional - pre-M10
+   * snapshots omit it).
+   *
+   * A radio is a *mode of this queue*, so its identity has to travel with the
+   * queue: without it a reload brings back a queue still labelled "From radio"
+   * while nothing knows which radio it is, and the next refill quietly degrades
+   * to ordinary autofill. A track radio persists only the seed's id — the track
+   * itself is already in `queue`, so a second copy would be a second copy of
+   * data the app owns.
+   */
+  radio?: RadioSnapshot;
+}
+
+/**
+ * A radio identity in the shape it can be **persisted** in.
+ *
+ * A track radio persists the seed's *id*, not the whole track: the queue is
+ * already persisted, so the seed can be resolved back out of it on load, and
+ * storing a second copy of a track would be a second copy of data the app owns.
+ */
+export type RadioSeedSnapshot =
+  | { kind: "track"; trackId: string; title: string; artist?: string }
+  | { kind: "artist"; id?: string; name: string };
+
+/** A persistable radio: who it is, and how far its seed rotation has got. */
+export interface RadioSnapshot {
+  seed: RadioSeedSnapshot;
+  variant: number;
 }
 
 /** Persisted queue/session record (keyPath `id`); consumed by M6. */

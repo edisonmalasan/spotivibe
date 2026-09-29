@@ -104,6 +104,12 @@ const preferencesSchema = z.strictObject({
   autoplayNext: z.boolean(),
   reduceMotion: z.boolean(),
   onboardingComplete: z.boolean(),
+  // M10's `autofillQueue` (design §6). Additive with a default rather than a
+  // required field: a v1 envelope exported before M10 carries no such key, and
+  // it must still validate and import — with the documented default the user
+  // would have had. The *output* type is a plain `boolean`, so everything
+  // downstream (the plan, the applier, the store) sees a required value.
+  autofillQueue: z.boolean().default(true),
 });
 
 const sessionSchema = z.strictObject({
@@ -118,7 +124,32 @@ const sessionSchema = z.strictObject({
   // unchanged (design §6; no new dataset, so whitelists stay valid).
   history: z.array(z.strictObject({ track: trackSchema, playedAt: z.number() })).optional(),
   playOrder: z.array(z.number()).optional(),
-  source: z.enum(["search", "browse", "library", "queue", "unknown"]).optional(),
+  // M10: the `radio` source (a radio is a mode of this one queue, design §1), so
+  // a session captured mid-radio exports and imports back as the same queue
+  // rather than failing validation or losing its label.
+  source: z.enum(["search", "browse", "library", "queue", "radio", "unknown"]).optional(),
+  // M10: the radio's identity, so an exported session comes back as the same
+  // radio rather than a queue labelled "From radio" that nothing can refill.
+  // Optional so a pre-M10 export still validates, and a track radio persists
+  // only the seed's id (the track itself already travels in `queue`).
+  radio: z
+    .strictObject({
+      seed: z.union([
+        z.strictObject({
+          kind: z.literal("track"),
+          trackId: z.string().min(1).max(200),
+          title: z.string().min(1).max(200),
+          artist: z.string().min(1).max(200).optional(),
+        }),
+        z.strictObject({
+          kind: z.literal("artist"),
+          id: z.string().min(1).max(200).optional(),
+          name: z.string().min(1).max(200),
+        }),
+      ]),
+      variant: z.number().int().min(0).max(999),
+    })
+    .optional(),
 });
 
 export const backupEnvelopeSchema = z.strictObject({

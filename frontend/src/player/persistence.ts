@@ -2,6 +2,7 @@ import type { SessionSnapshot } from "@/data/repositories";
 import { getLocalData } from "@/data/localData";
 import { usePlayerStore } from "@/stores/playerStore";
 import { useQueueStore } from "@/stores/queueStore";
+import { restoreRadio, snapshotRadio, useRadioStore } from "@/stores/radioStore";
 
 /**
  * Session persistence for ROADMAP M4/M6: debounced writes of the playback
@@ -19,6 +20,7 @@ function snapshotOf(
   queue: ReturnType<typeof useQueueStore.getState>,
 ): SessionSnapshot | null {
   if (!player.currentTrack || queue.queue.length === 0) return null;
+  const radioSnapshot = snapshotRadio(useRadioStore.getState());
   return {
     queue: queue.queue,
     queueIndex: queue.queueIndex,
@@ -30,6 +32,10 @@ function snapshotOf(
     history: queue.history,
     playOrder: queue.playOrder,
     source: queue.source,
+    // M10: the radio's identity travels with its queue. Without it the queue
+    // comes back labelled "From radio" while nothing knows a radio exists, and
+    // the next refill silently degrades to ordinary autofill.
+    ...(radioSnapshot === null ? {} : { radio: radioSnapshot }),
   };
 }
 
@@ -49,6 +55,21 @@ export async function restorePlaybackSession(): Promise<void> {
     const store = usePlayerStore.getState();
     if (session && store.currentTrack === null) {
       store.restoreSession(session);
+    }
+    if (session?.radio) {
+      // Resolve a track radio's seed out of the restored queue: the seed's id is
+      // all that was persisted, because the queue already holds the track.
+      const queue = useQueueStore.getState();
+      const restored = restoreRadio(session.radio, (trackId) =>
+        queue.queue.find((track) => track.id === trackId),
+      );
+      if (restored) {
+        // The played stack travels with the session, so dedupe survives the
+        // reload too: a restored radio must not re-serve what already played.
+        for (const entry of session.history ?? []) {
+          useRadioStore.getState().markPlayed(entry.track.id);
+        }
+      }
     }
   } catch (error: unknown) {
     console.warn("[playback] session restore skipped:", error);

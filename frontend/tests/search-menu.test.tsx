@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SearchPage from "@/app/search/page";
 import type { Track } from "@/data/repositories";
@@ -7,14 +7,16 @@ import { getLocalData, type RepositorySet } from "@/data/localData";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { useQueueStore } from "@/stores/queueStore";
+import { resetRadioStore, useRadioStore } from "@/stores/radioStore";
 import { resetSearchStore, useSearchStore } from "@/stores/searchStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
 /**
  * Context-action coverage (tasks 5.1–5.4, spec "Result context actions")
  * against the real (fake-indexeddb) local-data layer: menu mechanics,
- * repository-persisted likes, playlist add/inline create, and the go-to
- * navigation that opens the real artist/album surfaces (M9 task 6.1).
+ * repository-persisted likes, playlist add/inline create, the go-to
+ * navigation that opens the real artist/album surfaces (M9 task 6.1), and
+ * M10's "Start track radio" item.
  */
 
 // Rendering + IndexedDB round-trips can exceed the 1s default on a cold
@@ -85,6 +87,7 @@ beforeEach(async () => {
   resetSearchStore();
   resetPlayerStore();
   resetLibraryStore();
+  resetRadioStore();
   nav.q = "";
   repositories = await getLocalData();
   await repositories.resetAll();
@@ -118,6 +121,8 @@ describe("result menu (task 5.1)", () => {
 
     const items = within(openMenuFor("Karma Police")).getAllByRole("menuitem"); // opens the menu
     expect(trigger).toHaveAttribute("aria-expanded", "true");
+    // Every pre-M10 item keeps its position; M10's radio item is appended last,
+    // because it is the only one that replaces what plays.
     expect(items.map((item) => item.textContent)).toEqual([
       "Play",
       "Save to Liked Songs",
@@ -125,6 +130,7 @@ describe("result menu (task 5.1)", () => {
       "Add to playlist",
       "Go to artist",
       "Go to album",
+      "Start track radio",
     ]);
     expect(items[0]).toHaveFocus(); // keyboard users land on the first item
   });
@@ -243,6 +249,102 @@ describe("add to queue (task 7.1)", () => {
     expect(after.currentTrack?.id).toBe(trackA.id);
     expect(after.status).toBe(statusBefore);
     expect(after.positionSeconds).toBe(42);
+  });
+});
+
+describe("start track radio (M10 task 5.2)", () => {
+  /**
+   * Answer the search endpoint as before and the radio endpoint with real
+   * material, so the item runs the whole request path rather than a mocked
+   * outcome: the assertion is that the *real* engine replaced the queue.
+   */
+  function stubRadioFeed(radioTracks: Track[]): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        const body = url.pathname === "/api/radio" ? { tracks: radioTracks, variant: 0 } : null;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => body ?? { tracks: [trackA, trackB], diagnostics: {} },
+        } as unknown as Response;
+      }),
+    );
+  }
+
+  it("starts a radio for that result, closes the menu, and leaves every other item intact", async () => {
+    const radioTracks = [
+      makeTrack({ id: "youtube:r1", providerId: "r1", title: "Radio One" }),
+      makeTrack({ id: "youtube:r2", providerId: "r2", title: "Radio Two" }),
+    ];
+    await renderResults();
+    stubRadioFeed(radioTracks);
+
+    // Something is already playing, so "the queue is replaced" is observable.
+    usePlayerStore.getState().playTrack(trackB, [trackA, trackB]);
+
+    fireEvent.click(openMenuFor("Karma Police"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Start track radio" }));
+
+    // The menu dismisses immediately — the action never waits on the network.
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(useRadioStore.getState().seed).not.toBeNull());
+
+    // A radio for *that* result: the queue is the radio's own tracks under the
+    // radio source, and playback started on its first track.
+    expect(useRadioStore.getState().seed).toEqual({ kind: "track", track: trackA });
+    expect(useQueueStore.getState().source).toBe("radio");
+    expect(useQueueStore.getState().queue.map((track) => track.id)).toEqual([
+      radioTracks[0].id,
+      radioTracks[1].id,
+    ]);
+    expect(usePlayerStore.getState().currentTrack?.id).toBe(radioTracks[0].id);
+
+    // Every prior item is still there, in order, and still works.
+    fireEvent.click(openMenuFor("Karma Police"));
+    expect(
+      within(screen.getByRole("menu", { name: "Actions for Karma Police" }))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Play",
+      "Save to Liked Songs",
+      "Add to queue",
+      "Add to playlist",
+      "Go to artist",
+      "Go to album",
+      "Start track radio",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Save to Liked Songs" }));
+    await waitFor(async () => {
+      expect(await repositories.likedTracks.isLiked(trackA.id)).toBe(true);
+    });
+  });
+
+  it("leaves the current queue and playback alone when the provider answers nothing", async () => {
+    await renderResults();
+    stubRadioFeed([]);
+
+    usePlayerStore.getState().playTrack(trackB, [trackA, trackB]);
+    usePlayerStore.setState({ positionSeconds: 17 });
+
+    fireEvent.click(openMenuFor("Karma Police"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Start track radio" }));
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // A refused start is a no-op, not a half-started radio.
+    expect(useRadioStore.getState().seed).toBeNull();
+    expect(useQueueStore.getState().source).toBe("unknown");
+    expect(useQueueStore.getState().queue.map((track) => track.id)).toEqual([trackA.id, trackB.id]);
+    expect(usePlayerStore.getState().currentTrack?.id).toBe(trackB.id);
+    expect(usePlayerStore.getState().positionSeconds).toBe(17);
   });
 });
 

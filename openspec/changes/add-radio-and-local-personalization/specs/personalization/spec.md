@@ -49,24 +49,36 @@ The application SHALL rank candidates with deterministic, local rules: artist af
 - **WHEN** candidates are scored
 - **THEN** the ranking depends only on the local profile, the candidate's own metadata, and the provider quality score, with no other user's data involved
 
-### Requirement: Ephemeral seed terms
+### Requirement: Ephemeral personalization, never a profile on the wire
 
-The application SHALL use the local profile to derive a small set of ephemeral seed terms, and SHALL send only those terms with a request needed to fulfill it. Seed terms SHALL be derived per request, SHALL NOT be stored server-side, SHALL NOT be joined to a persistent identifier, and SHALL be discarded after the request. The server SHALL keep no record of what it was asked for beyond its normal short-lived response cache.
+The application SHALL use the local profile **locally** — to rank candidates the provider has already returned — and SHALL NOT transmit it, or anything derived from it, to the provider. A request needed to fulfill a radio or autofill SHALL carry only the seed identity, the rotation index, the result limit, and the exclusion list; it SHALL carry no taste weights, no liked-track or history data, and no persistent identifier of any kind. The rotation index SHALL be a counter the caller keeps, so the server learns nothing about how often anyone asks. The server SHALL keep no per-caller state and SHALL retain nothing beyond its normal short-lived response cache.
 
-#### Scenario: Seeds are derived locally and sent ephemerally
+> **Amendment (2026-09-29, during apply).** This requirement previously said the profile derives "ephemeral seed terms" that are sent with the request. The implementation does not do that, and the stricter behavior is the better one: a request carries the identity only, and the profile shapes the *ranking* of what comes back. ROADMAP M10 says the API "**may** receive ephemeral search seed terms needed to fulfill a request, but no server-side profile storage" — a permission, not a duty — and sending nothing derived from the listener is strictly stronger than the permission requires. Sending a listener's derived words to a third party would also be a worse privacy posture than not sending them. The unused `seedTermsFor` helper and its tests were removed rather than left as speculative code.
 
-- **WHEN** a refill is requested with a local profile present
-- **THEN** the request's seed terms are derived from that profile, and nothing derived from the profile is retained after the response
+#### Scenario: Nothing derived from the profile reaches the provider
+
+- **WHEN** a radio or autofill request is issued
+- **THEN** its parameters are limited to the seed identity, the rotation index, the limit, and the exclusion list, and no taste weight, liked track, history row, or user identifier is present
+
+#### Scenario: The profile decides locally
+
+- **WHEN** candidates return from the provider
+- **THEN** the local profile ranks them, and the same profile produces the same order every time for the same candidates
 
 #### Scenario: No persistent identifier is attached
 
 - **WHEN** any personalization-related request is issued
 - **THEN** it carries no user id, device id, account, or session token identifying a person
 
+#### Scenario: The server retains nothing about the caller
+
+- **WHEN** the same identity is requested repeatedly with different rotation indices
+- **THEN** each request is answered from the provider tier chain with no per-caller record, and the rotation index is the only thing that varies the answer
+
 #### Scenario: A cold device still works
 
 - **WHEN** no local listening signal exists yet
-- **THEN** the seed terms fall back to the request's own identity, and the request still succeeds
+- **THEN** the request carries the identity alone and still succeeds, because the ranking simply falls back to the provider's own quality score
 
 ### Requirement: Clearing local data changes personalization
 
