@@ -44,7 +44,7 @@ See `proposal.md` — Why. Current state that constrains the approach:
 
 ### 2. Server composes seeds; the client fetches one shelf at a time
 
-**Decision.** `GET /api/discover?kind=…&languages=…&seeds=…` composes a *single* feed server-side (bounded seeds, per-seed chain execution, merge/dedupe, language stamping, short TTL cache). The Home surface issues one request per shelf with its own `AbortController`.
+**Decision.** `GET /api/discover?kind=…&languages=…&seeds=…&limit=…` composes a *single* feed server-side (bounded seeds, per-seed chain execution, merge/dedupe, language stamping, short TTL cache). `limit` mirrors the existing `/api/search?limit=` response-size bound — it is not user data. The Home surface issues one request per shelf with its own `AbortController`, and the number of shelves in flight at once is capped so a page never fans out more requests than the shared outbound budget can serve.
 
 **Why.** Server-side composition shares the outbound limiter, in-flight dedupe, and cache across every client, and keeps the seed catalog server-owned. Per-shelf client requests give the per-shelf loading/empty/error isolation the acceptance criteria demand; a single aggregated page request would let one slow or failing feed stall or break the page.
 
@@ -100,9 +100,9 @@ See `proposal.md` — Why. Current state that constrains the approach:
 
 ### 9. Smart Mixes ship as a gated preview
 
-**Decision.** A Smart Mixes shelf renders only when local signal exists (at least three distinct locally known artists from likes/recent plays). Each mix is named deterministically from its seed artist and holds a bounded number of tracks.
+**Decision.** A Smart Mixes shelf renders only when local signal exists (at least three distinct locally known artists from likes/recent plays). It is one shelf seeded from those artist names, holding a bounded number of tracks. Per-mix identity, stable naming, and refresh behavior are M11's, so M8 deliberately ships a single undifferentiated shelf rather than inventing mix identity rules here.
 
-**Why.** ROADMAP lists it as "when available"; this proves the section and the local taste plumbing without inventing M11's stable-identity/refresh rules.
+**Why.** ROADMAP lists the section as "when available"; this proves the section and the local taste plumbing without pre-empting M11.
 
 **Alternatives considered.** Omitting the section in M8 (loses roadmap coverage); full mix generation (M11).
 
@@ -116,6 +116,7 @@ See `proposal.md` — Why. Current state that constrains the approach:
 - **Listening-event writes add local storage churn** → one record per track step only; no analytics, no server write.
 - **New client stores could drift from repository truth** → stores hydrate from repositories and write through them; architecture tests pin repository-mediated access and forbid `data/indexeddb` imports in UI.
 - **Design drift on the rhythm rule** → section order is a typed list validated by a unit test, not a convention.
+- **DESIGN.md alternation is unsatisfiable at feed scale (amended spec)** → DESIGN.md's "never place two circular sections or two square sections adjacent" cannot coexist with ROADMAP M8's eight baseline Home sections: taken literally it caps the feed at two shelves. The roadmap outranks DESIGN.md in the documented precedence, and the rule's *purpose* is unclustered geometric contrast. The spec therefore requires what DESIGN.md's intent protects — circular sections are never adjacent to each other, and the circular artist section interrupts the square shelves within the first four sections instead of trailing the feed — instead of an unsatisfiable literal alternation. Square shelves still use DESIGN.md's 5-column carousel and circular ones its 5-column circular carousel.
 
 ## Migration Plan
 

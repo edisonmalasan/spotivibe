@@ -1,6 +1,6 @@
 "use client";
 
-import { House, Library, Search } from "lucide-react";
+import { Compass, House, Library, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -14,13 +14,16 @@ interface BottomNavItem {
 const items: BottomNavItem[] = [
   { href: "/", label: "Home", icon: House },
   { href: "/search", label: "Search", icon: Search },
+  { href: "/discover", label: "Discover", icon: Compass },
   { href: "/library", label: "Library", icon: Library },
 ];
 
 /**
  * Compact-shell primary navigation pinned above the safe area: 64px carbon bar
- * with Home/Search/Library, mist at rest and pure white + aria-current for the
- * active destination. Hidden from 1024px up.
+ * with Home/Search/Discover/Library, mist at rest and pure white + aria-current
+ * for the active destination. Discover is a primary destination (M8 added the
+ * `/discover` genre/language surface), so it is reachable from the compact
+ * shell and not only by typing a URL. Hidden from 1024px up.
  */
 export function BottomNav() {
   const pathname = usePathname();

@@ -8,7 +8,7 @@ The discovery layer that makes Spotivibe feel alive without accounts: a DESIGN.m
 
 ### Requirement: Home discovery feed
 
-The application SHALL replace the placeholder Home route with a discovery feed composed of named sections rendered per `frontend/docs/DESIGN.md`: horizontal card shelves of square track cards, at most one circular artist section, a section header per shelf, and compact vertical section spacing. The baseline feed SHALL include Trending Now, Made For You, Smart Mixes (only when enough local signal exists), Popular Artists, genre discovery, a podcast preview, and curated collections; Continue/Recently Played SHALL appear only when local listening history exists. Square and circular shelves SHALL never be adjacent in the rendered order. The feed SHALL render skeleton placeholders while a shelf loads, an explanatory empty state when a shelf has no content, and a retryable error state for that shelf alone; one failing shelf SHALL NOT prevent other shelves from rendering. The feed SHALL NOT start playback by itself and every card SHALL be keyboard operable with a visible focus state and an accessible name.
+The application SHALL replace the placeholder Home route with a discovery feed composed of named sections rendered per `frontend/docs/DESIGN.md`: horizontal card shelves of square track cards, at most one circular artist section, a section header per shelf, and compact vertical section spacing. The baseline feed SHALL include Trending Now, Made For You, Smart Mixes (only when enough local signal exists), Popular Artists, genre discovery, a podcast preview, and curated collections; Continue/Recently Played SHALL appear only when local listening history exists. The circular artist section SHALL never be adjacent to another circular section, and it SHALL interrupt the square shelves within the first four sections rather than trailing the feed. The feed SHALL render skeleton placeholders while a shelf loads, an explanatory empty state when a shelf has no content, and a retryable error state for that shelf alone; one failing shelf SHALL NOT prevent other shelves from rendering. The feed SHALL NOT start playback by itself and every card SHALL be keyboard operable with a visible focus state and an accessible name.
 
 #### Scenario: Fresh user sees non-personalized discovery
 
@@ -20,10 +20,10 @@ The application SHALL replace the placeholder Home route with a discovery feed c
 - **WHEN** a user with liked tracks and listening history opens Home
 - **THEN** a recently played section and a locally informed Made For You shelf appear, and the non-personalized shelves still render
 
-#### Scenario: Geometry rhythm alternates shelf shapes
+#### Scenario: Geometry rhythm keeps circular contrast unclustered
 
 - **WHEN** the Home feed renders its sections
-- **THEN** no two circular artist sections are adjacent and no two square track sections are adjacent in the rendered order
+- **THEN** no two circular artist sections are adjacent, and the circular section appears within the first four rendered sections
 
 #### Scenario: One failing shelf does not break the feed
 
@@ -95,7 +95,7 @@ Language selections, liked tracks, playlists, listening history, and any taste s
 #### Scenario: Discovery requests carry only languages and seeds
 
 - **WHEN** a discovery request is issued
-- **THEN** its parameters are limited to the requested feed kind, selected language codes, and short seed terms, with no liked-track, playlist, or history payload
+- **THEN** its parameters are limited to the requested feed kind, selected language codes, short seed terms derived from local taste, and a bounded result count, with no liked-track, playlist, or history payload
 
 #### Scenario: No server-side profile is created
 

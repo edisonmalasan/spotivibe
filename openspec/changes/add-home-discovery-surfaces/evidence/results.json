@@ -1,0 +1,512 @@
+{
+  "task": "9.2",
+  "generatedAt": "2026-09-29T07:05:58.199Z",
+  "origin": "http://localhost:3210",
+  "selectedLanguages": {
+    "names": [
+      "English",
+      "Spanish",
+      "German"
+    ],
+    "codes": [
+      "en",
+      "es",
+      "de"
+    ]
+  },
+  "copy": {
+    "onboardingLabel": "Choose your languages",
+    "confirmLabel": "Save languages",
+    "pickerHint": "You can change this later in Settings.",
+    "discoverOffline": "You're offline. Genre discovery needs a connection, so no shelf is loading right now.",
+    "languageSummaryLabel": "Selected languages",
+    "queueBrowse": "From browse",
+    "offlineBanner": "You're offline — some things won't load until you reconnect."
+  },
+  "steps": [
+    {
+      "name": "first-run language onboarding offers the broad catalog",
+      "ok": true,
+      "detail": "languages=38 (spec floor 37), confirm=true, count=\"1 of 8 selected — Choose up to 8 languages.\""
+    },
+    {
+      "name": "onboarding shows no account, sign-in, or email copy",
+      "ok": true,
+      "detail": "dialog text scanned for account vocabulary (750 chars)"
+    },
+    {
+      "name": "picker tells the user the choice stays changeable",
+      "ok": true,
+      "detail": "hint=\"You can change this later in Settings.\""
+    },
+    {
+      "name": "multi-language selection confirms and closes onboarding",
+      "ok": true,
+      "detail": "selected=English+Spanish+German, allChecked=true, count line=\"3 of 8 selected — Choose up to 8 languages.\""
+    },
+    {
+      "name": "selected languages persist across a full reload",
+      "ok": true,
+      "detail": "settings summary=\"Showing English, Spanish, German.\""
+    },
+    {
+      "name": "fresh profile shows no local-only sections",
+      "ok": true,
+      "detail": "sections=[trending, popular-artists, genres, podcasts, collections]"
+    },
+    {
+      "name": "Trending Now shelf renders cards with real provider artwork",
+      "ok": true,
+      "detail": "cards=20, withArtwork=20"
+    },
+    {
+      "name": "multi-language feed is interleaved rather than grouped by language",
+      "ok": true,
+      "detail": "first six=[en, es, de, en, es, de] (selected=en,es,de), full order=[en,es,de,en,es,de,en,es,de,en,es,en,es,en,es,en,en,en,en,en]"
+    },
+    {
+      "name": "Popular Artists renders an unclustered circular section with search links",
+      "ok": true,
+      "detail": "index=1 of 5 sections, artists=10, withArtwork=10, hrefs=[/search?q=Lumivox, /search?q=La%20Soluci%C3%B3n%20De%20Jes%C3%BAs%20M.%20Campos]"
+    },
+    {
+      "name": "genres, podcast preview, and curated collections render",
+      "ok": true,
+      "detail": "genreTiles=10 (e.g. /discover?genre=pop), podcastCards=20"
+    },
+    {
+      "name": "no shelf copy claims an official chart, ranking, or editorial curation",
+      "ok": true,
+      "detail": "scanned 4531 chars of Home copy"
+    },
+    {
+      "name": "shelf activation starts real playback",
+      "ok": true,
+      "detail": "control=Pause, bar=\"Top Hits 2026 Best English Songs 2026 -Trending Music 2026 New Pop & Latest Pop SongsLumiv\""
+    },
+    {
+      "name": "active playback keeps exactly one player iframe and one IFrame API script",
+      "ok": true,
+      "detail": "iframes=1, apiScripts=1 while playing"
+    },
+    {
+      "name": "the queue records the shelf playback as browse-sourced",
+      "ok": true,
+      "detail": "label \"From browse\" present on /queue"
+    },
+    {
+      "name": "a recorded play adds Recently Played (newest-first, deduplicated)",
+      "ok": true,
+      "detail": "cards=1, uniqueIds=1, sections=[recently-played, trending, made-for-you, popular-artists, genres, podcasts, collections]"
+    },
+    {
+      "name": "Made For You renders from on-device taste seeds",
+      "ok": true,
+      "detail": "cards=20"
+    },
+    {
+      "name": "the local-informed request carries only short seed terms, no library payload",
+      "ok": true,
+      "detail": "url=/api/discover?kind=for-you&languages=en%2Ces%2Cde&seeds=Lumivox&limit=20"
+    },
+    {
+      "name": "one failing shelf degrades alone with a retryable error",
+      "ok": true,
+      "detail": "collections cards=0 with Retry=true; trending cards=20"
+    },
+    {
+      "name": "the blocked shelf recovers on retry",
+      "ok": true,
+      "detail": "collections cards=true"
+    },
+    {
+      "name": "Discover renders per-genre shelves with the language summary and change affordance",
+      "ok": true,
+      "detail": "genres=10 (withCards=4), summary=\"Selected languages: English, Spanish, German\", changeAffordance=true"
+    },
+    {
+      "name": "the ?genre= deep link is honored",
+      "ok": true,
+      "detail": "discover-genre-rock present"
+    },
+    {
+      "name": "offline Discover explains that discovery needs a connection",
+      "ok": true,
+      "detail": "notice=\"You're offline. Genre discovery needs a connection, so no shelf is loading right now.\""
+    },
+    {
+      "name": "offline Discover issues no discovery request",
+      "ok": true,
+      "detail": "requests issued while offline=0 (genre retry clicked=false)"
+    },
+    {
+      "name": "languages are changeable after onboarding and persist",
+      "ok": true,
+      "detail": "summary=\"Showing English, German.\""
+    },
+    {
+      "name": "discovery requests follow the reduced language selection",
+      "ok": true,
+      "detail": "last trending request languages=[en,de]"
+    },
+    {
+      "name": "the IFrame API is still loaded exactly once at the end of the run",
+      "ok": true,
+      "detail": "apiScripts=1, iframes now=1 (the embed is released once no track is loaded), control=Play"
+    },
+    {
+      "name": "zero console errors (disclosed offline/blocked-shelf entries excluded)",
+      "ok": true,
+      "detail": "errors=0, disclosed offline=0, disclosed blocked-shelf=2, disclosed live-upstream=0"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "onboarding-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "first-run language onboarding over the Home feed"
+    },
+    {
+      "file": "settings-languages-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Settings → Languages with the persisted selection"
+    },
+    {
+      "file": "home-trending-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Home → Trending Now (live provider feed)"
+    },
+    {
+      "file": "home-artists-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Home → Popular Artists (circular cards refining search)"
+    },
+    {
+      "file": "home-local-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Home → Recently Played + Made For You after a real play"
+    },
+    {
+      "file": "home-shelf-error-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Home → Collections shelf retryable error, other shelves intact"
+    },
+    {
+      "file": "discover-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/discover → per-genre shelves and language summary"
+    },
+    {
+      "file": "discover-offline-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/discover offline → connection notice, no requests"
+    }
+  ],
+  "consoleErrors": [],
+  "notes": {
+    "disclosures": {
+      "offlineWindow": [],
+      "blockedShelfProbe": [
+        "log: Failed to load resource: net::ERR_FAILED",
+        "log: Failed to load resource: net::ERR_FAILED"
+      ],
+      "liveUpstream": []
+    },
+    "discoveryRequests": [
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=for-you&languages=en%2Ces%2Cde&seeds=Lumivox&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=for-you&languages=en%2Ces%2Cde&seeds=Lumivox&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=for-you&languages=en%2Ces%2Cde&seeds=Lumivox&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en%2Ces%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en&seeds=rock+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en&seeds=pop+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en&seeds=hip+hop+rap&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=rock+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=pop+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=hip+hop+rap&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=electronic+dance+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=jazz+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=classical+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=country+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=rock+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=pop+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=hip+hop+rap&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=electronic+dance+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=jazz+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=classical+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=genre&languages=en%2Ces%2Cde&seeds=country+music&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=trending&languages=en%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=podcast&languages=en%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=collection&languages=en%2Cde&limit=20",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/discover?kind=for-you&languages=en%2Cde&seeds=Lumivox&limit=20",
+        "offline": false
+      }
+    ],
+    "attachedTargets": [
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      }
+    ],
+    "trendingLanguages": {
+      "order": [
+        "en",
+        "es",
+        "de",
+        "en",
+        "es",
+        "de",
+        "en",
+        "es",
+        "de",
+        "en",
+        "es",
+        "en",
+        "es",
+        "en",
+        "es",
+        "en",
+        "en",
+        "en",
+        "en",
+        "en"
+      ],
+      "counts": {
+        "en": 11,
+        "es": 6,
+        "de": 3
+      }
+    },
+    "pauseOutcome": "already-stopped",
+    "blockedShelf": {
+      "blocked": "kind=collection"
+    },
+    "offlineEmulation": {
+      "calls": [
+        {
+          "command": "Network.emulateNetworkConditions {offline:true}",
+          "sessions": [
+            "main"
+          ]
+        },
+        {
+          "command": "Network.emulateNetworkConditions {offline:false}",
+          "sessions": [
+            "main",
+            "84FA0A369BB2ED667BDD3463568AF0EE"
+          ]
+        }
+      ]
+    }
+  },
+  "pass": true,
+  "browser": "Edg/154.0.4258.37"
+}

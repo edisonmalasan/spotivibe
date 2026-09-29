@@ -4,7 +4,7 @@
 
 ### Requirement: Discovery feed resolution
 
-The music API SHALL expose a discovery-feed endpoint that composes a requested feed from the curated seed catalog server-side and resolves each seed through the same fixed provider tier order and per-tier fallback as search, returning normalized canonical Spotivibe `Track` objects that additionally carry the language code of the seed that produced them. The endpoint SHALL accept only a feed kind, selected language codes, and short caller-supplied seed terms; it SHALL NOT accept or persist liked-track, playlist, or history data, and SHALL NOT create a stored user profile. Each seed attempt SHALL be bounded by a timeout, an aborted client request SHALL propagate to in-flight upstream calls, no provider key or credential SHALL be required, and the response SHALL be metadata only. A seed that fails SHALL be skipped while the remaining seeds still produce results, and only a feed whose every seed fails SHALL respond with a structured non-success error. Responses SHALL use a short-lived HTTP cache so repeat feeds do not re-query providers.
+The music API SHALL expose a discovery-feed endpoint that composes a requested feed from the curated seed catalog server-side and resolves each seed through the same fixed provider tier order and per-tier fallback as search, returning normalized canonical Spotivibe `Track` objects that additionally carry the language code of the seed that produced them. The endpoint SHALL accept only a feed kind, selected language codes, short caller-supplied seed terms, and a bounded result count — it SHALL NOT accept or persist liked-track, playlist, or history data, and SHALL NOT create a stored user profile. Each seed attempt SHALL be bounded by a timeout, an aborted client request SHALL propagate to in-flight upstream calls, no provider key or credential SHALL be required, and the response SHALL be metadata only. Seeds within one feed SHALL be executed with bounded concurrency so a multi-language feed cannot exhaust the shared outbound budget, and a seed that is skipped for budget reasons SHALL be reported. A seed that fails SHALL be skipped while the remaining seeds still produce results, and only a feed whose every seed fails SHALL respond with a structured non-success error. Responses SHALL use a short-lived HTTP cache so repeat feeds do not re-query providers.
 
 #### Scenario: Seeds resolve to canonical tracks carrying language attribution
 
@@ -34,4 +34,9 @@ The music API SHALL expose a discovery-feed endpoint that composes a requested f
 #### Scenario: Discovery requests carry no local library data
 
 - **WHEN** the discovery endpoint's accepted inputs are inspected
-- **THEN** only a feed kind, language codes, and seed terms exist, with no field for liked tracks, playlists, or listening history
+- **THEN** only a feed kind, language codes, seed terms, and a bounded result count exist, with no field for liked tracks, playlists, or listening history
+
+#### Scenario: A multi-language feed does not exhaust the outbound budget
+
+- **WHEN** one feed is requested for many languages, so its seeds outnumber the shared outbound concurrency
+- **THEN** the seeds run with bounded concurrency, the feed still returns results, and any seed skipped for budget reasons is named in the diagnostics
