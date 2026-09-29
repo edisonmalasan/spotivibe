@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AlbumPage from "@/app/album/[key]/page";
 import ArtistPage from "@/app/artist/[key]/page";
 import DiscoverPage from "@/app/discover/page";
+import HistoryPage from "@/app/history/page";
 import HomePage from "@/app/page";
 import LibraryPage from "@/app/library/page";
 import NowPlayingPage from "@/app/now-playing/page";
@@ -14,6 +15,7 @@ import type { Track } from "@/data/repositories";
 import { CIRCULAR_WINDOW } from "@/features/home/homeSections";
 import { resetRefillChannel } from "@/features/personalization/RefillAgent";
 import { resetHistoryStore } from "@/stores/historyStore";
+import { resetMixStore } from "@/stores/mixStore";
 import { resetLibraryStore } from "@/stores/libraryStore";
 import { resetPreferencesStore } from "@/stores/preferencesStore";
 import { resetQueueStore } from "@/stores/queueStore";
@@ -196,6 +198,9 @@ beforeEach(() => {
   resetPlayerStore();
   clearPlaybackBridge();
   resetHistoryStore();
+  // M11: the mix store backs the Home Smart Mixes section and the /history mixes
+  // surface, so it is cross-case state here too.
+  resetMixStore();
   resetPreferencesStore();
   resetRadioStore();
   resetRefillChannel();
@@ -337,6 +342,36 @@ describe("route shells", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Queue" })).toBeInTheDocument();
     expect(screen.getByText("Nothing queued yet")).toBeInTheDocument();
     expect(screen.queryAllByRole("region")).toHaveLength(0);
+  });
+
+  it("mounts both listening-insights views behind one hidden route heading (M11)", async () => {
+    render(<HistoryPage />);
+
+    // The route owns a single visually hidden h1; the views own the visible ones,
+    // exactly as the M9 catalog routes do.
+    const heading = screen.getByRole("heading", { level: 1, name: "History" });
+    expect(heading).toHaveClass("sr-only");
+
+    expect(await screen.findByTestId("stats-view")).toBeInTheDocument();
+    expect(screen.getByTestId("history-view")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Listening stats" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Listening history" })).toBeInTheDocument();
+
+    // A fresh device explains both rather than reporting zeroes.
+    await waitFor(() =>
+      expect(screen.getAllByRole("heading", { name: "Nothing here yet" }).length).toBe(2),
+    );
+  });
+
+  it("issues no provider request when /history opens (M11)", async () => {
+    stubDiscovery();
+    render(<HistoryPage />);
+
+    await screen.findByTestId("history-view");
+    // History and statistics are derived from local data; opening the route must
+    // not spend a provider request. `push` is the stubbed fetch every case here
+    // records its calls on.
+    expect(push).not.toHaveBeenCalled();
   });
 });
 

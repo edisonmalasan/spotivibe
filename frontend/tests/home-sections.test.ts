@@ -3,7 +3,6 @@ import {
   assertShelfRhythm,
   CIRCULAR_WINDOW,
   HOME_SECTIONS,
-  MIN_LOCAL_ARTISTS_FOR_MIXES,
   selectHomeSections,
   shelfRhythmViolations,
   type HomeSection,
@@ -19,32 +18,41 @@ import {
  * is enforced is what the spec states: circular sections are never adjacent to
  * one another, and the circular section interrupts the square shelves within the
  * first four rendered sections.
+ *
+ * M11 re-gates Smart Mixes: the section lists the mixes the listener actually
+ * has (`hasMixes`) instead of previewing a discovery feed once three local
+ * artists existed, so a listener with signal but no mix sees no empty shelf.
  */
 
-/** A fresh user: no history, no local artists. */
+/** A fresh user: no history, no local artists, no mixes. */
 const NO_SIGNAL: HomeSectionSignals = {
   hasHistory: false,
   hasLocalArtists: false,
   localArtistCount: 0,
+  hasMixes: false,
 };
 
-/** A returning user with plenty of local signal. */
+/** A returning user with plenty of local signal and a generated mix. */
 const FULL_SIGNAL: HomeSectionSignals = {
   hasHistory: true,
   hasLocalArtists: true,
   localArtistCount: 6,
+  hasMixes: true,
 };
 
-/** Every combination of the three gating signals. */
+/** Every combination of the gating signals. */
 function allSignalCombinations(): HomeSectionSignals[] {
   const combinations: HomeSectionSignals[] = [];
   for (const hasHistory of [false, true]) {
-    for (const localArtistCount of [0, 1, MIN_LOCAL_ARTISTS_FOR_MIXES, 9]) {
-      combinations.push({
-        hasHistory,
-        hasLocalArtists: localArtistCount > 0,
-        localArtistCount,
-      });
+    for (const localArtistCount of [0, 1, 3, 9]) {
+      for (const hasMixes of [false, true]) {
+        combinations.push({
+          hasHistory,
+          hasLocalArtists: localArtistCount > 0,
+          localArtistCount,
+          hasMixes,
+        });
+      }
     }
   }
   return combinations;
@@ -82,7 +90,9 @@ describe("homeSections: the ordered feed", () => {
       "trending",
       "for-you",
       "local",
-      "mix",
+      // M11: Smart Mixes is local data now — the section lists generated mixes
+      // rather than resolving a discovery feed of its own.
+      "local",
       "local",
       "podcast",
       "collection",
@@ -132,7 +142,7 @@ describe("homeSections: local-only sections are gated", () => {
 
   it("omits Recently Played when there is no history, even with local artists", () => {
     const rendered = selectHomeSections(
-      { hasHistory: false, hasLocalArtists: true, localArtistCount: 8 },
+      { hasHistory: false, hasLocalArtists: true, localArtistCount: 8, hasMixes: true },
       HOME_SECTIONS,
     );
 
@@ -141,42 +151,55 @@ describe("homeSections: local-only sections are gated", () => {
 
   it("adds Recently Played as soon as one listening event exists", () => {
     const rendered = selectHomeSections(
-      { hasHistory: true, hasLocalArtists: false, localArtistCount: 0 },
+      { hasHistory: true, hasLocalArtists: false, localArtistCount: 0, hasMixes: false },
       HOME_SECTIONS,
     );
 
     expect(rendered[0]?.id).toBe("recently-played");
   });
 
-  it("gates Made For You on any local artist and Smart Mixes on three", () => {
+  it("gates Made For You on any local artist and Smart Mixes on a generated mix", () => {
     const one = selectHomeSections(
-      { hasHistory: true, hasLocalArtists: true, localArtistCount: 1 },
+      { hasHistory: true, hasLocalArtists: true, localArtistCount: 1, hasMixes: false },
       HOME_SECTIONS,
     );
     expect(one.map((entry) => entry.id)).toContain("made-for-you");
+    // Signal without a mix: the section would have nothing to list, so it does
+    // not render — the opposite of the M8 preview gate.
     expect(one.map((entry) => entry.id)).not.toContain("smart-mixes");
 
-    const three = selectHomeSections(
-      { hasHistory: true, hasLocalArtists: true, localArtistCount: MIN_LOCAL_ARTISTS_FOR_MIXES },
+    const withMix = selectHomeSections(
+      { hasHistory: true, hasLocalArtists: true, localArtistCount: 1, hasMixes: true },
       HOME_SECTIONS,
     );
-    expect(three.map((entry) => entry.id)).toContain("smart-mixes");
+    expect(withMix.map((entry) => entry.id)).toContain("smart-mixes");
+  });
+
+  it("shows Smart Mixes for a listener with a mix but no local artist seed", () => {
+    // A mix persists after the likes that produced it are cleared, and the
+    // listener can still open it — the section is gated on the mix, not on the
+    // signal behind it.
+    const rendered = selectHomeSections(
+      { hasHistory: false, hasLocalArtists: false, localArtistCount: 0, hasMixes: true },
+      HOME_SECTIONS,
+    ).map((entry) => entry.id);
+    expect(rendered).toContain("smart-mixes");
   });
 
   it("opens the seeded shelves on usable seed terms, not on the artist count alone", () => {
-    // `for-you` and `mix` are caller-seeded kinds: the endpoint answers a request
-    // with an empty seed list with 400. So a signal set that says "there are
-    // artists" while the seed derivation produces no term must not be able to
-    // open either shelf — the count is necessary, never sufficient.
+    // `for-you` is a caller-seeded kind: the endpoint answers a request with an
+    // empty seed list with 400. So a signal set that says "there are artists"
+    // while the seed derivation produces no term must not be able to open the
+    // shelf — the count is necessary, never sufficient.
     const countedButUnseeded: HomeSectionSignals = {
       hasHistory: true,
       hasLocalArtists: false,
-      localArtistCount: MIN_LOCAL_ARTISTS_FOR_MIXES + 2,
+      localArtistCount: 8,
+      hasMixes: false,
     };
 
     const rendered = selectHomeSections(countedButUnseeded, HOME_SECTIONS).map((entry) => entry.id);
     expect(rendered).not.toContain("made-for-you");
-    expect(rendered).not.toContain("smart-mixes");
   });
 
   it("never renders the local-only sections without their signal", () => {
@@ -185,9 +208,7 @@ describe("homeSections: local-only sections are gated", () => {
       const ids = rendered.map((entry) => entry.id);
       if (!signals.hasHistory) expect(ids).not.toContain("recently-played");
       if (!signals.hasLocalArtists) expect(ids).not.toContain("made-for-you");
-      if (signals.localArtistCount < MIN_LOCAL_ARTISTS_FOR_MIXES) {
-        expect(ids).not.toContain("smart-mixes");
-      }
+      if (!signals.hasMixes) expect(ids).not.toContain("smart-mixes");
     }
   });
 });

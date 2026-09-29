@@ -54,8 +54,15 @@ export interface HomeSectionSignals {
    * "the request is valid" the same condition.
    */
   hasLocalArtists: boolean;
-  /** How many distinct local artists exist (Smart Mixes' gate, design §9). */
+  /** How many distinct local artists exist (reported on the Home feed). */
   localArtistCount: number;
+  /**
+   * Whether the listener has at least one generated Smart Mix (M11: Smart Mixes'
+   * gate). Unlike the two signals above this one is not a proxy for what *could*
+   * be built — the section lists mixes that exist, so it renders exactly when
+   * there is one to open.
+   */
+  hasMixes: boolean;
 }
 
 /** One Home section: what it shows, what shape it is, and when it appears. */
@@ -73,9 +80,6 @@ export interface HomeSection {
   /** Whether the local signals make this section render at all. */
   readonly enabled: (signals: HomeSectionSignals) => boolean;
 }
-
-/** Minimum distinct local artists before a Smart Mixes shelf renders (§9). */
-export const MIN_LOCAL_ARTISTS_FOR_MIXES = 3;
 
 /** How many rendered sections may precede the circular one (spec). */
 export const CIRCULAR_WINDOW = 4;
@@ -129,13 +133,13 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
   {
     id: "smart-mixes",
     title: "Smart Mixes",
-    description: "A preview of continuous mixes seeded by artists you already know.",
+    description: "Mixes built on this device from what you like and play.",
     shape: "square",
-    kind: "mix",
-    // `mix` is a caller-seeded kind, so the three-artist threshold is necessary
-    // but not sufficient: the seed terms themselves must exist too.
-    enabled: (signals) =>
-      signals.hasLocalArtists && signals.localArtistCount >= MIN_LOCAL_ARTISTS_FOR_MIXES,
+    // M11: this section lists mixes the listener actually has, not a preview of
+    // what a feed could produce. It renders only when a generated mix exists —
+    // the section is the mix list, so an empty list has nothing to show.
+    kind: "local",
+    enabled: (signals) => signals.hasMixes,
   },
   {
     id: "genres",
