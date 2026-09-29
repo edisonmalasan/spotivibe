@@ -59,7 +59,7 @@ The shell SHALL reserve and render a player region on every route, in both shell
 
 ### Requirement: Now Playing surface
 
-The shell SHALL provide an expanded Now Playing surface as a dedicated route, reachable from the player region, rendered full-screen/expanded on compact viewports and presented as an expanded view on desktop. The surface SHALL present the current track's artwork, title and artists, like state, progress and seek, the full transport and volume controls, and access to the queue, all bound to the same store and player state the player region uses, so that any change made anywhere is reflected in both without a reload. It SHALL render the current artwork as a background behind the content when artwork exists and the plain surface when it does not, SHALL present an over-long title so it stays readable — animating only when the title overflows, and never animating when the user prefers reduced motion — and SHALL offer a More Like This shelf for the current track that never starts playback on its own. A visible, compliant YouTube playback surface and its attribution SHALL remain part of the design, and the surface SHALL NOT autoplay anything by itself.
+The shell SHALL provide an expanded Now Playing surface as a dedicated route, reachable from the player region, rendered full-screen/expanded on compact viewports and presented as an expanded view on desktop. The surface SHALL present the current track's artwork, title and artists, like state, progress and seek, the full transport and volume controls, and access to the queue, all bound to the same store and player state the player region uses, so that any change made anywhere is reflected in both without a reload. It SHALL render the current artwork as a background behind the content when artwork exists and the plain surface when it does not, SHALL present an over-long title so it stays readable — animating only when the title overflows, and never animating when the user prefers reduced motion — and SHALL offer a More Like This shelf for the current track that never starts playback on its own. It SHALL offer a radio action that starts a track radio from the current track, SHALL omit that action when there is no current track to seed it from, and SHALL label a playing radio as such. A visible, compliant YouTube playback surface and its attribution SHALL remain part of the design, and the surface SHALL NOT autoplay anything by itself.
 
 #### Scenario: Opening Now Playing from the player region
 
@@ -85,6 +85,16 @@ The shell SHALL provide an expanded Now Playing surface as a dedicated route, re
 
 - **WHEN** the surface renders for a track
 - **THEN** a More Like This shelf for that track is available, it never includes the current track, and loading it starts no playback
+
+#### Scenario: Now Playing can start a track radio
+
+- **WHEN** a track is playing and the user activates the radio action
+- **THEN** a track radio for that track starts and the surface presents the radio as the active source
+
+#### Scenario: No radio action without a current track
+
+- **WHEN** there is no current track
+- **THEN** the radio action is not offered rather than offered without a seed
 ### Requirement: Primitive interaction states
 
 Design-system primitives (buttons, cards, inputs, navigation items) SHALL implement hover, focus-visible, disabled, and loading treatments: card hover shifts surface `#121212` → `#1f1f1f`/`#292929` per placement, interactive controls show a visible focus indicator for keyboard focus, disabled controls are visually muted and non-interactive, and loading content renders as skeleton placeholders matching the layout it replaces.
