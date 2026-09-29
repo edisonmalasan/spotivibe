@@ -11,7 +11,6 @@ import { genreHref, GENRE_CATALOG } from "@/features/home/genreCatalog";
 import {
   assertShelfRhythm,
   HOME_SECTIONS,
-  MIN_LOCAL_ARTISTS_FOR_MIXES,
   selectHomeSections,
   type HomeSection,
   type HomeSectionSignals,
@@ -24,10 +23,12 @@ import {
 } from "@/features/home/localSeeds";
 import { ShelfTrackCard } from "@/features/home/ShelfTrackCard";
 import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDiscoveryShelf";
+import { MixList } from "@/features/mixes/MixList";
 import { LanguageOnboarding } from "@/features/preferences/LanguageOnboarding";
 import { groupArtistsByIdentity } from "@/features/recommendations/artists";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useLibraryStore } from "@/stores/libraryStore";
+import { useMixStore } from "@/stores/mixStore";
 import { usePreferencesStore } from "@/stores/preferencesStore";
 
 /**
@@ -122,7 +123,6 @@ function GenreTile({ id, name }: { id: string; name: string }) {
 interface Feed {
   trending: ReturnType<typeof useDiscoveryShelf>;
   forYou: ReturnType<typeof useDiscoveryShelf>;
-  mixes: ReturnType<typeof useDiscoveryShelf>;
   podcasts: ReturnType<typeof useDiscoveryShelf>;
   collections: ReturnType<typeof useDiscoveryShelf>;
   recent: Track[];
@@ -185,18 +185,22 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
       );
 
     case "smart-mixes":
+      // M11: the mixes the listener actually has, by name. No generation action
+      // and no autoplay here — opening Home must not spend provider work or start
+      // audio; building a mix is an explicit act on its own surface.
+      //
+      // The section header contract is kept (title plus the authored description),
+      // but a mix is a *collection* rather than a single track, so its list is a
+      // named list rather than a horizontal card shelf — see the amended
+      // `discovery` delta in the M11 change.
       return (
-        <Shelf
-          title={section.title}
-          description={section.description}
-          shape={section.shape}
-          state={toShelfState(feed.mixes.status)}
-          onRetry={feed.mixes.retry}
-          error={SHELF_ERROR}
-          data-testid={testId}
-        >
-          {trackCards(feed.mixes.tracks)}
-        </Shelf>
+        <section className="flex flex-col gap-4" data-testid={testId}>
+          <header className="flex flex-col gap-1">
+            <h2 className="text-title-lg font-bold text-pure-white">{section.title}</h2>
+            <p className="text-body-lg text-mist">{section.description}</p>
+          </header>
+          <MixList title="" showGenerate={false} />
+        </section>
       );
 
     case "podcasts":
@@ -309,6 +313,10 @@ export function HomeView() {
   const hydrateHistory = useHistoryStore((state) => state.hydrate);
   const likedTracks = useLibraryStore((state) => state.likedTracks);
   const hydrateLibrary = useLibraryStore((state) => state.hydrate);
+  // M11: the Smart Mixes section lists generated mixes, so the feed needs to
+  // know whether the listener has one before it decides to render the section.
+  const mixes = useMixStore((state) => state.mixes);
+  const hydrateMixes = useMixStore((state) => state.hydrate);
   // Onboarding is offered until it is confirmed *or* dismissed for this visit.
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
 
@@ -324,7 +332,10 @@ export function HomeView() {
     void hydrateLibrary().catch((error: unknown) => {
       console.warn("[home] liked tracks unavailable:", error);
     });
-  }, [hydrateHistory, hydrateLibrary, hydratePreferences]);
+    void hydrateMixes().catch((error: unknown) => {
+      console.warn("[home] smart mixes unavailable:", error);
+    });
+  }, [hydrateHistory, hydrateLibrary, hydrateMixes, hydratePreferences]);
 
   // Local signals drive which sections render at all, and — through the seeds —
   // which locally informed shelves may issue a request.
@@ -344,6 +355,7 @@ export function HomeView() {
     hasHistory: events.length > 0,
     hasLocalArtists: seeds.length > 0,
     localArtistCount,
+    hasMixes: mixes.length > 0,
   };
   const sections = selectHomeSections(signals, HOME_SECTIONS);
   assertShelfRhythm(sections);
@@ -356,12 +368,9 @@ export function HomeView() {
       seeds,
       enabled: signals.hasLocalArtists,
     }),
-    mixes: useDiscoveryShelf({
-      kind: "mix",
-      languages,
-      seeds,
-      enabled: signals.hasLocalArtists && signals.localArtistCount >= MIN_LOCAL_ARTISTS_FOR_MIXES,
-    }),
+    // M11: no `mix` discovery shelf any more. The mix *feed* is still what builds
+    // a mix (see features/mixes/generateMix) — it is just no longer previewed on
+    // Home, where a listener with no mix has nothing to open there.
     // The long-form preference is a presentation choice over the same result —
     // it never changes which feed is requested.
     podcasts: withLongFormPreference(useDiscoveryShelf({ kind: "podcast", languages })),

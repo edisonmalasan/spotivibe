@@ -93,7 +93,7 @@ describe("Settings data controls", () => {
     expect(screen.getByRole("button", { name: "Reset Spotivibe data" })).toBeInTheDocument();
   });
 
-  it("downloads a spotivibe-backup JSON containing only the six backup datasets", async () => {
+  it("downloads a spotivibe-backup JSON containing only the exported datasets", async () => {
     const capturedBlobs: Blob[] = [];
     let downloadName = "";
     URL.createObjectURL = ((source: Blob | MediaSource) => {
@@ -119,6 +119,8 @@ describe("Settings data controls", () => {
     expect(Object.keys(envelope.data as Record<string, unknown>).sort()).toEqual([
       "history",
       "likedTracks",
+      // M11: mixes are exported so a recognized mix survives the round trip.
+      "mixes",
       "playlists",
       "preferences",
       "searchHistory",

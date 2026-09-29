@@ -33,6 +33,14 @@ export interface HistoryState {
   hydrate(): Promise<void>;
   /** Persist one event, then reflect the refreshed newest-first list. */
   record(event: NewListeningEvent): Promise<ListeningEventRecord>;
+  /**
+   * M11: write the raw measurements of an already-recorded event, then reflect
+   * the refreshed list. Returns `undefined` when the event no longer exists.
+   */
+  updateMeasurements(
+    id: string,
+    patch: { secondsPlayed?: number; completed?: boolean },
+  ): Promise<ListeningEventRecord | undefined>;
   /** Clear the whole listening-history dataset, then reflect the empty list. */
   clear(): Promise<void>;
 }
@@ -78,6 +86,21 @@ export const useHistoryStore = create<HistoryState>()(() => ({
     const created = await data.listeningHistory.record(event);
     await refreshEvents();
     return created;
+  },
+
+  /**
+   * M11: write an already-recorded event's measurements, then re-read.
+   *
+   * Raw measurements only — the seconds a step played for and whether the engine
+   * reported it ended. No verdict is stored here; `classifyPlay` reads these
+   * numbers later, which is what lets the rule change without a migration.
+   */
+  async updateMeasurements(id: string, patch: { secondsPlayed?: number; completed?: boolean }) {
+    const data = await getLocalData();
+    const updated = await data.listeningHistory.update(id, patch);
+    if (updated === undefined) return undefined;
+    await refreshEvents();
+    return updated;
   },
 
   async clear() {

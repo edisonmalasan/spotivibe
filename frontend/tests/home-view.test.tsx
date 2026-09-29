@@ -2,13 +2,14 @@ import { act, configure, fireEvent, render, screen, waitFor, within } from "@tes
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
-import type { ListeningEventRecord, Track } from "@/data/repositories";
+import type { ListeningEventRecord, MixRecord, Track } from "@/data/repositories";
 import * as browsePlayback from "@/features/home/browsePlayback";
 import { HomeView, preferLongFormTracks, LONG_FORM_MIN_SECONDS } from "@/features/home/HomeView";
 import { GENRE_CATALOG } from "@/features/home/genreCatalog";
 import { countLocalArtists, deriveSeedTerms } from "@/features/home/localSeeds";
 import { makeTrack } from "./helpers/music-fixtures";
 import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
+import { resetMixStore, useMixStore } from "@/stores/mixStore";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { resetPreferencesStore, usePreferencesStore } from "@/stores/preferencesStore";
@@ -136,11 +137,13 @@ function event(id: string, title: string, artist: string, playedAt: number): Lis
 function seedStores({
   events = [] as ListeningEventRecord[],
   likedTracks = [] as Track[],
+  mixes = [] as MixRecord[],
   languages = ["en"] as string[],
   onboardingComplete = true,
 }: {
   events?: ListeningEventRecord[];
   likedTracks?: Track[];
+  mixes?: MixRecord[];
   languages?: string[];
   onboardingComplete?: boolean;
 } = {}): void {
@@ -154,6 +157,12 @@ function seedStores({
   useLibraryStore.setState({
     likedTracks,
     hydrated: true,
+    hydrate: () => Promise.resolve(),
+  });
+  // M11: the Smart Mixes section is gated on generated mixes, so a case that
+  // wants the section injects the dataset the section actually lists.
+  useMixStore.setState({
+    mixes,
     hydrate: () => Promise.resolve(),
   });
   usePreferencesStore.setState({
@@ -174,6 +183,7 @@ async function settleFeed(): Promise<void> {
 beforeEach(() => {
   resetHistoryStore();
   resetLibraryStore();
+  resetMixStore();
   resetPlayerStore();
   resetPreferencesStore();
   resetQueueStore();
@@ -271,7 +281,40 @@ describe("HomeView: a returning user", () => {
     expect(screen.getByTestId("home-section-collections")).toBeInTheDocument();
   });
 
-  it("unlocks Smart Mixes at three distinct local artists", async () => {
+  it("lists Smart Mixes by name once a mix exists, and issues no feed request for it", async () => {
+    // M11: the section lists generated mixes rather than previewing the `mix`
+    // discovery feed, so it renders from local data alone — the discovery stub is
+    // called only for the other shelves.
+    seedStores({
+      likedTracks: [credited("l1", "Liked", "Aurora")],
+      mixes: [
+        {
+          id: "mix:2026-09-30:aurora",
+          name: "Aurora",
+          generatedAt: 1_700_000_000_000,
+          period: "2026-09-30",
+          seeds: ["Aurora"],
+          tracks: [makeTrack({ id: "youtube:m1", providerId: "m1", title: "Mix Song" })],
+          updatedAt: 1_700_000_000_000,
+        },
+      ],
+    });
+    const { calls } = stubDiscovery(() => ({ tracks: [] }));
+    render(<HomeView />);
+
+    const section = await screen.findByTestId("home-section-smart-mixes");
+    expect(within(section).getByText("Aurora")).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: "Play Aurora" })).toBeInTheDocument();
+    // A mix is opened explicitly: the Home feed must not start playback.
+    expect(usePlayerStore.getState().currentTrack).toBeNull();
+    // The `mix` feed kind is no longer requested by Home at all.
+    expect(calls.some((call) => call.kind === "mix")).toBe(false);
+    await settleFeed();
+  });
+
+  it("omits Smart Mixes when local signal exists but no mix was generated", async () => {
+    // The M8 preview gate rendered the shelf on three artists; M11 removes it, so
+    // a listener with signal and no mix sees no empty section.
     seedStores({
       likedTracks: [
         credited("l1", "Liked", "Aurora"),
@@ -282,8 +325,8 @@ describe("HomeView: a returning user", () => {
     stubDiscovery(() => ({ tracks: [] }));
     render(<HomeView />);
 
-    await waitFor(() => expect(screen.getByTestId("home-section-smart-mixes")).toBeInTheDocument());
     await settleFeed();
+    expect(screen.queryByTestId("home-section-smart-mixes")).not.toBeInTheDocument();
   });
 
   it("carries only short artist-name seeds — never local data", async () => {

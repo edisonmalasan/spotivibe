@@ -182,7 +182,7 @@ function extractBackupDatasetKeys(source: string): string[] {
   return [...block.matchAll(/^\s*(\w+):/gm)].map((match) => match[1]);
 }
 
-/** Whitelists: the seven stores (ROADMAP §8/§13) and six exportable datasets. */
+/** Whitelists: the eight stores (ROADMAP §8/§13) and seven exportable datasets. */
 const STORE_WHITELIST = [
   "likedTracks",
   "playlists",
@@ -191,6 +191,9 @@ const STORE_WHITELIST = [
   "preferences",
   "session",
   "metadataCache",
+  // M11: Smart Mixes — derived data, but persisted and exported because a mix is
+  // a *named* record the listener recognizes.
+  "mixes",
 ];
 const BACKUP_WHITELIST = [
   "preferences",
@@ -198,6 +201,8 @@ const BACKUP_WHITELIST = [
   "playlists",
   "history",
   "searchHistory",
+  // M11: mixes travel as derived data so a recognized mix survives a round trip.
+  "mixes",
   "session",
 ];
 
@@ -2044,5 +2049,304 @@ describe("architecture: a radio is a queue mode, not a second player (M10 task 6
     // Not vacuous: the extractor really does read this store's state keys.
     expect(radioStoreStateKeys(source).length).toBeGreaterThan(0);
     expect(radioStorePlaybackFields(source)).toEqual([]);
+  });
+});
+
+/**
+ * Insights/mixes layering invariants (M11 task 6.1, design §1/§2/§3/§5/§6).
+ *
+ * M11 adds the last two client feature folders and the rules around them are the
+ * ones the "derived, never aggregated" promise rests on:
+ *
+ * - `features/insights` and `features/mixes` are repository-mediated like every
+ *   other client surface: no IndexedDB implementation, no `src/server`, no raw
+ *   provider shape, and no IFrame API loader.
+ * - `features/insights/buildStats` and `classifyPlay` stay **pure**: they derive
+ *   everything from `(events, now)`, so importing a store, a repository accessor,
+ *   or the network would make a statistic depend on something other than the
+ *   events it summarizes.
+ * - **No aggregate is ever persisted.** A derived total written to storage is
+ *   exactly the disagreement the spec forbids ("SHALL NOT store an aggregate that
+ *   could disagree with the history it summarizes"), so any module that both names
+ *   a derived statistic and performs a repository write fails.
+ * - The mix request path is held to the M10 rule that already exists: it may read
+ *   the profile and the local datasets *locally*, but a request carries only the
+ *   feed parameters — never a taste weight, a store's data, or a profile.
+ * - `/history` is a thin route: it mounts the two client views and reaches no
+ *   dataset, no server module, and no network itself.
+ */
+
+/** The M11 surfaces the repository-mediated and player-internals rules must reach. */
+const M11_SURFACE_DIRECTORIES = ["features/insights", "features/mixes", "app/history"] as const;
+
+/** The M11 files, named so the coverage proof pins files, not only directories. */
+const M11_TOUCHED_FILES = [
+  join("app", "history", "page.tsx"),
+  join("features", "history", "HistoryView.tsx"),
+  join("features", "insights", "StatsView.tsx"),
+  join("features", "insights", "buildStats.ts"),
+  join("features", "insights", "classifyPlay.ts"),
+  join("features", "mixes", "MixList.tsx"),
+  join("features", "mixes", "generateMix.ts"),
+  join("features", "mixes", "mixNaming.ts"),
+  join("stores", "mixStore.ts"),
+] as const;
+
+/** The derivation modules that must stay a pure function of their inputs. */
+const PURE_INSIGHT_MODULES = [
+  join("features", "insights", "buildStats.ts"),
+  join("features", "insights", "classifyPlay.ts"),
+] as const;
+
+/** The M11 modules that build a mix request — the boundary the M10 rule guards. */
+const MIX_REQUEST_MODULES = [
+  join("features", "mixes", "generateMix.ts"),
+  join("features", "mixes", "mixNaming.ts"),
+] as const;
+
+/**
+ * Specifiers a pure derivation must never reach: a store (state it did not
+ * receive), the local-data accessor or the IndexedDB implementation (I/O a pure
+ * function must not perform), the network, and the server layer.
+ */
+function impureSpecifier(specifier: string): string | null {
+  if (/(^|[\\/])stores[\\/]/.test(specifier) || /[\\/]stores$/.test(specifier)) {
+    return "store import";
+  }
+  if (/(^|[\\/])data[\\/](?:localData|indexeddb)/.test(specifier)) return "local-data import";
+  if (targetsServerModule(specifier)) return "src/server import";
+  if (/(^|[\\/])player[\\/](?:ytApi|types|engine)(\.tsx?)?$/.test(specifier)) {
+    return "player internals import";
+  }
+  return null;
+}
+
+/** Violations of the pure-derivation rule, as labels. */
+function purityViolations(source: string): string[] {
+  const violations: string[] = [];
+  for (const specifier of moduleSpecifiers(source)) {
+    const label = impureSpecifier(specifier);
+    if (label !== null) violations.push(label);
+  }
+  if (hasServerReferenceOrFetch(source)) violations.push("network call");
+  if (accessesIndexedDbGlobal(source)) violations.push("indexedDB global access");
+  return violations;
+}
+
+/**
+ * Field names that only exist because statistics were derived. None of them may
+ * appear in a module that also writes to a repository: a persisted aggregate is
+ * the one thing that could disagree with the history it summarizes.
+ */
+const DERIVED_STAT_FIELDS = [
+  "totalSeconds",
+  "playCount",
+  "eventCount",
+  "topTracks",
+  "topArtists",
+  "currentStreak",
+  "longestStreak",
+  "lastListeningDay",
+] as const;
+
+/** Repository write calls — the only way derived data could be persisted. */
+const REPOSITORY_WRITE_CALL =
+  /\.(?:likedTracks|playlists|listeningHistory|searchHistory|preferences|session|mixes|metadataCache)\s*\.\s*(?:create|record|put|set|update|refresh|addTrack|like|unlike|removeTrack)\s*\(/;
+
+/** Violations of the "no persisted aggregate" rule, as labels. */
+function persistedAggregateViolations(source: string): string[] {
+  const derived = DERIVED_STAT_FIELDS.filter((field) => new RegExp(`\\b${field}\\b`).test(source));
+  // Both conditions are required: naming a statistic is fine (that is what the
+  // derivation does), and writing a dataset is fine (that is what every
+  // repository does). Persisting one *from* the other is the violation.
+  if (derived.length === 0 || !REPOSITORY_WRITE_CALL.test(source)) return [];
+  return [`derived statistics persisted (${derived.join(", ")})`];
+}
+
+describe("architecture violation detectors (M11 task 6.1)", () => {
+  it("flags a store, local-data, server, or network reach from a derivation but passes pure code", () => {
+    expect(purityViolations('import { useHistoryStore } from "@/stores/historyStore";')).toEqual([
+      "store import",
+    ]);
+    expect(purityViolations('import { getLocalData } from "@/data/localData";')).toEqual([
+      "local-data import",
+    ]);
+    // A server import is a local-data reach *and* a network reach; both are
+    // reported, so one violation cannot hide behind the other.
+    expect(purityViolations('import { runDiscovery } from "@/server/music/discovery";')).toEqual([
+      "src/server import",
+      "network call",
+    ]);
+    expect(purityViolations('import { loadYouTubeIframeApi } from "@/player/ytApi";')).toEqual([
+      "player internals import",
+    ]);
+    expect(purityViolations('const res = await fetch("/api/discover");')).toEqual(["network call"]);
+    expect(purityViolations('const open = indexedDB.open("spotivibe");')).toEqual([
+      "indexedDB global access",
+    ]);
+    // The real derivations: pure imports over events and canonical domain types.
+    expect(
+      purityViolations(
+        [
+          'import { artistKeyOf, genreKeysOf } from "@/features/personalization/tasteProfile";',
+          'import { languageName } from "@/lib/languages";',
+          'import type { ListeningEventRecord } from "@/data/repositories";',
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a persisted aggregate but passes the derivation and the repositories", () => {
+    expect(
+      persistedAggregateViolations(
+        "await data.mixes.create({ name, totalSeconds: 900, currentStreak: 3 });",
+      ),
+    ).toEqual(["derived statistics persisted (totalSeconds, currentStreak)"]);
+    expect(
+      persistedAggregateViolations("await data.listeningHistory.set({ playCount: 12 });"),
+    ).toEqual(["derived statistics persisted (playCount)"]);
+    // Naming a statistic without writing is the derivation itself.
+    expect(
+      persistedAggregateViolations("return { totalSeconds: total, topTracks, topArtists };"),
+    ).toEqual([]);
+    // Writing a dataset without naming a statistic is every repository.
+    expect(
+      persistedAggregateViolations(
+        "const record = { ...event, id: event.id ?? crypto.randomUUID() };\nstore.put(record);",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("architecture: the M11 surfaces stay repository-mediated (M11 task 6.1)", () => {
+  it("sweeps every M11 surface directory and pins the files it added", () => {
+    for (const dir of M11_SURFACE_DIRECTORIES) {
+      const real = readTree(join(srcDir, dir));
+      expect(real.length, dir).toBeGreaterThan(0);
+      const swept = uiSourceFiles().filter(({ file }) => file.startsWith(join(srcDir, dir)));
+      // Not vacuous: the shared sweep reaches these directories, and reaches
+      // exactly the files that are really there.
+      expect(swept.map(({ file }) => file).sort(), dir).toEqual(
+        real.map(({ file }) => file).sort(),
+      );
+    }
+    for (const file of M11_TOUCHED_FILES) {
+      expect(existsSync(join(srcDir, file)), file).toBe(true);
+    }
+  }, 30_000);
+
+  it("finds no IndexedDB, server, provider-shape, or player-internals leak", () => {
+    const files = M11_SURFACE_DIRECTORIES.flatMap((dir) => readTree(join(srcDir, dir)));
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(
+        ({ source }) =>
+          librarySurfaceViolations(source).length > 0 ||
+          moduleSpecifiers(source).some(targetsPlayerInternals),
+      )
+      .map(({ file }) => relative(srcDir, file));
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags a leak in any M11 surface — the sweep is proven, not assumed", () => {
+    const swept = uiSourceFiles().filter(({ file }) =>
+      M11_SURFACE_DIRECTORIES.some((dir) => file.startsWith(join(srcDir, dir))),
+    );
+    expect(swept.length).toBeGreaterThan(0);
+    const injected = swept.map(({ file }) => ({
+      file,
+      source:
+        'import { createRepositories } from "@/data/indexeddb";\nimport { resolveArtist } from "@/server/music/catalog";\nconst node: MusicResponsiveListItemRenderer = input;',
+    }));
+    const expected = injected.map(({ file }) => file);
+
+    expect(
+      injected
+        .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+        .map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected.filter(({ source }) => mentionsRawProviderShape(source)).map(({ file }) => file),
+    ).toEqual(expected);
+  }, 30_000);
+});
+
+describe("architecture: the insights derivations stay pure (M11 task 6.1)", () => {
+  it("keeps buildStats and classifyPlay free of stores, repositories, and the network", () => {
+    for (const file of PURE_INSIGHT_MODULES) {
+      const source = readSource(file);
+      expect(source.length, file).toBeGreaterThan(0);
+      expect(purityViolations(source), file).toEqual([]);
+      expect(accessesIndexedDbGlobal(source), file).toBe(false);
+    }
+    // Not vacuous: `buildStats` really does read canonical helpers, and the rule
+    // accepts them. `classifyPlay` is deliberately self-contained — a rule that
+    // passes an empty import list proves nothing about a module that imports.
+    expect(
+      moduleSpecifiers(readSource("features", "insights", "buildStats.ts")).length,
+    ).toBeGreaterThan(0);
+    expect(moduleSpecifiers(readSource("features", "insights", "classifyPlay.ts"))).toEqual([]);
+  });
+});
+
+describe("architecture: no aggregate of listening is persisted (M11 task 6.1)", () => {
+  it("finds no module that writes a derived statistic to a repository", () => {
+    const offenders = readTree(srcDir)
+      .filter(({ source }) => persistedAggregateViolations(source).length > 0)
+      .map(({ file }) => relative(srcDir, file));
+
+    expect(offenders).toEqual([]);
+    // Not vacuous: the derivation really does name these fields, and the
+    // repositories really do write — the rule needs both, and finds neither alone.
+    expect(
+      DERIVED_STAT_FIELDS.filter((field) =>
+        readSource("features", "insights", "buildStats.ts").includes(field),
+      ).length,
+    ).toBeGreaterThan(3);
+    // The other half of the rule: repository writes really happen in this tree,
+    // so "no violation" cannot be an artifact of a pattern that never matches.
+    expect(REPOSITORY_WRITE_CALL.test(readSource("features", "mixes", "generateMix.ts"))).toBe(
+      true,
+    );
+  });
+});
+
+describe("architecture: mix requests carry only feed parameters (M11 task 6.1)", () => {
+  it("keeps the mix request path free of taste weights and library/history stores", () => {
+    for (const file of MIX_REQUEST_MODULES) {
+      const source = readSource(file);
+      expect(source.length, file).toBeGreaterThan(0);
+      expect(radioRequestViolations(source), file).toEqual([]);
+    }
+  });
+
+  it("still sends the request through the existing discovery feed client", () => {
+    // No new provider capability: a mix is composed from the M8 `mix` feed, so
+    // the discovery client is the transport and nothing else is.
+    const source = readSource("features", "mixes", "generateMix.ts");
+    expect(moduleSpecifiers(source)).toContain("@/features/home/discoveryApi");
+    expect(source).toMatch(/kind:\s*"mix"/);
+  });
+});
+
+describe("architecture: /history is a thin route (M11 task 6.1)", () => {
+  it("mounts the client views and reaches no dataset, server module, or network", () => {
+    const source = readSource("app", "history", "page.tsx");
+    expect(source.length).toBeGreaterThan(0);
+    expect(librarySurfaceViolations(source)).toEqual([]);
+    expect(hasServerReferenceOrFetch(source)).toBe(false);
+    expect(dataLayerImports(source)).toEqual([]);
+    expect(moduleSpecifiers(source).filter(importsDataLayer)).toEqual([]);
+    // The route mounts the client views and owns the route's single hidden h1.
+    // It reaches no dataset itself: every view reads local data through the
+    // repository interfaces, which the rules above already check per surface.
+    for (const view of [
+      "@/features/history/HistoryView",
+      "@/features/insights/StatsView",
+      "@/features/mixes/MixList",
+    ]) {
+      expect(moduleSpecifiers(source), view).toContain(view);
+    }
   });
 });

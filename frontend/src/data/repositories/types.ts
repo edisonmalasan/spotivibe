@@ -78,6 +78,40 @@ export interface PlaylistRecord {
   tracks: PlaylistTrackEntry[];
 }
 
+/**
+ * A locally generated Smart Mix (M11).
+ *
+ * A mix is a **named snapshot** the listener can recognise and re-enter, which is
+ * what separates it from a radio (a continuously refilled queue with no identity).
+ * Its `id` is the merge dedupe key, exactly like a playlist's: two devices that
+ * generated the same mix converge on one record rather than two.
+ */
+export interface MixRecord {
+  /** Stable local identity; survives refreshes and export/import. */
+  id: string;
+  /**
+   * Name derived from the mix's strongest local signal (M11 design decision 4).
+   * It names what the mix contains; it is not a ranking or editorial claim.
+   */
+  name: string;
+  /** Epoch milliseconds when this generation happened. */
+  generatedAt: number;
+  /**
+   * The period key ("YYYY-MM-DD") the mix was generated in, so a refresh inside
+   * the same period is recognisable as a refresh rather than a different mix.
+   */
+  period: string;
+  /** The local profile terms this mix was built from; public text only. */
+  seeds: string[];
+  /** The mix's ordered tracks, as resolved. */
+  tracks: Track[];
+  /** Bumped on every refresh; newer timestamp wins on merge conflict. */
+  updatedAt: number;
+}
+
+/** Input for creating a mix; the repository stamps `id` when absent. */
+export type NewMix = Omit<MixRecord, "id"> & { id?: string };
+
 /** Where a listening event originated (ROADMAP §8.3 "source context"). */
 export type ListeningContext =
   "search" | "home" | "playlist" | "album" | "artist" | "queue" | "radio" | "library" | "other";

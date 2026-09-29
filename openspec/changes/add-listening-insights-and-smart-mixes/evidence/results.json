@@ -1,0 +1,435 @@
+{
+  "task": "7.2",
+  "generatedAt": "2026-09-29T20:22:57.691Z",
+  "origin": "http://localhost:3210",
+  "query": "bohemian rhapsody",
+  "allowedDiscoveryKeys": [
+    "kind",
+    "languages",
+    "seeds",
+    "limit"
+  ],
+  "copy": {
+    "onboardingLabel": "Choose your languages",
+    "onboardingConfirm": "Save languages"
+  },
+  "steps": [
+    {
+      "name": "a fresh profile shows the accountless first-run language onboarding",
+      "ok": true,
+      "detail": "checkboxes=38, confirm=\"Save languages\", accountCopy=false"
+    },
+    {
+      "name": "the History route mounts both insights views behind one hidden route heading",
+      "ok": true,
+      "detail": "h1=\"History\" (sr-only=true), stats view=true, empty states=2"
+    },
+    {
+      "name": "a cold device explains both insights surfaces instead of reporting zeroes",
+      "ok": true,
+      "detail": "history rows=0, empty headings=2"
+    },
+    {
+      "name": "the History surface states the record is local and unranked",
+      "ok": true,
+      "detail": "disclaimer present=true, ranking/total claim in the record=false"
+    },
+    {
+      "name": "with no local signal the mix surface says mixes need some listening",
+      "ok": true,
+      "detail": "\"Mixes appear after some listening — like a track or play a few songs on this device, then \""
+    },
+    {
+      "name": "live search returns results for the seeded query",
+      "ok": true,
+      "detail": "rows=19"
+    },
+    {
+      "name": "playback starts from a search result",
+      "ok": true,
+      "detail": "control=Pause"
+    },
+    {
+      "name": "playing tracks records local history with the seconds actually played",
+      "ok": true,
+      "detail": "steps=4, events=5, with measured seconds=3, seconds=[14,14,13,0,0]"
+    },
+    {
+      "name": "every measured play is long enough that the rule reads it as a play, not a skip",
+      "ok": true,
+      "detail": "seconds per event=[14,14,13,0,0] (skip threshold 10s, exclusive)"
+    },
+    {
+      "name": "the History page lists the recorded plays, grouped by local day",
+      "ok": true,
+      "detail": "rows=5, day groups=1"
+    },
+    {
+      "name": "each history row shows the track, a time, and how the play ended",
+      "ok": true,
+      "detail": "verdicts=[\"Skipped\",\"Played partly\",\"Played partly\",\"Played partly\",\"Played partly\"]"
+    },
+    {
+      "name": "the recorded plays read as plays rather than skips",
+      "ok": true,
+      "detail": "verdicts=[\"Skipped\",\"Played partly\",\"Played partly\",\"Played partly\",\"Played partly\"]"
+    },
+    {
+      "name": "each history row links the artist to that artist's own surface",
+      "ok": true,
+      "detail": "\"Simply Three\" → /artist/Simply%20Three"
+    },
+    {
+      "name": "activating a history row's artist opens that artist's surface",
+      "ok": true,
+      "detail": "path=/artist/Simply%20Three, activation=in-page-click, artist view rendered=true"
+    },
+    {
+      "name": "the statistics report listening time, plays, and how each play ended",
+      "ok": true,
+      "detail": "plays=4, time=\"55 sec\", verdicts=\"0 played through · 4 partly · 1 skipped\""
+    },
+    {
+      "name": "the statistics report top tracks and top artists",
+      "ok": true,
+      "detail": "top tracks block=Most played tracksBohemian Rhapsody1 playBohemian Rhapsody1 playBohemi"
+    },
+    {
+      "name": "the statistics report both listening streaks",
+      "ok": true,
+      "detail": "current=1, longest=\"Longest: 1\""
+    },
+    {
+      "name": "every statistic is labelled as derived from this device's record",
+      "ok": true,
+      "detail": "derived labels=6, account claim=false"
+    },
+    {
+      "name": "with local signal, a Smart Mix is generated and listed by name",
+      "ok": true,
+      "detail": "name=\"Simply Three\", size=\"20 songs\", rows=1"
+    },
+    {
+      "name": "the mix was composed from the existing mix feed, within its request bound",
+      "ok": true,
+      "detail": "mix feed requests=3, kinds=[\"mix\",\"mix\",\"mix\"], limits=[7,14,20]"
+    },
+    {
+      "name": "the mix request carried only feed parameters, with no profile, history, or mix data",
+      "ok": true,
+      "detail": "params=[\"kind\",\"languages\",\"limit\",\"seeds\"]"
+    },
+    {
+      "name": "the mix surface offered generation because local signal existed",
+      "ok": true,
+      "detail": "mix panel mounted=true, generate action still offered=true"
+    },
+    {
+      "name": "playing a mix starts playback with the mix as its context",
+      "ok": true,
+      "detail": "control=Pause, bar=\"Con CalmaSimply Three0:003:30\""
+    },
+    {
+      "name": "Home lists the generated mix by name, with no generation action on the feed",
+      "ok": true,
+      "detail": "rows=1, names=[\"Simply Three\",\"20 songs, generated 2026-09-30\",\", generated 2026-09-30\"]"
+    },
+    {
+      "name": "refreshing a mix keeps its identity and its name",
+      "ok": true,
+      "detail": "ids before=[\"mix-row-mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\"], after=[\"mix-row-mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\"], name still \"Simply Three\", refreshed notice=false, alert=\"No new tracks for this mix right now.\""
+    },
+    {
+      "name": "a refresh that cannot find new material says so instead of emptying the mix",
+      "ok": true,
+      "detail": "refreshed=false, alert=\"No new tracks for this mix right now.\""
+    },
+    {
+      "name": "the exported backup carries the mixes dataset, with the generated mix in it",
+      "ok": true,
+      "detail": "datasets=[\"preferences\",\"likedTracks\",\"playlists\",\"history\",\"searchHistory\",\"mixes\",\"session\"], mixes=[{\"id\":\"mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\",\"name\":\"Simply Three\",\"tracks\":20}]"
+    },
+    {
+      "name": "the exported envelope carries no profile weights, no history-only tables, and no secrets",
+      "ok": true,
+      "detail": "format=spotivibe-backup, version=1"
+    },
+    {
+      "name": "resetting the local data really removes the mixes dataset",
+      "ok": true,
+      "detail": "activation=in-page-click, feedback=\"Resetting Spotivibe data…\", stored mixes after reset=0"
+    },
+    {
+      "name": "the exported envelope imports back through the Settings file picker",
+      "ok": true,
+      "detail": "feedback=\"Import complete (merge mode): 0 liked tracks, 0 playlists, 6 listening\", files on input=0 (\"\", 0 bytes), change events observed=2"
+    },
+    {
+      "name": "the mixes dataset survives the round trip with its identity and name intact",
+      "ok": true,
+      "detail": "restored=[{\"id\":\"mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\",\"name\":\"Simply Three\",\"period\":\"2026-09-30\",\"tracks\":20}]"
+    },
+    {
+      "name": "the restored mix is listed again by name after the import",
+      "ok": true,
+      "detail": "rows after import=[\"mix-row-mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\"]"
+    },
+    {
+      "name": "the round trip restored the listening record as well as the mixes",
+      "ok": true,
+      "detail": "events after import=6"
+    },
+    {
+      "name": "the IFrame API is loaded exactly once and one player host is present",
+      "ok": true,
+      "detail": "apiScripts=1, iframes=1, control=Play"
+    },
+    {
+      "name": "no request this run carried profile, history, liked-track, or mix data",
+      "ok": true,
+      "detail": "every observed discovery request's params: [\"kind\",\"languages\",\"limit\",\"seeds\"] (11 requests)"
+    },
+    {
+      "name": "zero console errors (disclosed offline/blocked/live-upstream entries excluded)",
+      "ok": true,
+      "detail": "errors=0, disclosed offline=0, disclosed blocked-feed=0, disclosed live-upstream=0"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "history-empty-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "A cold device: both insights surfaces explain themselves"
+    },
+    {
+      "file": "history-with-plays-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "History: local plays grouped by day with their verdicts"
+    },
+    {
+      "file": "history-stats-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Statistics derived from the local record: time, plays, top entries, streak"
+    },
+    {
+      "file": "mix-generated-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "A Smart Mix generated from the local profile, listed by name with its size"
+    }
+  ],
+  "consoleErrors": [],
+  "notes": {
+    "disclosures": {
+      "offlineWindow": [],
+      "blockedFeedProbe": [],
+      "liveUpstream": [],
+      "searchFallbacks": []
+    },
+    "feedRequests": [
+      {
+        "url": "/api/discover?kind=trending&languages=en&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit"
+        ],
+        "kind": "trending",
+        "languages": "en",
+        "seeds": null,
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=podcast&languages=en&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit"
+        ],
+        "kind": "podcast",
+        "languages": "en",
+        "seeds": null,
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=collection&languages=en&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit"
+        ],
+        "kind": "collection",
+        "languages": "en",
+        "seeds": null,
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=7",
+        "keys": [
+          "kind",
+          "languages",
+          "limit",
+          "seeds"
+        ],
+        "kind": "mix",
+        "languages": "en",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
+        "limit": 7
+      },
+      {
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=14",
+        "keys": [
+          "kind",
+          "languages",
+          "limit",
+          "seeds"
+        ],
+        "kind": "mix",
+        "languages": "en",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
+        "limit": 14
+      },
+      {
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit",
+          "seeds"
+        ],
+        "kind": "mix",
+        "languages": "en",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=trending&languages=en&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit"
+        ],
+        "kind": "trending",
+        "languages": "en",
+        "seeds": null,
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=podcast&languages=en&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit"
+        ],
+        "kind": "podcast",
+        "languages": "en",
+        "seeds": null,
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=collection&languages=en&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit"
+        ],
+        "kind": "collection",
+        "languages": "en",
+        "seeds": null,
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=for-you&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir%2CQueen&limit=20",
+        "keys": [
+          "kind",
+          "languages",
+          "limit",
+          "seeds"
+        ],
+        "kind": "for-you",
+        "languages": "en",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir,Queen",
+        "limit": 20
+      },
+      {
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=7",
+        "keys": [
+          "kind",
+          "languages",
+          "limit",
+          "seeds"
+        ],
+        "kind": "mix",
+        "languages": "en",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
+        "limit": 7
+      }
+    ],
+    "attachedTargets": [
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "service_worker",
+        "url": "https://www.youtube.com/sw.js"
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "service_worker",
+        "url": "https://www.youtube.com/sw.js"
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      }
+    ],
+    "playSteps": {
+      "steps": 4,
+      "perStepSeconds": 15
+    },
+    "artistLinkActivation": "in-page-click",
+    "resetActivation": "in-page-click",
+    "importPicker": {
+      "inputs": 1,
+      "files": 0,
+      "firstName": "",
+      "firstBytes": 0,
+      "changeEvents": 2
+    },
+    "screenshotFiles": [
+      "history-empty-1280.png",
+      "history-stats-1280.png",
+      "history-with-plays-1280.png",
+      "mix-generated-1280.png"
+    ]
+  },
+  "pass": true,
+  "browser": "Edg/154.0.4258.37"
+}

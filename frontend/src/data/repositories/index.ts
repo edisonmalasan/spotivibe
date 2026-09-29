@@ -1,15 +1,17 @@
 import type {
+  Artwork,
   CachedMetadataRecord,
   LikedTrackRecord,
   ListeningEventRecord,
+  MixRecord,
   NewListeningEvent,
+  NewMix,
   PlaylistRecord,
   Preferences,
   SearchEntryRecord,
   SessionRecord,
   SessionSnapshot,
   Track,
-  Artwork,
 } from "./types";
 
 /**
@@ -55,6 +57,18 @@ export interface PlaylistsRepository {
 export interface ListeningHistoryRepository {
   /** Record an event; generates the event UUID when `id` is not provided. */
   record(event: NewListeningEvent): Promise<ListeningEventRecord>;
+  /**
+   * M11: write the *measurements* of an already-recorded event — the seconds it
+   * actually played for and whether the engine reported it ended.
+   *
+   * A patch, not a verdict: classification is a read-time policy over these raw
+   * numbers, so the recorder can fill them in when a track step ends without any
+   * stored interpretation of them. An unknown id resolves to `undefined`.
+   */
+  update(
+    id: string,
+    patch: { secondsPlayed?: number; completed?: boolean },
+  ): Promise<ListeningEventRecord | undefined>;
   /** Events newest-first; `limit` caps the number returned. */
   list(limit?: number): Promise<ListeningEventRecord[]>;
   clear(): Promise<void>;
@@ -96,6 +110,28 @@ export interface MetadataCacheRepository {
   clear(): Promise<void>;
 }
 
+/**
+ * Locally generated Smart Mixes (M11 dataset 8).
+ *
+ * A mix is derived data, but it is *user-visible derived data* — a name the
+ * listener recognizes — so it is persisted and exported like a playlist, and can
+ * always be regenerated from the profile if the listener would rather drop it.
+ */
+export interface MixesRepository {
+  /** Create a mix; re-creating an existing `id` replaces it. */
+  create(mix: NewMix): Promise<MixRecord>;
+  /** Replace a mix's contents, keeping its identity and name; bumps `updatedAt`. */
+  refresh(
+    id: string,
+    patch: { tracks: Track[]; seeds: string[]; period: string },
+  ): Promise<MixRecord | undefined>;
+  get(id: string): Promise<MixRecord | undefined>;
+  /** Mixes newest-generation first. */
+  list(): Promise<MixRecord[]>;
+  remove(id: string): Promise<void>;
+  clear(): Promise<void>;
+}
+
 /** Every repository the data layer exposes, grouped for one-stop access. */
 export interface Repositories {
   likedTracks: LikedTracksRepository;
@@ -105,6 +141,7 @@ export interface Repositories {
   preferences: PreferencesRepository;
   session: SessionRepository;
   metadataCache: MetadataCacheRepository;
+  mixes: MixesRepository;
 }
 
 export * from "./types";

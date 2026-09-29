@@ -32,6 +32,7 @@ describe("serializeBackup", () => {
     expect(Object.keys(envelope.data).sort()).toEqual([
       "history",
       "likedTracks",
+      "mixes",
       "playlists",
       "preferences",
       "searchHistory",

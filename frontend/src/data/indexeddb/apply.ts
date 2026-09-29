@@ -17,6 +17,11 @@ const SUPPORTED_DATASETS = [
   STORE.searchHistory,
   STORE.preferences,
   STORE.session,
+  // M11: mixes are a supported dataset, so `"replace"` clears them like every
+  // other one. Importing a pre-M11 envelope — which carries no mixes — must leave
+  // the dataset *empty*, not untouched (spec `local-data`, "An envelope without
+  // the mixes dataset still imports").
+  STORE.mixes,
 ] as const;
 
 export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void> {
@@ -28,6 +33,7 @@ export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void
   if (plan.writes.playlists.length > 0) stores.add(STORE.playlists);
   if (plan.writes.history.length > 0) stores.add(STORE.listeningHistory);
   if (plan.writes.searchHistory.length > 0) stores.add(STORE.searchHistory);
+  if (plan.writes.mixes.length > 0) stores.add(STORE.mixes);
   if (plan.writes.preferences !== undefined) stores.add(STORE.preferences);
   if (plan.writes.session !== null && plan.writes.session !== undefined) {
     stores.add(STORE.session);
@@ -46,14 +52,33 @@ export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void
           tx.objectStore(name).clear();
         }
       }
-      const liked = tx.objectStore(STORE.likedTracks);
-      for (const record of plan.writes.likedTracks) liked.put(record);
-      const playlists = tx.objectStore(STORE.playlists);
-      for (const record of plan.writes.playlists) playlists.put(record);
-      const history = tx.objectStore(STORE.listeningHistory);
-      for (const record of plan.writes.history) history.put(record);
-      const search = tx.objectStore(STORE.searchHistory);
-      for (const record of plan.writes.searchHistory) search.put(record);
+      // Only touch a store the transaction actually spans: opening a store the
+      // transaction does not include is a NotFoundError, which aborts the
+      // transaction and loses the rollback guarantee with it. A merge import
+      // legitimately writes *some* datasets (nothing new to merge for the rest),
+      // so each store is opened only when it has a write.
+      if (plan.writes.likedTracks.length > 0) {
+        const liked = tx.objectStore(STORE.likedTracks);
+        for (const record of plan.writes.likedTracks) liked.put(record);
+      }
+      if (plan.writes.playlists.length > 0) {
+        const playlists = tx.objectStore(STORE.playlists);
+        for (const record of plan.writes.playlists) playlists.put(record);
+      }
+      if (plan.writes.history.length > 0) {
+        const history = tx.objectStore(STORE.listeningHistory);
+        for (const record of plan.writes.history) history.put(record);
+      }
+      if (plan.writes.searchHistory.length > 0) {
+        const search = tx.objectStore(STORE.searchHistory);
+        for (const record of plan.writes.searchHistory) search.put(record);
+      }
+      // M11: mixes are written by identity, so a refresh in the backup overwrites
+      // the local record of the same mix rather than creating a second one.
+      if (plan.writes.mixes.length > 0) {
+        const mixes = tx.objectStore(STORE.mixes);
+        for (const record of plan.writes.mixes) mixes.put(record);
+      }
       if (plan.writes.preferences !== undefined) {
         tx.objectStore(STORE.preferences).put({
           id: SINGLE_RECORD_KEY,

@@ -1,11 +1,12 @@
 import "fake-indexeddb/auto";
 import { expect, it } from "vitest";
 import { createRepositories, openDatabase, STORE } from "@/data/indexeddb";
+import { SCHEMA_VERSION } from "@/data/indexeddb/schema";
 import type { SchemaMigration } from "@/data/migrations";
 
 /**
- * Task 3.1: migration machinery — a synthetic registry runs in ascending
- * version order, only steps inside the upgrade range run, real schema v1
+ * Task 3.1: migration machinery - a synthetic registry runs in ascending
+ * version order, only steps inside the upgrade range run, the real schema
  * creates every store before repositories are served, and `versionchange`
  * closes our connections so future upgrades are never blocked.
  */
@@ -94,10 +95,14 @@ it("creates every schema v1 store before repositories are served", async () => {
 it("closes the connection on versionchange so upgrades are not blocked", async () => {
   const db = await openDatabase({ name: "versionchange-test" });
 
+  // Strictly above the shipped schema: asking for the version we are already at
+  // is not an upgrade, so no `versionchange` would ever fire and this would
+  // silently stop testing anything (it did exactly that at schema v2).
+  const nextVersion = SCHEMA_VERSION + 1;
   await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open("versionchange-test", 2);
+    const request = indexedDB.open("versionchange-test", nextVersion);
     request.onupgradeneeded = () => {
-      /* schema v1 registry has no v2 step yet — upgrade is a no-op */
+      /* no step beyond the shipped schema — the upgrade itself is a no-op */
     };
     request.onsuccess = () => {
       request.result.close();

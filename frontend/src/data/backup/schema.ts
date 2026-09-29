@@ -152,6 +152,24 @@ const sessionSchema = z.strictObject({
     .optional(),
 });
 
+/**
+ * M11: a locally generated Smart Mix.
+ *
+ * Optional in the envelope: a v1 envelope exported before mixes existed carries
+ * no such key, and that must keep importing cleanly (spec `local-data` — "An
+ * envelope without the mixes dataset still imports"). Its tracks are ordinary
+ * `Track` records, so a restored mix needs no new parsing rules.
+ */
+const mixSchema = z.strictObject({
+  id: z.string().min(1).max(200),
+  name: z.string().min(1).max(200),
+  generatedAt: z.number().int().min(0),
+  period: z.string().min(1).max(20),
+  seeds: z.array(z.string().min(1).max(200)).max(20),
+  tracks: z.array(trackSchema).max(200),
+  updatedAt: z.number().int().min(0),
+});
+
 export const backupEnvelopeSchema = z.strictObject({
   format: z.literal(BACKUP_FORMAT),
   version: z.number().int().min(1),
@@ -163,6 +181,9 @@ export const backupEnvelopeSchema = z.strictObject({
     playlists: z.array(playlistSchema),
     history: z.array(listeningEventSchema),
     searchHistory: z.array(searchEntrySchema),
+    // M11: derived data, optional so a pre-M11 envelope still validates and
+    // imports with the dataset empty.
+    mixes: z.array(mixSchema).optional(),
     session: sessionSchema.nullable(),
   }),
 });
