@@ -52,6 +52,38 @@ describe("AlbumCard", () => {
     expect(cover!.className).toContain("rounded-images");
     expect(cover!.querySelector("svg")).not.toBeNull();
   });
+
+  it("renders the placeholder cover when no artwork URL is given", () => {
+    const { container } = render(<AlbumCard title="Midnight Drive" artist="Neon Waves" />);
+    const cover = container.querySelector("article > div");
+
+    expect(cover!.querySelector("img")).toBeNull();
+    // `className` on an SVG element is not a string in jsdom; read the attribute.
+    expect(cover!.querySelector("svg")).toHaveClass("text-fog");
+  });
+
+  it("renders real cover artwork when a URL is given (M8 shelves)", () => {
+    const { container } = render(
+      <AlbumCard
+        title="Midnight Drive"
+        artist="Neon Waves"
+        artworkUrl="https://example.test/cover.jpg"
+      />,
+    );
+    const cover = container.querySelector("article > div");
+    const image = screen.getByRole("img", { name: "Midnight Drive" });
+
+    expect(image).toHaveAttribute("src", "https://example.test/cover.jpg");
+    // Meaningful alternative text — the artwork is the content, not decoration.
+    expect(image).toHaveAttribute("alt", "Midnight Drive");
+    // Lazy loading plus an explicit 1:1 size keeps the card from shifting.
+    expect(image).toHaveAttribute("loading", "lazy");
+    expect(image).toHaveAttribute("width", "300");
+    expect(image).toHaveAttribute("height", "300");
+    expect(image.className).toContain("object-cover");
+    expect(image.className).toContain("rounded-cards");
+    expect(cover!.querySelector("svg")).toBeNull();
+  });
 });
 
 describe("ArtistCard", () => {
@@ -78,6 +110,31 @@ describe("ArtistCard", () => {
     expect(card!.className).not.toContain("bg-carbon");
     expect(card!.className).toContain("hover:bg-graphite");
     expect(card!.className).toContain("gap-3"); // 12px gap circle → text
+  });
+
+  it("renders the placeholder circle when no artwork URL is given", () => {
+    const { container } = render(<ArtistCard name="Aurora Sky" />);
+    const avatar = container.querySelector("article > div");
+
+    expect(avatar!.querySelector("img")).toBeNull();
+    expect(avatar!.querySelector("svg")).toHaveClass("text-fog");
+  });
+
+  it("renders a circular crop of real artwork when a URL is given (M8 shelf)", () => {
+    const { container } = render(
+      <ArtistCard name="Aurora Sky" artworkUrl="https://example.test/artist.jpg" />,
+    );
+    const avatar = container.querySelector("article > div");
+    const image = screen.getByRole("img", { name: "Aurora Sky" });
+
+    expect(image).toHaveAttribute("src", "https://example.test/artist.jpg");
+    expect(image).toHaveAttribute("alt", "Aurora Sky");
+    expect(image).toHaveAttribute("loading", "lazy");
+    expect(image).toHaveAttribute("width", "300");
+    expect(image).toHaveAttribute("height", "300");
+    expect(image.className).toContain("object-cover");
+    expect(image.className).toContain("rounded-avatars"); // 500px circular crop
+    expect(avatar!.querySelector("svg")).toBeNull();
   });
 });
 
