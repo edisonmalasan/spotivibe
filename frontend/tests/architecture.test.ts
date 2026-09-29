@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Static architecture invariants checked against the real source files
- * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1) —
+ * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1 +
+ * M7 task 9.1) —
  * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
@@ -17,7 +18,10 @@ import { describe, expect, it } from "vitest";
  * or YT types directly, nothing can capture or decode media, outbound
  * links never suppress the referrer, the search feature stays
  * client-side and repository-mediated, and the queue/transport store split
- * keeps queue state free of transport dependencies.
+ * keeps queue state free of transport dependencies; M7 layers every
+ * playlist/like repository write inside `libraryStore`, keeps it off the
+ * transport store, keeps library surfaces repository-mediated, and keeps the
+ * server playlist module off the data layer.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -592,5 +596,171 @@ describe("architecture: the queue/transport split holds (task 9.1)", () => {
     const playerSource = readFileSync(join(srcDir, "stores", "playerStore.ts"), "utf8");
     expect(transportStateKeys(playerSource).length).toBeGreaterThan(0);
     expect(queueMembershipFieldsIn(playerSource)).toEqual([]);
+  });
+});
+
+/**
+ * Library layering invariants (M7 task 9.1, design §1/§12): the M7
+ * feature/route surfaces stay repository-mediated (no IndexedDB
+ * implementation, no `src/server`, no raw provider shapes), `libraryStore`
+ * never imports `playerStore` (library edits cannot touch transport by
+ * construction), repository playlist/like writes happen only inside
+ * `libraryStore` (the one enforcement point), and the server playlist module
+ * never reaches into the local data layer. Each detector is first exercised
+ * against violating input, then applied to the real tree.
+ */
+
+/** Violations of the M7 surface layering rule, as labels. */
+function librarySurfaceViolations(source: string): string[] {
+  const violations: string[] = [];
+  for (const specifier of moduleSpecifiers(source)) {
+    if (importsIndexedDbImplementation(specifier))
+      violations.push("IndexedDB implementation import");
+    if (targetsServerModule(specifier)) violations.push("src/server import");
+  }
+  if (mentionsRawProviderShape(source)) violations.push("raw provider shape");
+  return violations;
+}
+
+/** Violations of the `libraryStore` → transport split, as labels. */
+function libraryStoreViolations(source: string): string[] {
+  const violations: string[] = [];
+  for (const specifier of moduleSpecifiers(source)) {
+    if (/(^|[\\/])playerStore(\.tsx?)?$/.test(specifier)) violations.push("playerStore import");
+  }
+  return violations;
+}
+
+/** Repository playlist/like write calls — reserved for `libraryStore`. */
+const LIBRARY_WRITE_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: "liked-tracks write", pattern: /\.likedTracks\s*\.\s*(?:like|unlike)\s*\(/ },
+  {
+    label: "playlist write",
+    pattern: /\.playlists\s*\.\s*(?:create|update|remove|addTrack|removeTrack|reorderTrack)\s*\(/,
+  },
+];
+
+function libraryWriteViolations(source: string): string[] {
+  return LIBRARY_WRITE_PATTERNS.filter(({ pattern }) => pattern.test(source)).map(
+    ({ label }) => label,
+  );
+}
+
+/** True when a specifier reaches into the local data layer. */
+function importsDataLayer(specifier: string): boolean {
+  return specifier.startsWith("@/data/") || /(^|\.\.\/)data(\/|$)/.test(specifier);
+}
+
+/** Data-layer specifiers imported by a server module. */
+function dataLayerImports(source: string): string[] {
+  return moduleSpecifiers(source).filter(importsDataLayer);
+}
+
+describe("architecture violation detectors (M7 task 9.1)", () => {
+  it("flags IndexedDB, server, and provider-shape leaks from a library surface but passes repository-mediated code", () => {
+    expect(
+      librarySurfaceViolations('import { createRepositories } from "@/data/indexeddb";'),
+    ).toEqual(["IndexedDB implementation import"]);
+    expect(
+      librarySurfaceViolations('import { resolvePlaylist } from "@/server/music/playlist";'),
+    ).toEqual(["src/server import"]);
+    expect(
+      librarySurfaceViolations("const node: MusicResponsiveListItemRenderer = input;"),
+    ).toEqual(["raw provider shape"]);
+    // Repository interfaces and canonical domain types are the allowed path.
+    expect(
+      librarySurfaceViolations(
+        'import { getLocalData } from "@/data/localData";\nimport type { Track } from "@/data/repositories";',
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a playerStore import from the library store but passes its real dependencies", () => {
+    expect(
+      libraryStoreViolations('import { usePlayerStore } from "@/stores/playerStore";'),
+    ).toEqual(["playerStore import"]);
+    expect(libraryStoreViolations('import { usePlayerStore } from "./playerStore";')).toEqual([
+      "playerStore import",
+    ]);
+    expect(libraryStoreViolations('import { getLocalData } from "@/data/localData";')).toEqual([]);
+    expect(libraryStoreViolations('import { create } from "zustand";')).toEqual([]);
+  });
+
+  it("flags playlist/like repository writes outside the store but passes reads and store actions", () => {
+    expect(libraryWriteViolations("await data.likedTracks.like(track);")).toEqual([
+      "liked-tracks write",
+    ]);
+    expect(libraryWriteViolations("await data.likedTracks.unlike(track.id);")).toEqual([
+      "liked-tracks write",
+    ]);
+    expect(libraryWriteViolations("await data.playlists.addTrack(id, track);")).toEqual([
+      "playlist write",
+    ]);
+    expect(libraryWriteViolations("await data.playlists.reorderTrack(id, 0, 1);")).toEqual([
+      "playlist write",
+    ]);
+    // Reads and store-level actions are not repository writes.
+    expect(libraryWriteViolations("await data.likedTracks.list();")).toEqual([]);
+    expect(libraryWriteViolations("await data.playlists.get(id);")).toEqual([]);
+    expect(libraryWriteViolations("await useLibraryStore.getState().toggleLike(track);")).toEqual(
+      [],
+    );
+  });
+
+  it("flags a data-layer import from a server module but passes server-only deps", () => {
+    expect(dataLayerImports('import { getLocalData } from "@/data/localData";')).toEqual([
+      "@/data/localData",
+    ]);
+    expect(dataLayerImports('import type { Track } from "@/data/repositories";')).toEqual([
+      "@/data/repositories",
+    ]);
+    expect(dataLayerImports('import { repos } from "../../data/indexeddb";')).toEqual([
+      "../../data/indexeddb",
+    ]);
+    expect(dataLayerImports('import { createTtlCache } from "./cache";')).toEqual([]);
+  });
+});
+
+describe("architecture: library layering holds (M7 task 9.1)", () => {
+  it("keeps the M7 feature/route surfaces repository-mediated", () => {
+    const files = [
+      ...[
+        "features/library",
+        "features/playlists",
+        "components/playlist",
+        "components/track",
+      ].flatMap((dir) => readTree(join(srcDir, dir))),
+      ...readTree(join(srcDir, "app", "library")),
+      ...readTree(join(srcDir, "app", "playlist")),
+    ];
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps libraryStore free of playerStore imports", () => {
+    const storeSource = readFileSync(join(srcDir, "stores", "libraryStore.ts"), "utf8");
+    expect(storeSource.length).toBeGreaterThan(0);
+    expect(libraryStoreViolations(storeSource)).toEqual([]);
+  });
+
+  it("runs every playlist/like repository write inside libraryStore only", () => {
+    const offenders = readTree(srcDir)
+      .filter(({ file }) => !file.endsWith(join("stores", "libraryStore.ts")))
+      .filter(({ source }) => libraryWriteViolations(source).length > 0)
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the data layer out of the server playlist module", () => {
+    const offenders = ["playlist.ts", "playlistRef.ts"]
+      .map((name) => join(srcDir, "server", "music", name))
+      .map((file) => ({ file, source: readFileSync(file, "utf8") }))
+      .filter(({ source }) => dataLayerImports(source).length > 0)
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
   });
 });
