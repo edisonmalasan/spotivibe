@@ -1,6 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import "fake-indexeddb/auto";
+import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/layout/AppShell";
+import { getLocalData, type RepositorySet } from "@/data/localData";
+import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
+import { makeTrack } from "./helpers/music-fixtures";
 
 const routerMock = vi.hoisted(() => ({
   back: vi.fn(),
@@ -29,6 +33,20 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
   usePathname: () => "/",
 }));
+
+// Cold fake-indexeddb hydration can exceed the 1s default (settings precedent).
+configure({ asyncUtilTimeout: 5000 });
+
+let repositories: RepositorySet;
+
+beforeEach(async () => {
+  resetLibraryStore();
+  repositories = await getLocalData();
+  await repositories.resetAll();
+  // Drain any hydration still in flight from the previous test, so this
+  // test's render starts a fresh read against the freshly reset database.
+  await useLibraryStore.getState().hydrate();
+});
 
 describe("AppShell", () => {
   it("exposes the shell landmarks (banner, navigation, main, complementary)", () => {
@@ -149,6 +167,72 @@ describe("Sidebar", () => {
     expect(card.className).toContain("bg-graphite");
     expect(card.className).toContain("transition-colors");
     expect(card.className).toContain("hover:bg-smoke");
+  });
+
+  it("lists Liked Songs and playlist entries with navigation when populated (task 8.1)", async () => {
+    await repositories.likedTracks.like(
+      makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" }),
+    );
+    const playlist = await repositories.playlists.create({ name: "Road Trip" });
+
+    render(<AppShell>page</AppShell>);
+    const sidebar = screen.getByRole("complementary");
+
+    const likedEntry = await within(sidebar).findByRole("link", { name: "Liked Songs" });
+    expect(likedEntry).toHaveAttribute("href", "/library/liked");
+    expect(within(sidebar).getByRole("link", { name: "Road Trip" })).toHaveAttribute(
+      "href",
+      `/playlist/${playlist.id}`,
+    );
+    // The guidance cards are replaced once the library has content.
+    expect(
+      within(sidebar).queryByRole("heading", { name: "Start your library" }),
+    ).not.toBeInTheDocument();
+    expect(within(sidebar).queryByRole("link", { name: "Open library" })).not.toBeInTheDocument();
+  });
+
+  it("shows entries appearing and disappearing without a reload (task 8.1)", async () => {
+    render(<AppShell>page</AppShell>);
+    expect(screen.getByRole("heading", { name: "Start your library" })).toBeInTheDocument();
+
+    // Live create: the entry replaces the prompts with no remount.
+    let createdId = "";
+    await act(async () => {
+      createdId = (await useLibraryStore.getState().createPlaylist({ name: "Road Trip" })).id;
+    });
+    expect(await screen.findByRole("link", { name: "Road Trip" })).toHaveAttribute(
+      "href",
+      `/playlist/${createdId}`,
+    );
+    expect(screen.queryByRole("heading", { name: "Start your library" })).not.toBeInTheDocument();
+
+    // Live delete: the prompts return, again with no remount.
+    await act(async () => {
+      await useLibraryStore.getState().deletePlaylist(createdId);
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Road Trip" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("heading", { name: "Start your library" })).toBeInTheDocument();
+  });
+
+  it("opens the create dialog from the + control and shows the new entry (task 8.2)", async () => {
+    render(<AppShell>page</AppShell>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to Your Library" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create playlist" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Night Drive" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await screen.findByRole("link", { name: "Night Drive" })).toBeInTheDocument();
+    // Focus returns to the opener, and the playlist was persisted through the store.
+    expect(screen.getByRole("button", { name: "Add to Your Library" })).toHaveFocus();
+    expect((await repositories.playlists.list()).map((entry) => entry.name)).toEqual([
+      "Night Drive",
+    ]);
   });
 });
 

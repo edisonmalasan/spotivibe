@@ -43,8 +43,8 @@
 
 ## 8. Library sidebar
 
-- [ ] 8.1 Make `Sidebar` hydrate the store and render Liked Songs + playlist entries (cover, name) with live updates after create/delete, keeping the guidance prompt cards only while the library is empty — verify: shell tests cover the empty library still showing prompt cards (existing assertions preserved), a populated sidebar listing entries with navigation, and entries appearing/disappearing without a reload (`npm test`).
-- [ ] 8.2 Wire the sidebar `+` control to open the Create playlist dialog in place — verify: a shell test asserts the dialog opens, creates through the store, and the new entry appears in the sidebar (`npm test`).
+- [x] 8.1 Make `Sidebar` hydrate the store and render Liked Songs + playlist entries (cover, name) with live updates after create/delete, keeping the guidance prompt cards only while the library is empty — verify: shell tests cover the empty library still showing prompt cards (existing assertions preserved), a populated sidebar listing entries with navigation, and entries appearing/disappearing without a reload (`npm test`).
+- [x] 8.2 Wire the sidebar `+` control to open the Create playlist dialog in place — verify: a shell test asserts the dialog opens, creates through the store, and the new entry appears in the sidebar (`npm test`).
 
 ## 9. Integration verification and release evidence
 
