@@ -114,7 +114,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M5 | Search experience and result quality | `DONE` | M1, M3, M4 |
 | M6 | Queue, session persistence, network recovery | `DONE` | M2, M4 |
 | M7 | Library, liked songs, and local playlists | `DONE` | M1, M2, M4 |
-| M8 | Home, discovery, trending, languages, and curated surfaces | `NOT STARTED` | M3, M5, M7 |
+| M8 | Home, discovery, trending, languages, and curated surfaces | `IN PROGRESS` | M3, M5, M7 |
 | M9 | Artist pages, album pages, Now Playing, related content | `NOT STARTED` | M4, M5, M8 |
 | M10 | Radio, queue autofill, and local personalization | `NOT STARTED` | M2, M6, M8, M9 |
 | M11 | Listening history, stats, streaks, and Smart Mixes | `NOT STARTED` | M2, M7, M10 |
