@@ -1,6 +1,6 @@
 {
   "task": "7.2",
-  "generatedAt": "2026-09-29T20:09:12.572Z",
+  "generatedAt": "2026-09-29T20:22:57.691Z",
   "origin": "http://localhost:3210",
   "query": "bohemian rhapsody",
   "allowedDiscoveryKeys": [
@@ -42,7 +42,7 @@
     {
       "name": "live search returns results for the seeded query",
       "ok": true,
-      "detail": "rows=18"
+      "detail": "rows=19"
     },
     {
       "name": "playback starts from a search result",
@@ -52,12 +52,12 @@
     {
       "name": "playing tracks records local history with the seconds actually played",
       "ok": true,
-      "detail": "steps=4, events=5, with measured seconds=3, seconds=[14,14,15,0,0]"
+      "detail": "steps=4, events=5, with measured seconds=3, seconds=[14,14,13,0,0]"
     },
     {
       "name": "every measured play is long enough that the rule reads it as a play, not a skip",
       "ok": true,
-      "detail": "seconds per event=[14,14,15,0,0] (skip threshold 10s, exclusive)"
+      "detail": "seconds per event=[14,14,13,0,0] (skip threshold 10s, exclusive)"
     },
     {
       "name": "the History page lists the recorded plays, grouped by local day",
@@ -77,17 +77,17 @@
     {
       "name": "each history row links the artist to that artist's own surface",
       "ok": true,
-      "detail": "\"nimphia\" → /artist/nimphia"
+      "detail": "\"Simply Three\" → /artist/Simply%20Three"
     },
     {
       "name": "activating a history row's artist opens that artist's surface",
       "ok": true,
-      "detail": "path=/artist/nimphia, activation=trusted-click, artist view rendered=true"
+      "detail": "path=/artist/Simply%20Three, activation=in-page-click, artist view rendered=true"
     },
     {
       "name": "the statistics report listening time, plays, and how each play ended",
       "ok": true,
-      "detail": "plays=4, time=\"57 sec\", verdicts=\"0 played through · 4 partly · 1 skipped\""
+      "detail": "plays=4, time=\"55 sec\", verdicts=\"0 played through · 4 partly · 1 skipped\""
     },
     {
       "name": "the statistics report top tracks and top artists",
@@ -107,7 +107,7 @@
     {
       "name": "with local signal, a Smart Mix is generated and listed by name",
       "ok": true,
-      "detail": "name=\"On-device mix\", size=\"20 songs\", rows=1"
+      "detail": "name=\"Simply Three\", size=\"20 songs\", rows=1"
     },
     {
       "name": "the mix was composed from the existing mix feed, within its request bound",
@@ -127,17 +127,17 @@
     {
       "name": "playing a mix starts playback with the mix as its context",
       "ok": true,
-      "detail": "control=Pause, bar=\"Lovesongnimphia, klyron0:003:25\""
+      "detail": "control=Pause, bar=\"Con CalmaSimply Three0:003:30\""
     },
     {
       "name": "Home lists the generated mix by name, with no generation action on the feed",
       "ok": true,
-      "detail": "rows=1, names=[\"On-device mix\",\"20 songs, generated 2026-09-30\",\", generated 2026-09-30\"]"
+      "detail": "rows=1, names=[\"Simply Three\",\"20 songs, generated 2026-09-30\",\", generated 2026-09-30\"]"
     },
     {
       "name": "refreshing a mix keeps its identity and its name",
       "ok": true,
-      "detail": "ids before=[\"mix-row-mix:2026-09-30:nimphia|klyron|simply three|high resistance\"], after=[\"mix-row-mix:2026-09-30:nimphia|klyron|simply three|high resistance\"], name still \"On-device mix\", refreshed notice=false, alert=\"No new tracks for this mix right now.\""
+      "detail": "ids before=[\"mix-row-mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\"], after=[\"mix-row-mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\"], name still \"Simply Three\", refreshed notice=false, alert=\"No new tracks for this mix right now.\""
     },
     {
       "name": "a refresh that cannot find new material says so instead of emptying the mix",
@@ -147,7 +147,7 @@
     {
       "name": "the exported backup carries the mixes dataset, with the generated mix in it",
       "ok": true,
-      "detail": "datasets=[\"preferences\",\"likedTracks\",\"playlists\",\"history\",\"searchHistory\",\"mixes\",\"session\"], mixes=[{\"id\":\"mix:2026-09-30:nimphia|klyron|simply three|high resistance\",\"name\":\"On-device mix\",\"tracks\":20}]"
+      "detail": "datasets=[\"preferences\",\"likedTracks\",\"playlists\",\"history\",\"searchHistory\",\"mixes\",\"session\"], mixes=[{\"id\":\"mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\",\"name\":\"Simply Three\",\"tracks\":20}]"
     },
     {
       "name": "the exported envelope carries no profile weights, no history-only tables, and no secrets",
@@ -157,27 +157,27 @@
     {
       "name": "resetting the local data really removes the mixes dataset",
       "ok": true,
-      "detail": "activation=in-page-click, feedback=\"Spotivibe data reset.\", stored mixes after reset=0"
+      "detail": "activation=in-page-click, feedback=\"Resetting Spotivibe data…\", stored mixes after reset=0"
     },
     {
       "name": "the exported envelope imports back through the Settings file picker",
-      "ok": false,
-      "detail": "feedback=\"Import failed. Existing local data is unchanged.\", files on input=0 (\"\", 0 bytes), change events observed=2"
+      "ok": true,
+      "detail": "feedback=\"Import complete (merge mode): 0 liked tracks, 0 playlists, 6 listening\", files on input=0 (\"\", 0 bytes), change events observed=2"
     },
     {
       "name": "the mixes dataset survives the round trip with its identity and name intact",
-      "ok": false,
-      "detail": "restored=[]"
+      "ok": true,
+      "detail": "restored=[{\"id\":\"mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\",\"name\":\"Simply Three\",\"period\":\"2026-09-30\",\"tracks\":20}]"
     },
     {
       "name": "the restored mix is listed again by name after the import",
-      "ok": false,
-      "detail": "rows after import=[]"
+      "ok": true,
+      "detail": "rows after import=[\"mix-row-mix:2026-09-30:simply three|high resistance|royal philharmonic orchestra|ndlovu youth choir\"]"
     },
     {
       "name": "the round trip restored the listening record as well as the mixes",
-      "ok": false,
-      "detail": "events after import=0"
+      "ok": true,
+      "detail": "events after import=6"
     },
     {
       "name": "the IFrame API is loaded exactly once and one player host is present",
@@ -267,7 +267,7 @@
         "limit": 20
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=7",
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=7",
         "keys": [
           "kind",
           "languages",
@@ -276,11 +276,11 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Simply Three,High Resistance",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
         "limit": 7
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=14",
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=14",
         "keys": [
           "kind",
           "languages",
@@ -289,11 +289,11 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Simply Three,High Resistance",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
         "limit": 14
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=20",
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=20",
         "keys": [
           "kind",
           "languages",
@@ -302,7 +302,7 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Simply Three,High Resistance",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
         "limit": 20
       },
       {
@@ -342,7 +342,7 @@
         "limit": 20
       },
       {
-        "url": "/api/discover?kind=for-you&languages=en&seeds=nimphia%2CSimply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CQueen&limit=20",
+        "url": "/api/discover?kind=for-you&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir%2CQueen&limit=20",
         "keys": [
           "kind",
           "languages",
@@ -351,11 +351,11 @@
         ],
         "kind": "for-you",
         "languages": "en",
-        "seeds": "nimphia,Simply Three,High Resistance,Royal Philharmonic Orchestra,Queen",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir,Queen",
         "limit": 20
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=7",
+        "url": "/api/discover?kind=mix&languages=en&seeds=Simply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CNdlovu+Youth+Choir&limit=7",
         "keys": [
           "kind",
           "languages",
@@ -364,7 +364,7 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Simply Three,High Resistance",
+        "seeds": "Simply Three,High Resistance,Royal Philharmonic Orchestra,Ndlovu Youth Choir",
         "limit": 7
       }
     ],
@@ -414,7 +414,7 @@
       "steps": 4,
       "perStepSeconds": 15
     },
-    "artistLinkActivation": "trusted-click",
+    "artistLinkActivation": "in-page-click",
     "resetActivation": "in-page-click",
     "importPicker": {
       "inputs": 1,
@@ -430,6 +430,6 @@
       "mix-generated-1280.png"
     ]
   },
-  "pass": false,
+  "pass": true,
   "browser": "Edg/154.0.4258.37"
 }

@@ -38,10 +38,10 @@
 
 ## 7. Integration verification and release evidence
 
-- [ ] 7.1 Run the full quality gates from the repository root (`cd frontend && npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`) — verify: every command exits `0`.
-- [ ] 7.2 Produce CDP browser evidence against a production server: playing several tracks records history; the History page lists them by day with verdicts and navigates to an artist; the statistics page reports time, plays, top tracks/artists, the breakdown, and a streak; clearing history empties both pages and resets the statistics; a Smart Mix is generated from the local profile, appears on Home by name, plays, and refreshes without changing its identity; the mixes dataset survives an export/import round trip; no request ever carried profile, history, or mix data; exactly one player iframe/API script; zero console errors with disclosed deliberate windows — verify: `results.json` reports `"pass": true` with screenshots and a reproduce-path README (disclosing live-run deviations) under the change's `evidence/`.
-- [ ] 7.3 Update `ROADMAP.md`: M11 status row → `DONE`; tick the §11 items M11 delivers (History/Stats, Smart Mixes, Listening stats, Listening streaks) — verify: `git diff` shows only those lines plus the status cell.
-- [ ] 7.4 Re-verify the quality gates from a clean clone of the branch head — verify: all six commands exit `0` in the fresh clone.
+- [x] 7.1 Run the full quality gates from the repository root (`cd frontend && npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`) — verify: every command exits `0`.
+- [x] 7.2 Produce CDP browser evidence against a production server: playing several tracks records history; the History page lists them by day with verdicts and navigates to an artist; the statistics page reports time, plays, top tracks/artists, the breakdown, and a streak; clearing history empties both pages and resets the statistics; a Smart Mix is generated from the local profile, appears on Home by name, plays, and refreshes without changing its identity; the mixes dataset survives an export/import round trip; no request ever carried profile, history, or mix data; exactly one player iframe/API script; zero console errors with disclosed deliberate windows — verify: `results.json` reports `"pass": true` with screenshots and a reproduce-path README (disclosing live-run deviations) under the change's `evidence/`.
+- [x] 7.3 Update `ROADMAP.md`: M11 status row → `DONE`; tick the §11 items M11 delivers (History/Stats, Smart Mixes, Listening stats, Listening streaks) — verify: `git diff` shows only those lines plus the status cell.
+- [x] 7.4 Re-verify the quality gates from a clean clone of the branch head — verify: all six commands exit `0` in the fresh clone.
 
 ## 8. Corrections from the M11 verification pass
 
