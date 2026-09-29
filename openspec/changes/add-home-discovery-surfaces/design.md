@@ -44,7 +44,7 @@ See `proposal.md` — Why. Current state that constrains the approach:
 
 ### 2. Server composes seeds; the client fetches one shelf at a time
 
-**Decision.** `GET /api/discover?kind=…&languages=…&seeds=…` composes a *single* feed server-side (bounded seeds, per-seed chain execution, merge/dedupe, language stamping, short TTL cache). The Home surface issues one request per shelf with its own `AbortController`.
+**Decision.** `GET /api/discover?kind=…&languages=…&seeds=…&limit=…` composes a *single* feed server-side (bounded seeds, per-seed chain execution, merge/dedupe, language stamping, short TTL cache). `limit` mirrors the existing `/api/search?limit=` response-size bound — it is not user data. The Home surface issues one request per shelf with its own `AbortController`, and the number of shelves in flight at once is capped so a page never fans out more requests than the shared outbound budget can serve.
 
 **Why.** Server-side composition shares the outbound limiter, in-flight dedupe, and cache across every client, and keeps the seed catalog server-owned. Per-shelf client requests give the per-shelf loading/empty/error isolation the acceptance criteria demand; a single aggregated page request would let one slow or failing feed stall or break the page.
 
@@ -100,9 +100,9 @@ See `proposal.md` — Why. Current state that constrains the approach:
 
 ### 9. Smart Mixes ship as a gated preview
 
-**Decision.** A Smart Mixes shelf renders only when local signal exists (at least three distinct locally known artists from likes/recent plays). Each mix is named deterministically from its seed artist and holds a bounded number of tracks.
+**Decision.** A Smart Mixes shelf renders only when local signal exists (at least three distinct locally known artists from likes/recent plays). It is one shelf seeded from those artist names, holding a bounded number of tracks. Per-mix identity, stable naming, and refresh behavior are M11's, so M8 deliberately ships a single undifferentiated shelf rather than inventing mix identity rules here.
 
-**Why.** ROADMAP lists it as "when available"; this proves the section and the local taste plumbing without inventing M11's stable-identity/refresh rules.
+**Why.** ROADMAP lists the section as "when available"; this proves the section and the local taste plumbing without pre-empting M11.
 
 **Alternatives considered.** Omitting the section in M8 (loses roadmap coverage); full mix generation (M11).
 

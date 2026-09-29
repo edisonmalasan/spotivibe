@@ -95,7 +95,7 @@ Language selections, liked tracks, playlists, listening history, and any taste s
 #### Scenario: Discovery requests carry only languages and seeds
 
 - **WHEN** a discovery request is issued
-- **THEN** its parameters are limited to the requested feed kind, selected language codes, and short seed terms, with no liked-track, playlist, or history payload
+- **THEN** its parameters are limited to the requested feed kind, selected language codes, short seed terms derived from local taste, and a bounded result count, with no liked-track, playlist, or history payload
 
 #### Scenario: No server-side profile is created
 

@@ -1,0 +1,43 @@
+{
+  "task": "9.2",
+  "generatedAt": "2026-09-29T06:18:52.161Z",
+  "origin": "http://localhost:3210",
+  "selectedLanguages": {
+    "names": [
+      "English",
+      "Spanish",
+      "German"
+    ],
+    "codes": [
+      "en",
+      "es",
+      "de"
+    ]
+  },
+  "copy": {
+    "onboardingLabel": "Choose your languages",
+    "confirmLabel": "Confirm languages",
+    "pickerHint": "You can change this later in Settings.",
+    "discoverOffline": "You're offline. Genre discovery needs a connection, so no shelf is loading right now.",
+    "languageSummaryLabel": "Selected languages",
+    "queueBrowse": "From browse",
+    "offlineBanner": "You're offline — some things won't load until you reconnect."
+  },
+  "steps": [],
+  "screenshots": [],
+  "consoleErrors": [
+    "log: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ],
+  "notes": {
+    "disclosures": {
+      "offlineWindow": [],
+      "blockedShelfProbe": [],
+      "liveUpstream": []
+    },
+    "discoveryRequests": [],
+    "attachedTargets": []
+  },
+  "pass": false,
+  "browser": "Edg/154.0.4258.37",
+  "error": "Error: Timed out waiting for first-run language onboarding (last: null)\n    at waitFor (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-home-discovery-surfaces/evidence/cdp-check.mjs:297:13)\n    at async main (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-home-discovery-surfaces/evidence/cdp-check.mjs:505:24)"
+}

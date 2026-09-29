@@ -9,7 +9,7 @@
 ## 2. Discovery API route
 
 - [x] 2.1 Add `src/app/api/discover/route.ts` validating `kind`, `languages` (bounded, catalog-known), and `seeds` (bounded length/count) with zod before any provider call; return `{ tracks, diagnostics }` with a short `Cache-Control`, `400` structured errors for invalid input, `503` structured `upstream_unavailable` when every seed fails, and `499` on client abort — verify: route tests cover happy path, every invalid-input branch, all-seeds-failure, and that invalid input contacts no provider.
-- [x] 2.2 Assert the route accepts no local-library data and returns metadata only — verify: route test asserts the accepted query keys are exactly kind/languages/seeds and the response contains no media bytes or local dataset fields.
+- [x] 2.2 Assert the route accepts no local-library data and returns metadata only — verify: route test asserts the accepted query keys are exactly kind/languages/seeds/limit and the response contains no media bytes or local dataset fields.
 
 ## 3. Client discovery API, preferences, and language onboarding
 
