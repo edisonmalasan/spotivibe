@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
  * Static architecture invariants checked against the real source files
  * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1 +
- * M7 task 9.1) —
+ * M7 task 9.1 + M8 task 8.1) —
  * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
@@ -21,7 +21,11 @@ import { describe, expect, it } from "vitest";
  * keeps queue state free of transport dependencies; M7 layers every
  * playlist/like repository write inside `libraryStore`, keeps it off the
  * transport store, keeps library surfaces repository-mediated, and keeps the
- * server playlist module off the data layer.
+ * server playlist module off the data layer; M8 keeps the discovery surfaces
+ * repository-mediated, the client stores on the repository entry point, the
+ * server discovery modules off `@/data`, the discovery route metadata-only with
+ * a four-parameter input surface, and `lib/languages.ts` the single language
+ * catalog.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -762,5 +766,314 @@ describe("architecture: library layering holds (M7 task 9.1)", () => {
       .filter(({ source }) => dataLayerImports(source).length > 0)
       .map(({ file }) => file);
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Discovery layering invariants (M8 task 8.1, design §1/§2/§5/§7): the M8
+ * surfaces are repository-mediated exactly like the M5/M7 ones — the client
+ * reaches local data only through repository interfaces (`getLocalData()` /
+ * `@/data/repositories`), never the IndexedDB implementation, `src/server`, or a
+ * raw provider shape. The server discovery modules keep the dependency the
+ * other way round: they import nothing from `@/data`, so a discovery feed can
+ * never be composed from local user data. The discovery route is
+ * metadata-only, and its input surface is exactly four query parameters — a
+ * future local-data parameter fails the suite instead of shipping outward.
+ * Finally, `lib/languages.ts` stays the single language catalog, because the
+ * server seed catalog and the client picker import it and a second copy is
+ * exactly how the two would drift.
+ *
+ * The `features`/`components`/`stores` sweeps already cover the M8
+ * directories, so this section does not open a second sweep: it *proves* that
+ * coverage by re-running the real detectors over those files with a violating
+ * source substituted, which is what would catch a directory silently falling
+ * out of `uiSourceFiles()`.
+ */
+
+/**
+ * The M8 discovery surfaces the repository-mediated rules must reach. `features`
+ * and `components` are swept wholesale by {@link uiSourceFiles}; naming the
+ * directories here is how the tests below prove that sweep reaches them
+ * instead of assuming it.
+ */
+const M8_SURFACE_DIRECTORIES = [
+  "features/home",
+  "features/discover",
+  "features/preferences",
+  "features/history",
+  "components/recommendations",
+] as const;
+
+/** The sanctioned ways client code reaches local data: one accessor, or its types. */
+const LOCAL_DATA_ENTRY_POINTS = ["@/data/localData", "@/data/repositories"];
+
+/** Violations of the client-store local-data rule, as labels. */
+function localStoreViolations(source: string): string[] {
+  const violations: string[] = [];
+  if (hasDirectIndexedDbImport(source)) violations.push("IndexedDB implementation import");
+  if (accessesIndexedDbGlobal(source)) violations.push("indexedDB global access");
+
+  // Any *other* data-layer import is an unmediated route to local data: the
+  // store would read around `getLocalData()` instead of through the repository
+  // interfaces. The IndexedDB implementation is already reported above.
+  const specifiers = moduleSpecifiers(source);
+  const reachesDataLayer = specifiers.some(
+    (specifier) => importsDataLayer(specifier) && !importsIndexedDbImplementation(specifier),
+  );
+  if (reachesDataLayer && !specifiers.some((spec) => LOCAL_DATA_ENTRY_POINTS.includes(spec))) {
+    violations.push("unmediated data-layer import");
+  }
+
+  return violations;
+}
+
+/**
+ * Query-parameter keys a route handler actually reads (`params.get("x")`,
+ * `searchParams.getAll("x")`, …). Asserting the exact set is what enforces the
+ * discovery endpoint's input contract: the accepted inputs are a feed kind,
+ * catalog language codes, short seed terms, and a limit — nothing else, and
+ * never a liked-track, playlist, or history field.
+ */
+function acceptedQueryKeys(source: string): string[] {
+  return [...source.matchAll(/\b\w*[Pp]arams\w*\s*\.\s*get(?:All)?\s*\(\s*["']([^"']+)["']/g)].map(
+    (match) => match[1],
+  );
+}
+
+/** Entries a literal must hold before it counts as a catalog rather than a sample. */
+const MIN_LANGUAGE_CATALOG_ENTRIES = 3;
+
+/** The array literal whose `[` is at `start`, matched to its own `]`. */
+function balancedArrayLiteral(source: string, start: number): string {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote !== null) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") quote = char;
+    else if (char === "[") depth += 1;
+    else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start + 1, index);
+    }
+  }
+  return source.slice(start + 1);
+}
+
+/**
+ * Competing language catalogs a module declares: an **exported** array constant
+ * whose name marks it as a language list (`LANGUAGES`/`…_LANGUAGES`) *and* whose
+ * literal holds several `{ code, name }` records.
+ *
+ * Deliberately narrow, so it cannot misfire on ordinary data: it requires both
+ * the catalog naming and the code/name record shape, it ignores a module-private
+ * table (nothing can import it, so nothing can drift against the shared one),
+ * and non-language data — a genre catalog, a tuple list, a copy block — fails
+ * one of the two conditions.
+ */
+function languageCatalogDeclarations(source: string): string[] {
+  const declarations: string[] = [];
+  for (const match of source.matchAll(/export\s+const\s+(\w*LANGUAGES\w*)\b[^=]*=\s*\[/g)) {
+    // The `[` that opens the literal is the last one in the matched head (a type
+    // annotation such as `readonly LanguageOption[]` may contain its own).
+    const open = match.index + match[0].lastIndexOf("[");
+    const entries = [...balancedArrayLiteral(source, open).matchAll(/\{[^{}]*\}/g)].filter(
+      (entry) => /\bcode\s*:/.test(entry[0]) && /\bname\s*:/.test(entry[0]),
+    );
+    if (entries.length >= MIN_LANGUAGE_CATALOG_ENTRIES) declarations.push(match[1]);
+  }
+  return declarations;
+}
+
+/** Read a real source file, failing loudly when the module is missing. */
+function readSource(...segments: string[]): string {
+  return readFileSync(join(srcDir, ...segments), "utf8");
+}
+
+/** The discovery route handler — the M8 transport boundary. */
+function readDiscoveryRoute(): string {
+  return readSource("app", "api", "discover", "route.ts");
+}
+
+describe("architecture violation detectors (M8 task 8.1)", () => {
+  it("flags IndexedDB and unmediated data access from a client store but passes repository-mediated code", () => {
+    expect(localStoreViolations('import { createRepositories } from "@/data/indexeddb";')).toEqual([
+      "IndexedDB implementation import",
+    ]);
+    expect(localStoreViolations('const open = indexedDB.open("spotivibe");')).toEqual([
+      "indexedDB global access",
+    ]);
+    expect(localStoreViolations('import "fake-indexeddb/auto";')).toEqual([
+      "indexedDB global access",
+    ]);
+    // Reading around `getLocalData()` — the implementation, a backup helper, or
+    // a relative path to the same module — is the violation this rule names.
+    expect(localStoreViolations('import { exportEnvelope } from "@/data/backup/prepare";')).toEqual(
+      ["unmediated data-layer import"],
+    );
+    expect(localStoreViolations('import { getLocalData } from "../data/localData";')).toEqual([
+      "unmediated data-layer import",
+    ]);
+    // The sanctioned path, and code that touches no local data at all.
+    expect(
+      localStoreViolations(
+        'import { getLocalData } from "@/data/localData";\nimport type { Track } from "@/data/repositories";',
+      ),
+    ).toEqual([]);
+    expect(localStoreViolations('import { create } from "zustand";')).toEqual([]);
+  });
+
+  it("reads the query parameters a route handler accepts", () => {
+    expect(
+      acceptedQueryKeys(
+        'params.get("kind");\nparams.get("languages");\nparams.get("seeds");\nparams.get("limit");',
+      ),
+    ).toEqual(["kind", "languages", "seeds", "limit"]);
+    // A local-data parameter would be read exactly like a catalog one.
+    expect(acceptedQueryKeys('const id = params.get("likedTrackId");')).toEqual(["likedTrackId"]);
+    expect(acceptedQueryKeys('const ids = searchParams.getAll("trackIds");')).toEqual(["trackIds"]);
+    // A schema object is a bound, not an accepted parameter.
+    expect(
+      acceptedQueryKeys("discoveryParamsSchema.safeParse({ kind, languages, seeds, limit });"),
+    ).toEqual([]);
+    expect(acceptedQueryKeys("const body = await request.json();")).toEqual([]);
+  });
+
+  it("flags a second language catalog but passes ordinary catalog-shaped data", () => {
+    const rival = `export const LANGUAGES = [\n  { code: "en", name: "English" },\n  { code: "es", name: "Spanish" },\n  { code: "fr", name: "French" },\n];`;
+    expect(languageCatalogDeclarations(rival)).toEqual(["LANGUAGES"]);
+    expect(languageCatalogDeclarations(rival.replace("LANGUAGES", "SUPPORTED_LANGUAGES"))).toEqual([
+      "SUPPORTED_LANGUAGES",
+    ]);
+    // Not a catalog: wrong identifier, wrong record shape, not exported, or too
+    // few entries to be one.
+    expect(
+      languageCatalogDeclarations('export const GENRE_CATALOG = [{ id: "pop", name: "Pop" }];'),
+    ).toEqual([]);
+    expect(
+      languageCatalogDeclarations('export const LANGUAGES_BY_CODE = [["en", "English"]];'),
+    ).toEqual([]);
+    expect(
+      languageCatalogDeclarations('const LANGUAGES = [{ code: "en", name: "English" }];'),
+    ).toEqual([]);
+    expect(
+      languageCatalogDeclarations(
+        'export const LANGUAGES = [{ code: "en", name: "English" }, { code: "es", name: "Spanish" }];',
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("architecture: the M8 discovery surfaces stay repository-mediated (M8 task 8.1)", () => {
+  it("sweeps every M8 surface directory", () => {
+    for (const dir of M8_SURFACE_DIRECTORIES) {
+      const files = readTree(join(srcDir, dir));
+      expect(files.length, dir).toBeGreaterThan(0);
+      // The repository-mediated sweep is the shared `uiSourceFiles` one.
+      const swept = uiSourceFiles().map(({ file }) => file);
+      expect(
+        swept.some((file) => file.startsWith(join(srcDir, dir))),
+        dir,
+      ).toBe(true);
+    }
+  });
+
+  it("flags a leak in any M8 surface — the sweep is proven, not assumed", () => {
+    // Substitute a violating source for every real file in the sweep: if a rule
+    // did not reach a file, that file would escape this list.
+    const swept = uiSourceFiles();
+    expect(swept.length).toBeGreaterThan(0);
+    const injected = swept.map(({ file }) => ({
+      file,
+      source:
+        'import { createRepositories } from "@/data/indexeddb";\nimport { runDiscovery } from "@/server/music/discovery";\nconst node: MusicResponsiveListItemRenderer = input;',
+    }));
+
+    const expected = injected.map(({ file }) => file);
+    expect(
+      injected
+        .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+        .map(({ file }) => file),
+    ).toEqual(expected);
+    // Each leak is reported for its own reason, so one rule cannot mask another.
+    expect(
+      injected.filter(({ source }) => hasDirectIndexedDbImport(source)).map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected
+        .filter(({ source }) => moduleSpecifiers(source).some(targetsServerModule))
+        .map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected.filter(({ source }) => mentionsRawProviderShape(source)).map(({ file }) => file),
+    ).toEqual(expected);
+  });
+
+  it("finds no IndexedDB, server, or provider-shape leak in the M8 surfaces", () => {
+    const files = M8_SURFACE_DIRECTORIES.flatMap((dir) => readTree(join(srcDir, dir)));
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+      .map(({ file }) => relative(srcDir, file));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: the M8 client stores reach data through repositories (M8 task 8.1)", () => {
+  it("keeps preferencesStore and historyStore on the repository entry point", () => {
+    for (const name of ["preferencesStore.ts", "historyStore.ts"]) {
+      const source = readSource("stores", name);
+      expect(source.length, name).toBeGreaterThan(0);
+      expect(localStoreViolations(source), name).toEqual([]);
+      // Not vacuous: the store really does read local data through the accessor.
+      expect(moduleSpecifiers(source), name).toContain("@/data/localData");
+    }
+  });
+});
+
+describe("architecture: the server discovery layer stays off local data (M8 task 8.1)", () => {
+  it("imports no @/data module from the discovery feed modules", () => {
+    const modules = ["discovery.ts", "discoverySeeds.ts"].map((name) => ({
+      file: join(srcDir, "server", "music", name),
+      source: readFileSync(join(srcDir, "server", "music", name), "utf8"),
+    }));
+    expect(modules.every(({ source }) => source.length > 0)).toBe(true);
+
+    const offenders = modules
+      .filter(({ source }) => dataLayerImports(source).length > 0)
+      .map(({ file }) => relative(srcDir, file));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: the discovery route is metadata-only (M8 task 8.1)", () => {
+  it("accepts exactly kind, languages, seeds, and limit", () => {
+    const source = readDiscoveryRoute();
+
+    expect([...acceptedQueryKeys(source)].sort()).toEqual(["kind", "languages", "limit", "seeds"]);
+  });
+
+  it("returns no media bytes and reaches no local dataset", () => {
+    const source = readDiscoveryRoute();
+
+    expect(mediaByteIndicators(source)).toEqual([]);
+    expect(dataLayerImports(source)).toEqual([]);
+  });
+});
+
+describe("architecture: lib/languages.ts is the only language catalog (M8 task 8.1)", () => {
+  it("finds a competing language catalog in no other module under src", () => {
+    const owners = readTree(srcDir)
+      .filter(({ source }) => languageCatalogDeclarations(source).length > 0)
+      .map(({ file }) => relative(srcDir, file));
+
+    expect(owners).toEqual([join("lib", "languages.ts")]);
+    // Not vacuous: the canonical catalog is found by the very same detector.
+    expect(languageCatalogDeclarations(readSource("lib", "languages.ts"))).toEqual(["LANGUAGES"]);
   });
 });
