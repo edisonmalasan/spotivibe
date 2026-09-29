@@ -57,6 +57,18 @@ export interface PlaylistsRepository {
 export interface ListeningHistoryRepository {
   /** Record an event; generates the event UUID when `id` is not provided. */
   record(event: NewListeningEvent): Promise<ListeningEventRecord>;
+  /**
+   * M11: write the *measurements* of an already-recorded event — the seconds it
+   * actually played for and whether the engine reported it ended.
+   *
+   * A patch, not a verdict: classification is a read-time policy over these raw
+   * numbers, so the recorder can fill them in when a track step ends without any
+   * stored interpretation of them. An unknown id resolves to `undefined`.
+   */
+  update(
+    id: string,
+    patch: { secondsPlayed?: number; completed?: boolean },
+  ): Promise<ListeningEventRecord | undefined>;
   /** Events newest-first; `limit` caps the number returned. */
   list(limit?: number): Promise<ListeningEventRecord[]>;
   clear(): Promise<void>;

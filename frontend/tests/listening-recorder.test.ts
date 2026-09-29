@@ -13,6 +13,8 @@ import {
   resetListeningRecorder,
   useListeningRecorder,
 } from "@/features/history/useListeningRecorder";
+import { buildStats } from "@/features/insights/buildStats";
+import { classifyPlay } from "@/features/insights/classifyPlay";
 import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { makeTrack } from "./helpers/music-fixtures";
@@ -287,5 +289,173 @@ describe("one event per track step", () => {
     play(trackB, "search");
     await expectEventCount(1);
     expect((await storedEvents())[0].trackId).toBe(trackB.id);
+  });
+});
+
+describe("M11: raw measurements, never a verdict", () => {
+  /** Drive the transport's position tick the engine would send. */
+  const tickTo = (seconds: number) => usePlayerStore.getState()._setPosition(seconds);
+  const setDuration = (seconds: number) => usePlayerStore.getState()._setDuration(seconds);
+
+  it("records the seconds a step actually played when the next step starts", async () => {
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(240);
+    tickTo(120);
+    tickTo(180);
+
+    play(trackB, "search");
+    await expectEventCount(2);
+
+    const events = await storedEvents();
+    const first = events.find((entry) => entry.trackId === trackA.id);
+    // A raw measurement of the position the engine reported — not a verdict:
+    // 180s of a 240s track is data the read-time rule decides about later.
+    expect(first?.secondsPlayed).toBe(180);
+    expect(first?.completed).toBe(false);
+  });
+
+  it("marks a step completed once playback reached the track's end", async () => {
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(200);
+    // The engine's last tick lands a fraction short of the duration.
+    tickTo(199);
+
+    play(trackB, "search");
+    await expectEventCount(2);
+
+    const first = (await storedEvents()).find((entry) => entry.trackId === trackA.id);
+    expect(first?.completed).toBe(true);
+    expect(first?.secondsPlayed).toBe(199);
+  });
+
+  it("never reports more seconds than the track's duration", async () => {
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(100);
+    tickTo(140); // a seek or a provider quirk past the end
+
+    play(trackB, "search");
+    await expectEventCount(2);
+
+    const first = (await storedEvents()).find((entry) => entry.trackId === trackA.id);
+    expect(first?.secondsPlayed).toBe(100);
+    expect(first?.completed).toBe(true);
+  });
+
+  it("leaves a step that never moved at zero seconds rather than inventing a play", async () => {
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+
+    play(trackB, "search");
+    await expectEventCount(2);
+
+    const first = (await storedEvents()).find((entry) => entry.trackId === trackA.id);
+    // Untouched, not rewritten: no patch means no stored `completed` marker, so
+    // nothing can be read as a claim that the track was played.
+    expect(first?.secondsPlayed).toBe(0);
+    expect(first?.completed).toBeUndefined();
+  });
+
+  it("writes the open step's measurements when the recorder detaches", async () => {
+    const detach = initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(300);
+    tickTo(45);
+
+    detach();
+    await settle();
+
+    const first = (await storedEvents()).find((entry) => entry.trackId === trackA.id);
+    expect(first?.secondsPlayed).toBe(45);
+  });
+
+  it("does not measure one step against another track's position", async () => {
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(240);
+    tickTo(60);
+
+    play(trackB, "search");
+    await expectEventCount(2);
+    // A tick that arrives after the switch belongs to track B's step; it must not
+    // rewrite track A's measurement.
+    tickTo(5);
+
+    play(makeTrack({ id: "youtube:ccc", providerId: "ccc", title: "Gamma" }), "search");
+    await expectEventCount(3);
+
+    const first = (await storedEvents()).find((entry) => entry.trackId === trackA.id);
+    expect(first?.secondsPlayed).toBe(60);
+  });
+
+  it("stores a measurement that classifies as a real play, through the M11 rule", async () => {
+    // The point of measuring: without it every recorded event would read as a
+    // skip, so no statistic could ever report a play.
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(240);
+    tickTo(150);
+
+    play(trackB, "search");
+    await expectEventCount(2);
+
+    const first = (await storedEvents()).find((entry) => entry.trackId === trackA.id);
+    const verdict = classifyPlay({
+      secondsPlayed: first?.secondsPlayed ?? 0,
+      durationSeconds: 240,
+      completed: first?.completed,
+    });
+    expect(verdict).toBe("completed");
+    expect(buildStats(await storedEvents(), { now: Date.now() }).playCount).toBeGreaterThan(0);
+  });
+
+  it("keeps recording when the measurement write fails", async () => {
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(240);
+    tickTo(90);
+
+    const spy = vi
+      .spyOn(repositories.listeningHistory, "update")
+      .mockRejectedValueOnce(new Error("write failed"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    play(trackB, "search");
+    await expectEventCount(2);
+
+    // The event itself survives: a lost measurement degrades one statistic, it
+    // does not drop the play.
+    expect((await storedEvents()).length).toBe(2);
+    warn.mockRestore();
+    spy.mockRestore();
+  });
+
+  it("writes measurements through the repository's update, not a second record", async () => {
+    initListeningRecorder();
+    play(trackA, "search");
+    await expectEventCount(1);
+    setDuration(240);
+    tickTo(30);
+
+    const spy = vi.spyOn(repositories.listeningHistory, "update");
+    play(trackB, "search");
+    await expectEventCount(2);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    // One event for track A, patched in place — the id never changes.
+    const first = (await storedEvents()).find((entry) => entry.trackId === trackA.id);
+    expect(spy.mock.calls[0][0]).toBe(first?.id);
+    expect(spy.mock.calls[0][1]).toMatchObject({ secondsPlayed: 30 });
+    spy.mockRestore();
   });
 });

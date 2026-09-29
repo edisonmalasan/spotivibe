@@ -70,6 +70,13 @@ What already exists, and therefore what this milestone can and cannot need:
 
 **Why.** An identity the user can see (a named mix) that silently vanished on import would be a worse experience than one that is restored, and the cost is one more small dataset. Marking it derived means a future "drop derived data" export option can exclude mixes without losing anything unrecoverable — the mix can always be regenerated from the profile.
 
+### 7. The recorder writes the measurements the rule reads, and still no verdict
+
+**Decision.** The event is written at the step's start (as M8 does) and its *raw measurements* are patched onto it when the step ends: `secondsPlayed` from the engine's last reported position, clamped to the track's duration, plus a `completed` marker once playback reaches the end. Nothing else is stored, and `skipped` is left to the read-time rule rather than recorded, because the seconds already distinguish it. The patch happens on the next step, on detach, and on `pagehide`.
+
+**Why (found during implementation).** M8's recorder writes `secondsPlayed: 0` and deliberately deferred thresholds to M11. Left as it was, *every* real event classifies as a skip under the rule above, so `playCount` is always 0, no day is ever a listening day, streaks stay at 0, and decision 5's "no signal, no mix" would read as "no signal" for a listener who has played a hundred tracks. The statistics requirement is unsatisfiable without a measurement, and the measurement belongs with the recorder that observes playback rather than inside the statistics derivation, which must stay a pure function of `(events, now)`.
+
+**Alternatives considered.** Deriving seconds from wall-clock around a load request inside `buildStats` (rejected: the derivation would need a clock and would disagree with the position the engine actually reported). Recording a verdict at write time (rejected: exactly the stored interpretation decision 1 forbids). Setting `skipped` explicitly (rejected: redundant with the seconds, and one more stored claim to keep honest).
 ## Risks / Trade-offs
 
 - **Stats are O(events) per read** (decision 2) — stated, with the trigger for changing it.
