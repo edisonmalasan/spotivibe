@@ -1,6 +1,6 @@
 {
   "task": "8.2",
-  "generatedAt": "2026-09-29T12:35:03.729Z",
+  "generatedAt": "2026-09-29T13:04:49.464Z",
   "origin": "http://localhost:3210",
   "query": "bohemian rhapsody",
   "unknownArtistKey": "zzz-spotivibe-no-such-artist-zzz",
@@ -25,7 +25,7 @@
     {
       "name": "live search returns results for the seeded query",
       "ok": true,
-      "detail": "rows=17"
+      "detail": "rows=18"
     },
     {
       "name": "a search result can be liked (local signal seeded)",
@@ -40,7 +40,7 @@
     {
       "name": "the artist page renders identity, popular tracks, releases, and related artists",
       "ok": true,
-      "detail": "tracks=14 (playable=14, likeable=14, withArtwork=14), portrait=true, releases=11, related=0, heading=\"Queen\""
+      "detail": "tracks=16 (playable=16, likeable=16, withArtwork=16), portrait=true, releases=11, related=0, heading=\"Queen\""
     },
     {
       "name": "the artist page offers \"Start artist radio\"",
@@ -80,32 +80,37 @@
     {
       "name": "a release/album entry point opens the album page with its tracks",
       "ok": true,
-      "detail": "entry=search album tile, rows=5, cover=false, play=false, shuffle=false"
+      "detail": "entry=search album tile, rows=29, cover=true, play=true, shuffle=true"
     },
     {
-      "name": "the album page reports whether the release tracklist could be confirmed",
+      "name": "the album page's unconfirmed-tracklist notice agrees with the flag it was given",
       "ok": true,
-      "detail": "metadata confirmed for this release (no notice rendered)"
+      "detail": "data-metadata-incomplete=\"true\", notice: \"Track list not confirmedThe music service didn't confirm that these songs belong to this r\""
+    },
+    {
+      "name": "the album page never shows a provider release id as the release title",
+      "ok": true,
+      "detail": "heading=\"Unconfirmed release\", key=MPREb_eEpQf8QskKl"
     },
     {
       "name": "the album page links its artist to the artist route",
       "ok": true,
-      "detail": "artist link=\"\""
+      "detail": "artist link=\"/artist/Seedhe%20Maut\""
     },
     {
       "name": "every album track row exposes like and add-to-playlist controls",
-      "ok": false,
-      "detail": "rows=5, likeableRows=29, like=\"Save Do Dil Mil Rahe Hai to Liked Songs\", add=\"Add Do Dil Mil Rahe Hai to a playlist\""
+      "ok": true,
+      "detail": "rows=29, likeableRows=29, like=\"Save FULL ALBUM to Liked Songs\", add=\"Add FULL ALBUM to a playlist\""
     },
     {
       "name": "liking an album track persists and flips the control",
       "ok": true,
-      "detail": "via \"Save Do Dil Mil Rahe Hai to Liked Songs\""
+      "detail": "via \"Save FULL ALBUM to Liked Songs\""
     },
     {
       "name": "album tracks reuse the existing add-to-playlist picker",
       "ok": true,
-      "detail": "control \"Add Do Dil Mil Rahe Hai to a playlist\""
+      "detail": "control \"Add FULL ALBUM to a playlist\""
     },
     {
       "name": "Now Playing offers a More Like This shelf for the current track",
@@ -123,9 +128,9 @@
       "detail": "excluded \"youtube:BSTsnWoslP4\" (19 chars), cards rendered=10, excluded present=false"
     },
     {
-      "name": "Now Playing renders an artwork-derived background",
-      "ok": false,
-      "detail": "background=true, artworkImg=false"
+      "name": "Now Playing renders an artwork-derived, decorative background",
+      "ok": true,
+      "detail": "element=<IMG>, src=\"https://yt3.googleusercontent.com/nLn1gxvYiZqzXO\", aria-hidden=true, alt=\"\""
     },
     {
       "name": "the long-title treatment always keeps the full title available",
@@ -135,12 +140,12 @@
     {
       "name": "the Home artists shelf links to artist routes",
       "ok": true,
-      "detail": "cards=9, still-pointing-at-search=0, e.g. /artist/Lumivox"
+      "detail": "cards=10, still-pointing-at-search=0, e.g. /artist/Lumivox"
     },
     {
       "name": "search artist/album entries are real routes and the menu keeps go-to-artist/album",
       "ok": true,
-      "detail": "artistTiles=12, albumTiles=14, menuItems=[\"Play\",\"Remove from Liked Songs\",\"Add to queue\",\"Add to playlist\",\"Go to artist\",\"Go to album\"]"
+      "detail": "artistTiles=19, albumTiles=18, menuItems=[\"Play\",\"Remove from Liked Songs\",\"Add to queue\",\"Add to playlist\",\"Go to artist\",\"Go to album\"]"
     },
     {
       "name": "one failing entity request degrades to a retryable error on that page alone",
@@ -151,6 +156,26 @@
       "name": "the entity page recovers on retry",
       "ok": true,
       "detail": "tracks=true"
+    },
+    {
+      "name": "offline, retrying an entity resolution degrades to a retryable state, not a crash",
+      "ok": true,
+      "detail": "error=true, retry=true, stillNotFound=false, shellAlive=true"
+    },
+    {
+      "name": "reconnecting restores a working artist page",
+      "ok": true,
+      "detail": "tracks=true"
+    },
+    {
+      "name": "the IFrame API is still loaded exactly once at the end of the run",
+      "ok": true,
+      "detail": "apiScripts=1, iframes now=1, control=Play"
+    },
+    {
+      "name": "zero console errors (disclosed offline/blocked/not-found entries excluded)",
+      "ok": true,
+      "detail": "errors=0, disclosed offline=1, disclosed blocked-artist=1, disclosed unresolvable-key-404=2, disclosed live-upstream=0"
     }
   ],
   "screenshots": [
@@ -191,17 +216,21 @@
       "note": "Artist page with the entity request blocked → retryable error"
     }
   ],
-  "consoleErrors": [
-    "log: Failed to load resource: the server responded with a status of 404 (Not Found)",
-    "log: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
-  ],
+  "consoleErrors": [],
   "notes": {
     "disclosures": {
-      "offlineWindow": [],
-      "blockedArtistProbe": [
-        "log: Failed to load resource: net::ERR_FAILED"
+      "offlineWindow": [
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/api/artist?name=zzz+spotivibe+no+such+artist+zzz]"
       ],
-      "liveUpstream": []
+      "blockedArtistProbe": [
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/artist?name=Queen]"
+      ],
+      "notFoundProbe": [
+        "log: Failed to load resource: the server responded with a status of 404 (Not Found) [http://localhost:3210/api/artist?name=zzz+spotivibe+no+such+artist+zzz]",
+        "log: Failed to load resource: the server responded with a status of 404 (Not Found) [http://localhost:3210/api/artist?name=zzz+spotivibe+no+such+artist+zzz]"
+      ],
+      "liveUpstream": [],
+      "searchFallbacks": []
     },
     "catalogRequests": [
       {
@@ -217,7 +246,7 @@
         "offline": false
       },
       {
-        "url": "http://localhost:3210/api/album?title=MPREb_eEpQf8QskKl",
+        "url": "http://localhost:3210/api/album?id=MPREb_eEpQf8QskKl",
         "offline": false
       },
       {
@@ -227,6 +256,18 @@
       {
         "url": "http://localhost:3210/api/artist?name=Queen",
         "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/artist?name=Queen",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/artist?name=zzz+spotivibe+no+such+artist+zzz",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/artist?name=zzz+spotivibe+no+such+artist+zzz",
+        "offline": true
       },
       {
         "url": "http://localhost:3210/api/artist?name=Queen",
@@ -269,11 +310,21 @@
       {
         "type": "iframe",
         "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
       }
     ],
     "artistKey": "Queen",
     "pauseOutcome": "already-stopped",
+    "notFoundProbeKey": "zzz-spotivibe-no-such-artist-zzz",
     "albumEntry": "search album tile",
+    "albumEntryKey": "MPREb_eEpQf8QskKl",
     "blockedEndpoint": "/api/artist",
     "offlineEmulation": {
       "calls": [
@@ -281,13 +332,19 @@
           "command": "Network.emulateNetworkConditions {offline:true}",
           "sessions": [
             "main",
-            "67DB9319459F2CC9EA0A1962D50D3F51"
+            "15AA8C9D8574A65527F12109E03A64C4"
+          ]
+        },
+        {
+          "command": "Network.emulateNetworkConditions {offline:false}",
+          "sessions": [
+            "main",
+            "15AA8C9D8574A65527F12109E03A64C4"
           ]
         }
       ]
     }
   },
-  "pass": false,
-  "browser": "Edg/154.0.4258.37",
-  "error": "Error: Timed out waiting for /artist/Queen: artist view (last: false)\n    at waitFor (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-artist-catalog-pages/evidence/cdp-check.mjs:304:13)\n    at async goto (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-artist-catalog-pages/evidence/cdp-check.mjs:371:22)\n    at async main (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-artist-catalog-pages/evidence/cdp-check.mjs:1123:5)"
+  "pass": true,
+  "browser": "Edg/154.0.4258.37"
 }

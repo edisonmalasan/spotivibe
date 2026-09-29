@@ -156,7 +156,13 @@ async function main() {
     screenshots: [],
     consoleErrors: [],
     notes: {
-      disclosures: { offlineWindow: [], blockedArtistProbe: [], liveUpstream: [] },
+      disclosures: {
+        offlineWindow: [],
+        blockedArtistProbe: [],
+        notFoundProbe: [],
+        liveUpstream: [],
+        searchFallbacks: [],
+      },
       catalogRequests: [],
     },
     pass: false,
@@ -178,6 +184,7 @@ async function main() {
   const cdpSessions = new Set();
   let offlineNow = false;
   let blockedArtistProbe = false; // deliberate single-endpoint failure window
+  let notFoundProbe = false; // deliberate unresolvable-key window (a real 404)
   const sendTo = (sessionId, method, params = {}) =>
     new Promise((resolveSend, reject) => {
       const id = ++seq;
@@ -421,8 +428,21 @@ async function main() {
       const netCut = /net::ERR_|Failed to load resource/.test(params.entry.text);
       const statusErr = /status of [45]\d\d/.test(params.entry.text);
       const liveFlake = /status of (429|503)/.test(params.entry.text);
+      // The unresolvable-key probe asks for a key nothing can resolve, so its
+      // 404 is the expected answer and is disclosed rather than counted. Matched
+      // on the probe key **in the URL** rather than only on a time window: the
+      // probe is requested more than once (initial visit, offline retry), and a
+      // URL match cannot swallow an unrelated 404 that happens to land nearby.
+      const entryUrl = String(params.entry.url ?? "");
+      const probeNeedle = UNKNOWN_ARTIST_KEY.replace(/-/g, "+");
+      const isNotFoundProbe =
+        /status of 404/.test(params.entry.text) &&
+        (notFoundProbe ||
+          entryUrl.includes(UNKNOWN_ARTIST_KEY) ||
+          entryUrl.includes(probeNeedle));
       if (offlineNow && (netCut || statusErr)) results.notes.disclosures.offlineWindow.push(text);
       else if (liveFlake) results.notes.disclosures.liveUpstream.push(text);
+      else if (isNotFoundProbe) results.notes.disclosures.notFoundProbe.push(text);
       else if (blockedArtistProbe && (netCut || statusErr))
         results.notes.disclosures.blockedArtistProbe.push(text);
       else results.consoleErrors.push(text);
@@ -677,6 +697,10 @@ async function main() {
           error: !!document.querySelector('[data-testid="artist-error"]'),
           notFound: !!document.querySelector('[data-testid="artist-not-found"]'),
           tracks: document.querySelectorAll('${ARTIST_ROWS}').length,
+          // Skeleton rows are list items with no controls, so a real row is only
+          // a row that carries its Play control. Readiness and completeness are
+          // both measured on the controls, never on the row count.
+          realRows: document.querySelectorAll('${PLAY_FIRST(ARTIST_ROWS)}').length,
           tracksWithArtwork: document.querySelectorAll('${ARTIST_ROWS} img').length,
           playable: document.querySelectorAll('${PLAY_FIRST(ARTIST_ROWS)}').length,
           likeable: document.querySelectorAll('[data-testid="artist-tracks"] li button[aria-label^="Save "], [data-testid="artist-tracks"] li button[aria-label^="Remove "]').length,
@@ -689,7 +713,7 @@ async function main() {
           radioLabel: document.querySelector('[data-testid="artist-radio"]')?.textContent?.trim() ?? '',
         };
       })()`,
-      (state) => state && !state.loadingOnly && (state.tracks > 0 || state.error || state.notFound),
+      (state) => state && (state.realRows > 0 || state.error || state.notFound),
       90000,
     );
     step(
@@ -698,9 +722,9 @@ async function main() {
         !artistPage.loading &&
         !artistPage.error &&
         !artistPage.notFound &&
-        artistPage.tracks >= 3 &&
-        artistPage.playable === artistPage.tracks &&
-        artistPage.likeable === artistPage.tracks,
+        artistPage.realRows >= 3 &&
+        artistPage.playable === artistPage.realRows &&
+        artistPage.likeable === artistPage.realRows,
       `tracks=${artistPage.tracks} (playable=${artistPage.playable}, likeable=${artistPage.likeable}, withArtwork=${artistPage.tracksWithArtwork}), portrait=${artistPage.portrait}, releases=${artistPage.releases}, related=${artistPage.related}, heading="${artistPage.heading.slice(0, 40)}"`,
     );
     step(
@@ -807,6 +831,10 @@ async function main() {
     // ====================================================================
     // STEP 8 — an unknown artist key is recoverable
     // ====================================================================
+    // Armed around the probe: its 404 is the expected answer, so the console
+    // entries it produces are disclosed rather than counted as defects.
+    notFoundProbe = true;
+    results.notes.notFoundProbeKey = UNKNOWN_ARTIST_KEY;
     await goto(
       `/artist/${encodeURIComponent(UNKNOWN_ARTIST_KEY)}`,
       `!!document.querySelector('[data-testid="artist-view"]')`,
@@ -827,6 +855,7 @@ async function main() {
       `text="${notFound.text.replace(/\s+/g, " ").trim().slice(0, 90)}"`,
     );
     await shoot(1280, 900, "artist-not-found-1280.png", "Unknown artist key → recoverable not-found state");
+    notFoundProbe = false;
 
     // ====================================================================
     // STEP 9 — a release entry opens the album page
@@ -878,6 +907,9 @@ async function main() {
                 error: !!document.querySelector('[data-testid="album-error"]'),
                 notFound: !!document.querySelector('[data-testid="album-not-found"]'),
                 rows: document.querySelectorAll('${ALBUM_ROWS}').length,
+                // Skeleton rows carry no controls, so a real row is a row with
+                // its Play button; readiness is measured on that, not on rows.
+                realRows: document.querySelectorAll('${PLAY_FIRST(ALBUM_ROWS)}').length,
                 incomplete: !!document.querySelector('[data-testid="album-metadata-incomplete"]'),
                 incompleteText: document.querySelector('[data-testid="album-metadata-incomplete"]')?.textContent ?? '',
                 // The committed flag, read from the view root.
@@ -890,14 +922,18 @@ async function main() {
               };
             })()`,
             (state) =>
-              state && !state.loading && (state.rows > 0 || state.error || state.notFound),
+              state && (state.realRows > 0 || state.error || state.notFound),
             90000,
           );
         })()
       : null;
     step(
       "a release/album entry point opens the album page with its tracks",
-      Boolean(albumPage) && albumPage.present && !albumPage.error && !albumPage.notFound && albumPage.rows >= 1,
+      Boolean(albumPage) &&
+      albumPage.present &&
+      !albumPage.error &&
+      !albumPage.notFound &&
+      albumPage.realRows >= 1,
       albumPage
         ? `entry=${results.notes.albumEntry}, rows=${albumPage.rows}, cover=${albumPage.cover}, play=${albumPage.play}, shuffle=${albumPage.shuffle}`
         : "no album entry point resolved",
@@ -935,7 +971,7 @@ async function main() {
     // ====================================================================
     // STEP 10 — album: like a track and open the add-to-playlist picker
     // ====================================================================
-    if (albumPage?.present && albumPage.rows >= 1) {
+    if (albumPage?.present && albumPage.realRows >= 1) {
       const likeResult = await evaluate(
         `(() => {
           const row = document.querySelector('${ALBUM_ROWS}');
@@ -952,7 +988,9 @@ async function main() {
       );
       step(
         "every album track row exposes like and add-to-playlist controls",
-        likeResult.ok && likeResult.add !== null && likeResult.likeableRows === albumPage.rows,
+        likeResult.ok &&
+        likeResult.add !== null &&
+        likeResult.likeableRows === albumPage.realRows,
         `rows=${albumPage.rows}, likeableRows=${likeResult.likeableRows}, like="${likeResult.like}", add="${likeResult.add}"`,
       );
       if (likeResult.ok) {
@@ -1207,9 +1245,9 @@ async function main() {
     // STEP 16 — zero console errors
     // ====================================================================
     step(
-      "zero console errors (disclosed offline/blocked entries excluded)",
+      "zero console errors (disclosed offline/blocked/not-found entries excluded)",
       results.consoleErrors.length === 0,
-      `errors=${results.consoleErrors.length}, disclosed offline=${results.notes.disclosures.offlineWindow.length}, disclosed blocked-artist=${results.notes.disclosures.blockedArtistProbe.length}, disclosed live-upstream=${results.notes.disclosures.liveUpstream.length}`,
+      `errors=${results.consoleErrors.length}, disclosed offline=${results.notes.disclosures.offlineWindow.length}, disclosed blocked-artist=${results.notes.disclosures.blockedArtistProbe.length}, disclosed unresolvable-key-404=${results.notes.disclosures.notFoundProbe.length}, disclosed live-upstream=${results.notes.disclosures.liveUpstream.length}`,
     );
   } catch (error) {
     results.error = String(error?.stack ?? error);

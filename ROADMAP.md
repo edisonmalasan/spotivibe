@@ -115,7 +115,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M6 | Queue, session persistence, network recovery | `DONE` | M2, M4 |
 | M7 | Library, liked songs, and local playlists | `DONE` | M1, M2, M4 |
 | M8 | Home, discovery, trending, languages, and curated surfaces | `DONE` | M3, M5, M7 |
-| M9 | Artist pages, album pages, Now Playing, related content | `IN PROGRESS` | M4, M5, M8 |
+| M9 | Artist pages, album pages, Now Playing, related content | `DONE` | M4, M5, M8 |
 | M10 | Radio, queue autofill, and local personalization | `NOT STARTED` | M2, M6, M8, M9 |
 | M11 | Listening history, stats, streaks, and Smart Mixes | `NOT STARTED` | M2, M7, M10 |
 | M12 | Podcasts | `NOT STARTED` | M3, M4, M5 |
@@ -1152,8 +1152,8 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] Music quality/remix filtering.
 - [x] Duplicate handling.
 - [x] Search history.
-- [ ] Artist navigation.
-- [ ] Album navigation where metadata supports it.
+- [x] Artist navigation.
+- [x] Album navigation where metadata supports it.
 - [ ] Podcast search/category.
 
 ## Player
@@ -1180,7 +1180,7 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] Auto-advance.
 - [ ] Queue autofill.
 - [ ] Track Radio.
-- [ ] Artist Radio.
+- [x] Artist Radio.
 - [ ] Radio refill.
 - [ ] Played-track dedupe.
 
@@ -1201,11 +1201,11 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] Home.
 - [ ] Search.
 - [x] Discover.
-- [ ] Artist.
-- [ ] Album/release.
+- [x] Artist.
+- [x] Album/release.
 - [ ] Playlist.
 - [ ] Library/Liked Songs.
-- [ ] Now Playing.
+- [x] Now Playing.
 - [ ] History/Stats.
 - [ ] Podcasts.
 - [ ] Settings/Data.
@@ -1218,7 +1218,7 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] Trending.
 - [x] Popular Artists.
 - [x] Genre discovery.
-- [ ] More Like This.
+- [x] More Like This.
 - [ ] Smart Mixes.
 - [x] Recently Played.
 - [ ] Listening stats.
