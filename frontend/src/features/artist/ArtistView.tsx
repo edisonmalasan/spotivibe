@@ -21,7 +21,8 @@ import {
   type ArtistDetail,
   type ArtistRelease,
 } from "@/features/artist/artistApi";
-import { albumHrefFor, artistHref, artistRequestKey } from "@/features/artist/artistKeys";
+import { albumHrefFromRelease } from "@/features/album/albumKeys";
+import { artistHref, artistRequestKey } from "@/features/artist/artistKeys";
 import { likedTracksByArtist } from "@/features/artist/likedByArtist";
 import { playFromShelf } from "@/features/home/browsePlayback";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
@@ -253,7 +254,7 @@ function ArtistPortrait({ artworkUrl }: { artworkUrl?: string }) {
 function ReleaseCard({ release }: { release: ArtistRelease }) {
   return (
     <Link
-      href={albumHrefFor(release.id ?? release.title)}
+      href={albumHrefFromRelease(release)}
       data-testid="artist-release"
       className="flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 text-left transition-colors hover:bg-graphite"
     >

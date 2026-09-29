@@ -29,5 +29,41 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+
+    /*
+     * The Now Playing long-title marquee is a scroll, not a decoration, so a
+     * reduced-motion user gets the truncated title with its full string in the
+     * element's `title`/`aria-label` rather than a title that visibly drifts.
+     * The global rule above already collapses the animation to a single frame;
+     * this cancels it outright so the duplicated span never moves at all.
+     */
+    .now-playing-marquee {
+      animation: none !important;
+      transform: none !important;
+    }
   }
+}
+
+/*
+ * Now Playing's long-title treatment (M9; spec: `catalog` — "Now Playing
+ * presentation of the current track"; design decision 7).
+ *
+ * CSS-only and conditional by construction: the markup is a fixed-width
+ * overflow box holding a track of two copies of the title, and the animation is
+ * applied **only** when the component measured that the title overflows. A
+ * title that fits therefore never animates and is never duplicated — there is no
+ * JavaScript measuring loop, no per-frame work, and no dependency.
+ */
+@keyframes spotivibe-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.now-playing-marquee {
+  animation: spotivibe-marquee 14s linear infinite;
 }

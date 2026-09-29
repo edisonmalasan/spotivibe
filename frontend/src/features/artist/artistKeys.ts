@@ -138,19 +138,3 @@ export function artistHref(key: string): string {
   return `${ARTIST_ROUTE}/${encodeURIComponent(key.trim())}`;
 }
 
-/**
- * The album route for `releaseKey` — a release id when the provider supplied
- * one, else the release title, the same two-key contract the artist route uses.
- *
- * This is the **artist feature's local copy** of the album route format, kept
- * format-compatible with the canonical `albumHref` the album feature owns
- * (M9 task 4.1). It exists only because a release entry on an artist page is
- * part of *this* feature's render and must not reach across into a sibling
- * feature for a one-line href; the two must be replaced by the single canonical
- * helper if the album feature ever publishes one, and this module is where
- * that consolidation belongs. It is deliberately not exported for general use —
- * its only consumer is `ArtistView`.
- */
-export function albumHrefFor(releaseKey: string): string {
-  return `${ALBUM_ROUTE}/${encodeURIComponent(releaseKey.trim())}`;
-}

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as artistKeys from "@/features/artist/artistKeys";
 import {
-  albumHrefFor,
   artistHref,
   artistRequestKey,
   isProviderEntityId,
@@ -153,21 +152,6 @@ describe("artistHref", () => {
   });
 });
 
-describe("albumHrefFor (the artist feature's local album-route format)", () => {
-  it("uses the same key encoding as the artist route, on the album route", () => {
-    expect(albumHrefFor("OK Computer")).toBe("/album/OK%20Computer");
-    expect(albumHrefFor("  OK Computer  ")).toBe("/album/OK%20Computer");
-    expect(albumHrefFor(CHANNEL_ID)).toBe(`/album/${CHANNEL_ID}`);
-    expect(albumHrefFor("")).toBe("/album/");
-  });
-
-  it("is format-compatible with artistHref so one route-key contract serves both", () => {
-    for (const key of ["Aurora Sky", "Björk", "AC/DC", CHANNEL_ID, "  padded  "]) {
-      expect(albumHrefFor(key).replace("/album/", "/artist/")).toBe(artistHref(key));
-    }
-  });
-});
-
 describe("normalizeEntityText", () => {
   it("trims and collapses whitespace without touching case or punctuation", () => {
     expect(normalizeEntityText("  Aurora   Sky \n")).toBe("Aurora Sky");
@@ -185,7 +169,6 @@ describe("the artist key module's published surface", () => {
     // this route: a renamed or dropped export must fail here rather than at the
     // call site.
     expect(Object.keys(artistKeys).sort()).toEqual([
-      "albumHrefFor",
       "artistHref",
       "artistRequestKey",
       "isProviderEntityId",
