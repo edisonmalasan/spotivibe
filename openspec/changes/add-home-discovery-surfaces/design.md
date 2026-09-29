@@ -116,6 +116,7 @@ See `proposal.md` — Why. Current state that constrains the approach:
 - **Listening-event writes add local storage churn** → one record per track step only; no analytics, no server write.
 - **New client stores could drift from repository truth** → stores hydrate from repositories and write through them; architecture tests pin repository-mediated access and forbid `data/indexeddb` imports in UI.
 - **Design drift on the rhythm rule** → section order is a typed list validated by a unit test, not a convention.
+- **DESIGN.md alternation is unsatisfiable at feed scale (amended spec)** → DESIGN.md's "never place two circular sections or two square sections adjacent" cannot coexist with ROADMAP M8's eight baseline Home sections: taken literally it caps the feed at two shelves. The roadmap outranks DESIGN.md in the documented precedence, and the rule's *purpose* is unclustered geometric contrast. The spec therefore requires what DESIGN.md's intent protects — circular sections are never adjacent to each other, and the circular artist section interrupts the square shelves within the first four sections instead of trailing the feed — instead of an unsatisfiable literal alternation. Square shelves still use DESIGN.md's 5-column carousel and circular ones its 5-column circular carousel.
 
 ## Migration Plan
 
