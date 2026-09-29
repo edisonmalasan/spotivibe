@@ -49,6 +49,7 @@ const ZERO_STATS: ImportStats = {
   playlists: 0,
   history: 0,
   searchHistory: 0,
+  mixes: 0,
   preferences: 0,
   session: 0,
 };
@@ -70,6 +71,8 @@ describe("planReplace", () => {
       playlists: 1,
       history: 1,
       searchHistory: 1,
+      // M11: a pre-M11 envelope carries no mixes, so it plans none.
+      mixes: 0,
       preferences: 1,
       session: 1,
     });
@@ -250,6 +253,7 @@ describe("planMerge", () => {
       playlists: 1,
       history: 1,
       searchHistory: 1,
+      mixes: 0,
       preferences: 1,
       session: 1,
     });

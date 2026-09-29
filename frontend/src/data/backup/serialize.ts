@@ -20,14 +20,18 @@ export interface SerializeOptions {
 
 /** Read every exported dataset through the repository interfaces. */
 export async function collectLocalData(repos: Repositories): Promise<BackupData> {
-  const [preferences, likedTracks, playlists, history, searchHistory, session] = await Promise.all([
-    repos.preferences.get(),
-    repos.likedTracks.list(),
-    repos.playlists.list(),
-    repos.listeningHistory.list(),
-    repos.searchHistory.list(),
-    repos.session.get(),
-  ]);
+  const [preferences, likedTracks, playlists, history, searchHistory, mixes, session] =
+    await Promise.all([
+      repos.preferences.get(),
+      repos.likedTracks.list(),
+      repos.playlists.list(),
+      repos.listeningHistory.list(),
+      repos.searchHistory.list(),
+      // M11: generated mixes travel as derived data so a named mix the listener
+      // can recognize survives an export/import round trip.
+      repos.mixes.list(),
+      repos.session.get(),
+    ]);
 
   return {
     // Strip store bookkeeping (the single-record `id`) — backups carry
@@ -46,6 +50,7 @@ export async function collectLocalData(repos: Repositories): Promise<BackupData>
     playlists,
     history,
     searchHistory,
+    mixes,
     session: session
       ? {
           queue: session.queue,

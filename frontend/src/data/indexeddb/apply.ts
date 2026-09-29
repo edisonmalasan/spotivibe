@@ -28,6 +28,7 @@ export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void
   if (plan.writes.playlists.length > 0) stores.add(STORE.playlists);
   if (plan.writes.history.length > 0) stores.add(STORE.listeningHistory);
   if (plan.writes.searchHistory.length > 0) stores.add(STORE.searchHistory);
+  if (plan.writes.mixes.length > 0) stores.add(STORE.mixes);
   if (plan.writes.preferences !== undefined) stores.add(STORE.preferences);
   if (plan.writes.session !== null && plan.writes.session !== undefined) {
     stores.add(STORE.session);
@@ -54,6 +55,12 @@ export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void
       for (const record of plan.writes.history) history.put(record);
       const search = tx.objectStore(STORE.searchHistory);
       for (const record of plan.writes.searchHistory) search.put(record);
+      // M11: mixes are written by identity, so a refresh in the backup overwrites
+      // the local record of the same mix rather than creating a second one.
+      if (plan.writes.mixes.length > 0) {
+        const mixes = tx.objectStore(STORE.mixes);
+        for (const record of plan.writes.mixes) mixes.put(record);
+      }
       if (plan.writes.preferences !== undefined) {
         tx.objectStore(STORE.preferences).put({
           id: SINGLE_RECORD_KEY,

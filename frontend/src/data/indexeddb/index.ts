@@ -4,6 +4,7 @@ import { applyImport as runImport, resetStores } from "./apply";
 import { createLikedTracksRepository } from "./likedTracks";
 import { createListeningHistoryRepository } from "./listeningHistory";
 import { createMetadataCacheRepository } from "./metadataCache";
+import { createMixesRepository } from "./mixes";
 import { createPlaylistsRepository } from "./playlists";
 import { createPreferencesRepository } from "./preferences";
 import { openDatabase, type OpenDatabaseOptions } from "./open";
@@ -36,6 +37,7 @@ export async function createRepositories(
     preferences: createPreferencesRepository(db),
     session: createSessionRepository(db),
     metadataCache: createMetadataCacheRepository(db),
+    mixes: createMixesRepository(db),
     applyImport: (plan) => runImport(db, plan),
     resetAll: () => resetStores(db),
     close: () => db.close(),

@@ -9,7 +9,13 @@ import {
 } from "@/data/backup";
 import { createRepositories, type RepositorySet } from "@/data/indexeddb";
 import { DEFAULT_PREFERENCES, type ListeningEventRecord } from "@/data/repositories";
-import { FIXED_EXPORTED_AT, makeEnvelope, makeTrack } from "./helpers/backup-fixtures";
+import {
+  FIXED_EXPORTED_AT,
+  makeBackupData,
+  makeEnvelope,
+  makeMix,
+  makeTrack,
+} from "./helpers/backup-fixtures";
 
 /**
  * Tasks 5.1/5.2: atomic application and the acceptance loop —
@@ -35,6 +41,7 @@ async function seedBaseline(repos: RepositorySet): Promise<void> {
     context: "home",
   });
   await repos.searchHistory.record("baseline query");
+  await repos.mixes.create(makeMix());
   await repos.session.set({
     queue: [makeTrack("base-1")],
     queueIndex: 0,
@@ -51,7 +58,7 @@ describe("applyImport", () => {
     const repos = await createRepositories({ name: "apply-success" });
     try {
       await seedBaseline(repos);
-      const envelope = makeEnvelope();
+      const envelope = makeEnvelope(makeBackupData({ mixes: [makeMix()] }));
 
       await repos.applyImport(planReplace(envelope));
 
@@ -62,6 +69,8 @@ describe("applyImport", () => {
       expect(restored.playlists.map((p) => p.id)).toEqual(["p1"]);
       expect(restored.history.map((e) => e.id)).toEqual(["e1"]);
       expect(restored.searchHistory.map((e) => e.normalizedQuery)).toEqual(["beatles"]);
+      // M11: the backup's mix replaces the baseline one, by identity.
+      expect(restored.mixes?.map((m) => m.id)).toEqual([makeMix().id]);
       expect(restored.session).toEqual(envelope.data.session);
       // Derived caches are outside the supported dataset set — untouched.
       expect((await repos.metadataCache.list()).map((c) => c.providerId)).toEqual(["yt-base-1"]);
@@ -110,6 +119,7 @@ describe("export → reset → import", () => {
       expect(await repos.playlists.list()).toEqual([]);
       expect(await repos.listeningHistory.list()).toEqual([]);
       expect(await repos.searchHistory.list()).toEqual([]);
+      expect(await repos.mixes.list()).toEqual([]);
       expect(await repos.preferences.get()).toEqual(DEFAULT_PREFERENCES);
       expect(await repos.session.get()).toBeNull();
       expect(await repos.metadataCache.list()).toEqual([]);
@@ -128,6 +138,7 @@ describe("export → reset → import", () => {
         playlists: (await repos.playlists.list()).length,
         history: (await repos.listeningHistory.list()).length,
         search: (await repos.searchHistory.list()).length,
+        mixes: (await repos.mixes.list()).length,
       });
       const beforeCounts = await counts();
       expect(beforeCounts).toEqual({
@@ -135,6 +146,8 @@ describe("export → reset → import", () => {
         playlists: 1,
         history: 1,
         search: 1,
+        // M11: the mix the baseline seeded survives the round trip.
+        mixes: 1,
       });
 
       const mergePlan = planMerge(prepared.envelope, restored);
@@ -143,6 +156,7 @@ describe("export → reset → import", () => {
         playlists: 0,
         history: 0,
         searchHistory: 0,
+        mixes: 0,
         preferences: 0,
         session: 0,
       });

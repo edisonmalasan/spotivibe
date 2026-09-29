@@ -182,7 +182,7 @@ function extractBackupDatasetKeys(source: string): string[] {
   return [...block.matchAll(/^\s*(\w+):/gm)].map((match) => match[1]);
 }
 
-/** Whitelists: the seven stores (ROADMAP §8/§13) and six exportable datasets. */
+/** Whitelists: the eight stores (ROADMAP §8/§13) and seven exportable datasets. */
 const STORE_WHITELIST = [
   "likedTracks",
   "playlists",
@@ -191,6 +191,9 @@ const STORE_WHITELIST = [
   "preferences",
   "session",
   "metadataCache",
+  // M11: Smart Mixes — derived data, but persisted and exported because a mix is
+  // a *named* record the listener recognizes.
+  "mixes",
 ];
 const BACKUP_WHITELIST = [
   "preferences",
@@ -198,6 +201,8 @@ const BACKUP_WHITELIST = [
   "playlists",
   "history",
   "searchHistory",
+  // M11: mixes travel as derived data so a recognized mix survives a round trip.
+  "mixes",
   "session",
 ];
 

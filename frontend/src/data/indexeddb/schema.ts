@@ -1,14 +1,14 @@
 /**
- * IndexedDB schema constants and store definitions (schema version 1).
+ * IndexedDB schema constants and store definitions (schema version 2).
  *
  * Store keys double as merge dedupe keys for backup import (design
  * Decision 2): liked tracks by track ID, playlists by playlist ID,
  * history events by event UUID, search history by normalized query,
- * preferences/session as single records, cache by provider ID.
+ * preferences/session as single records, cache by provider ID, mixes by mix id.
  */
 
 export const DATABASE_NAME = "spotivibe";
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Store key for the single-record stores (preferences, session). */
 export const SINGLE_RECORD_KEY = "app";
@@ -21,6 +21,7 @@ export const STORE = {
   preferences: "preferences",
   session: "session",
   metadataCache: "metadataCache",
+  mixes: "mixes",
 } as const;
 
 export interface StoreIndexDefinition {
@@ -51,4 +52,9 @@ export const STORE_DEFINITIONS: readonly StoreDefinition[] = [
   { name: STORE.preferences, options: { keyPath: "id" } },
   { name: STORE.session, options: { keyPath: "id" } },
   { name: STORE.metadataCache, options: { keyPath: "providerId" } },
+  {
+    name: STORE.mixes,
+    options: { keyPath: "id" },
+    indexes: [{ name: "byGeneratedAt", keyPath: "generatedAt" }],
+  },
 ];
