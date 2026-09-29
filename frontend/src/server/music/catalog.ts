@@ -204,7 +204,14 @@ export interface ArtistView {
 /** The release metadata an album view presents. */
 export interface AlbumView {
   id?: string;
-  title: string;
+  /**
+   * The release's own title, read from a *confirmed* member's album summary.
+   *
+   * Optional on purpose: an id-keyed request can never confirm the release (no
+   * tier resolves a release id to its metadata), and the honest answer there is
+   * "no title", not the route token or the search phrase that produced the hits.
+   */
+  title?: string;
   artistName?: string;
   artworkUrl?: string;
   year?: number;
@@ -945,14 +952,25 @@ export async function resolveAlbum(
         ? tracks.filter((track) => albumMatches(track, requestedTitle))
         : tracks.filter((track) => track.album !== undefined);
 
+    // The release's own identity is read from the *confirmed* members, never
+    // echoed from the request: an id-keyed request (or a text key that never
+    // matched) would otherwise put an opaque `MPREb_…` token in the page
+    // heading. When nothing confirmed the release, no title is claimed at all.
+    const confirmedTitle =
+      requestedTitle === undefined
+        ? undefined
+        : dominantText(confirmed, (track) => track.album?.title);
     const album: AlbumView = {
-      title,
+      ...(confirmedTitle !== undefined ? { title: confirmedTitle } : {}),
       ...(requestedId !== undefined ? { id: requestedId } : {}),
       ...(requestedArtist !== undefined ? { artistName: requestedArtist } : {}),
     };
     const id = requestedId ?? dominantAlbumId(confirmed);
     if (id !== undefined) album.id = id;
-    const artistName = requestedArtist ?? dominantText(tracks, (track) => track.artists[0]?.name);
+    const artistName =
+      requestedArtist ??
+      dominantText(confirmed, (track) => track.artists[0]?.name) ??
+      dominantText(tracks, (track) => track.artists[0]?.name);
     if (artistName !== undefined) album.artistName = artistName;
     // Only a *confirmed* member's artwork becomes the release's cover: an
     // unconfirmed search hit's thumbnail is somebody else's picture, and

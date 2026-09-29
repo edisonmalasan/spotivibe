@@ -25,6 +25,16 @@ The application SHALL provide an artist page on its own route showing the artist
 - **WHEN** the user activates a release or a related-artist entry
 - **THEN** the corresponding album or artist surface opens for that entry
 
+#### Scenario: Related artists come from the artist's own resolution
+
+- **WHEN** the artist page shows related artists
+- **THEN** they are other artists credited on the tracks of that same artist resolution, and no second provider request is issued to obtain them
+
+#### Scenario: An artist with no co-credited artist says so
+
+- **WHEN** the resolution yields no artist other than the one requested
+- **THEN** the Related artists section reports that no related artist was found instead of presenting unrelated or invented artists
+
 #### Scenario: Artist radio seeds playback
 
 - **WHEN** the user activates "Start artist radio" on an artist page
@@ -101,6 +111,11 @@ Artist and album routes SHALL be addressable by a stable key: a provider entity 
 
 - **WHEN** an artist or album is reached by a provider entity id and another by a text key
 - **THEN** both routes resolve the correct entity
+
+#### Scenario: An id key the provider cannot confirm stays unconfirmed
+
+- **WHEN** a release is reached by a provider entity id that no tier can resolve to that release's own metadata
+- **THEN** the page reports that the tracklist could not be confirmed and never presents the resolved tracks as that release's tracklist
 
 #### Scenario: Requests carry only the identifier
 

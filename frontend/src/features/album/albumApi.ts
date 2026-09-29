@@ -78,7 +78,9 @@ export class AlbumApiError extends Error {
  * release, and retrying it only re-sends the same dead identifier.
  */
 export function isRetryableAlbumError(code: AlbumApiErrorCode): boolean {
-  return code !== "unresolvable";
+  // See `isRetryableArtistError`: an unresolvable key and a rejected request are
+  // both settled answers, not transient upstream trouble.
+  return code !== "unresolvable" && code !== "invalid_request";
 }
 
 /**
@@ -97,7 +99,12 @@ export interface AlbumDiagnostics {
 export interface AlbumRelease {
   /** Provider release id, when the resolution carried one. */
   readonly id?: string;
-  readonly title: string;
+  /**
+   * The release's own title, when the provider confirmed one. Absent for an
+   * unconfirmed release (see `parseAlbumRelease`); the view then shows neutral
+   * copy instead of an opaque route key.
+   */
+  readonly title?: string;
   readonly artistName?: string;
   /**
    * The release's cover, taken only from a **confirmed** member track's
@@ -161,24 +168,28 @@ function asYear(value: unknown): number | undefined {
 
 /**
  * The resolved release, or `undefined` when the payload carries no usable one.
- * A blank title is no identity — a page cannot render a release called "" — so
- * it reports unresolvable rather than substituting the requested key.
+ *
+ * A release is identified by a release id, a title, or both. The title is
+ * **optional**: the server omits it whenever no resolved track's album metadata
+ * confirmed the release (an id-keyed request can never confirm one), and
+ * requiring it here would turn "unconfirmed" into "unresolvable" - losing the
+ * resolved tracks the page may still show behind an honest notice.
  */
 function parseAlbumRelease(value: unknown): AlbumRelease | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const raw = value as Record<string, unknown>;
   const title = asNonBlankString(raw.title);
-  if (title === undefined) return undefined;
+  const id = asNonBlankString(raw.id);
+  if (title === undefined && id === undefined) return undefined;
   const year = asYear(raw.year);
   return {
-    id: asNonBlankString(raw.id),
+    id,
     title,
     artistName: asNonBlankString(raw.artistName),
     artworkUrl: asNonBlankString(raw.artworkUrl),
     year,
   };
 }
-
 /** The untouched `diagnostics` payload, or an empty record when it is absent. */
 function parseDiagnostics(value: unknown): AlbumDiagnostics {
   if (typeof value !== "object" || value === null) return { raw: {} };
@@ -246,11 +257,12 @@ export function buildAlbumQuery(request: Pick<AlbumRequest, "key">): string {
  * absent or not an array, a malformed track) is an upstream contract violation
  * rather than a resolution answer, so it reports as `upstream_unavailable`.
  *
- * `metadataIncomplete` is read strictly: only an explicit `true` is true, so a
- * missing or malformed flag defaults to the *complete* reading. That is the
- * safe direction for the one flag the server sets deliberately — the
- * alternative would nag about incompleteness on every response that predates the
- * field.
+ * `metadataIncomplete` is read in the safe direction: it is believed only when
+ * the payload says `false` explicitly, so a missing or malformed flag is read as
+ * *unconfirmed*. That is the one direction this contract must never get wrong:
+ * the alternative would present an unconfirmed list as a definitive tracklist
+ * for any stale, proxied, or older payload that omits the flag. The server always sets it; the safe reading only differs
+ * for a payload that never carried the field at all.
  */
 export function parseAlbumResponse(body: unknown): AlbumDetail {
   // An array is `typeof "object"`, but it is not the `{ … }` envelope this
@@ -282,7 +294,11 @@ export function parseAlbumResponse(body: unknown): AlbumDetail {
     // a search-derived list is an approximation, and re-sorting it here would
     // claim an authority the resolution never had.
     tracks: raw.tracks,
-    metadataIncomplete: raw.metadataIncomplete === true,
+    // Read in the **safe** direction: the flag is only believed when the payload
+    // says `false` explicitly. An absent, null, or non-boolean field means the
+    // release was never confirmed, and treating that as confirmed is exactly how
+    // an unconfirmed list gets presented as an authoritative tracklist.
+    metadataIncomplete: raw.metadataIncomplete !== false,
     diagnostics: parseDiagnostics(raw.diagnostics),
   };
 }

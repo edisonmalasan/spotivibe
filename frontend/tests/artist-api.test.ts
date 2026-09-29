@@ -435,11 +435,15 @@ describe("ArtistApiError", () => {
     expect(new ArtistApiError("unresolvable", "custom").message).toBe("custom");
   });
 
-  it("treats every code but unresolvable as worth retrying", () => {
+  it("offers a retry only for trouble a retry can fix", () => {
     // `unresolvable` is the route saying this key names no artist; re-sending
     // the same dead identifier is not a recovery.
-    const retryable: ArtistApiErrorCode[] = ["invalid_request", "upstream_unavailable", "network"];
+    const retryable: ArtistApiErrorCode[] = ["upstream_unavailable", "network"];
     for (const code of retryable) expect(isRetryableArtistError(code), code).toBe(true);
     expect(isRetryableArtistError("unresolvable")).toBe(false);
+    // A rejected request is a settled answer about *this* key rather than about
+    // the connection, so it is not retryable either — which is what lets the view
+    // show it its own copy instead of "check your connection".
+    expect(isRetryableArtistError("invalid_request")).toBe(false);
   });
 });

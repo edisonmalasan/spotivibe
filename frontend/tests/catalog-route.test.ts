@@ -398,7 +398,12 @@ describe("GET /api/album — success contract and completeness flag", () => {
     expect(typeof body.metadataIncomplete).toBe("boolean");
 
     const album = body.album as Record<string, unknown>;
-    expect(typeof album.title).toBe("string");
+    // The `ytm-search` fixture carries no album metadata at all, so this release
+    // is genuinely unconfirmed and **no title is claimed**: echoing the requested
+    // text would have put a search phrase in the page heading, and echoing an id
+    // would have put a provider token there. The view renders neutral copy instead.
+    expect(body.metadataIncomplete).toBe(true);
+    expect(album.title).toBeUndefined();
     for (const key of Object.keys(album)) {
       expect(["id", "title", "artistName", "artworkUrl", "year"]).toContain(key);
     }

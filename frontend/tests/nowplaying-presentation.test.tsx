@@ -298,7 +298,7 @@ describe("Now Playing: the long-title treatment", () => {
     expect(title.querySelector(".now-playing-marquee")).toBeNull();
   });
 
-  it("suppresses the animation entirely under prefers-reduced-motion", async () => {
+  it("leaves the motion decision to the stylesheet, and keeps the title readable", async () => {
     // The motion preference is honoured in CSS (the global reduced-motion block
     // cancels `.now-playing-marquee`), so the *markup* is unchanged here: what
     // must hold is that the animated class is never paired with an inline

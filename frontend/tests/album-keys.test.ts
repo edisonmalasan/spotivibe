@@ -33,11 +33,18 @@ describe("albumRequestKey: classifying a route key", () => {
     expect(albumRequestKey(`  ${CHANNEL_ID}  `)).toEqual({ id: CHANNEL_ID });
   });
 
-  it("does not treat punctuation as part of an id token", () => {
-    // The id rule excludes punctuation on purpose, so an underscored token is a
-    // text key however long it is.
+  it("treats a punctuated token as an id only when it is a release-id shape", () => {
+    // A name carrying punctuation stays a title. (A hyphenated key is de-slugged
+    // to spaces first — `AC-DC` arrives as `AC DC` — which is the one reversible
+    // trace a slug keeps of the name it came from.)
+    expect(albumRequestKey("AC-DC")).toEqual({ title: "AC DC" });
+    expect(albumRequestKey("Sgt. Pepper's")).toEqual({ title: "Sgt. Pepper's" });
+    expect(albumRequestKey("100% Hits")).toEqual({ title: "100% Hits" });
+    // An underscore *is* part of a YouTube release id. The M9 evidence run found
+    // the previous rule sending this real id as a search phrase, which resolved
+    // an unrelated release instead of reporting the key as unresolvable.
     expect(albumRequestKey("MPREb_1234567890abcdefghij")).toEqual({
-      title: "MPREb_1234567890abcdefghij",
+      id: "MPREb_1234567890abcdefghij",
     });
   });
 

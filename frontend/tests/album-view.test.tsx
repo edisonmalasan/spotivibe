@@ -1,5 +1,14 @@
 import "fake-indexeddb/auto";
-import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { Suspense, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AlbumPage from "@/app/album/[key]/page";
@@ -315,6 +324,49 @@ describe("AlbumView: the metadataIncomplete notice (design §3)", () => {
     expect(screen.queryByTestId("album-metadata-incomplete")).not.toBeInTheDocument();
     expect(screen.getByTestId("album-tracks")).toHaveTextContent("Alpha");
   });
+
+  it("commits the completeness flag so the notice and the flag can be checked against each other", async () => {
+    // The flag is also an evidence affordance: the browser run asserts that the
+    // committed attribute and the rendered notice agree, instead of inferring one
+    // from the other.
+    stubAlbum();
+    render(<AlbumView albumKey="Dawn Chorus" />);
+    await screen.findByText("Alpha");
+    expect(screen.getByTestId("album-view")).toHaveAttribute("data-metadata-incomplete", "false");
+
+    cleanup();
+    stubAlbum(() => ({
+      resolve: { ...DEFAULT_RESOLUTION, metadataIncomplete: true },
+    }));
+    render(<AlbumView albumKey="Dawn Chorus" />);
+    await screen.findByText("Alpha");
+    expect(screen.getByTestId("album-view")).toHaveAttribute("data-metadata-incomplete", "true");
+    expect(screen.getByTestId("album-metadata-incomplete")).toBeInTheDocument();
+  });
+
+  it("never shows a provider release id as the release title", async () => {
+    // C1: a search album tile whose release carries a provider id mints
+    // `/album/<id>`, the resolution cannot confirm that id, and the old code
+    // echoed the id back as the title — so the page's heading read
+    // `MPREb_eEpQf8QskKl`. An unconfirmed release now shows neutral copy and the
+    // unconfirmed-tracklist notice instead.
+    stubAlbum(() => ({
+      resolve: {
+        ...DEFAULT_RESOLUTION,
+        album: { id: "MPREb_eEpQf8QskKl", artistName: "Aurora" },
+        metadataIncomplete: true,
+      },
+    }));
+    render(<AlbumView albumKey="MPREb_eEpQf8QskKl" />);
+
+    await screen.findByText("Alpha");
+    const view = screen.getByTestId("album-view");
+    expect(view).not.toHaveTextContent("MPREb_eEpQf8QskKl");
+    expect(within(view).getByRole("heading", { name: "Unconfirmed release" })).toBeInTheDocument();
+    // The resolved tracks are still offered, behind the honest notice.
+    expect(screen.getByTestId("album-metadata-incomplete")).toBeInTheDocument();
+    expect(screen.getByTestId("album-tracks")).toHaveTextContent("Alpha");
+  });
 });
 
 describe("AlbumView: playing the album", () => {
@@ -497,6 +549,19 @@ describe("AlbumView: a failing resolution", () => {
     const failure = await screen.findByTestId("album-error");
     expect(within(failure).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(usePlayerStore.getState().currentTrack).toBeNull();
+  });
+
+  it("does not send the user to check a connection when the key itself was rejected", async () => {
+    // The invalid-request copy used to be unreachable: the code was classified as
+    // retryable, so a rejected key showed "check your connection" — advice about a
+    // connection that was never the problem.
+    stubAlbum(() => ({ fail: 400, code: "invalid_request" }));
+    render(<AlbumView albumKey="Dawn Chorus" />);
+
+    const failure = await screen.findByTestId("album-error");
+    const text = failure.textContent ?? "";
+    expect(text).toMatch(/try another release/i);
+    expect(text).not.toMatch(/connection/i);
   });
 });
 

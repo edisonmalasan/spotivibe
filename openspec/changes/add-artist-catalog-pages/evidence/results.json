@@ -1,0 +1,293 @@
+{
+  "task": "8.2",
+  "generatedAt": "2026-09-29T12:35:03.729Z",
+  "origin": "http://localhost:3210",
+  "query": "bohemian rhapsody",
+  "unknownArtistKey": "zzz-spotivibe-no-such-artist-zzz",
+  "copy": {
+    "queueBrowse": "From browse",
+    "npSave": "Save to Liked Songs",
+    "npRemove": "Remove from Liked Songs",
+    "goArtist": "Go to artist",
+    "goAlbum": "Go to album",
+    "radioLabel": " ",
+    "albumIncomplete": "Tracks",
+    "relatedTitle": "More Like This",
+    "onboardingLabel": "Choose your languages",
+    "onboardingConfirm": "Save languages"
+  },
+  "steps": [
+    {
+      "name": "a fresh profile shows the accountless first-run language onboarding",
+      "ok": true,
+      "detail": "checkboxes=38, confirm=\"Save languages\", accountCopy=false"
+    },
+    {
+      "name": "live search returns results for the seeded query",
+      "ok": true,
+      "detail": "rows=17"
+    },
+    {
+      "name": "a search result can be liked (local signal seeded)",
+      "ok": true,
+      "detail": "row=\"Bohemian RhapsodyQueenA Night At The Opera5:55\", menu now reads \"Remove from Liked Songs\""
+    },
+    {
+      "name": "the result menu's go-to-artist opens a real artist route (not a search)",
+      "ok": true,
+      "detail": "pathname=/artist/Queen"
+    },
+    {
+      "name": "the artist page renders identity, popular tracks, releases, and related artists",
+      "ok": true,
+      "detail": "tracks=14 (playable=14, likeable=14, withArtwork=14), portrait=true, releases=11, related=0, heading=\"Queen\""
+    },
+    {
+      "name": "the artist page offers \"Start artist radio\"",
+      "ok": true,
+      "detail": "label=\"Start artist radio\""
+    },
+    {
+      "name": "the \"Liked tracks by this artist\" section reflects the local liked dataset",
+      "ok": true,
+      "detail": "liked rows=1 (the run liked this artist's track in step 2)"
+    },
+    {
+      "name": "no catalog request carries liked-track, playlist, or history data",
+      "ok": true,
+      "detail": "catalog requests observed=1, leaking library params=0"
+    },
+    {
+      "name": "activating an artist track starts real playback with one embed",
+      "ok": true,
+      "detail": "control=Pause, iframes=1, apiScripts=1"
+    },
+    {
+      "name": "the artist feed is recorded as the browse playback context",
+      "ok": true,
+      "detail": "label \"From browse\" present on /queue"
+    },
+    {
+      "name": "\"Start artist radio\" begins playback within the artist feed",
+      "ok": true,
+      "detail": "control=Pause, bar=\"Bohemian RhapsodyQueen0:005:55\""
+    },
+    {
+      "name": "an unknown artist key shows a recoverable not-found state",
+      "ok": true,
+      "detail": "text=\"Artist not foundWe couldn't match that artist on the music service. Check the name, or try\""
+    },
+    {
+      "name": "a release/album entry point opens the album page with its tracks",
+      "ok": true,
+      "detail": "entry=search album tile, rows=5, cover=false, play=false, shuffle=false"
+    },
+    {
+      "name": "the album page reports whether the release tracklist could be confirmed",
+      "ok": true,
+      "detail": "metadata confirmed for this release (no notice rendered)"
+    },
+    {
+      "name": "the album page links its artist to the artist route",
+      "ok": true,
+      "detail": "artist link=\"\""
+    },
+    {
+      "name": "every album track row exposes like and add-to-playlist controls",
+      "ok": false,
+      "detail": "rows=5, likeableRows=29, like=\"Save Do Dil Mil Rahe Hai to Liked Songs\", add=\"Add Do Dil Mil Rahe Hai to a playlist\""
+    },
+    {
+      "name": "liking an album track persists and flips the control",
+      "ok": true,
+      "detail": "via \"Save Do Dil Mil Rahe Hai to Liked Songs\""
+    },
+    {
+      "name": "album tracks reuse the existing add-to-playlist picker",
+      "ok": true,
+      "detail": "control \"Add Do Dil Mil Rahe Hai to a playlist\""
+    },
+    {
+      "name": "Now Playing offers a More Like This shelf for the current track",
+      "ok": true,
+      "detail": "cards=10, skeletons=0, error=false"
+    },
+    {
+      "name": "the More Like This request carries only the track's public metadata",
+      "ok": true,
+      "detail": "url=/api/similar?title=Bohemian+Rhapsody&artist=Queen&exclude=youtube%3ABSTsnWoslP4"
+    },
+    {
+      "name": "the More Like This shelf never offers the track already playing",
+      "ok": true,
+      "detail": "excluded \"youtube:BSTsnWoslP4\" (19 chars), cards rendered=10, excluded present=false"
+    },
+    {
+      "name": "Now Playing renders an artwork-derived background",
+      "ok": false,
+      "detail": "background=true, artworkImg=false"
+    },
+    {
+      "name": "the long-title treatment always keeps the full title available",
+      "ok": true,
+      "detail": "marquee=false, title=\"Bohemian Rhapsody\", titleAttribute=true"
+    },
+    {
+      "name": "the Home artists shelf links to artist routes",
+      "ok": true,
+      "detail": "cards=9, still-pointing-at-search=0, e.g. /artist/Lumivox"
+    },
+    {
+      "name": "search artist/album entries are real routes and the menu keeps go-to-artist/album",
+      "ok": true,
+      "detail": "artistTiles=12, albumTiles=14, menuItems=[\"Play\",\"Remove from Liked Songs\",\"Add to queue\",\"Add to playlist\",\"Go to artist\",\"Go to album\"]"
+    },
+    {
+      "name": "one failing entity request degrades to a retryable error on that page alone",
+      "ok": true,
+      "detail": "error=true, retry=true, shellAlive=true"
+    },
+    {
+      "name": "the entity page recovers on retry",
+      "ok": true,
+      "detail": "tracks=true"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "artist-page-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Artist page: identity, popular tracks, releases, related artists"
+    },
+    {
+      "file": "artist-liked-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Artist page → Liked tracks by this artist (local signal)"
+    },
+    {
+      "file": "artist-not-found-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Unknown artist key → recoverable not-found state"
+    },
+    {
+      "file": "album-page-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Album page: cover, ordered tracks, play + shuffle"
+    },
+    {
+      "file": "now-playing-related-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Now Playing: artwork background + More Like This shelf"
+    },
+    {
+      "file": "artist-error-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Artist page with the entity request blocked → retryable error"
+    }
+  ],
+  "consoleErrors": [
+    "log: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "log: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ],
+  "notes": {
+    "disclosures": {
+      "offlineWindow": [],
+      "blockedArtistProbe": [
+        "log: Failed to load resource: net::ERR_FAILED"
+      ],
+      "liveUpstream": []
+    },
+    "catalogRequests": [
+      {
+        "url": "http://localhost:3210/api/artist?name=Queen",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/artist?name=Queen",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/artist?name=zzz+spotivibe+no+such+artist+zzz",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/album?title=MPREb_eEpQf8QskKl",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/similar?title=Bohemian+Rhapsody&artist=Queen&exclude=youtube%3ABSTsnWoslP4",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/artist?name=Queen",
+        "offline": false
+      },
+      {
+        "url": "http://localhost:3210/api/artist?name=Queen",
+        "offline": false
+      }
+    ],
+    "attachedTargets": [
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      }
+    ],
+    "artistKey": "Queen",
+    "pauseOutcome": "already-stopped",
+    "albumEntry": "search album tile",
+    "blockedEndpoint": "/api/artist",
+    "offlineEmulation": {
+      "calls": [
+        {
+          "command": "Network.emulateNetworkConditions {offline:true}",
+          "sessions": [
+            "main",
+            "67DB9319459F2CC9EA0A1962D50D3F51"
+          ]
+        }
+      ]
+    }
+  },
+  "pass": false,
+  "browser": "Edg/154.0.4258.37",
+  "error": "Error: Timed out waiting for /artist/Queen: artist view (last: false)\n    at waitFor (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-artist-catalog-pages/evidence/cdp-check.mjs:304:13)\n    at async goto (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-artist-catalog-pages/evidence/cdp-check.mjs:371:22)\n    at async main (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-artist-catalog-pages/evidence/cdp-check.mjs:1123:5)"
+}

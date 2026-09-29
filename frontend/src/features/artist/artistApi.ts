@@ -73,7 +73,12 @@ export class ArtistApiError extends Error {
  * only re-sends the same dead identifier.
  */
 export function isRetryableArtistError(code: ArtistApiErrorCode): boolean {
-  return code !== "unresolvable";
+  // `unresolvable` is a settled answer (the key resolves to no artist) and
+  // `invalid_request` is a client-side key problem, so neither is fixed by
+  // waiting for the provider. Both are therefore *not* retryable, which is what
+  // lets the view show each one's own copy instead of sending the user off to
+  // check a connection that was never the problem.
+  return code !== "unresolvable" && code !== "invalid_request";
 }
 
 /**

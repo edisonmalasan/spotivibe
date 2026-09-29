@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as artistKeys from "@/features/artist/artistKeys";
+import * as entityKeys from "@/lib/entityKeys";
 import {
   artistHref,
   artistRequestKey,
@@ -46,6 +47,18 @@ describe("artist key classification", () => {
     expect(isProviderEntityId("01234567890123456789")).toBe(true);
   });
 
+  it("accepts a YouTube release id, which carries an underscore", () => {
+    // The M9 evidence run found a real release key that the two rules above
+    // rejected as a *name*, which resolved an unrelated release instead of
+    // reporting the key as unresolvable. An underscore is what a release id has
+    // and a name does not.
+    expect(isProviderEntityId("MPREb_eEpQf8QskKl")).toBe(true);
+    expect(isProviderEntityId("OLAK5uy_lADvyQxLK7Xqc3Aw9VU")).toBe(true);
+    expect(isProviderEntityId("PL1234567890abcdefghij")).toBe(true);
+    // Surrounding whitespace is still just the id.
+    expect(isProviderEntityId("  MPREb_eEpQf8QskKl  ")).toBe(true);
+  });
+
   it("rejects names that merely look opaque", () => {
     // Hyphen/underscore are excluded on purpose, so no slug is ever an id.
     expect(isProviderEntityId("the-very-long-artist-name")).toBe(false);
@@ -56,6 +69,11 @@ describe("artist key classification", () => {
     expect(isProviderEntityId("Björk")).toBe(false);
     expect(isProviderEntityId("AC/DC")).toBe(false);
     expect(isProviderEntityId("Tyler, The Creator")).toBe(false);
+    // Underscored *names* stay names: too short, or carrying other punctuation.
+    expect(isProviderEntityId("A_C")).toBe(false);
+    expect(isProviderEntityId("AC_DC_Band")).toBe(false);
+    expect(isProviderEntityId("MPREb_eEpQf8QskKl.")).toBe(false);
+    expect(isProviderEntityId("MPREb eEpQf8QskKl")).toBe(false);
   });
 
   it("rejects blank input rather than guessing", () => {
@@ -149,6 +167,16 @@ describe("artistHref", () => {
         }
       }
     }
+  });
+});
+
+describe("the shared entity-key module", () => {
+  it("is the single definition of the rules both catalog routes classify with", () => {
+    // The album route imports these from `@/lib/entityKeys`; if the two features
+    // each declared their own copy they could drift, and a key minted by one
+    // would be sent under the other's contract. Pinned by identity, not by value.
+    expect(artistKeys.isProviderEntityId).toBe(entityKeys.isProviderEntityId);
+    expect(artistKeys.normalizeEntityText).toBe(entityKeys.normalizeEntityText);
   });
 });
 

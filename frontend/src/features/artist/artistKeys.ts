@@ -13,62 +13,21 @@
  * The whole module is deliberately rule-based rather than lookup-based, because
  * a client cannot ask the provider "is this string an id?" without a round trip
  * and an artist route must resolve in one request (design §1).
+ *
+ * The two classification rules are shared with the album route and therefore live
+ * in `@/lib/entityKeys`; they are re-exported here because the artist route's
+ * consumers (entry points, tests) read them as part of this route's contract, and
+ * the pinned export list in `tests/artist-keys.test.ts` guards the surface.
  */
+import { isProviderEntityId, normalizeEntityText } from "@/lib/entityKeys";
 
-/** The YouTube channel-id prefix — the one id shape a provider hands us today. */
-const YOUTUBE_CHANNEL_PREFIX = "UC";
-
-/**
- * Shortest token the long-opaque-id rule accepts. A YouTube channel id is 24
- * characters, so 20 leaves a little slack while staying far above any real
- * artist name made only of letters and digits.
- */
-const MIN_OPAQUE_ID_LENGTH = 20;
+export { isProviderEntityId, normalizeEntityText };
 
 /** Route prefix for an artist page. */
 const ARTIST_ROUTE = "/artist";
 
 /** The two identifier shapes a route key may resolve to. */
 export type ArtistRequestKey = { name: string } | { id: string };
-
-/**
- * Whether `value` is shaped like a provider entity id rather than a text key.
- *
- * The rule is intentionally **narrow**, because misclassifying is the one
- * failure mode with no honest recovery: a name sent as `id=` resolves to
- * nothing, and an id sent as `name=` silently resolves to *some other* entity
- * (spec: "An unresolvable key is not substituted"). Two conditions qualify,
- * both of which a human-typed artist name practically never satisfies:
- *
- * 1. A `UC` prefix, **case-sensitively** — YouTube channel ids are
- *    case-sensitive tokens, and accepting `uc…` too would sweep in the very
- *    common band/label names that start "Uc" (UChicago, …).
- * 2. An unbroken alphanumeric run of at least {@link MIN_OPAQUE_ID_LENGTH}
- *    characters. Punctuation is *excluded* on purpose: a hyphenated or
- *    underscored slug is a text key, however long it is, so no artist name can
- *    be mistaken for an opaque id by length alone.
- *
- * Everything else — including the empty string, whitespace-only input, and
- * ordinary names with spaces, accents, or punctuation — is a text key.
- */
-export function isProviderEntityId(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed === "") return false;
-  if (trimmed.startsWith(YOUTUBE_CHANNEL_PREFIX)) return true;
-  return new RegExp(`^[A-Za-z0-9]{${MIN_OPAQUE_ID_LENGTH},}$`).test(trimmed);
-}
-
-/**
- * Text identity form: trimmed with internal whitespace runs collapsed to one
- * space. This is the *presentation* normalization (what a route key and a
- * display name agree on) and deliberately does **not** lowercase, fold accents,
- * or strip punctuation — the name is sent to the provider exactly as the user
- * typed it. Case/punctuation-insensitive *identity comparison* is a separate
- * concern and lives with its only consumer, `likedByArtist.ts`.
- */
-export function normalizeEntityText(value: string): string {
-  return value.trim().replace(/\s+/g, " ");
-}
 
 /**
  * Percent-decode a route key when it is encoded, tolerating a malformed

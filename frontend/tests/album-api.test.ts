@@ -157,11 +157,17 @@ describe("parseAlbumResponse", () => {
     expect(parseAlbumResponse(successBody({ metadataIncomplete: true })).metadataIncomplete).toBe(
       true,
     );
-    // Only an explicit `true` is true, so a body predating the field does not nag.
+    // The flag is believed only when the body says `false` explicitly. An absent
+    // or malformed field means the release was never confirmed, and reading that
+    // as "confirmed" is how an unconfirmed list gets shown as a definitive
+    // tracklist — so the safe direction is the *unconfirmed* one.
     expect(
       parseAlbumResponse(successBody({ metadataIncomplete: undefined })).metadataIncomplete,
-    ).toBe(false);
+    ).toBe(true);
     expect(parseAlbumResponse(successBody({ metadataIncomplete: "yes" })).metadataIncomplete).toBe(
+      true,
+    );
+    expect(parseAlbumResponse(successBody({ metadataIncomplete: false })).metadataIncomplete).toBe(
       false,
     );
   });
@@ -403,12 +409,13 @@ describe("fetchAlbum", () => {
 });
 
 describe("isRetryableAlbumError", () => {
-  it("offers a retry for everything except a key that names no release", () => {
+  it("offers a retry only for trouble that a retry can actually fix", () => {
     expect(isRetryableAlbumError("upstream_unavailable")).toBe(true);
     expect(isRetryableAlbumError("network")).toBe(true);
-    // A client bug may well be gone on a newer deploy, so a retry is still
-    // offered for it.
-    expect(isRetryableAlbumError("invalid_request")).toBe(true);
+    // A rejected request is a settled answer about *this* key, not about the
+    // connection: retrying re-sends the same rejected request, and the view
+    // shows it its own copy instead of "check your connection".
+    expect(isRetryableAlbumError("invalid_request")).toBe(false);
     // Retrying re-sends the same dead identifier.
     expect(isRetryableAlbumError("unresolvable")).toBe(false);
   });

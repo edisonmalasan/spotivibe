@@ -204,7 +204,7 @@ describe("resolveArtist — one bounded resolution, whole view derived from it",
     const releases: Array<() => void> = [];
     let inFlight = 0;
     let peakInFlight = 0;
-    const primary = fakeProvider("ytmusic", (request) => {
+    const primary = fakeProvider("ytmusic", () => {
       inFlight += 1;
       peakInFlight = Math.max(peakInFlight, inFlight);
       return new Promise<ProviderCandidate[]>((resolve) => {
@@ -331,6 +331,56 @@ describe("resolveArtist — one bounded resolution, whole view derived from it",
     // No name was requested, so the identity is read from the resolved credits.
     expect(result.artist.name).toBe("Daft Punk");
     expect(result.artist.id).toBe("UCabc123");
+  });
+
+  it("never puts a release id in the album title", async () => {
+    // C1: an id-keyed release request (a YouTube Music release `browseId`, which
+    // the search surface hands us as `album.id`) used to be echoed straight into
+    // `album.title`, so the album page's heading read `MPREb_eEpQf8QskKl`. The
+    // identity is only ever read from a *confirmed* member's album summary, and an
+    // id-keyed request can never confirm one, so no provider token is returned as
+    // a title.
+    const primary = fakeProvider("ytmusic", async () => [
+      makeCandidate({ videoId: "vidA", title: "Get Lucky", artistText: "Daft Punk" }),
+    ]);
+
+    const result = await resolveAlbum(
+      { id: "MPREb_eEpQf8QskKl" },
+      freshDeps({ providers: [primary] }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.album.id).toBe("MPREb_eEpQf8QskKl");
+    // No title is claimed at all, rather than the route token or the phrase that
+    // produced the hits.
+    expect(result.album.title).toBeUndefined();
+    // Nothing confirmed the release, so the caller must say so rather than
+    // present the resolved list as this release's tracklist.
+    expect(result.metadataIncomplete).toBe(true);
+  });
+
+  it("names a confirmed release from the resolved tracks, not from the request", async () => {
+    // The mirror case: when a text-keyed request's members *do* carry matching
+    // album metadata, that real title is what the page shows.
+    const primary = fakeProvider("ytmusic", async () => [
+      makeCandidate({
+        videoId: "vidA",
+        title: "Get Lucky",
+        artistText: "Daft Punk",
+        albumTitle: "Random Access Memories",
+      }),
+    ]);
+
+    const result = await resolveAlbum(
+      { title: "Random Access Memories", artist: "Daft Punk" },
+      freshDeps({ providers: [primary] }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.album.title).toBe("Random Access Memories");
+    expect(result.metadataIncomplete).toBe(false);
   });
 
   it("returns a structured upstream failure when every seed fails (spec scenario)", async () => {
@@ -728,7 +778,9 @@ describe("resolveAlbum — release metadata, resolved order, metadataIncomplete"
     if (!result.ok) return;
     // Matching is case/punctuation-insensitive, so the confirmation holds.
     expect(result.metadataIncomplete).toBe(false);
-    expect(result.album.title).toBe("random access memories!!");
+    // The release is named by the *provider's* album metadata on its confirmed
+    // members, not by the punctuation-mangled text the user happened to type.
+    expect(result.album.title).toBe("Random Access Memories");
     expect(result.album.artistName).toBe("Daft Punk");
     expect(result.album.id).toBe("MPREalbum");
     expect(result.album.artworkUrl).toBe("https://example.test/art.jpg");

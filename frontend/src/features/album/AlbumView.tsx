@@ -18,7 +18,7 @@ import {
   type AlbumApiErrorCode,
   type AlbumDetail,
 } from "@/features/album/albumApi";
-import { artistHref } from "@/features/artist/artistKeys";
+import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
 import { playFromShelf } from "@/features/home/browsePlayback";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
 import { PlaylistPicker } from "@/features/search/PlaylistPicker";
@@ -100,6 +100,13 @@ const METADATA_INCOMPLETE = {
   description:
     "The music service didn't confirm that these songs belong to this release, so the list below may be incomplete or approximate.",
 };
+
+/**
+ * Heading for an unconfirmed release reached by an entity id. The route key is a
+ * provider token (`MPREb_…`), not a name, so it is never shown as one; the copy
+ * states only what is known and the tracklist notice below carries the rest.
+ */
+const UNCONFIRMED_RELEASE = "Unconfirmed release";
 
 /** How the resolution settled. */
 type AlbumStatus = "loading" | "ready" | "not-found" | "error";
@@ -456,6 +463,15 @@ export function AlbumView({ albumKey }: AlbumViewProps) {
 
   const { album, metadataIncomplete } = detail;
   const empty = tracks.length === 0;
+  // A release reached by an entity id is never confirmed (no tier resolves a
+  // release id to its metadata), so it has no title the provider vouched for, and
+  // its route key (`MPREb_…`) is not a name. Rendering that token as the page
+  // heading would present an opaque id as a release title, so the heading falls
+  // back to neutral copy and the notice below carries the rest.
+  const heading =
+    album.title !== undefined && !isProviderEntityId(album.title)
+      ? album.title
+      : UNCONFIRMED_RELEASE;
   // Only the release metadata that actually resolved is claimed; a search-derived
   // resolution frequently carries no year and no cover, and inventing a label for
   // a missing field would be presenting a gap as information.
@@ -465,11 +481,17 @@ export function AlbumView({ albumKey }: AlbumViewProps) {
   const pickerTrack = tracks.find((track) => track.id === pickerTrackId);
 
   return (
-    <div className="flex flex-col gap-8" data-testid="album-view">
+    <div
+      className="flex flex-col gap-8"
+      data-testid="album-view"
+      // Committed so the browser-evidence run can falsify the notice: the flag
+      // and the rendered notice are asserted to agree rather than assumed to.
+      data-metadata-incomplete={metadataIncomplete ? "true" : "false"}
+    >
       <div className="flex flex-wrap items-end gap-6">
         <ReleaseCover artworkUrl={album.artworkUrl} />
         <div className="flex min-w-0 flex-col gap-2">
-          <h2 className="text-heading font-bold text-pure-white">{album.title}</h2>
+          <h2 className="text-heading font-bold text-pure-white">{heading}</h2>
           {album.artistName !== undefined && (
             <Link
               href={artistHref(album.artistName)}

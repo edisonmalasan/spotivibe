@@ -537,6 +537,19 @@ describe("ArtistView: a failing resolution", () => {
     expect(within(failure).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(usePlayerStore.getState().currentTrack).toBeNull();
   });
+
+  it("does not send the user to check a connection when the key itself was rejected", async () => {
+    // The invalid-request copy used to be unreachable: the code was classified as
+    // retryable, so a rejected key showed "check your connection" — advice about a
+    // connection that was never the problem.
+    stubArtist(() => ({ fail: 400, code: "invalid_request" }));
+    render(<ArtistView artistKey="Aurora" />);
+
+    const failure = await screen.findByTestId("artist-error");
+    const text = failure.textContent ?? "";
+    expect(text).toMatch(/try another artist/i);
+    expect(text).not.toMatch(/connection/i);
+  });
 });
 
 describe("ArtistView: an unresolvable artist key", () => {

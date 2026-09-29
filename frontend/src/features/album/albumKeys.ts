@@ -1,5 +1,3 @@
-import { isProviderEntityId, normalizeEntityText } from "@/features/artist/artistKeys";
-
 /**
  * Album route keys (M9 task 4.1; spec: `catalog` — "Catalog entity keys and
  * resolution requests"; design §2).
@@ -22,11 +20,15 @@ import { isProviderEntityId, normalizeEntityText } from "@/features/artist/artis
  * import.
  *
  * It also **owns the canonical album href helper** the whole app formats album
- * links with. `features/artist/artistKeys.ts` holds a temporary local copy
- * (`albumHrefFor`) that a release tile on an artist page uses; the two are
- * format-compatible by construction, and `tests/album-keys.test.ts` pins that
- * agreement so the consolidation cannot drift before the duplicate is removed.
+ * links with: the artist page's release tiles call {@link albumHrefFromRelease}
+ * directly, and `tests/album-keys.test.ts` pins that round trip, so no second copy
+ * of the album-route format can appear.
+ *
+ * The two key-classification rules are shared with the artist route and live in
+ * `@/lib/entityKeys`; this module imports them rather than re-declaring them, so
+ * an artist key and an album key can never drift apart.
  */
+import { isProviderEntityId, normalizeEntityText } from "@/lib/entityKeys";
 
 /** Route prefix for a release/album page. */
 const ALBUM_ROUTE = "/album";
