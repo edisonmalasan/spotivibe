@@ -50,7 +50,7 @@ The local-data layer MUST NOT transmit user data over the network, and no server
 
 ### Requirement: Versioned backup export
 
-Export SHALL serialize the supported datasets into a `BackupEnvelope` JSON document with `format: "spotivibe-backup"`, a numeric `version`, an ISO-8601 `exportedAt`, an optional application version, and a `data` object containing exactly the supported export datasets (preferences, liked tracks, playlists with order, listening history, search history, session/queue). Caches and all non-whitelisted data MUST NOT be included.
+The application SHALL export its local data as a versioned JSON envelope carrying `format`, `version`, `exportedAt`, and exactly the whitelisted datasets — no cache, secret, or unknown top-level keys. Listening history SHALL be included in the envelope by default, and generated Smart Mixes SHALL be included as an **optional derived dataset** so a named mix the listener can revisit survives an export/import round trip. The envelope SHALL remain importable by a build that predates any dataset it does not know, and a dataset that is absent from an envelope SHALL import as empty rather than failing the import.
 
 #### Scenario: Export produces a well-formed envelope
 
@@ -62,6 +62,20 @@ Export SHALL serialize the supported datasets into a `BackupEnvelope` JSON docum
 - **WHEN** a dataset changes and export is then run
 - **THEN** the envelope contains the current values for that dataset
 
+#### Scenario: Listening history is exported by default
+
+- **WHEN** export runs with listening history present
+- **THEN** the envelope carries the listening history without the user having to opt in
+
+#### Scenario: Generated mixes travel as optional derived data
+
+- **WHEN** export runs with generated Smart Mixes present
+- **THEN** the envelope carries those mixes — with their identities, names, periods, and tracks — as a dataset marked optional and derived
+
+#### Scenario: An envelope without the mixes dataset still imports
+
+- **WHEN** an envelope produced before mixes existed is imported
+- **THEN** the import succeeds and the mixes dataset ends up empty rather than absent from the database
 ### Requirement: Import preparation, validation, and migration
 
 An import SHALL be fully prepared before any live mutation: parse the file, verify `format` and `version`, run pure migration steps in ascending version order for older supported versions, and validate every record against the current schema. Malformed JSON, an unrecognized `format`, an unsupported (newer) `version`, or any invalid record SHALL reject the import with user-visible feedback before the database is touched. Migration steps SHALL be pure functions.
@@ -156,3 +170,22 @@ Long-running backup operations (export, import, clears, reset) SHALL show busy f
 
 - **WHEN** an import fails during validation or application
 - **THEN** failure feedback appears and states that existing local data is unchanged
+
+### Requirement: Local insights are as local as their inputs
+
+Data the application derives from local datasets SHALL stay on the device exactly like the datasets themselves. This includes listening statistics, listening streaks, generated Smart Mixes with their names and seeds, and the local taste profile. Deriving them SHALL NOT cause any of them to be transmitted, and no diagnostic or error report SHALL include a track list, a mix's contents, or a history summary. Sharing SHALL be an explicit, per-item user action, and sharing SHALL leave the device's own copy unchanged.
+
+#### Scenario: Derived insights are never transmitted
+
+- **WHEN** statistics, streaks, or Smart Mixes are computed
+- **THEN** they are produced and kept on the device, exactly like the events and likes they came from, and no request carries them
+
+#### Scenario: Diagnostics carry no listening content
+
+- **WHEN** an error or diagnostic is recorded
+- **THEN** it contains no track list, mix contents, history summary, or other listening detail from local data
+
+#### Scenario: Sharing is explicit and non-destructive
+
+- **WHEN** the user shares an item with history or an insight
+- **THEN** the act is a deliberate action for that item, and the device's own local record is unchanged by it
