@@ -88,7 +88,7 @@ Activating a song result SHALL start persistent playback through the playback en
 
 ### Requirement: Result context actions
 
-Each song result SHALL expose a context menu with: play, like/unlike, add to queue, add to local playlist, go to artist, and go to album (where album metadata exists). Like/unlike SHALL persist to the local liked-tracks repository and reflect current state when results render. Add to queue SHALL append the track to the end of the queue per the queue capability's insertion rules (including its duplicate protection) without disturbing current playback. Add to local playlist SHALL let the user pick an existing local playlist or create a new one inline, then append the track — unless the playlist already contains it, in which case the playlist is unchanged and the picker reports that the track is already there, per the library capability's duplicate rule. Go to artist and go to album SHALL refine the search to that artist/album name. The menu SHALL be operable by keyboard with a visible focus state and an accessible name per control.
+Each song result SHALL expose a context menu with: play, like/unlike, add to queue, add to local playlist, go to artist, and go to album (where album metadata exists). Like/unlike SHALL persist to the local liked-tracks repository and reflect current state when results render. Add to queue SHALL append the track to the end of the queue per the queue capability's insertion rules (including its duplicate protection) without disturbing current playback. Add to local playlist SHALL let the user pick an existing local playlist or create a new one inline, then append the track — unless the playlist already contains it, in which case the playlist is unchanged and the picker reports that the track is already there, per the library capability's duplicate rule. Go to artist and go to album SHALL open that artist's or release's own surface from the catalog capability, keyed by the provider identity when the result carries one and by the artist/album name otherwise, and SHALL NOT be limited to refining the search query. The menu SHALL be operable by keyboard with a visible focus state and an accessible name per control.
 
 #### Scenario: Like persists locally
 
@@ -107,8 +107,11 @@ Each song result SHALL expose a context menu with: play, like/unlike, add to que
 
 #### Scenario: Going to artist or album refines the search
 
+<!-- Scenario name retained verbatim: a MODIFIED block must carry every scenario
+     the main spec still has, and the validator matches on names. The asserted
+     behavior changed in M9 — both items now open the entity's own page. -->
 - **WHEN** the user activates "go to artist" or "go to album" on a result
-- **THEN** the search query becomes that artist/album name and results update accordingly
+- **THEN** the corresponding artist or album page opens, keyed by the provider identity when the result carries one and by the artist/album name otherwise
 
 #### Scenario: Add to queue appends without disturbing playback
 
@@ -119,7 +122,6 @@ Each song result SHALL expose a context menu with: play, like/unlike, add to que
 
 - **WHEN** the user adds a result to a local playlist that already contains that track
 - **THEN** the playlist's tracks and order are unchanged, and the picker reports that the track is already in the playlist
-
 ### Requirement: Local-first search history
 
 Settled searches SHALL be recorded to the local search-history repository (one entry per normalized query, most recent search wins), and the browse state SHALL list recent searches newest-first with per-entry remove and clear-all controls. Recording, listing, removing, and clearing SHALL use repository APIs only, and search history MUST NOT be transmitted over the network; history survives reload.

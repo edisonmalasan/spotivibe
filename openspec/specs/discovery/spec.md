@@ -152,7 +152,7 @@ When playback of a track starts, the application SHALL record a local listening 
 
 ### Requirement: Popular artists shelf
 
-The feed SHALL present a Popular Artists shelf derived by grouping discovery results by canonical artist identity, showing one entry per artist with that artist's artwork when available, rendered as circular artist cards. Artist entries SHALL be deduplicated by artist identity and ordered deterministically. Activating an artist entry SHALL navigate to the search surface refined to that artist's name, and SHALL NOT require an artist page. The shelf SHALL render an explanatory empty state when no artist entries can be derived.
+The feed SHALL present a Popular Artists shelf derived by grouping discovery results by canonical artist identity, showing one entry per artist with that artist's artwork when available, rendered as circular artist cards. Artist entries SHALL be deduplicated by artist identity and ordered deterministically. Activating an artist entry SHALL navigate to that artist's own surface — the catalog capability's artist route — using the provider's artist identity when the entry has one and the artist's name otherwise, and SHALL NOT require a search refinement. The shelf SHALL render an explanatory empty state when no artist entries can be derived.
 
 #### Scenario: Grouping yields one entry per artist
 
@@ -166,9 +166,12 @@ The feed SHALL present a Popular Artists shelf derived by grouping discovery res
 
 #### Scenario: Activating an artist refines search
 
+<!-- Scenario name retained verbatim: a MODIFIED block must carry every scenario
+     the main spec still has, and the validator matches on names. The asserted
+     behavior changed in M9 — the entry now opens the artist's own page, keyed
+     by provider identity when present and by name otherwise. -->
 - **WHEN** the user activates a Popular Artists entry
-- **THEN** the search surface opens refined to that artist's name
-
+- **THEN** that artist's own page opens, keyed by the provider artist identity when the entry has one and by the artist's name otherwise
 ### Requirement: Discover surface for genres and languages
 
 The application SHALL provide a Discover route presenting genre discovery and the user's selected languages. Each genre entry SHALL resolve a shelf of tracks for that genre through the provider API, and the surface SHALL summarize the selected languages with an affordance to change them. Entries SHALL render skeleton placeholders while loading, explanatory empty states when a genre yields nothing, and a retryable error state for a failing genre alone. The surface SHALL NOT start playback by itself, SHALL NOT claim official chart status, and SHALL remain usable when the device is offline by explaining that remote discovery needs a connection.
