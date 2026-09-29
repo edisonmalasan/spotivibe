@@ -9,7 +9,8 @@ import {
   VolumeControls,
 } from "@/components/player/PlaybackControls";
 import { ProgressSlider } from "@/components/player/ProgressSlider";
-import { startTrackRadio, useRadioStatus } from "@/features/personalization/startRadio";
+import { startTrackRadio, stopRadio, useRadioStatus } from "@/features/personalization/startRadio";
+import { clearRefillFailure } from "@/features/personalization/RefillAgent";
 import { MoreLikeThisShelf } from "@/features/related/MoreLikeThisShelf";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { usePlayerStore } from "@/stores/playerStore";
@@ -122,6 +123,16 @@ export default function NowPlayingPage() {
   const startRadioFromCurrent = (): void => {
     if (currentTrack === null) return;
     void startTrackRadio(currentTrack);
+  };
+
+  /**
+   * Ending a radio is not a playback action: the queue keeps playing exactly as
+   * it is, and only the radio's identity and its refills go away. The queue's own
+   * source is left alone, because the radio's tracks are still the queue.
+   */
+  const endRadio = (): void => {
+    stopRadio();
+    clearRefillFailure();
   };
 
   /**
@@ -270,12 +281,15 @@ export default function NowPlayingPage() {
           <IconButton label="Queue" onClick={() => router.push("/queue")}>
             <ListMusic className="size-5" aria-hidden="true" />
           </IconButton>
-          {/* A radio needs a seed, so the action is omitted rather than disabled. */}
+          {/* A radio needs a seed, so the action is omitted rather than disabled.
+              While one is playing the same control ends it — the radio is
+              cancelable (spec: "Radio modes"), and a control that only ever
+              starts would leave no way out. */}
           {currentTrack !== null ? (
             <IconButton
-              label="Start track radio"
+              label={radio.active ? "End radio" : "Start track radio"}
               data-testid="now-playing-radio"
-              onClick={startRadioFromCurrent}
+              onClick={radio.active ? endRadio : startRadioFromCurrent}
             >
               <Radio className="size-5" aria-hidden="true" />
             </IconButton>

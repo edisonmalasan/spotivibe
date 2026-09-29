@@ -139,9 +139,16 @@ describe("radioStore: the refill counter", () => {
     state().markPlayed("youtube:aaa");
 
     // A failure surfaces and keeps the queue; only a successful refill asks for
-    // different material, so the counter must not move.
+    // different material, so the counter must not move. (Asserted at the store
+    // boundary because that is where the contract lives: `setStatus` is the only
+    // thing a failure is allowed to touch. The end-to-end proof that a *refill*
+    // does not advance on failure is in `tests/refill-agent.test.tsx`.)
     state().setStatus("error", "Radio request failed (upstream_unavailable).");
     expect(state().variant).toBe(0);
+    expect(state().status).toBe("error");
+    expect(state().lastError).toContain("upstream_unavailable");
+    // The played set is bookkeeping, not rotation: it is untouched by a failure.
+    expect(state().playedIds).toEqual(["youtube:aaa"]);
 
     // Recovery is an explicit advance, after the retry succeeds.
     state().setStatus("active");
@@ -216,7 +223,10 @@ describe("radioIdentity: the request identity of a seed", () => {
 });
 
 describe("the radio store holds only the radio's bookkeeping (design §1)", () => {
-  it("exposes exactly the seed, played set, counter, status, and five actions", () => {
+  it("exposes exactly the seed, played set, counter, status, and six actions", () => {
+    // `setVariant` is the restore-only counterpart of `advanceVariant`: a reload
+    // resumes the seed rotation rather than rewinding it. Pinned here so a
+    // seventh action cannot appear unnoticed.
     expect(Object.keys(state()).sort()).toEqual([
       "advanceVariant",
       "lastError",
@@ -224,6 +234,7 @@ describe("the radio store holds only the radio's bookkeeping (design §1)", () =
       "playedIds",
       "seed",
       "setStatus",
+      "setVariant",
       "startRadio",
       "status",
       "stopRadio",

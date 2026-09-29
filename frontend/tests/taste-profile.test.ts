@@ -11,7 +11,6 @@ import {
   PLAY_WEIGHT,
   recencyDecay,
   RECENCY_DECAY_FLOOR,
-  seedTermsFor,
   SKIP_WEIGHT,
   TASTE_LIMITS,
   type TasteProfileInput,
@@ -250,14 +249,13 @@ describe("taste profile: cold device", () => {
     expect(profileFor({ languages: ["en"] }).hasSignal).toBe(false);
   });
 
-  it("still produces usable seed terms from the request's own identity", () => {
-    expect(seedTermsFor(cold, "track", { title: "Get Lucky", artist: "Daft Punk" })).toEqual([
-      "Daft Punk",
-      "Get Lucky",
-    ]);
-    expect(seedTermsFor(cold, "artist", { artist: "Aurora" })).toEqual(["Aurora"]);
-    // A surface with only a title is still a usable request.
-    expect(seedTermsFor(cold, "track", { title: "Get Lucky" })).toEqual(["Get Lucky"]);
+  it("produces no signal, so the ranker falls back to the quality score alone", () => {
+    // A cold device is not a broken one: the profile is empty, the request still
+    // carries its own identity, and ranking simply has nothing local to add.
+    expect(cold.hasSignal).toBe(false);
+    expect(cold.artists).toEqual([]);
+    expect(cold.genres).toEqual([]);
+    expect(cold.recentTrackIds).toEqual([]);
   });
 
   it("reports signal once a single local event exists", () => {
@@ -266,50 +264,44 @@ describe("taste profile: cold device", () => {
   });
 });
 
-describe("seedTermsFor: the request's identity first, the profile as a fallback", () => {
+describe("the profile stays on the device (personalization spec: Ephemeral personalization)", () => {
   const taste = profileFor({
     likedTracks: [track("1", "Aurora"), track("2", "Beacon")],
     events: [event("3", "Cobalt", NOW, { completed: true })],
   });
 
-  it("prefers the seed identity and falls back to the profile terms", () => {
-    expect(seedTermsFor(taste, "track", { title: "Get Lucky", artist: "Daft Punk" })).toEqual([
-      "Daft Punk",
-      "Get Lucky",
-      "Aurora",
-      "Beacon",
+  it("exposes its local signals as weighted entries for the ranker, and nothing else", () => {
+    // The only consumers are `scoreCandidates` (weights) and this assertion. No
+    // module sends a term, a weight, or an id anywhere: the radio request carries
+    // the seed identity and nothing else.
+    expect(Object.keys(taste).sort()).toEqual([
+      "artists",
+      "genres",
+      "hasSignal",
+      "languages",
+      "recentTrackIds",
+      "seedTerms",
     ]);
-    expect(seedTermsFor(taste, "artist", { artist: "Aurora" })).toEqual([
-      "Aurora",
-      "Beacon",
-      "Cobalt",
-    ]);
+    for (const entry of taste.artists) {
+      expect(typeof entry.key).toBe("string");
+      expect(typeof entry.weight).toBe("number");
+    }
   });
 
-  it("stays bounded and never returns a track id, a weight, or an object", () => {
-    const terms = seedTermsFor(taste, "track", { title: "Get Lucky", artist: "Daft Punk" });
-
-    expect(terms).toHaveLength(TASTE_LIMITS.seedTerms);
-    for (const term of terms) {
+  it("keeps its derived terms as public text, never an id or a number", () => {
+    // `seedTerms` remains a local convenience for explaining/ranking; it is not
+    // on any request path. Bounded, and free of anything that could identify a
+    // track or a person.
+    expect(taste.seedTerms.length).toBeLessThanOrEqual(TASTE_LIMITS.seedTerms);
+    for (const term of taste.seedTerms) {
       expect(typeof term).toBe("string");
       expect(term).not.toMatch(/youtube:/u);
     }
   });
-
-  it("skips a blank identity rather than sending an empty term", () => {
-    expect(seedTermsFor(taste, "track", { title: "   " })).toEqual(["Aurora", "Beacon", "Cobalt"]);
-    expect(seedTermsFor(taste, "artist", { artist: "" })).toEqual(["Aurora", "Beacon", "Cobalt"]);
-  });
-
-  it("takes no input beyond the profile, the kind, and the seed identity", () => {
-    // No cross-user parameter exists in the signature: a term can only ever be
-    // the caller's own seed or a word derived from this device's own data.
-    expect(seedTermsFor.length).toBe(3);
-  });
 });
 
 describe("clearing local data changes the derived profile (design §7)", () => {
-  it("drops the cleared artists and changes the terms a later request would send", () => {
+  it("drops the cleared artists and changes how later candidates would rank", () => {
     const before = profileFor({
       likedTracks: [track("1", "Aurora")],
       events: [event("2", "Beacon", NOW)],
@@ -322,10 +314,11 @@ describe("clearing local data changes the derived profile (design §7)", () => {
     expect(before.artists.map((entry) => entry.key)).toEqual(["aurora", "beacon"]);
     expect(after.artists).toEqual([]);
     expect(after.hasSignal).toBe(false);
-    // The terms a refill would send change with the data: the cleared artists
-    // are no longer candidates, and only the request's own identity remains.
-    expect(seedTermsFor(before, "artist", { artist: "Aurora" })).toEqual(["Aurora", "Beacon"]);
-    expect(seedTermsFor(after, "artist", { artist: "Aurora" })).toEqual(["Aurora"]);
+    // The local signal a refill *ranks* with changes with the data: the cleared
+    // artists are no longer candidates, and what is left is ranked by the
+    // provider's own quality score.
+    expect(after.seedTerms).toEqual([]);
+    expect(before.seedTerms).toEqual(["Aurora", "Beacon"]);
   });
 
   it("keeps the surviving signal when only one dataset is cleared", () => {

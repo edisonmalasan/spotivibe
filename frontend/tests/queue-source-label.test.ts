@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { QueueView } from "@/features/queue/QueueView";
@@ -57,14 +57,26 @@ describe("the queue source label", () => {
     render(createElement(QueueView));
 
     expect(screen.getByText("From radio")).toBeInTheDocument();
-    // The label reports the recorded source: growing the queue for a radio does
-    // not change it, and ordinary playback afterwards does.
+    // Growing the queue for a radio does not change the recorded source.
     useQueueStore
       .getState()
       .appendUpcoming([makeTrack({ id: "youtube:ggg", providerId: "ggg", title: "Growth" })]);
     expect(useQueueStore.getState().source).toBe("radio");
-    useQueueStore.setState({ source: "search" });
+  });
+
+  it("becomes the next ordinary context's label when playback moves on", () => {
+    // The queue spec requires the radio label to become "that of the next
+    // ordinary context" — asserted after an actual re-render, because reading
+    // the DOM without one would only prove the previous render is still on
+    // screen, which is true of any label.
+    render(createElement(QueueView));
     expect(screen.getByText("From radio")).toBeInTheDocument();
-    expect(screen.queryByText("From search")).toBeNull();
+
+    act(() => {
+      useQueueStore.setState({ source: "search" });
+    });
+
+    expect(screen.getByText("From search")).toBeInTheDocument();
+    expect(screen.queryByText("From radio")).toBeNull();
   });
 });

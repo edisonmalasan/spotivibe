@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Track } from "@/data/repositories";
+import type { RadioSnapshot, Track } from "@/data/repositories";
 
 /**
  * `radioStore` (M10 task 4.1; design §1/§3): the radio's **identity and
@@ -56,12 +56,88 @@ export interface RadioState {
    * exactly where it was.
    */
   advanceVariant(): number;
+  /**
+   * Restore a persisted rotation counter. Only {@link restoreRadio} calls this:
+   * a reload resumes the rotation, it does not rewind it.
+   */
+  setVariant(variant: number): void;
   /** Move to a status, recording (or clearing) the message shown with it. */
   setStatus(status: RadioStatus, error?: string | null): void;
 }
 
 /** Message a failed refill reports when the caller carries no text. */
 export const DEFAULT_RADIO_ERROR = "Radio refill failed.";
+
+/**
+ * The persistable radio types live in the data layer, because the **snapshot**
+ * they describe is a repository shape: the store re-exports them so callers of
+ * `snapshotRadio`/`restoreRadio` do not have to reach across layers for them.
+ */
+export type { RadioSeedSnapshot, RadioSnapshot } from "@/data/repositories";
+
+/**
+ * The persistable form of the current radio, or `null` when no radio is running
+ * (never started, or ended) — a finished radio must not be resurrected.
+ */
+export function snapshotRadio(state: RadioState): RadioSnapshot | null {
+  const { seed, status, variant } = state;
+  if (seed === null || status === "ended") return null;
+  if (seed.kind === "track") {
+    const artist = seed.track.artists[0]?.name;
+    return {
+      seed: {
+        kind: "track",
+        trackId: seed.track.id,
+        title: seed.track.title,
+        ...(artist !== undefined ? { artist } : {}),
+      },
+      variant,
+    };
+  }
+  return {
+    seed: {
+      kind: "artist",
+      ...(seed.artist.id !== undefined ? { id: seed.artist.id } : {}),
+      name: seed.artist.name,
+    },
+    variant,
+  };
+}
+
+/**
+ * Put a persisted radio back, resolving a track radio's seed through
+ * `resolveTrack`.
+ *
+ * Returns `false` — having changed nothing — when a track radio's seed is no
+ * longer available. That is the honest outcome: the radio's identity is the seed
+ * track, and without it there is nothing to refill *for*. The queue keeps
+ * playing as ordinary content rather than pretending a radio continues.
+ */
+export function restoreRadio(
+  snapshot: RadioSnapshot,
+  resolveTrack: (trackId: string) => Track | undefined,
+): boolean {
+  const seed: RadioSeed | null =
+    snapshot.seed.kind === "artist"
+      ? {
+          kind: "artist",
+          artist: {
+            ...(snapshot.seed.id !== undefined ? { id: snapshot.seed.id } : {}),
+            name: snapshot.seed.name,
+          },
+        }
+      : (() => {
+          const track = resolveTrack(snapshot.seed.trackId);
+          return track === undefined ? null : { kind: "track", track };
+        })();
+  if (seed === null) return false;
+  const store = useRadioStore.getState();
+  store.startRadio(seed);
+  // The rotation continues where it left off rather than restarting, so a
+  // reloaded radio does not re-ask the question it already asked.
+  if (snapshot.variant > 0) store.setVariant(snapshot.variant);
+  return true;
+}
 
 /**
  * The pure request identity of a seed: what a refill asks for, and nothing more
@@ -129,6 +205,17 @@ export const useRadioStore = create<RadioState>()((set, get) => ({
     const variant = get().variant + 1;
     set({ variant });
     return variant;
+  },
+
+  /**
+   * Put the rotation counter back to a persisted value, so a reloaded radio
+   * resumes its rotation instead of re-asking the question it already asked.
+   * Only ever used by {@link restoreRadio}; the refill path moves the counter
+   * exclusively through {@link RadioState.advanceVariant}.
+   */
+  setVariant(variant) {
+    if (!Number.isInteger(variant) || variant < 0) return;
+    set({ variant });
   },
 
   setStatus(status, error) {

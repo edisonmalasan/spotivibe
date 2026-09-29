@@ -243,13 +243,21 @@ function recentPlays(
  * cycle asks the same seeds again rather than skipping a rotation step.
  */
 async function performRefill(plan: RefillPlan, signal: AbortSignal): Promise<void> {
-  const playedIds = useRadioStore.getState().playedIds;
   try {
     const feed = await fetchRadioFeed(radioRequestFor(plan), { signal });
 
     // Design §3: the server can only honor the ids it was given, so the
     // invariant is enforced here too — a cached or truncated response that
-    // re-serves a played or queued track still cannot append it.
+    // re-serves a played or queued track still cannot append it. The played set
+    // is re-read *after* the response, not captured before the request, so a
+    // track that finished playing while the request was in flight is still
+    // refused.
+    const playedIds = useRadioStore.getState().playedIds;
+    // A radio can end while its request is in flight (the user started ordinary
+    // playback, or ended it deliberately). The response then belongs to a radio
+    // that no longer exists, so it must not touch the queue that replaced it, and
+    // it must not write the radio status back onto a cleared store.
+    if (plan.policy === "radio" && useRadioStore.getState().seed === null) return;
     const playable = selectAppendable(feed.tracks, useQueueStore.getState().queue, playedIds);
     if (playable.length === 0) {
       endRefill(plan);
@@ -305,6 +313,7 @@ export function useRefillAgent(options: RefillAgentOptions = {}): void {
   const currentTrack = usePlayerStore((state) => state.currentTrack);
   const radioSeed = useRadioStore((state) => state.seed);
   const radioStatus = useRadioStore((state) => state.status);
+  const queueSource = useQueueStore((state) => state.source);
   const autofillEnabled = usePreferencesStore((state) => state.autofillQueue);
   // Only the retry token drives the engine; the message itself is the queue
   // surface's business (`useRefillFailure`).
@@ -323,6 +332,26 @@ export function useRefillAgent(options: RefillAgentOptions = {}): void {
 
   useEffect(() => {
     if (!enabled) return;
+
+    // **Leaving a radio ends it** (spec: "Leaving a radio restores ordinary
+    // playback"), and this check comes *before* the latch and the low-water gate
+    // on purpose: it is a correction of state, not a refill decision, so it must
+    // not be skipped because a previous cycle is latched or a request is still
+    // in flight. Ordinary playback replaces the queue's context, so the source
+    // moving off `"radio"` is the signal that this queue is no longer the
+    // radio's. Without this the radio kept refilling somebody else's queue and
+    // kept claiming the Now Playing indicator over it.
+    const radioState = useRadioStore.getState();
+    if (radioState.seed !== null && radioState.status !== "ended" && queueSource !== "radio") {
+      radioState.stopRadio();
+      clearRefillFailure();
+      // An in-flight request belonged to the radio that just ended.
+      inFlight.current?.abort();
+      inFlight.current = null;
+      latched.current = false;
+      return;
+    }
+
     // Re-arm when the queue is no longer in the state that latched this crossing:
     // either it climbed back above the mark, or a small refill still grew it past
     // where it was. Re-arming on *growth only* is what makes the latch safe — a
@@ -341,16 +370,17 @@ export function useRefillAgent(options: RefillAgentOptions = {}): void {
     // A cycle that failed leaves the radio in `"error"`; reaching the mark again
     // (or a retry) is a new cycle for the same radio, so it resumes rather than
     // staying wedged on its last failure. `"ended"` is the opposite — material
-    // is exhausted, and the radio stops refilling for good.
-    if (radio.seed !== null && radio.status === "error") radio.setStatus("active");
+    // is exhausted, and the radio stops refilling for good. The *next* status is
+    // what the plan is built from: resuming must not pass the stale `"error"`.
+    const radioRunning = radio.seed !== null && radio.status !== "ended";
+    if (radioRunning && radio.status === "error") radio.setStatus("active");
     // A radio takes over from autofill while it runs (spec: "A radio takes over
     // from autofill"); with no radio, the setting and the current track decide.
-    const policy: RefillPolicy =
-      radio.seed !== null && radio.status !== "ended" ? "radio" : "autofill";
+    const policy: RefillPolicy = radioRunning ? "radio" : "autofill";
     const plan = planRefill({
       policy,
       radioSeed: radio.seed,
-      radioStatus: radio.status,
+      radioStatus: radioRunning ? "active" : radio.status,
       radioVariant: radio.variant,
       playedIds:
         policy === "radio"
@@ -371,7 +401,18 @@ export function useRefillAgent(options: RefillAgentOptions = {}): void {
     void performRefill(plan, controller.signal).finally(() => {
       if (inFlight.current === controller) inFlight.current = null;
     });
-  }, [enabled, remaining, currentTrack, radioSeed, radioStatus, autofillEnabled, retryToken]);
+  }, [
+    enabled,
+    remaining,
+    currentTrack,
+    radioSeed,
+    radioStatus,
+    // The radio ends when the queue's recorded source leaves it, so the source
+    // is a real dependency of this effect, not an incidental read.
+    queueSource,
+    autofillEnabled,
+    retryToken,
+  ]);
 
   // Abort on unmount. The latch is released with it so a remount (a StrictMode
   // double-mount, or a shell that is torn down and rebuilt) can refill again

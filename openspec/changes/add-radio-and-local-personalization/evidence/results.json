@@ -1,0 +1,312 @@
+{
+  "task": "7.2",
+  "generatedAt": "2026-09-29T15:29:53.233Z",
+  "origin": "http://localhost:3210",
+  "query": "bohemian rhapsody",
+  "allowedRadioKeys": [
+    "kind",
+    "title",
+    "artist",
+    "variant",
+    "limit",
+    "exclude"
+  ],
+  "copy": {
+    "radioLabel": "From radio",
+    "radioItem": "Start track radio",
+    "goArtist": "Go to artist",
+    "retryLabel": "Try again",
+    "autofillLabel": "Keep playing when the queue ends",
+    "onboardingLabel": "Choose your languages",
+    "onboardingConfirm": "Save languages"
+  },
+  "steps": [
+    {
+      "name": "a fresh profile shows the accountless first-run language onboarding",
+      "ok": true,
+      "detail": "checkboxes=38, confirm=\"Save languages\", accountCopy=false"
+    },
+    {
+      "name": "live search returns results for the seeded query",
+      "ok": true,
+      "detail": "rows=17"
+    },
+    {
+      "name": "the search result menu starts a track radio",
+      "ok": true,
+      "detail": "feed variant=0, control=Pause, bar=\"Bohemian RhapsodyQueen0:005:55\""
+    },
+    {
+      "name": "the first radio request carries only identity, variant, limit, and exclusions",
+      "ok": true,
+      "detail": "params=[\"artist\",\"kind\",\"limit\",\"title\",\"variant\"]"
+    },
+    {
+      "name": "the radio is presented as its own source and filled the queue",
+      "ok": true,
+      "detail": "label \"From radio\" present, queue rows=12"
+    },
+    {
+      "name": "the radio refills when the queue runs low, with a different variant",
+      "ok": false,
+      "detail": "feeds=1, variants=[0], queue rows 12 -> 0"
+    },
+    {
+      "name": "a refill excludes the tracks this radio already played",
+      "ok": false,
+      "detail": "excluded ids on refill #2 = 0 (tracks played during the skip run: 14)"
+    },
+    {
+      "name": "the radio continues across the refill without an error",
+      "ok": true,
+      "detail": "queue rows=0, no refill failure notice"
+    },
+    {
+      "name": "no track id is queued twice after refills",
+      "ok": true,
+      "detail": "rows=22, distinct ids=22, rows without an id=0"
+    },
+    {
+      "name": "Now Playing offers the radio action with an accessible name while a track plays",
+      "ok": true,
+      "detail": "label=\"Start track radio\", disabled=false"
+    },
+    {
+      "name": "Now Playing shows the radio while one is playing",
+      "ok": false,
+      "detail": "indicator text=\"\""
+    },
+    {
+      "name": "a failed refill keeps the queue playing and offers a retry, without a modal",
+      "ok": true,
+      "detail": "role=\"status\", retry offered=true, shell alive=true, text=\"Radio request failed (network).Try again\""
+    },
+    {
+      "name": "retrying after the block resumes the radio's refills",
+      "ok": false,
+      "detail": "feeds observed=2"
+    },
+    {
+      "name": "the artist page starts an artist radio",
+      "ok": true,
+      "detail": "control=Pause, artist feed requested=true, artist=\"Queen\""
+    },
+    {
+      "name": "the artist radio is labelled as a radio",
+      "ok": true,
+      "detail": "\"From radio\" present"
+    },
+    {
+      "name": "the autofill setting exists and is on by default",
+      "ok": true,
+      "detail": "control \"Keep playing when the queue ends\" present=true, checked=true"
+    },
+    {
+      "name": "with autofill off, a low ordinary queue spends no provider request",
+      "ok": true,
+      "detail": "feeds before=0, after draining with the setting off=0"
+    },
+    {
+      "name": "with autofill on, a low ordinary queue is grown by a scored request",
+      "ok": true,
+      "detail": "feeds before=0, after draining with the setting on=1"
+    },
+    {
+      "name": "no personalization request ever carried profile, liked, or history data",
+      "ok": true,
+      "detail": "every observed request's params: [\"artist\",\"kind\",\"limit\",\"title\",\"variant\"]"
+    },
+    {
+      "name": "the IFrame API is still loaded exactly once at the end of the run",
+      "ok": true,
+      "detail": "apiScripts=1, iframes now=1, control=Pause"
+    },
+    {
+      "name": "zero console errors (disclosed offline/blocked/not-found entries excluded)",
+      "ok": true,
+      "detail": "errors=0, disclosed offline=0, disclosed blocked-radio=1, disclosed unresolvable-key-404=0, disclosed live-upstream=0"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "radio-queue-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Radio queue: its own source label and the filled queue"
+    },
+    {
+      "file": "now-playing-radio-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Now Playing: radio action and the live radio indicator"
+    },
+    {
+      "file": "radio-refill-failure-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "Refill blocked → non-blocking retry while the queue keeps playing"
+    }
+  ],
+  "consoleErrors": [],
+  "notes": {
+    "disclosures": {
+      "offlineWindow": [],
+      "blockedRadioProbe": [
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/radio?kind=track&title=Is+This+the+World+We+Created%3F+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4c"
+      ],
+      "notFoundProbe": [],
+      "liveUpstream": [],
+      "searchFallbacks": []
+    },
+    "radioRequests": [
+      {
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody&artist=Queen&variant=0&limit=12",
+        "keys": [
+          "artist",
+          "kind",
+          "limit",
+          "title",
+          "variant"
+        ],
+        "kind": "track",
+        "title": "Bohemian Rhapsody",
+        "artist": "Queen",
+        "variant": 0,
+        "limit": 12,
+        "excludeCount": 0
+      },
+      {
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4cRz8SQ%2Cyoutube%3A7UAMkY2IxOE",
+        "keys": [
+          "artist",
+          "exclude",
+          "kind",
+          "limit",
+          "title",
+          "variant"
+        ],
+        "kind": "track",
+        "title": "Bohemian Rhapsody (Live At Wembley Stadium / July 1986)",
+        "artist": "Queen",
+        "variant": 0,
+        "limit": 12,
+        "excludeCount": 5
+      },
+      {
+        "url": "/api/radio?kind=track&title=Is+This+the+World+We+Created%3F+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4cRz8SQ%2Cyoutube%3A7UAMkY2IxOE%2Cyoutube%3A6Wg1_YOfiM0%2Cyoutube%3AG4",
+        "keys": [
+          "artist",
+          "exclude",
+          "kind",
+          "limit",
+          "title",
+          "variant"
+        ],
+        "kind": "track",
+        "title": "Is This the World We Created? (Live At Wembley Stadium / July 1986)",
+        "artist": "Queen",
+        "variant": 0,
+        "limit": 12,
+        "excludeCount": 14
+      },
+      {
+        "url": "/api/radio?kind=track&title=A+Kind+of+Magic+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4cRz8SQ%2Cyoutube%3A7UAMkY2IxOE%2Cyoutube%3A6Wg1_YOfiM0%2Cyoutube%3AG4rPKJPZ4Ws%2Cyout",
+        "keys": [
+          "artist",
+          "exclude",
+          "kind",
+          "limit",
+          "title",
+          "variant"
+        ],
+        "kind": "track",
+        "title": "A Kind of Magic (Live At Wembley Stadium / July 1986)",
+        "artist": "Queen",
+        "variant": 0,
+        "limit": 12,
+        "excludeCount": 22
+      },
+      {
+        "url": "/api/radio?kind=artist&artist=Queen&variant=0&limit=12",
+        "keys": [
+          "artist",
+          "kind",
+          "limit",
+          "variant"
+        ],
+        "kind": "artist",
+        "title": null,
+        "artist": "Queen",
+        "variant": 0,
+        "limit": 12,
+        "excludeCount": 0
+      },
+      {
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody+%28In+the+style+of+System+Of+A+Down%29&artist=Anthony+Vincent&variant=0&limit=12",
+        "keys": [
+          "artist",
+          "kind",
+          "limit",
+          "title",
+          "variant"
+        ],
+        "kind": "track",
+        "title": "Bohemian Rhapsody (In the style of System Of A Down)",
+        "artist": "Anthony Vincent",
+        "variant": 0,
+        "limit": 12,
+        "excludeCount": 0
+      }
+    ],
+    "attachedTargets": [
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      }
+    ],
+    "blockedEndpoint": "/api/radio",
+    "artistKey": "Queen"
+  },
+  "pass": false,
+  "browser": "Edg/154.0.4258.37"
+}

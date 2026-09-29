@@ -12,9 +12,12 @@ import type { ArtistSummary, ListeningEventRecord, Track } from "@/data/reposito
  * construction (design §7) and "delete the data" is literally "delete the data"
  * (design §4).
  *
- * **Nothing here may leave the device.** The derived value is weights and text;
- * a caller sends at most a handful of seed *words* (see {@link seedTermsFor}),
- * never a weight, a track id, a like, or a history row.
+ * **Nothing here may leave the device.** The derived value is weights and public
+ * text, and the only consumer is the **local** ranker: a radio or autofill request
+ * carries the seed identity, the rotation index, the limit, and the exclusion list
+ * — never a weight, a track id, a like, a history row, or a word derived from any
+ * of them (spec `personalization` — "Ephemeral personalization, never a profile on
+ * the wire").
  *
  * Pure and deterministic: the clock arrives as `now`, ties break on first
  * appearance, and the inputs are never mutated. Two runs over the same inputs
@@ -306,47 +309,10 @@ function normalizedLanguages(codes: readonly string[]): string[] {
   return result;
 }
 
-/** Trim, cap, and drop a term that would be blank — the text a request may carry. */
+/** Trim, cap, and drop a term that would be blank — public text only. */
 function usableTerm(raw: string): string | null {
   const term = raw.trim().slice(0, MAX_SEED_TERM_LENGTH).trim();
   return term === "" ? null : term;
-}
-
-/**
- * The ephemeral seed terms for one request: the caller's own identity first
- * (so a cold device still works — spec scenario "A cold device still works"),
- * then the profile's terms, deduped case-insensitively and capped.
- *
- * Only public text is returned: an artist name, a track title, a genre word.
- * There is no code path from here to a track id, a weight, a like, a history
- * row, or any identifier that could follow a person.
- */
-export function seedTermsFor(
-  profile: TasteProfile,
-  kind: "track" | "artist",
-  identity: { title?: string; artist?: string },
-): string[] {
-  const terms: string[] = [];
-  const seen = new Set<string>();
-  const push = (raw: string | undefined): void => {
-    if (terms.length >= TASTE_LIMITS.seedTerms) return;
-    const term = usableTerm(raw ?? "");
-    if (term === null) return;
-    const fold = normalizedName(term);
-    if (seen.has(fold)) return;
-    seen.add(fold);
-    terms.push(term);
-  };
-
-  if (kind === "track") {
-    // The seed's own artist is the strongest thing about the request.
-    push(identity.artist);
-    push(identity.title);
-  } else {
-    push(identity.artist);
-  }
-  for (const term of profile.seedTerms) push(term);
-  return terms;
 }
 
 /**

@@ -200,12 +200,23 @@ export async function startTrackRadio(
   const first = queue[0];
   // Register the radio *before* the queue (step 3 of the contract).
   useRadioStore.getState().startRadio(seed);
+  // The start *consumed* rotation step 0, so the counter moves past it now. If it
+  // did not, the first refill would re-ask the start's exact seeds — one wasted
+  // provider round trip per radio, and a rotation that is a no-op on its first
+  // real cycle.
+  useRadioStore.getState().advanceVariant();
   // A start that succeeds clears any failure a previous attempt left behind.
   clearRefillFailure();
   // One `setContext` + one `load`: the queue is replaced and playback starts
   // exactly once, through the same path every other track+context start uses.
   usePlayerStore.getState().playTrack(first, queue, "radio");
   return { status: "started", track: first, queue };
+}
+
+/** End whatever radio is running. Exported for the Now Playing control. */
+export function stopRadio(): void {
+  useRadioStore.getState().stopRadio();
+  clearRefillFailure();
 }
 
 /**
