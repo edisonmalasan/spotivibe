@@ -102,6 +102,19 @@ describe("homeSections: the ordered feed", () => {
       );
     }
   });
+
+  it("describes the Trending shelf's mechanism, never a popularity ranking", () => {
+    const trending = HOME_SECTIONS.find((entry) => entry.id === "trending");
+    expect(trending?.description).toBe(
+      "A rotating shelf built from provider queries, refreshed each visit.",
+    );
+    // The shelf runs queries and is recomposed; it makes no claim about what the
+    // results mean. Naming a popularity, ranking, or timeliness guarantee would
+    // be a claim the feed cannot back.
+    expect(trending?.description).not.toMatch(
+      /popular|popularity|hot|hottest|biggest|number one|now|top|chart|rank/i,
+    );
+  });
 });
 
 describe("homeSections: local-only sections are gated", () => {
@@ -148,6 +161,22 @@ describe("homeSections: local-only sections are gated", () => {
       HOME_SECTIONS,
     );
     expect(three.map((entry) => entry.id)).toContain("smart-mixes");
+  });
+
+  it("opens the seeded shelves on usable seed terms, not on the artist count alone", () => {
+    // `for-you` and `mix` are caller-seeded kinds: the endpoint answers a request
+    // with an empty seed list with 400. So a signal set that says "there are
+    // artists" while the seed derivation produces no term must not be able to
+    // open either shelf — the count is necessary, never sufficient.
+    const countedButUnseeded: HomeSectionSignals = {
+      hasHistory: true,
+      hasLocalArtists: false,
+      localArtistCount: MIN_LOCAL_ARTISTS_FOR_MIXES + 2,
+    };
+
+    const rendered = selectHomeSections(countedButUnseeded, HOME_SECTIONS).map((entry) => entry.id);
+    expect(rendered).not.toContain("made-for-you");
+    expect(rendered).not.toContain("smart-mixes");
   });
 
   it("never renders the local-only sections without their signal", () => {

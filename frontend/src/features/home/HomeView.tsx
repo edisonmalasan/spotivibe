@@ -47,7 +47,9 @@ import { usePreferencesStore } from "@/stores/preferencesStore";
  *   renders.
  * - **Locally informed, still local.** Made For You and Smart Mixes are seeded
  *   from artist *names* derived on-device from likes and plays; the request
- *   carries nothing but those short terms plus the selected languages.
+ *   carries nothing but those short terms plus the selected languages. Both are
+ *   gated on the derived terms being non-empty, so a shelf can never render and
+ *   then send a seedless (400) request.
  * - **No autoplay.** Nothing here starts playback; a card activation is the only
  *   path in, and it records the `browse` queue source.
  */
@@ -322,11 +324,21 @@ export function HomeView() {
 
   // Local signals drive which sections render at all, and — through the seeds —
   // which locally informed shelves may issue a request.
+  //
+  // The gate is the *derived seed list itself*, never the artist count. The two
+  // are not the same question: `countLocalArtists` credits an artist by provider
+  // id, while `deriveSeedTerms` can only send a term it has a non-blank *name*
+  // for. A local artist with a blank name therefore counts as one artist and
+  // yields no term — and `for-you`/`mix` are caller-seeded kinds the endpoint
+  // answers with 400 when the seed list is empty. Gating on the count would
+  // render the shelf and then issue a request guaranteed to be rejected; gating
+  // on the terms it will actually send makes "the shelf appears" and "the
+  // request is valid" the same condition.
   const localArtistCount = countLocalArtists({ likedTracks, events });
   const seeds = deriveSeedTerms({ likedTracks, events });
   const signals: HomeSectionSignals = {
     hasHistory: events.length > 0,
-    hasLocalArtists: localArtistCount > 0,
+    hasLocalArtists: seeds.length > 0,
     localArtistCount,
   };
   const sections = selectHomeSections(signals, HOME_SECTIONS);
@@ -344,7 +356,7 @@ export function HomeView() {
       kind: "mix",
       languages,
       seeds,
-      enabled: signals.localArtistCount >= MIN_LOCAL_ARTISTS_FOR_MIXES,
+      enabled: signals.hasLocalArtists && signals.localArtistCount >= MIN_LOCAL_ARTISTS_FOR_MIXES,
     }),
     // The long-form preference is a presentation choice over the same result —
     // it never changes which feed is requested.

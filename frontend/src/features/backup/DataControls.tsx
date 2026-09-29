@@ -16,6 +16,7 @@ import {
   type PrepareFailure,
 } from "@/data/backup";
 import { getLocalData, type RepositorySet } from "@/data/localData";
+import { useHistoryStore } from "@/stores/historyStore";
 
 /**
  * Settings → Data controls: backup export, validated import with merge/replace
@@ -24,6 +25,14 @@ import { getLocalData, type RepositorySet } from "@/data/localData";
  * with Cancel / Confirm; only Confirm executes). Results report through
  * `role="status"` / `role="alert"` live regions, and every failure states that
  * existing local data is unchanged. Depends on repository interfaces only.
+ *
+ * **Clearing listening history goes through `historyStore`**, not straight to
+ * the repository. The store is the client authority for the newest events, and
+ * it already wraps the same repository call: clearing behind its back would
+ * leave the store holding events that no longer exist, so a co-resident consumer
+ * (Home's Recently Played) would keep showing a history the user just deleted.
+ * Clearing through the store keeps the write and the state in step, and still
+ * reports its own failure.
  */
 
 type BusyOperation = "export" | "import" | "clear-history" | "clear-search" | "reset";
@@ -197,7 +206,9 @@ export function DataControls() {
       await runAction(
         "clear-history",
         "Clearing listening history…",
-        () => repositories.listeningHistory.clear(),
+        // The store wraps the same repository call and re-reads the newest
+        // events, so nothing keeps rendering the events this delete removes.
+        () => useHistoryStore.getState().clear(),
         "Listening history cleared.",
         "Could not clear listening history — your data is unchanged.",
       );

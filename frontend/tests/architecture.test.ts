@@ -22,10 +22,10 @@ import { describe, expect, it } from "vitest";
  * playlist/like repository write inside `libraryStore`, keeps it off the
  * transport store, keeps library surfaces repository-mediated, and keeps the
  * server playlist module off the data layer; M8 keeps the discovery surfaces
- * repository-mediated, the client stores on the repository entry point, the
- * server discovery modules off `@/data`, the discovery route metadata-only with
- * a four-parameter input surface, and `lib/languages.ts` the single language
- * catalog.
+ * repository-mediated, the client stores on the repository entry point and off
+ * transport state, the server discovery modules off `@/data`, the discovery
+ * route metadata-only with a four-parameter input surface, and
+ * `lib/languages.ts` the single language catalog.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -828,6 +828,29 @@ function localStoreViolations(source: string): string[] {
 }
 
 /**
+ * Violations of the data-layer store → transport rule, as labels.
+ *
+ * `preferencesStore` and `historyStore` are the client authorities for local
+ * data: what a surface knows about languages or listening history comes out of
+ * them, and nothing else. A transport import would let either store's contents
+ * *move* — reading `playerStore`/`queueStore` would make "what is on the page"
+ * depend on playback state, and reaching the engine or the IFrame API loader
+ * would drag the browser-only host into a module that must stay importable on
+ * its own. That is the same layering the M6/M7 store splits enforce for their
+ * own stores, so it is detected here rather than left to review.
+ */
+function dataStoreTransportViolations(source: string): string[] {
+  const violations: string[] = [];
+  for (const specifier of moduleSpecifiers(source)) {
+    if (/(^|[\\/])playerStore(\.tsx?)?$/.test(specifier)) violations.push("playerStore import");
+    if (/(^|[\\/])queueStore(\.tsx?)?$/.test(specifier)) violations.push("queueStore import");
+    if (specifier.includes("player/engine")) violations.push("engine import");
+    if (/(^|[\\/])player\/ytApi(\.tsx?)?$/.test(specifier)) violations.push("ytApi import");
+  }
+  return violations;
+}
+
+/**
  * Query-parameter keys a route handler actually reads (`params.get("x")`,
  * `searchParams.getAll("x")`, …). Asserting the exact set is what enforces the
  * discovery endpoint's input contract: the accepted inputs are a feed kind,
@@ -925,6 +948,34 @@ describe("architecture violation detectors (M8 task 8.1)", () => {
       ),
     ).toEqual([]);
     expect(localStoreViolations('import { create } from "zustand";')).toEqual([]);
+  });
+
+  it("flags transport imports from a data-layer store but passes its real dependencies", () => {
+    expect(
+      dataStoreTransportViolations('import { usePlayerStore } from "@/stores/playerStore";'),
+    ).toEqual(["playerStore import"]);
+    expect(dataStoreTransportViolations('import { useQueueStore } from "../queueStore";')).toEqual([
+      "queueStore import",
+    ]);
+    expect(
+      dataStoreTransportViolations('import { getPlaybackEngine } from "@/player/engine";'),
+    ).toEqual(["engine import"]);
+    expect(
+      dataStoreTransportViolations('import { loadYouTubeIframeApi } from "@/player/ytApi";'),
+    ).toEqual(["ytApi import"]);
+    expect(dataStoreTransportViolations('const api = await import("../../player/ytApi");')).toEqual(
+      ["ytApi import"],
+    );
+    // The store's real dependencies, and Spotivibe's own player UI folder (which
+    // is not the loader/engine internals).
+    expect(
+      dataStoreTransportViolations(
+        'import { create } from "zustand";\nimport { getLocalData } from "@/data/localData";\nimport type { ListeningEventRecord } from "@/data/repositories";',
+      ),
+    ).toEqual([]);
+    expect(
+      dataStoreTransportViolations('import { PlayerHost } from "@/components/player/PlayerHost";'),
+    ).toEqual([]);
   });
 
   it("reads the query parameters a route handler accepts", () => {
@@ -1032,6 +1083,18 @@ describe("architecture: the M8 client stores reach data through repositories (M8
       expect(localStoreViolations(source), name).toEqual([]);
       // Not vacuous: the store really does read local data through the accessor.
       expect(moduleSpecifiers(source), name).toContain("@/data/localData");
+    }
+  });
+});
+
+describe("architecture: the M8 data-layer stores stay off transport (M8 task 8.1)", () => {
+  it("keeps preferencesStore and historyStore free of transport imports", () => {
+    for (const name of ["preferencesStore.ts", "historyStore.ts"]) {
+      const source = readSource("stores", name);
+      expect(source.length, name).toBeGreaterThan(0);
+      expect(dataStoreTransportViolations(source), name).toEqual([]);
+      // Not vacuous: the detector is reading a real store that really imports.
+      expect(moduleSpecifiers(source).length, name).toBeGreaterThan(0);
     }
   });
 });

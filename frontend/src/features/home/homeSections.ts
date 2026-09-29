@@ -42,7 +42,17 @@ export type HomeSectionId =
 export interface HomeSectionSignals {
   /** Any listening event exists (Recently Played's gate). */
   hasHistory: boolean;
-  /** Any locally known artist exists (Made For You's gate). */
+  /**
+   * Whether the device has at least one taste term to seed with — i.e. the
+   * *derived seed list* is non-empty, not merely that some artist is known
+   * (Made For You's gate).
+   *
+   * Deliberately the seeds and not the artist count: a local artist with a
+   * blank *name* is counted as an artist but produces no term, and a
+   * caller-seeded `for-you`/`mix` request with no term is answered with 400.
+   * Gating on the terms the request will carry makes "the shelf renders" and
+   * "the request is valid" the same condition.
+   */
   hasLocalArtists: boolean;
   /** How many distinct local artists exist (Smart Mixes' gate, design §9). */
   localArtistCount: number;
@@ -90,7 +100,10 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
   {
     id: "trending",
     title: "Trending Now",
-    description: "A rotating shelf of what is popular right now.",
+    // Describes the mechanism, not a ranking: the shelf runs a rotating set of
+    // provider queries and is recomposed on each visit, so no claim is made
+    // about what those results mean (no chart, no "popular right now").
+    description: "A rotating shelf built from provider queries, refreshed each visit.",
     shape: "square",
     kind: "trending",
     enabled: always,
@@ -119,7 +132,10 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     description: "A preview of continuous mixes seeded by artists you already know.",
     shape: "square",
     kind: "mix",
-    enabled: (signals) => signals.localArtistCount >= MIN_LOCAL_ARTISTS_FOR_MIXES,
+    // `mix` is a caller-seeded kind, so the three-artist threshold is necessary
+    // but not sufficient: the seed terms themselves must exist too.
+    enabled: (signals) =>
+      signals.hasLocalArtists && signals.localArtistCount >= MIN_LOCAL_ARTISTS_FOR_MIXES,
   },
   {
     id: "genres",

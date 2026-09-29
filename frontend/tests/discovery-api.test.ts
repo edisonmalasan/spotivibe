@@ -17,6 +17,7 @@ import {
   parseDiscoveryResponse,
   type DiscoveryFeedRequest,
 } from "@/features/home/discoveryApi";
+import { DISCOVERY_KINDS as SERVER_DISCOVERY_KINDS } from "@/server/music/discoverySeeds";
 import { makeTrack } from "./helpers/music-fixtures";
 
 /**
@@ -24,6 +25,16 @@ import { makeTrack } from "./helpers/music-fixtures";
  * parameter bounds that keep a request server-valid, response parsing (tracks
  * only; provider diagnostics stay opaque), and the three designed error codes.
  */
+
+/** The feed kinds the contract is written against, in documented order. */
+const EXPECTED_DISCOVERY_KINDS = [
+  "trending",
+  "genre",
+  "podcast",
+  "collection",
+  "for-you",
+  "mix",
+] as const;
 
 const trackA = makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" });
 const trackB = makeTrack({ id: "youtube:bbb", providerId: "bbb", title: "Beta", language: "es" });
@@ -387,6 +398,26 @@ describe("discovery request privacy (local-only inputs)", () => {
     expect(buildDiscoveryQuery({ kind: "for-you", languages: ["en"], seeds: ["a"] })).not.toContain(
       trackA.id,
     );
+  });
+});
+
+describe("discovery kind contract: client and server cannot drift", () => {
+  it("declares the same feed kinds, in the same order, on both sides of the route", () => {
+    // The client list validates what a caller may request; the server list
+    // decides what the endpoint serves. They are the *same* contract, and two
+    // independent lists only stay a contract while something compares them — so
+    // the comparison lives here, where a kind added on one side and forgotten on
+    // the other fails instead of shipping.
+    expect([...DISCOVERY_KINDS]).toEqual([...SERVER_DISCOVERY_KINDS]);
+    expect([...DISCOVERY_KINDS]).toEqual([...EXPECTED_DISCOVERY_KINDS]);
+  });
+
+  it("keeps both sides in step with the kind guard the query builder uses", () => {
+    // Not vacuous: the same expected set is what the client accepts...
+    for (const kind of EXPECTED_DISCOVERY_KINDS) expect(isDiscoveryKind(kind)).toBe(true);
+    // ...and what the server advertises, so no kind is accepted-but-absent.
+    expect([...SERVER_DISCOVERY_KINDS].sort()).toEqual([...EXPECTED_DISCOVERY_KINDS].sort());
+    expect(DISCOVERY_KINDS).toHaveLength(EXPECTED_DISCOVERY_KINDS.length);
   });
 });
 

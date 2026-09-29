@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
 import type { ListeningEventRecord, Track } from "@/data/repositories";
+import * as browsePlayback from "@/features/home/browsePlayback";
 import { HomeView, preferLongFormTracks, LONG_FORM_MIN_SECONDS } from "@/features/home/HomeView";
 import { GENRE_CATALOG } from "@/features/home/genreCatalog";
+import { countLocalArtists, deriveSeedTerms } from "@/features/home/localSeeds";
 import { makeTrack } from "./helpers/music-fixtures";
 import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
@@ -63,6 +65,16 @@ function credited(
   overrides: Partial<Track> = {},
 ): Track {
   return track({ id, title, artists: [{ name: artist }], ...overrides });
+}
+
+/**
+ * A track by an artist the local data *counts* but cannot *name*: a provider
+ * artist id with a blank display name. `countLocalArtists` credits the id, while
+ * `deriveSeedTerms` has no term to send — the exact disagreement the seeded
+ * shelves' gate has to resolve.
+ */
+function unnamedArtist(id: string): Track {
+  return track({ id, title: `Track ${id}`, artists: [{ id: `artist-${id}`, name: "   " }] });
 }
 
 interface Recorded {
@@ -512,6 +524,60 @@ describe("HomeView: one failing shelf", () => {
     const artists = screen.getByTestId("home-section-popular-artists");
     await waitFor(() => expect(within(artists).getByRole("alert")).toBeInTheDocument());
     expect(within(artists).queryByTestId("shelf-rail")).not.toBeInTheDocument();
+  });
+});
+
+describe("HomeView: the seeded shelves gate on the terms they will send", () => {
+  it("counts a blank-named artist locally but derives no term from it", () => {
+    // The two derivations genuinely disagree, which is why the gate may not use
+    // the count: the count says "there is an artist", the seeds say "there is
+    // nothing to send".
+    const taste = { likedTracks: [unnamedArtist("l1"), unnamedArtist("l2")], events: [] };
+    expect(countLocalArtists(taste)).toBe(2);
+    expect(deriveSeedTerms(taste)).toEqual([]);
+  });
+
+  it("renders no seeded shelf and issues no seeded request when the terms are empty", async () => {
+    // Three locally known artists clears the Smart Mixes *count* gate, yet
+    // `for-you` and `mix` are caller-seeded kinds the endpoint answers with 400
+    // when the seed list is empty. The gate is the derived term list, so neither
+    // shelf renders and neither request goes out.
+    seedStores({ likedTracks: [unnamedArtist("l1"), unnamedArtist("l2"), unnamedArtist("l3")] });
+    const { calls } = stubDiscovery(() => ({ tracks: [] }));
+    render(<HomeView />);
+    await settleFeed();
+
+    expect(screen.queryByTestId("home-section-made-for-you")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("home-section-smart-mixes")).not.toBeInTheDocument();
+    expect(requestedKinds(calls)).not.toContain("for-you");
+    expect(requestedKinds(calls)).not.toContain("mix");
+    // No request went out carrying an empty `seeds` parameter.
+    for (const call of calls) expect(call.params.get("seeds")).toBeNull();
+  });
+
+  it("still opens the seeded shelves as soon as one term is derivable", async () => {
+    seedStores({
+      likedTracks: [unnamedArtist("l1"), credited("l2", "Liked 2", "Aurora")],
+    });
+    const { calls } = stubDiscovery(() => ({ tracks: [] }));
+    render(<HomeView />);
+
+    expect(await screen.findByTestId("home-section-made-for-you")).toBeInTheDocument();
+    await settleFeed();
+    expect(requestedKinds(calls)).toContain("for-you");
+    expect(calls.find((call) => call.kind === "for-you")?.params.get("seeds")).toBe("Aurora");
+  });
+});
+
+describe("browsePlayback: shelf activation surface", () => {
+  it("offers exactly one entry point and no shelf shuffle", () => {
+    // No Home/Discover surface offers a shelf shuffle and no spec requires one,
+    // so the export is gone rather than kept "in case" — an unused playback
+    // helper silently widens what a card activation can do.
+    expect("shuffleFromShelf" in browsePlayback).toBe(false);
+    expect(Object.keys(browsePlayback).sort()).toEqual(["BROWSE_QUEUE_SOURCE", "playFromShelf"]);
+    expect(typeof browsePlayback.playFromShelf).toBe("function");
+    expect(browsePlayback.BROWSE_QUEUE_SOURCE).toBe("browse");
   });
 });
 

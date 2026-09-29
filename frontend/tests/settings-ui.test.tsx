@@ -5,6 +5,7 @@ import SettingsPage from "@/app/settings/page";
 import { getLocalData, type RepositorySet } from "@/data/localData";
 import { DEFAULT_PREFERENCES } from "@/data/repositories";
 import { makeEnvelope, makeTrack } from "./helpers/backup-fixtures";
+import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
 
 /**
  * Tasks 6.1/6.2/6.4: Settings → Data controls integration tests against the
@@ -48,9 +49,16 @@ async function seedLocalData(): Promise<void> {
   await repositories.metadataCache.put(makeTrack("seed-1"));
 }
 
-beforeEach(seedLocalData);
+beforeEach(async () => {
+  // Registered after `seedLocalData`, so the repository is seeded first and the
+  // store's in-flight read is then dropped: each test starts from seeded storage
+  // and an empty client-side history.
+  await seedLocalData();
+  resetHistoryStore();
+});
 
 afterEach(() => {
+  resetHistoryStore();
   vi.restoreAllMocks();
   URL.createObjectURL = originalCreateObjectURL;
   URL.revokeObjectURL = originalRevokeObjectURL;
@@ -268,6 +276,38 @@ describe("Settings data controls", () => {
     expect(await repositories.playlists.list()).toHaveLength(1);
     expect(await repositories.searchHistory.list()).toHaveLength(1);
     expect(await repositories.metadataCache.list()).toHaveLength(1);
+  });
+
+  it("clears listening history through the store and leaves no stale events", async () => {
+    // The store is the client authority for the newest events, so hydrating it
+    // first is what makes the difference observable: a UI that deleted the
+    // repository rows behind the store's back would leave the store holding the
+    // events the user just asked to remove, and every co-resident consumer
+    // (Home's Recently Played) would keep rendering them.
+    await useHistoryStore.getState().hydrate();
+    expect(useHistoryStore.getState().events).toHaveLength(1);
+
+    const originalClear = useHistoryStore.getState().clear;
+    const clearSpy = vi.fn(originalClear);
+    useHistoryStore.setState({ clear: clearSpy });
+
+    try {
+      await renderSettings();
+      fireEvent.click(screen.getByRole("button", { name: "Clear listening history" }));
+      await screen.findByRole("status");
+      fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent("Listening history cleared."),
+      );
+
+      // The write went through the store's own action, exactly once.
+      expect(clearSpy).toHaveBeenCalledTimes(1);
+      expect(await repositories.listeningHistory.list()).toEqual([]);
+      // …and the store's events went with it, not stale.
+      expect(useHistoryStore.getState().events).toEqual([]);
+    } finally {
+      useHistoryStore.setState({ clear: originalClear });
+    }
   });
 
   it("clears only search history after confirmation", async () => {

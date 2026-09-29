@@ -1,6 +1,5 @@
 import type { Track } from "@/data/repositories";
 import { usePlayerStore } from "@/stores/playerStore";
-import { useQueueStore } from "@/stores/queueStore";
 
 /**
  * Playback entry points for the Home/Discover shelves (M8 design §9; spec:
@@ -30,13 +29,8 @@ export function playFromShelf(track: Track, context: readonly Track[] = []): voi
   usePlayerStore.getState().playTrack(track, [...context], BROWSE_QUEUE_SOURCE);
 }
 
-/**
- * Same as {@link playFromShelf} but with shuffle *ensured on* first — set
- * directly, never toggled, so shuffle-off stays off on a plain shelf play and an
- * already-on state is not flipped off. `setContext` rebuilds the traversal
- * order from the flag, and the activated track still starts deterministically.
- */
-export function shuffleFromShelf(track: Track, context: readonly Track[] = []): void {
-  useQueueStore.setState({ shuffle: true });
-  playFromShelf(track, context);
-}
+// No shuffle entry point lives here. A shelf activation plays the shelf in the
+// order it was fetched and leaves the user's shuffle flag alone; a future
+// shuffle affordance is a design decision with its own surface and its own
+// spec requirement, not a helper to keep "in case" — an unused export is dead
+// code that silently widens the playback surface.

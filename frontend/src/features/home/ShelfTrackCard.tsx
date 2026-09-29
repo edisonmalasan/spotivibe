@@ -52,6 +52,12 @@ export function ShelfTrackCard({ track, context, className = "" }: ShelfTrackCar
     <button
       type="button"
       data-testid="shelf-track-card"
+      // Canonical identity and the seed-attributed language are exposed as data
+      // attributes so tests and browser evidence can assert which tracks a
+      // shelf rendered and whether a multi-language shelf actually mixes
+      // languages (the interleaving is otherwise invisible in the DOM).
+      data-track-id={track.id}
+      data-language={track.language ?? ""}
       aria-label={`Play ${track.title} by ${artists}`}
       onClick={() => {
         playFromShelf(track, context);
