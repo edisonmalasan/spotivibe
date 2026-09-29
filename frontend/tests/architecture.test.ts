@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 /**
  * Static architecture invariants checked against the real source files
  * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1 +
- * M7 task 9.1 + M8 task 8.1 + M9 task 7.1) —
+ * M7 task 9.1 + M8 task 8.1 + M9 task 7.1 + M10 task 6.1) —
  * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
@@ -28,7 +28,12 @@ import { describe, expect, it } from "vitest";
  * `lib/languages.ts` the single language catalog; M9 keeps the artist, album,
  * and related surfaces repository-mediated and off the player internals, the
  * server catalog module off `@/data`, and the three catalog routes
- * metadata-only with exactly their documented entity parameters.
+ * metadata-only with exactly their documented entity parameters; and M10 keeps
+ * the personalization surfaces repository-mediated and off the player
+ * internals, `server/music/radio.ts` off `@/data`, the radio route
+ * metadata-only with exactly its six documented query keys, no personalization
+ * weight reachable from a module that builds a request, and `radioStore` a
+ * queue mode rather than a second player.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -580,10 +585,16 @@ const QUEUE_MEMBERSHIP_FIELDS = [
   "repeatMode",
 ];
 
+/** Top-level keys of an `export const <name> = { ... };` block. */
+function stateObjectKeys(source: string, name: string): string[] {
+  const block =
+    source.match(new RegExp(`export const ${name} = \\{([\\s\\S]*?)\\n\\};`))?.[1] ?? "";
+  return [...block.matchAll(/^\s*(\w+):/gm)].map((match) => match[1]);
+}
+
 /** Top-level keys of `export const initialPlayerState = { ... };`. */
 function transportStateKeys(source: string): string[] {
-  const block = source.match(/export const initialPlayerState = \{([\s\S]*?)\n\};/)?.[1] ?? "";
-  return [...block.matchAll(/^\s*(\w+):/gm)].map((match) => match[1]);
+  return stateObjectKeys(source, "initialPlayerState");
 }
 
 /** Queue membership fields present in an `initialPlayerState` block. */
@@ -1472,5 +1483,566 @@ describe("architecture: the catalog routes are metadata-only and bounded (M9 tas
         [...route.accepted].sort(),
       );
     }
+  });
+});
+
+/**
+ * Radio/personalization layering invariants (M10 task 6.1, design §1/§2/§3/§4/§6).
+ *
+ * M10 adds the last client area the repository-mediated rule has not covered
+ * yet, and the rules around it are the ones the local-first promise rests on:
+ *
+ * - The `features/personalization` surfaces are repository-mediated exactly
+ *   like the M5/M7/M8/M9 ones — no IndexedDB implementation, no `src/server`,
+ *   no raw provider shape — and they stay off the IFrame API loader and its YT
+ *   types, which the M3 player rule owns.
+ * - `server/music/radio.ts` keeps the dependency the other way round: it imports
+ *   nothing from `@/data`, so a radio feed can never be composed out of local
+ *   user data. This is the same rule the discovery and catalog services carry.
+ * - The radio route is metadata-only, and its input surface is **exactly** the
+ *   six documented keys. `kind`, `title`, and `artist` are public metadata,
+ *   `variant` is the caller's own refill counter, `limit` and `exclude` are the
+ *   caller's own bounds — so a `liked`/`history`/`profile`/`user`/`device`
+ *   parameter fails this suite instead of shipping a taste profile outward.
+ * - **No personalization weight crosses a request boundary.** The modules that
+ *   build a radio request may not read the profile's weighting internals, and
+ *   may not read `libraryStore`/`historyStore` themselves. The engine may *read*
+ *   a store to decide a policy — `RefillAgent` reads the local datasets, but
+ *   only to rank a response that has already arrived — and a request itself
+ *   carries only identity, variant, limit, and exclusions. The rule is scoped to
+ *   the request builders so it stays honest about what it actually forbids.
+ * - `radioStore` holds no playback state: a radio is a **mode of the one queue**,
+ *   not a second player, so it owns the seed, the played set, the variant, and
+ *   the status — and no queue or transport field.
+ *
+ * `app`, `components`, `features`, and `stores` are already swept wholesale by
+ * {@link uiSourceFiles}, so this section deliberately does not open a second
+ * walker. It *proves* that coverage the way the M9 block does — naming the M10
+ * directories, then re-running the real detectors over their files with a
+ * violating source substituted — which is what would catch a new M10 directory
+ * silently falling out of the shared sweep.
+ */
+
+/**
+ * The M10 surfaces the repository-mediated and player-internals rules must
+ * reach. `features/personalization` is the new folder the rules must cover;
+ * the rest are the existing areas M10 added a file or a listener to, which the
+ * same shared sweep owns and this list proves it owns.
+ */
+const M10_SURFACE_DIRECTORIES = [
+  "features/personalization",
+  "features/preferences",
+  "app/now-playing",
+  "components/layout",
+] as const;
+
+/**
+ * The exact M10 files, named so the coverage proof pins files and not only
+ * directories: a file added to an already-swept directory is covered by
+ * construction, and this list makes that claim checkable per file.
+ */
+const M10_TOUCHED_FILES = [
+  join("app", "now-playing", "page.tsx"),
+  join("components", "layout", "AppShell.tsx"),
+  join("features", "artist", "ArtistView.tsx"),
+  join("features", "personalization", "RadioStartedTracker.tsx"),
+  join("features", "personalization", "RefillAgent.tsx"),
+  join("features", "personalization", "radioApi.ts"),
+  join("features", "personalization", "refillEngine.ts"),
+  join("features", "personalization", "scoreCandidates.ts"),
+  join("features", "personalization", "startRadio.ts"),
+  join("features", "personalization", "tasteProfile.ts"),
+  join("features", "preferences", "AutofillSettingsSection.tsx"),
+  join("features", "search", "ResultMenu.tsx"),
+  join("stores", "radioStore.ts"),
+] as const;
+
+/**
+ * Query keys that would carry local user data or a taste profile into a radio
+ * request. Extends the M9 library list with the profile/user/device family the
+ * radio contract adds: the radio identity is public metadata, never user state.
+ */
+const PERSONALIZATION_QUERY_PARAMETERS = [
+  "profile",
+  "tasteProfile",
+  "taste",
+  "user",
+  "userId",
+  "device",
+  "deviceId",
+  ...LIBRARY_QUERY_PARAMETERS,
+];
+
+/** Accepted query keys of a route handler that name a profile or user dataset. */
+function personalizationQueryParameterReads(source: string): string[] {
+  return acceptedQueryKeys(source).filter((key) => PERSONALIZATION_QUERY_PARAMETERS.includes(key));
+}
+
+/**
+ * The radio route handler — the M10 transport boundary. Named so the route
+ * reads the same way as the discovery and catalog ones above.
+ */
+function readRadioRoute(): string {
+  return readSource("app", "api", "radio", "route.ts");
+}
+
+/** The radio route's documented query parameters, exactly. */
+const RADIO_ACCEPTED_QUERY_KEYS = ["kind", "title", "artist", "variant", "limit", "exclude"];
+
+/**
+ * The modules that **build a radio request** — the ones whose output is the
+ * query that crosses the network. These are the boundary the "no weight in a
+ * request" rule guards; ranking code (`scoreCandidates`, `RefillAgent`) reads
+ * the profile legitimately, and `RefillAgent` reads the local stores to *rank a
+ * response that already arrived*, which is not a request payload.
+ */
+const RADIO_REQUEST_MODULES = [
+  "features/personalization/radioApi.ts",
+  "features/personalization/refillEngine.ts",
+  "features/personalization/startRadio.ts",
+] as const;
+
+/** The personalization modules that own the weighting constants. */
+const PROFILE_MODULES = ["features/personalization/tasteProfile.ts"] as const;
+const SCORER_MODULES = ["features/personalization/scoreCandidates.ts"] as const;
+
+/**
+ * The names that make a personalization import a *weighting* import: the
+ * bounds object plus any `SCREAMING_SNAKE` constant ending in `_WEIGHT` or
+ * `_PENALTY` (`LIKE_WEIGHT`, `REPEAT_PENALTY`, `RECENCY_PENALTY_SKIPPED`).
+ *
+ * A shape, not a list, so a weight that has not been written yet is still
+ * covered — and so an ordinary binding (`buildTasteProfile`, `artistKeyOf`) is
+ * not mistaken for one.
+ */
+const PROFILE_WEIGHTING_PATTERN = /\b(?:TASTE_LIMITS|[A-Z][A-Z0-9_]*_(?:WEIGHT|PENALTY))\b/;
+
+/**
+ * True when a specifier is the taste profile or the scorer — by module *name*
+ * on the last path segment, so an alias, a relative sibling import, and the
+ * `@/…` path all reach the same module. Keyed on the name rather than the exact
+ * `personalization/` prefix because these three modules are siblings inside one
+ * feature folder and import each other by short relative path.
+ */
+function targetsProfileModule(specifier: string): boolean {
+  return /(^|[\\/])(?:tasteProfile|scoreCandidates)(\.tsx?)?$/.test(specifier);
+}
+
+/**
+ * Named bindings a source imports from the profile or the scorer, keeping only
+ * the *weighting* ones (`TASTE_LIMITS`, `*_WEIGHT`, `*_PENALTY`).
+ *
+ * Name-based rather than specifier-based on purpose: the profile's **types** and
+ * helpers (`TasteProfile`, `artistKeyOf`, `genreKeysOf`, `buildTasteProfile`)
+ * are legitimate anywhere, and a rule that flagged every import from the module
+ * would be a rule the real code fails for the wrong reason. A weight is a
+ * numeric tuning constant, and that is what must not reach a request.
+ */
+function profileWeightingImports(source: string): string[] {
+  const names: string[] = [];
+  for (const match of source.matchAll(
+    /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g,
+  )) {
+    if (!targetsProfileModule(match[2])) continue;
+    for (const raw of match[1].split(",")) {
+      // `X as Y` keeps both names; a leading `type` marks a type-only binding.
+      for (const part of raw.split(/\s+as\s+/)) {
+        const name = part.trim().replace(/^type\s+/, "");
+        if (PROFILE_WEIGHTING_PATTERN.test(name)) names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Violations of the "no personalization weight in a request" rule, as labels.
+ *
+ * Scoped to the modules that *build* a radio request — {@link
+ * RADIO_REQUEST_MODULES} — because that is where the boundary is. A request may
+ * carry identity, variant, limit, and exclusions; a taste weight is none of
+ * those, and a weight that can be read here is a weight that can end up in a
+ * query string.
+ */
+function radioRequestViolations(source: string): string[] {
+  const violations: string[] = [];
+  if (profileWeightingImports(source).length > 0) violations.push("taste-profile weighting import");
+  // A request may not be assembled *from a store's* local data directly. The
+  // stores a request builder is allowed to read are the radio identity and the
+  // queue's own membership — never the library/history datasets, whose contents
+  // are exactly what must not leave the device.
+  for (const specifier of moduleSpecifiers(source)) {
+    if (/(^|[\\/])(?:libraryStore|historyStore)(\.tsx?)?$/.test(specifier)) {
+      violations.push("library/history store import");
+    }
+  }
+  return violations;
+}
+
+/** Playback fields that must never appear in the radio store's state. */
+const RADIO_FORBIDDEN_STATE_FIELDS = [
+  "queue",
+  "queueIndex",
+  "currentTrack",
+  "position",
+  "isPlaying",
+  "playOrder",
+];
+
+/**
+ * The radio store's declared state keys, read from its `initialRadioState`
+ * literal. Reuses the transport-store extractor (M6) rather than a second
+ * walker: the invariant is the same shape ("this store's state must not carry
+ * playback fields"), so one extractor serves both.
+ */
+function radioStoreStateKeys(source: string): string[] {
+  return stateObjectKeys(source, "initialRadioState");
+}
+
+/** Playback fields present in the radio store's initial state. */
+function radioStorePlaybackFields(source: string): string[] {
+  const keys = new Set(radioStoreStateKeys(source));
+  return RADIO_FORBIDDEN_STATE_FIELDS.filter((field) => keys.has(field));
+}
+
+describe("architecture violation detectors (M10 task 6.1)", () => {
+  it("flags profile/user/device query keys but passes the radio's own six", () => {
+    expect(personalizationQueryParameterReads('const p = params.get("profile");')).toEqual([
+      "profile",
+    ]);
+    expect(personalizationQueryParameterReads('const u = params.get("userId");')).toEqual([
+      "userId",
+    ]);
+    expect(personalizationQueryParameterReads('const d = params.get("deviceId");')).toEqual([
+      "deviceId",
+    ]);
+    expect(personalizationQueryParameterReads('const l = params.get("liked");')).toEqual(["liked"]);
+    expect(personalizationQueryParameterReads('const h = params.get("history");')).toEqual([
+      "history",
+    ]);
+    // The documented keys are public metadata and caller-side bounds.
+    expect(
+      personalizationQueryParameterReads(
+        RADIO_ACCEPTED_QUERY_KEYS.map((key) => `params.get("${key}");`).join("\n"),
+      ),
+    ).toEqual([]);
+    // A schema object is a bound on a value, not an accepted parameter.
+    expect(personalizationQueryParameterReads("radioParamsSchema.safeParse({ kind });")).toEqual(
+      [],
+    );
+  });
+
+  it("fails the exact radio input surface on a widened key and on a dropped key", () => {
+    const documented = [...RADIO_ACCEPTED_QUERY_KEYS].sort();
+
+    const widened = [
+      ...RADIO_ACCEPTED_QUERY_KEYS.map((key) => `params.get("${key}");`),
+      'params.get("profile");',
+    ].join("\n");
+    expect([...acceptedQueryKeys(widened)].sort()).not.toEqual(documented);
+
+    // A dropped key breaks it too, so "at least these six" cannot satisfy the
+    // rule: the exact-set comparison is not satisfied by a superset.
+    const dropped = RADIO_ACCEPTED_QUERY_KEYS.filter((key) => key !== "exclude")
+      .map((key) => `params.get("${key}");`)
+      .join("\n");
+    expect([...acceptedQueryKeys(dropped)].sort()).not.toEqual(documented);
+  });
+
+  it("flags profile weights and library/history reads in a request but passes identity-only code", () => {
+    expect(
+      radioRequestViolations(
+        'import { TASTE_LIMITS } from "@/features/personalization/tasteProfile";',
+      ),
+    ).toEqual(["taste-profile weighting import"]);
+    expect(
+      radioRequestViolations(
+        'import { LIKE_WEIGHT } from "@/features/personalization/tasteProfile";',
+      ),
+    ).toEqual(["taste-profile weighting import"]);
+    expect(
+      radioRequestViolations(
+        'import { ARTIST_AFFINITY_WEIGHT } from "@/features/personalization/scoreCandidates";',
+      ),
+    ).toEqual(["taste-profile weighting import"]);
+    // Reading the stores directly is what would assemble a payload from them.
+    expect(
+      radioRequestViolations('import { useLibraryStore } from "@/stores/libraryStore";'),
+    ).toEqual(["library/history store import"]);
+    expect(
+      radioRequestViolations('import { useHistoryStore } from "@/stores/historyStore";'),
+    ).toEqual(["library/history store import"]);
+    // The real shape: the radio identity, the queue's own membership, the profile
+    // *type*, and the refiller's own helper — none of which is a weight or a store.
+    expect(
+      radioRequestViolations(
+        [
+          'import { radioIdentity } from "@/stores/radioStore";',
+          'import type { TasteProfile } from "@/features/personalization/tasteProfile";',
+          'import { selectAppendable } from "./refillEngine";',
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a playback field in the radio store's state but passes the real one", () => {
+    const violating = `export const initialRadioState = {\n  seed: null,\n  queue: [] as Track[],\n  currentTrack: null as Track | null,\n};`;
+    expect(radioStorePlaybackFields(violating)).toEqual(["queue", "currentTrack"]);
+
+    const clean = `export const initialRadioState = {\n  seed: null as RadioSeed | null,\n  status: "idle" as RadioStatus,\n  playedIds: [] as string[],\n};`;
+    expect(radioStorePlaybackFields(clean)).toEqual([]);
+  });
+});
+
+describe("architecture: the M10 surfaces stay repository-mediated (M10 task 6.1)", () => {
+  it("sweeps every M10 surface directory", () => {
+    for (const dir of M10_SURFACE_DIRECTORIES) {
+      expect(readTree(join(srcDir, dir)).length, dir).toBeGreaterThan(0);
+      // The repository-mediated sweep is the shared `uiSourceFiles` one.
+      expect(
+        uiSourceFiles().some(({ file }) => file.startsWith(join(srcDir, dir))),
+        dir,
+      ).toBe(true);
+    }
+  }, 30_000);
+
+  it("sweeps every touched M10 file — coverage is pinned per file, not per area", () => {
+    const swept = new Set(uiSourceFiles().map(({ file }) => file));
+    // Not vacuous: the detector below is about files inside those directories,
+    // and the named ones must actually exist for it to say anything.
+    for (const file of M10_TOUCHED_FILES) {
+      expect(existsSync(join(srcDir, file)), file).toBe(true);
+      expect(swept.has(join(srcDir, file)), file).toBe(true);
+    }
+  }, 30_000);
+
+  it("flags a leak in any M10 surface — the sweep is proven, not assumed", () => {
+    // Substitute a violating source for every real file in the M10 areas: if a
+    // rule did not reach a file, that file would escape this list.
+    const swept = uiSourceFiles().filter(({ file }) =>
+      M10_SURFACE_DIRECTORIES.some((dir) => file.startsWith(join(srcDir, dir))),
+    );
+    expect(swept.length).toBeGreaterThan(0);
+    const injected = swept.map(({ file }) => ({
+      file,
+      source:
+        'import { createRepositories } from "@/data/indexeddb";\nimport { runRadio } from "@/server/music/radio";\nconst node: MusicResponsiveListItemRenderer = input;',
+    }));
+    const expected = injected.map(({ file }) => file);
+
+    expect(
+      injected
+        .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+        .map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected.filter(({ source }) => hasDirectIndexedDbImport(source)).map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected
+        .filter(({ source }) => moduleSpecifiers(source).some(targetsServerModule))
+        .map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected.filter(({ source }) => mentionsRawProviderShape(source)).map(({ file }) => file),
+    ).toEqual(expected);
+  }, 30_000);
+
+  it("finds no IndexedDB, server, or provider-shape leak in the M10 surfaces", () => {
+    const files = M10_SURFACE_DIRECTORIES.flatMap((dir) => readTree(join(srcDir, dir)));
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+      .map(({ file }) => relative(srcDir, file));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: the M10 surfaces stay off the IFrame API loader and YT types (M10 task 6.1)", () => {
+  it("finds no player-internals import in the M10 surfaces", () => {
+    const files = M10_SURFACE_DIRECTORIES.flatMap((dir) => readTree(join(srcDir, dir)));
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(({ source }) => moduleSpecifiers(source).some(targetsPlayerInternals))
+      .map(({ file }) => relative(srcDir, file));
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags the loader and its types in any M10 surface — the sweep is proven, not assumed", () => {
+    const swept = M10_SURFACE_DIRECTORIES.flatMap((dir) =>
+      uiSourceFiles().filter(({ file }) => file.startsWith(join(srcDir, dir))),
+    );
+    expect(swept.length).toBeGreaterThan(0);
+    const expected = swept.map(({ file }) => file);
+
+    // Each internals module on its own: a rule that only caught one of the two
+    // would pass this list.
+    for (const specifier of ["@/player/ytApi", "@/player/types"]) {
+      const injected = swept.map(({ file }) => ({
+        file,
+        source: `import { internals } from "${specifier}";`,
+      }));
+      expect(
+        injected
+          .filter(({ source }) => moduleSpecifiers(source).some(targetsPlayerInternals))
+          .map(({ file }) => file),
+      ).toEqual(expected);
+    }
+  }, 30_000);
+});
+
+describe("architecture: the server radio layer stays off local data (M10 task 6.1)", () => {
+  it("imports no @/data module from the radio resolver", () => {
+    const source = readSource("server", "music", "radio.ts");
+    expect(source.length).toBeGreaterThan(0);
+    // Not vacuous: the module really does import its own dependencies.
+    expect(moduleSpecifiers(source).length).toBeGreaterThan(0);
+    expect(dataLayerImports(source)).toEqual([]);
+  });
+
+  it("flags a data-layer import in it — the rule is proven, not assumed", () => {
+    const injected = [
+      {
+        name: "radio.ts",
+        source:
+          'import { getLocalData } from "@/data/localData";\nimport { runChain } from "./chain";',
+      },
+    ];
+
+    expect(
+      injected.filter(({ source }) => dataLayerImports(source).length > 0).map(({ name }) => name),
+    ).toEqual(["radio.ts"]);
+  });
+});
+
+describe("architecture: the radio route is metadata-only (M10 task 6.1)", () => {
+  it("accepts exactly kind, title, artist, variant, limit, and exclude", () => {
+    expect([...acceptedQueryKeys(readRadioRoute())].sort()).toEqual(
+      [...RADIO_ACCEPTED_QUERY_KEYS].sort(),
+    );
+  });
+
+  it("reads no liked, history, profile, user, or device parameter", () => {
+    expect(personalizationQueryParameterReads(readRadioRoute())).toEqual([]);
+  });
+
+  it("returns no media bytes and reaches no local dataset", () => {
+    const source = readRadioRoute();
+
+    expect(mediaByteIndicators(source)).toEqual([]);
+    expect(dataLayerImports(source)).toEqual([]);
+  });
+
+  it("flags a widened input, a profile key, and a media body — proven on the real handler", () => {
+    const injected = {
+      name: "radio.ts",
+      source: [
+        'import { getLocalData } from "@/data/localData";',
+        ...RADIO_ACCEPTED_QUERY_KEYS.map((key) => `params.get("${key}");`),
+        'params.get("profile");',
+        'return new Response(bytes, { headers: { "Content-Type": "audio/mpeg" } });',
+      ].join("\n"),
+    };
+
+    expect(personalizationQueryParameterReads(injected.source)).toEqual(["profile"]);
+    expect([...acceptedQueryKeys(injected.source)].sort()).not.toEqual(
+      [...RADIO_ACCEPTED_QUERY_KEYS].sort(),
+    );
+    expect(mediaByteIndicators(injected.source)).toContain("media MIME type");
+    expect(dataLayerImports(injected.source)).toEqual(["@/data/localData"]);
+  });
+});
+
+describe("architecture: no personalization weight crosses a request boundary (M10 task 6.1)", () => {
+  it("keeps every radio-request module off the profile weights and the local data stores", () => {
+    for (const requestModule of RADIO_REQUEST_MODULES) {
+      const source = readSource(...requestModule.split("/"));
+      expect(source.length, requestModule).toBeGreaterThan(0);
+      // Not vacuous: each of these really does build a request payload.
+      expect(moduleSpecifiers(source).length, requestModule).toBeGreaterThan(0);
+      expect(radioRequestViolations(source), requestModule).toEqual([]);
+    }
+  });
+
+  it("reads the request's own parameters: identity, variant, limit, and exclusions only", () => {
+    // The client half of the same contract the server route pins: the query is
+    // built by exactly these six keys, with no liked/history/profile key. I/O
+    // -bound, like every sweep here.
+    const source = readSource("features", "personalization", "radioApi.ts");
+    const set = [...source.matchAll(/params\.set\(\s*["']([^"']+)["']/g)].map((match) => match[1]);
+
+    // Not vacuous: the detector really does read the request builder's keys.
+    expect(set.length).toBeGreaterThan(0);
+    expect([...new Set(set)].sort()).toEqual([...RADIO_ACCEPTED_QUERY_KEYS].sort());
+  }, 30_000);
+
+  it("flags a weight or a store read in any request module — the rule is proven, not assumed", () => {
+    const injected = RADIO_REQUEST_MODULES.map((requestModule) => ({
+      requestModule,
+      source:
+        'import { TASTE_LIMITS } from "@/features/personalization/tasteProfile";\nimport { useLibraryStore } from "@/stores/libraryStore";',
+    }));
+
+    expect(
+      injected
+        .filter(({ source }) => radioRequestViolations(source).length > 0)
+        .map(({ requestModule }) => requestModule),
+    ).toEqual([...RADIO_REQUEST_MODULES]);
+  });
+
+  it("confines the profile's weighting constants to the scorer", () => {
+    // The scorer is the one place a weight is *legitimately* read: it is the
+    // local ranking, after a response has arrived. Everywhere else, a weight is
+    // a tuning constant that must not travel. I/O-bound like every sweep here.
+    const allowed = [...PROFILE_MODULES, ...SCORER_MODULES].map((owned) =>
+      join(srcDir, ...owned.split("/")),
+    );
+
+    const offenders = readTree(srcDir)
+      .filter(({ file }) => !allowed.includes(file))
+      .filter(({ source }) => profileWeightingImports(source).length > 0)
+      .map(({ file }) => relative(srcDir, file));
+
+    expect(offenders).toEqual([]);
+    // Not vacuous: the scorer really does read the weights, and the very same
+    // detector finds it there.
+    expect(profileWeightingImports(readSource(...SCORER_MODULES[0].split("/")))).toContain(
+      "LIKE_WEIGHT",
+    );
+  }, 30_000);
+
+  it("reads weights in one imported name at a time, so a renamed leak still fails", () => {
+    // A weight aliased on import, or a direct relative specifier, is still the
+    // same leak — the rule must not be defeatable by naming.
+    expect(
+      profileWeightingImports(
+        'import { REPEAT_PENALTY as penalty } from "@/features/personalization/scoreCandidates";',
+      ),
+    ).toEqual(["REPEAT_PENALTY"]);
+    expect(
+      profileWeightingImports('import { ARTIST_AFFINITY_WEIGHT } from "./tasteProfile";'),
+    ).toEqual(["ARTIST_AFFINITY_WEIGHT"]);
+    // The profile's types and helpers are not weights and stay allowed.
+    expect(
+      profileWeightingImports(
+        [
+          'import type { TasteProfile } from "@/features/personalization/tasteProfile";',
+          'import { buildTasteProfile, artistKeyOf } from "@/features/personalization/tasteProfile";',
+          'import { scoreCandidates, type ScoreContext } from "@/features/personalization/scoreCandidates";',
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("architecture: a radio is a queue mode, not a second player (M10 task 6.1)", () => {
+  it("keeps playback fields out of the radio store's initial state", () => {
+    const source = readSource("stores", "radioStore.ts");
+    expect(source.length).toBeGreaterThan(0);
+    // Not vacuous: the extractor really does read this store's state keys.
+    expect(radioStoreStateKeys(source).length).toBeGreaterThan(0);
+    expect(radioStorePlaybackFields(source)).toEqual([]);
   });
 });
