@@ -119,7 +119,15 @@ export interface ListeningStats {
   verdicts: { completed: number; partial: number; skipped: number };
   /** The listening-day runs (design §3). */
   streak: { current: number; longest: number; lastListeningDay: string | null };
-  /** At least one non-skipped play exists — the same meaning M10's profile gives it. */
+  /**
+   * At least one non-skipped play exists.
+   *
+   * *Stricter* than M10's profile `hasSignal`, deliberately: a profile treats any
+   * recorded event as a reason to personalize (one touch of a track still says
+   * something about taste), while a statistic that counted one 3-second touch as
+   * "you listened 0 minutes, 1 play" would be reporting noise as a fact. So a
+   * skip-only history personalizes (M10) while reporting nothing (M11).
+   */
   hasSignal: boolean;
 }
 

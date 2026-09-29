@@ -2338,8 +2338,15 @@ describe("architecture: /history is a thin route (M11 task 6.1)", () => {
     expect(hasServerReferenceOrFetch(source)).toBe(false);
     expect(dataLayerImports(source)).toEqual([]);
     expect(moduleSpecifiers(source).filter(importsDataLayer)).toEqual([]);
-    // The route owns exactly the two client views and the route's hidden h1.
-    expect(moduleSpecifiers(source)).toContain("@/features/history/HistoryView");
-    expect(moduleSpecifiers(source)).toContain("@/features/insights/StatsView");
+    // The route mounts the client views and owns the route's single hidden h1.
+    // It reaches no dataset itself: every view reads local data through the
+    // repository interfaces, which the rules above already check per surface.
+    for (const view of [
+      "@/features/history/HistoryView",
+      "@/features/insights/StatsView",
+      "@/features/mixes/MixList",
+    ]) {
+      expect(moduleSpecifiers(source), view).toContain(view);
+    }
   });
 });

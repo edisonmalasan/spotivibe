@@ -188,10 +188,19 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
       // M11: the mixes the listener actually has, by name. No generation action
       // and no autoplay here — opening Home must not spend provider work or start
       // audio; building a mix is an explicit act on its own surface.
+      //
+      // The section header contract is kept (title plus the authored description),
+      // but a mix is a *collection* rather than a single track, so its list is a
+      // named list rather than a horizontal card shelf — see the amended
+      // `discovery` delta in the M11 change.
       return (
-        <div data-testid={testId}>
-          <MixList title={section.title} showGenerate={false} />
-        </div>
+        <section className="flex flex-col gap-4" data-testid={testId}>
+          <header className="flex flex-col gap-1">
+            <h2 className="text-title-lg font-bold text-pure-white">{section.title}</h2>
+            <p className="text-body-lg text-mist">{section.description}</p>
+          </header>
+          <MixList title="" showGenerate={false} />
+        </section>
       );
 
     case "podcasts":

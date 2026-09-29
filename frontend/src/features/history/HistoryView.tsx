@@ -11,7 +11,7 @@ import { localDayKey } from "@/features/insights/buildStats";
 import { albumHrefFromRelease } from "@/features/album/albumKeys";
 import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
 import { songCountLabel } from "@/lib/playlistPresentation";
-import { useHistoryStore } from "@/stores/historyStore";
+import { useHistoryStore, RECENT_HISTORY_LIMIT } from "@/stores/historyStore";
 
 /**
  * The local listening record (M11; spec: `insights` — "History surface"; task
@@ -157,8 +157,8 @@ export function HistoryView() {
         <div className="flex flex-col gap-1">
           <h2 className="text-title-lg font-bold text-pure-white">Listening history</h2>
           <p className="text-body-lg text-mist">
-            The local record of what was played in Spotivibe on this device. It is not a ranking,
-            and it is not shared.
+            The most recent plays Spotivibe recorded on this device — up to {RECENT_HISTORY_LIMIT}{" "}
+            at a time. It is not a ranking, and it is not shared.
           </p>
         </div>
         <Button

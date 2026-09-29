@@ -154,11 +154,15 @@ export function classifyPlay(
   //    track, and the reason a track shorter than a minute can complete at all.
   if (played >= thresholds.completedMinSeconds) return "completed";
   // 5. Skip rule, only for a track long enough for the fraction rule to mean
-  //    anything, and only below the skip threshold itself.
+  //    anything, and only *below* the skip threshold — the requirement's wording
+  //    is "fewer than the documented skip threshold", so a play of exactly the
+  //    threshold is a partial play, not a skip (the bound is exclusive on both
+  //    sides: `<= 10s` here contradicted the spec and design.md, which both say
+  //    "under" the threshold).
   if (
     duration !== null &&
     duration > thresholds.skipMinTrackSeconds &&
-    played <= thresholds.skipMaxSeconds
+    played < thresholds.skipMaxSeconds
   ) {
     return "skipped";
   }
@@ -168,9 +172,9 @@ export function classifyPlay(
 
 /**
  * Tally a list of verdicts — the same three counts `buildStats` reports, for a
- * caller that already holds verdicts (the History surface's per-day groups, for
- * instance). A verdict outside the union is ignored rather than invented into
- * one of the three buckets.
+ * caller that already holds a verdict per event (a day's group, a test's sample).
+ * A verdict outside the union is ignored rather than invented into one of the
+ * three buckets.
  */
 export function verdictCounts(verdicts: readonly PlayVerdict[]): {
   completed: number;

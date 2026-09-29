@@ -24,9 +24,16 @@ import { useHistoryStore } from "@/stores/historyStore";
  *    absent rather than filled with a guess.
  */
 
-/** `3725` → `1 h 2 m`. Hours only when there are any, like a person would say it. */
+/**
+ * `3725` → `1 h 2 m`, the way a person would say it.
+ *
+ * Seconds are shown below a minute rather than truncated: a listener who has
+ * played four 13-second tracks has listened to something, and reporting that as
+ * "0 min" would be the floor of the format leaking into the number.
+ */
 export function formatDuration(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
+  if (seconds < 60) return `${seconds} sec`;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   if (hours === 0) return `${minutes} min`;

@@ -74,11 +74,18 @@ afterEach(() => {
 
 describe("formatDuration", () => {
   it("reads the way a person would say it", () => {
-    expect(formatDuration(0)).toBe("0 min");
-    expect(formatDuration(59)).toBe("0 min");
+    expect(formatDuration(0)).toBe("0 sec");
+    expect(formatDuration(13)).toBe("13 sec");
+    expect(formatDuration(59)).toBe("59 sec");
     expect(formatDuration(60)).toBe("1 min");
     expect(formatDuration(3600)).toBe("1 h");
     expect(formatDuration(3750)).toBe("1 h 2 min");
+  });
+
+  it("never reports a minute of listening as zero minutes", () => {
+    // Four 13-second plays is nearly a minute of listening; truncating that to
+    // "0 min" would report a floor as a total.
+    expect(formatDuration(52)).not.toMatch(/^0 /u);
   });
 });
 

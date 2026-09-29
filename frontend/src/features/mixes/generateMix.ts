@@ -74,7 +74,7 @@ function recentlyPlayedIds(
 }
 
 /** A composed but not yet persisted mix. */
-export interface MixDraft {
+interface MixDraft {
   name: string;
   generatedAt: number;
   period: string;
@@ -176,8 +176,28 @@ export async function generateMix(input: GenerateMixInput): Promise<MixOutcome> 
   const outcome = await composeMix(input);
   if (outcome.status !== "composed") return outcome;
   const data = await getLocalData();
+  const id = mixIdentityKey(outcome.draft.seeds, outcome.draft.period);
+
+  // A second build in the same period lands on the identity the first one already
+  // claimed, and the spec calls that a *refresh* rather than a new identity — so
+  // it takes the refresh path. Otherwise the re-derived name would quietly replace
+  // the name the listener has learned, which is exactly what a refresh must not do.
+  const existing = await data.mixes.get(id);
+  if (existing !== undefined) {
+    const refreshed = await data.mixes.refresh(id, {
+      tracks: outcome.draft.tracks,
+      seeds: outcome.draft.seeds,
+      period: outcome.draft.period,
+    });
+    // The repository's own guard is the second line of defence: if the mix was
+    // removed between the read and the patch, nothing is recreated.
+    return refreshed === undefined
+      ? { status: "created", mix: { ...existing } }
+      : { status: "created", mix: refreshed };
+  }
+
   const mix: NewMix = {
-    id: mixIdentityKey(outcome.draft.seeds, outcome.draft.period),
+    id,
     ...outcome.draft,
     updatedAt: outcome.draft.generatedAt,
   };

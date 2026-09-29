@@ -14,7 +14,7 @@ import SearchPage from "@/app/search/page";
 import type { Track } from "@/data/repositories";
 import { CIRCULAR_WINDOW } from "@/features/home/homeSections";
 import { resetRefillChannel } from "@/features/personalization/RefillAgent";
-import { resetHistoryStore } from "@/stores/historyStore";
+import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
 import { resetMixStore } from "@/stores/mixStore";
 import { resetLibraryStore } from "@/stores/libraryStore";
 import { resetPreferencesStore } from "@/stores/preferencesStore";
@@ -356,6 +356,10 @@ describe("route shells", () => {
     expect(screen.getByTestId("history-view")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Listening stats" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Listening history" })).toBeInTheDocument();
+    // The mix surface shares the route, and generation is offered here — the Home
+    // section is list-only, so this is where a mix can actually be built.
+    expect(screen.getByTestId("mix-list")).toBeInTheDocument();
+    expect(screen.getByTestId("mix-generate")).toBeInTheDocument();
 
     // A fresh device explains both rather than reporting zeroes.
     await waitFor(() =>
@@ -363,6 +367,39 @@ describe("route shells", () => {
     );
   });
 
+  it("clearing history from the surface resets both the record and the statistics (M11)", async () => {
+    // The composed scenario: one click on the History surface must leave the list
+    // empty *and* the derived statistics reporting nothing, with no separate
+    // invalidation step (there is no stored aggregate to invalidate).
+    const playedTrack = makeTrack({
+      id: "youtube:m11played",
+      providerId: "m11played",
+      title: "Played Once",
+    });
+    await useHistoryStore.getState().record({
+      trackId: playedTrack.id,
+      track: playedTrack,
+      playedAt: Date.now() - 3_600_000,
+      secondsPlayed: 0,
+      context: "home",
+    });
+    await useHistoryStore
+      .getState()
+      .updateMeasurements(useHistoryStore.getState().events[0].id, { secondsPlayed: 180 });
+
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getAllByTestId("history-row")).toHaveLength(1));
+    await waitFor(() => expect(screen.getByTestId("stats-play-count")).toHaveTextContent("1"));
+
+    fireEvent.click(screen.getByTestId("history-clear"));
+
+    // Both surfaces go back to explaining themselves.
+    await waitFor(() => expect(screen.queryAllByTestId("history-row")).toHaveLength(0));
+    await waitFor(() =>
+      expect(screen.getAllByRole("heading", { name: "Nothing here yet" })).toHaveLength(2),
+    );
+    expect(screen.queryByTestId("stats-play-count")).not.toBeInTheDocument();
+  });
   it("issues no provider request when /history opens (M11)", async () => {
     stubDiscovery();
     render(<HistoryPage />);

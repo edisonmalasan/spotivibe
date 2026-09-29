@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ListeningEventRecord, Track } from "@/data/repositories";
 import { getLocalData } from "@/data/localData";
 import { groupEventsByDay, HistoryView } from "@/features/history/HistoryView";
-import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
+import { resetHistoryStore, RECENT_HISTORY_LIMIT, useHistoryStore } from "@/stores/historyStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
 /**
@@ -201,13 +201,46 @@ describe("HistoryView", () => {
     expect(screen.queryAllByTestId("history-row")).toHaveLength(0);
   });
 
-  it("states that the record is local and unranked", async () => {
+  it("states that the record is local, unranked, and bounded", async () => {
     render(<HistoryView />);
 
     // The requirement forbids a completeness/ranking/sharing claim, so the
     // surface says what the record is and nothing more.
     expect(screen.getByText(/not a ranking/i)).toBeInTheDocument();
     expect(screen.getByText(/not shared/i)).toBeInTheDocument();
+    // It also discloses its own window, because "the local record" over a
+    // bounded list would be a completeness claim the page cannot support.
+    expect(screen.getByText(/most recent plays/i)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`${RECENT_HISTORY_LIMIT}`))).toBeInTheDocument();
+  });
+
+  it("shows no total, ranking, or completeness claim even with plays present", async () => {
+    await seed([
+      event(),
+      event({
+        id: "e2",
+        trackId: "youtube:bbb",
+        track: playedTrack({ id: "youtube:bbb", providerId: "bbb", title: "Beta" }),
+      }),
+    ]);
+    render(<HistoryView />);
+    await waitFor(() => expect(screen.getAllByTestId("history-row")).toHaveLength(2));
+
+    // A negative assertion, so adding "Total listening time: 12 min" or
+    // "your complete history" to this surface fails the suite rather than
+    // shipping a claim the device cannot support.
+    const view = screen.getByTestId("history-view").textContent ?? "";
+    for (const claim of [
+      /total/i,
+      /listening time/i,
+      /you listened/i,
+      /complete/i,
+      /every (?:track|song) you/i,
+      /most played/i,
+      /top (?:track|artist|song)/i,
+    ]) {
+      expect(view, claim.source).not.toMatch(claim);
+    }
   });
 
   it("clears the history from the surface, emptying both the list and storage", async () => {

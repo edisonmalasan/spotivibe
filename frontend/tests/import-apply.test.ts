@@ -10,6 +10,7 @@ import {
 import { createRepositories, type RepositorySet } from "@/data/indexeddb";
 import { DEFAULT_PREFERENCES, type ListeningEventRecord } from "@/data/repositories";
 import {
+  encode,
   FIXED_EXPORTED_AT,
   makeBackupData,
   makeEnvelope,
@@ -167,6 +168,97 @@ describe("export → reset → import", () => {
       await repos.applyImport(planReplace(prepared.envelope));
       expect(await counts()).toEqual(beforeCounts);
       expect(await collectLocalData(repos)).toEqual(envelope.data);
+    } finally {
+      repos.close();
+    }
+  });
+});
+
+describe("M11: the mixes dataset in the import pipeline", () => {
+  it("replace-importing a pre-M11 envelope leaves the mixes dataset empty", async () => {
+    // The scenario the optional dataset exists for: an envelope exported before
+    // mixes existed carries no such key, and "replace" must mean the dataset is
+    // *empty* afterwards — not silently kept, which would make replace-import a
+    // partial operation and leave records a replace was asked to wipe.
+    const repos = await createRepositories({ name: "apply-pre-m11" });
+    try {
+      await seedBaseline(repos);
+      expect(await repos.mixes.list()).toHaveLength(1);
+
+      const preM11 = JSON.parse(encode(makeEnvelope())) as { data: Record<string, unknown> };
+      delete preM11.data.mixes;
+      const prepared = prepareImport(encode(preM11));
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      await repos.applyImport(planReplace(prepared.envelope));
+
+      expect(await repos.mixes.list()).toEqual([]);
+      // The other datasets really were replaced, so the run is not a no-op.
+      expect((await repos.likedTracks.list()).map((r) => r.trackId)).toEqual(["t2", "t1"]);
+    } finally {
+      repos.close();
+    }
+  });
+
+  it("merge-importing a pre-M11 envelope leaves local mixes untouched", async () => {
+    // Merge is the opposite promise: an envelope that knows nothing about mixes
+    // must not be allowed to delete a mix this device built.
+    const repos = await createRepositories({ name: "apply-merge-pre-m11" });
+    try {
+      await seedBaseline(repos);
+      const preM11 = JSON.parse(encode(makeEnvelope())) as { data: Record<string, unknown> };
+      delete preM11.data.mixes;
+      const prepared = prepareImport(encode(preM11));
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      const local = await collectLocalData(repos);
+      await repos.applyImport(planMerge(prepared.envelope, local));
+
+      expect(await repos.mixes.list()).toHaveLength(1);
+    } finally {
+      repos.close();
+    }
+  });
+
+  it("merge-importing a mix with a newer updatedAt overwrites it by identity", async () => {
+    const repos = await createRepositories({ name: "apply-merge-mix" });
+    try {
+      await seedBaseline(repos);
+      const newer = makeMix({ name: "Aurora (refreshed)", updatedAt: makeMix().updatedAt + 500 });
+      const prepared = prepareImport(encode(makeEnvelope(makeBackupData({ mixes: [newer] }))));
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      const local = await collectLocalData(repos);
+      const plan = planMerge(prepared.envelope, local);
+      expect(plan.stats.mixes).toBe(1);
+      await repos.applyImport(plan);
+
+      const stored = await repos.mixes.list();
+      expect(stored).toHaveLength(1);
+      expect(stored[0].name).toBe("Aurora (refreshed)");
+
+      // A second merge of the same envelope plans nothing: the rules converge.
+      const again = planMerge(prepared.envelope, await collectLocalData(repos));
+      expect(again.stats.mixes).toBe(0);
+    } finally {
+      repos.close();
+    }
+  });
+
+  it("merge-importing an older mix keeps the local one", async () => {
+    const repos = await createRepositories({ name: "apply-merge-mix-older" });
+    try {
+      await seedBaseline(repos);
+      const older = makeMix({ name: "Stale", updatedAt: makeMix().updatedAt - 500 });
+      const prepared = prepareImport(encode(makeEnvelope(makeBackupData({ mixes: [older] }))));
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      const plan = planMerge(prepared.envelope, await collectLocalData(repos));
+      expect(plan.stats.mixes).toBe(0);
+      await repos.applyImport(plan);
+
+      expect((await repos.mixes.list())[0].name).toBe(makeMix().name);
     } finally {
       repos.close();
     }

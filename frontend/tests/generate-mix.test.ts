@@ -6,10 +6,12 @@ import {
   generateMix,
   mixIdentityKey,
   refreshMix,
+  MIX_EXCLUDE_WINDOW_MS,
   MIX_MAX_ROUNDS,
   MIX_TARGET_TRACKS,
 } from "@/features/mixes/generateMix";
 import { buildTasteProfile, type TasteProfile } from "@/features/personalization/tasteProfile";
+import { localDayKey } from "@/features/insights/buildStats";
 import { makeTrack } from "./helpers/music-fixtures";
 
 /**
@@ -211,6 +213,9 @@ describe("generateMix: a mix is built from the profile, within bounds", () => {
 
   it("excludes tracks played in the last day", async () => {
     const data = await getLocalData();
+    // One hour ago: inside the documented recency window, so this track must be
+    // excluded from the mix built now.
+    expect(MIX_EXCLUDE_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
     await data.listeningHistory.record({
       trackId: "youtube:feed0",
       track: feedOf(1)[0],
@@ -337,5 +342,169 @@ describe("buildMixProfile", () => {
     const warm = await buildMixProfile(NOW);
     expect(warm?.hasSignal).toBe(true);
     expect(warm?.seedTerms.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the generation period is recorded with the mix", () => {
+  it("records the local day it was generated in", async () => {
+    const outcome = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW,
+      fetchFeed: vi.fn().mockResolvedValue(feedResponse(feedOf(4))),
+    });
+    if (outcome.status !== "created") throw new Error("expected a created mix");
+    // The period is the mix's own local day, not the instant: it is what makes a
+    // later generation in the same period a refresh rather than a new identity.
+    expect(outcome.mix.period).toBe(localDayKey(NOW));
+    expect(outcome.mix.generatedAt).toBe(NOW);
+    expect((await (await getLocalData()).mixes.get(outcome.mix.id))?.period).toBe(localDayKey(NOW));
+  });
+
+  it("treats a second generation in the same period as a refresh of that mix", async () => {
+    const fetchFeed = vi
+      .fn()
+      .mockResolvedValueOnce(feedResponse(feedOf(4)))
+      .mockResolvedValue(feedResponse(feedOf(4, 100)));
+    const first = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW,
+      fetchFeed,
+    });
+    if (first.status !== "created") throw new Error("expected a created mix");
+
+    const second = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW + 3_600_000, // the same local day
+      fetchFeed,
+    });
+    if (second.status !== "created") throw new Error("expected a created mix");
+
+    // One identity, one record, contents re-derived — and the name survives, which
+    // is what makes it a refresh rather than a second, differently-named mix.
+    expect(second.mix.id).toBe(first.mix.id);
+    expect(second.mix.name).toBe(first.mix.name);
+    expect(second.mix.tracks[0]?.providerId).toBe("feed100");
+    expect(await (await getLocalData()).mixes.list()).toHaveLength(1);
+  });
+
+  it("generates a separate mix in a later period", async () => {
+    const first = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW,
+      fetchFeed: vi.fn().mockResolvedValue(feedResponse(feedOf(4))),
+    });
+    if (first.status !== "created") throw new Error("expected a created mix");
+
+    const nextDay = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW + 24 * 60 * 60 * 1000,
+      fetchFeed: vi.fn().mockResolvedValue(feedResponse(feedOf(4))),
+    });
+    if (nextDay.status !== "created") throw new Error("expected a created mix");
+
+    // A new period is a new identity: the listener gets a fresh mix, and the old
+    // one is still openable rather than replaced without trace.
+    expect(nextDay.mix.id).not.toBe(first.mix.id);
+    expect(await (await getLocalData()).mixes.list()).toHaveLength(2);
+  });
+});
+
+describe("a mix is reproducible from local data alone", () => {
+  it("derives the same mix from the same profile and the same feed answers", async () => {
+    const answers = () => feedResponse(feedOf(6));
+    const first = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW,
+      fetchFeed: vi.fn().mockImplementation(answers),
+    });
+    if (first.status !== "created") throw new Error("expected a created mix");
+
+    // A different device's session, same local inputs: the derivation consults no
+    // server-held state about the listener, so it must land on the same mix.
+    await (await getLocalData()).mixes.clear();
+    const second = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW,
+      fetchFeed: vi.fn().mockImplementation(answers),
+    });
+    if (second.status !== "created") throw new Error("expected a created mix");
+
+    expect(second.mix.id).toBe(first.mix.id);
+    expect(second.mix.name).toBe(first.mix.name);
+    expect(second.mix.tracks.map((track) => track.id)).toEqual(
+      first.mix.tracks.map((track) => track.id),
+    );
+  });
+});
+
+describe("clearing local data changes future mixes", () => {
+  it("stops excluding tracks the listener no longer has a record of", async () => {
+    const data = await getLocalData();
+    // Play one feed track, so it is excluded from the mix built now.
+    // One hour ago: inside the documented recency window, so this track must be
+    // excluded from the mix built now.
+    expect(MIX_EXCLUDE_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+    await data.listeningHistory.record({
+      trackId: "youtube:feed0",
+      track: feedOf(1)[0],
+      playedAt: NOW - 60_000,
+      secondsPlayed: 180,
+      context: "home",
+    });
+    const withHistory = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW,
+      fetchFeed: vi.fn().mockResolvedValue(feedResponse(feedOf(4))),
+    });
+    if (withHistory.status !== "created") throw new Error("expected a created mix");
+    expect(withHistory.mix.tracks.map((track) => track.providerId)).not.toContain("feed0");
+
+    // Clearing the history removes that knowledge, so the next mix is free to
+    // include the track again: the exclusion is derived from what is stored now.
+    await data.listeningHistory.clear();
+    const afterClear = await generateMix({
+      profile: signaledProfile(),
+      languages: ["en"],
+      now: NOW + 3_600_000,
+      fetchFeed: vi.fn().mockResolvedValue(feedResponse(feedOf(4))),
+    });
+    if (afterClear.status !== "created") throw new Error("expected a created mix");
+    expect(afterClear.mix.tracks.map((track) => track.providerId)).toContain("feed0");
+  });
+
+  it("generates nothing once the signal it was built from is gone", async () => {
+    const data = await getLocalData();
+    await data.likedTracks.like(
+      makeTrack({ id: "youtube:liked1", providerId: "liked1", title: "Liked" }),
+      NOW,
+    );
+    const before = await generateMix({
+      profile: await buildMixProfile(NOW).then((p) => p as TasteProfile),
+      languages: ["en"],
+      now: NOW,
+      fetchFeed: vi.fn().mockResolvedValue(feedResponse(feedOf(4))),
+    });
+    expect(before.status).toBe("created");
+
+    // The likes that were the whole signal are gone, so no new mix is claimed to
+    // come from them — the previous record stays openable as its own snapshot.
+    await data.likedTracks.clear();
+    const after = await generateMix({
+      profile: (await buildMixProfile(NOW)) as TasteProfile,
+      languages: ["en"],
+      now: NOW + 3_600_000,
+      fetchFeed: vi.fn().mockResolvedValue(feedResponse(feedOf(4))),
+    });
+    expect(after.status).toBe("no-signal");
+    // The earlier mix is untouched: clearing signal does not silently delete it.
+    expect(await data.mixes.list()).toHaveLength(1);
   });
 });

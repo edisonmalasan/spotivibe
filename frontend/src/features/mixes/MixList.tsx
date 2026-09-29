@@ -132,6 +132,29 @@ export function MixList({
     void hydrate();
   }, [hydrate]);
 
+  /**
+   * Say "no signal, no mix" *before* the listener asks for one.
+   *
+   * Reading the profile is a local read of likes, history, and preferences — it
+   * costs no provider request — so a device that has never liked or played
+   * anything is told why there is nothing to build instead of being shown an
+   * empty list it has to interpret (spec `mixes` — "No signal, no mix"). It runs
+   * only while the list is empty: a mix that exists needs no excuse, and the
+   * message would contradict what is on screen.
+   */
+  useEffect(() => {
+    if (mixes.length > 0) return;
+    let cancelled = false;
+    void (async () => {
+      const profile = await buildMixProfile(Date.now()).catch(() => null);
+      if (cancelled) return;
+      setNoSignal(profile !== null && !profile.hasSignal);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mixes.length]);
+
   const busy = status === "generating";
 
   const generate = useCallback(async () => {
@@ -170,7 +193,9 @@ export function MixList({
   return (
     <section className={`flex flex-col gap-4 ${className}`} data-testid="mix-list">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-title-lg font-bold text-pure-white">{title}</h2>
+        {/* An empty title means the surrounding section already owns the heading
+            (the Home shelf does), so the list must not emit a second, empty one. */}
+        {title === "" ? null : <h2 className="text-title-lg font-bold text-pure-white">{title}</h2>}
         {showGenerate ? (
           <Button onClick={() => void generate()} disabled={busy} data-testid="mix-generate">
             <Sparkles className="size-5" aria-hidden="true" />
@@ -194,7 +219,7 @@ export function MixList({
         />
       ) : null}
 
-      {noSignal ? (
+      {mixes.length === 0 && noSignal ? (
         <p className="text-body-lg text-mist" role="status" data-testid="mix-no-signal">
           Mixes appear after some listening — like a track or play a few songs on this device, then
           build one.

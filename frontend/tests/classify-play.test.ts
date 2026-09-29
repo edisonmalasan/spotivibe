@@ -104,11 +104,12 @@ describe("classifyPlay: the skip rule and its gates", () => {
     expect(classifyPlay(signal({ secondsPlayed: 3, durationSeconds: 240 }))).toBe("skipped");
   });
 
-  it("skips at exactly the skip threshold, and calls one second more a partial play", () => {
-    // The boundary is `<=`: ten seconds of a long track is still a decision to
-    // skip, and 10.001 s is a play that stopped.
-    expect(classifyPlay(signal({ secondsPlayed: 10, durationSeconds: 240 }))).toBe("skipped");
-    expect(classifyPlay(signal({ secondsPlayed: 10.001, durationSeconds: 240 }))).toBe("partial");
+  it("skips below the skip threshold, and calls the threshold itself a partial play", () => {
+    // The requirement's wording is "fewer than the documented skip threshold", so
+    // the boundary is exclusive: 9.999 s of a long track is a decision to skip and
+    // 10 s — exactly the threshold — is a play that stopped.
+    expect(classifyPlay(signal({ secondsPlayed: 9.999, durationSeconds: 240 }))).toBe("skipped");
+    expect(classifyPlay(signal({ secondsPlayed: 10, durationSeconds: 240 }))).toBe("partial");
   });
 
   it("gates the skip rule on track length: a minute exactly is not longer", () => {

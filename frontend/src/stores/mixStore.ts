@@ -17,20 +17,17 @@ import { getLocalData } from "@/data/localData";
  * one" and "refresh this one" — must not be two different code paths.
  */
 
-export type MixStatus = "idle" | "generating" | "refreshing" | "ready" | "error";
+export type MixStatus = "idle" | "generating" | "refreshing" | "error";
 
 export interface MixState {
   mixes: MixRecord[];
   status: MixStatus;
-  /** The mix currently being generated or refreshed, or `null`. */
-  activeId: string | null;
   /** The last failure worth showing, or `null`. */
   error: string | null;
   /** Read the dataset. */
   hydrate(): Promise<void>;
   /** Store a freshly generated or refreshed mix (upsert by id). */
   upsert(mix: MixRecord): void;
-  remove(id: string): Promise<void>;
   setStatus(status: MixStatus, error?: string | null): void;
   reset(): void;
 }
@@ -38,7 +35,6 @@ export interface MixState {
 export const initialMixState = {
   mixes: [] as MixRecord[],
   status: "idle" as MixStatus,
-  activeId: null as string | null,
   error: null as string | null,
 };
 
@@ -65,17 +61,7 @@ export const useMixStore = create<MixState>()((set, get) => ({
     // Newest generation first, so a refreshed mix keeps its place at the top
     // without the surface having to re-sort.
     const rest = get().mixes.filter((existing) => existing.id !== mix.id);
-    set({ mixes: [mix, ...rest], status: "ready", error: null, activeId: null });
-  },
-
-  async remove(id) {
-    set({ mixes: get().mixes.filter((mix) => mix.id !== id) });
-    try {
-      const data = await getLocalData();
-      await data.mixes.remove(id);
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : "The mix could not be removed." });
-    }
+    set({ mixes: [mix, ...rest], error: null });
   },
 
   setStatus(status, error) {
@@ -84,7 +70,6 @@ export const useMixStore = create<MixState>()((set, get) => ({
       // A non-error status clears the message; an error without text still gets a
       // readable one so a surface can always offer a retry against something.
       error: status === "error" ? (error ?? "A mix could not be built.") : null,
-      ...(status === "idle" || status === "ready" ? { activeId: null } : {}),
     });
   },
 

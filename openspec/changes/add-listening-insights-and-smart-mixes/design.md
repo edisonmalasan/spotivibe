@@ -77,6 +77,13 @@ What already exists, and therefore what this milestone can and cannot need:
 **Why (found during implementation).** M8's recorder writes `secondsPlayed: 0` and deliberately deferred thresholds to M11. Left as it was, *every* real event classifies as a skip under the rule above, so `playCount` is always 0, no day is ever a listening day, streaks stay at 0, and decision 5's "no signal, no mix" would read as "no signal" for a listener who has played a hundred tracks. The statistics requirement is unsatisfiable without a measurement, and the measurement belongs with the recorder that observes playback rather than inside the statistics derivation, which must stay a pure function of `(events, now)`.
 
 **Alternatives considered.** Deriving seconds from wall-clock around a load request inside `buildStats` (rejected: the derivation would need a clock and would disagree with the position the engine actually reported). Recording a verdict at write time (rejected: exactly the stored interpretation decision 1 forbids). Setting `skipped` explicitly (rejected: redundant with the seconds, and one more stored claim to keep honest).
+### 8. The mixes surface lives on /history; the Home shelf lists only
+
+**Decision.** The full mix surface (list, build, play, refresh) is mounted on `/history` beside the statistics and the record, and the Home Smart Mixes shelf is **list-only**: no generation action, no playback, no provider request while the feed renders.
+
+**Why.** All three Home sections are derived from the same local listening signal, so "what this device knows about your listening" is one page rather than three. More importantly, the split keeps the M8 promise that opening Home never spends a provider request: generation costs one or more feed rounds, so an action that builds mixes must not live on a route people open to browse. Putting it only on Home would have made generation discoverable but easy to trigger by accident; putting it nowhere would have left `generateMix` unreachable. A second build in the same period then takes the refresh path, so pressing the button twice is harmless.
+
+**Alternatives considered.** Generation on Home behind a confirmation (rejected: still an action on a browse route, and the drawer competes with the feed). Mixes in `/library` next to playlists (rejected for this milestone: a mix is generated from *listening*, and its identity depends on the local signal rather than being a saved collection; revisit if mixes ever become editable collections).
 ## Risks / Trade-offs
 
 - **Stats are O(events) per read** (decision 2) — stated, with the trigger for changing it.

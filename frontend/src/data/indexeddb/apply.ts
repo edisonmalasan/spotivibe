@@ -17,6 +17,11 @@ const SUPPORTED_DATASETS = [
   STORE.searchHistory,
   STORE.preferences,
   STORE.session,
+  // M11: mixes are a supported dataset, so `"replace"` clears them like every
+  // other one. Importing a pre-M11 envelope — which carries no mixes — must leave
+  // the dataset *empty*, not untouched (spec `local-data`, "An envelope without
+  // the mixes dataset still imports").
+  STORE.mixes,
 ] as const;
 
 export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void> {

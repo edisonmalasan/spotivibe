@@ -5,7 +5,13 @@ import {
   type BackupMigration,
   type RawEnvelope,
 } from "@/data/backup";
-import { encode, makeBackupData, makeEnvelope, makeTrack } from "./helpers/backup-fixtures";
+import {
+  encode,
+  makeBackupData,
+  makeEnvelope,
+  makeMix,
+  makeTrack,
+} from "./helpers/backup-fixtures";
 
 /**
  * Task 4.2: import preparation — malformed input, foreign formats, newer
@@ -276,5 +282,48 @@ describe("migrateEnvelope", () => {
     const result = migrateEnvelope({ version: 1.5 }, 3, []);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("invalid-format");
+  });
+});
+
+describe("M11: an envelope without the mixes dataset is a valid envelope", () => {
+  it("validates a pre-M11 envelope that carries no mixes key at all", () => {
+    // The dataset is optional in the schema, and an envelope exported before mixes
+    // existed has no such key. `delete` is deliberate: the case is a *missing*
+    // dataset, not an empty one.
+    const envelope = JSON.parse(encode(makeEnvelope())) as {
+      data: Record<string, unknown>;
+    };
+    delete envelope.data.mixes;
+
+    const result = prepareImport(encode(envelope));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.envelope.data.mixes).toBeUndefined();
+    }
+  });
+
+  it("accepts an envelope whose mixes carry a full track list", () => {
+    const envelope = makeEnvelope(makeBackupData({ mixes: [makeMix()] }));
+    const result = prepareImport(encode(envelope));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const expected = envelope.data.mixes?.[0];
+      expect(expected).toBeDefined();
+      expect(result.envelope.data.mixes?.[0]).toMatchObject({
+        id: expected?.id,
+        name: expected?.name,
+        period: expected?.period,
+      });
+    }
+  });
+
+  it("rejects a mix record that violates the schema", () => {
+    const envelope = JSON.parse(encode(makeEnvelope(makeBackupData({ mixes: [makeMix()] })))) as {
+      data: { mixes: Array<Record<string, unknown>> };
+    };
+    // No name: a mix the listener cannot recognize is not a mix record.
+    envelope.data.mixes[0].name = "";
+
+    expect(prepareImport(encode(envelope)).ok).toBe(false);
   });
 });

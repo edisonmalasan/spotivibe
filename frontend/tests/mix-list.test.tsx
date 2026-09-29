@@ -257,13 +257,26 @@ describe("MixList", () => {
     expect(screen.queryByTestId("mix-no-signal")).not.toBeInTheDocument();
   });
 
-  it("explains an empty mix list instead of rendering nothing", async () => {
+  it("explains an empty mix list instead of rendering nothing when there is signal", async () => {
+    await seedSignal();
     render(<MixList />);
 
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "No mixes yet" })).toBeInTheDocument(),
     );
     expect(screen.queryAllByTestId(/^mix-row-/)).toHaveLength(0);
+  });
+
+  it("states that mixes need some listening on a cold device, before any click", async () => {
+    // The reason is offered up front rather than only after a failed attempt: the
+    // check is a local read of likes, history, and preferences, so it spends no
+    // provider request.
+    render(<MixList />);
+
+    await waitFor(() => expect(screen.getByTestId("mix-no-signal")).toBeInTheDocument());
+    expect(screen.getByTestId("mix-no-signal")).toHaveTextContent(/after some listening/i);
+    // With no mixes *and* no signal, the reason replaces the generic empty state.
+    expect(screen.queryByRole("heading", { name: "No mixes yet" })).not.toBeInTheDocument();
   });
 
   it("hides the generate action where the section is list-only", async () => {
