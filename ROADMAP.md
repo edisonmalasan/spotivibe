@@ -117,7 +117,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M8 | Home, discovery, trending, languages, and curated surfaces | `DONE` | M3, M5, M7 |
 | M9 | Artist pages, album pages, Now Playing, related content | `DONE` | M4, M5, M8 |
 | M10 | Radio, queue autofill, and local personalization | `DONE` | M2, M6, M8, M9 |
-| M11 | Listening history, stats, streaks, and Smart Mixes | `NOT STARTED` | M2, M7, M10 |
+| M11 | Listening history, stats, streaks, and Smart Mixes | `IN PROGRESS` | M2, M7, M10 |
 | M12 | Podcasts | `NOT STARTED` | M3, M4, M5 |
 | M13 | PWA installation, offline shell, offline metadata experience | `NOT STARTED` | M1, M2, M6 |
 | M14 | Hardening: performance, security, accessibility, resilience | `NOT STARTED` | M3–M13 |
