@@ -713,14 +713,18 @@ async function main() {
     ).catch(() => 0);
     const second = feedsAfterSkips[1];
     step(
-      "the radio refills when the queue runs low, with a different variant",
-      Boolean(second) && second.variant !== feedsAfterSkips[0].variant,
-      `feeds=${feedsAfterSkips.length}, variants=${JSON.stringify(feedsAfterSkips.map((f) => f.variant))}, queue rows ${queueBefore} -> ${queueAfter}`,
+      "the radio refills when the queue runs low, with a rotated variant",
+      // Every request logged on this document is a *refill* — the start happened
+      // on the search surface, before this document existed — so a non-zero
+      // variant is what distinguishes a refill from the start, and a variant the
+      // start did not use is what proves the rotation ran.
+      feedsAfterSkips.length > 0 && feedsAfterSkips.every((feed) => feed.variant > 0),
+      `refills=${feedsAfterSkips.length}, variants=${JSON.stringify(feedsAfterSkips.map((f) => f.variant))}, queue rows ${queueBefore} -> ${queueAfter}`,
     );
     step(
-      "a refill excludes the tracks this radio already played",
-      Boolean(second) && second.excludeCount > 0,
-      `excluded ids on refill #2 = ${second?.excludeCount ?? 0} (tracks played during the skip run: ${played.length})`,
+      "every refill excludes the tracks this radio already played",
+      feedsAfterSkips.length > 0 && feedsAfterSkips.every((feed) => feed.excludeCount > 0),
+      `excluded ids per refill = ${JSON.stringify(feedsAfterSkips.map((f) => f.excludeCount))} (tracks played during the skip run: ${played.length})`,
     );
     step(
       "the radio continues across the refill without an error",
@@ -821,17 +825,21 @@ async function main() {
     );
     await shoot(1280, 900, "radio-refill-failure-1280.png", "Refill blocked → non-blocking retry while the queue keeps playing");
     blockedRadioProbe = false;
+    // The page-side log is re-seeded on every document load, so the retry is
+    // measured against a baseline taken on this document rather than against a
+    // count accumulated since the run started.
+    const feedsBeforeRetry = (await evaluate(RADIO_FEED_LOG_EXPR)).length;
     await trustedClickJs(buttonByText(COPY.retryLabel), "retry the refill");
     const recovered = await waitFor(
       "the radio recovers after the retry",
       RADIO_FEED_LOG_EXPR,
-      (feeds) => feeds.length >= 3,
+      (feeds) => feeds.length > feedsBeforeRetry,
       60000,
     ).then(() => true).catch(() => false);
     step(
       "retrying after the block resumes the radio's refills",
       recovered,
-      `feeds observed=${(await evaluate(RADIO_FEED_LOG_EXPR)).length}`,
+      `feeds on this document ${feedsBeforeRetry} -> ${(await evaluate(RADIO_FEED_LOG_EXPR)).length}`,
     );
 
     // ====================================================================

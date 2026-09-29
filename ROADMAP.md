@@ -116,7 +116,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M7 | Library, liked songs, and local playlists | `DONE` | M1, M2, M4 |
 | M8 | Home, discovery, trending, languages, and curated surfaces | `DONE` | M3, M5, M7 |
 | M9 | Artist pages, album pages, Now Playing, related content | `DONE` | M4, M5, M8 |
-| M10 | Radio, queue autofill, and local personalization | `IN PROGRESS` | M2, M6, M8, M9 |
+| M10 | Radio, queue autofill, and local personalization | `DONE` | M2, M6, M8, M9 |
 | M11 | Listening history, stats, streaks, and Smart Mixes | `NOT STARTED` | M2, M7, M10 |
 | M12 | Podcasts | `NOT STARTED` | M3, M4, M5 |
 | M13 | PWA installation, offline shell, offline metadata experience | `NOT STARTED` | M1, M2, M6 |
@@ -1178,11 +1178,11 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] Current/next/upcoming/history.
 - [x] Duplicate protection.
 - [x] Auto-advance.
-- [ ] Queue autofill.
-- [ ] Track Radio.
+- [x] Queue autofill.
+- [x] Track Radio.
 - [x] Artist Radio.
-- [ ] Radio refill.
-- [ ] Played-track dedupe.
+- [x] Radio refill.
+- [x] Played-track dedupe.
 
 ## Library
 
@@ -1213,7 +1213,7 @@ This section prevents roadmap phases from accidentally shipping without importan
 ## Personalization
 
 - [x] Language onboarding.
-- [ ] Local taste profile.
+- [x] Local taste profile.
 - [x] For You.
 - [x] Trending.
 - [x] Popular Artists.

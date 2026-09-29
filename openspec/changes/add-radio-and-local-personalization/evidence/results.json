@@ -1,6 +1,6 @@
 {
   "task": "7.2",
-  "generatedAt": "2026-09-29T15:29:53.233Z",
+  "generatedAt": "2026-09-29T16:06:32.042Z",
   "origin": "http://localhost:3210",
   "query": "bohemian rhapsody",
   "allowedRadioKeys": [
@@ -47,14 +47,14 @@
       "detail": "label \"From radio\" present, queue rows=12"
     },
     {
-      "name": "the radio refills when the queue runs low, with a different variant",
-      "ok": false,
-      "detail": "feeds=1, variants=[0], queue rows 12 -> 0"
+      "name": "the radio refills when the queue runs low, with a rotated variant",
+      "ok": true,
+      "detail": "refills=1, variants=[1], queue rows 12 -> 0"
     },
     {
-      "name": "a refill excludes the tracks this radio already played",
-      "ok": false,
-      "detail": "excluded ids on refill #2 = 0 (tracks played during the skip run: 14)"
+      "name": "every refill excludes the tracks this radio already played",
+      "ok": true,
+      "detail": "excluded ids per refill = [8] (tracks played during the skip run: 14)"
     },
     {
       "name": "the radio continues across the refill without an error",
@@ -69,12 +69,12 @@
     {
       "name": "Now Playing offers the radio action with an accessible name while a track plays",
       "ok": true,
-      "detail": "label=\"Start track radio\", disabled=false"
+      "detail": "label=\"End radio\", disabled=false"
     },
     {
       "name": "Now Playing shows the radio while one is playing",
-      "ok": false,
-      "detail": "indicator text=\"\""
+      "ok": true,
+      "detail": "indicator text=\"Radio\""
     },
     {
       "name": "a failed refill keeps the queue playing and offers a retry, without a modal",
@@ -83,8 +83,8 @@
     },
     {
       "name": "retrying after the block resumes the radio's refills",
-      "ok": false,
-      "detail": "feeds observed=2"
+      "ok": true,
+      "detail": "feeds on this document 1 -> 2"
     },
     {
       "name": "the artist page starts an artist radio",
@@ -152,7 +152,7 @@
     "disclosures": {
       "offlineWindow": [],
       "blockedRadioProbe": [
-        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/radio?kind=track&title=Is+This+the+World+We+Created%3F+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4c"
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/radio?kind=track&title=Bohemian+Rhapsody&artist=Queen&variant=2&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AEyi-1APybjE%2Cyoutube%3AJfwqI9_Wgp0%2Cyoutube%3A001WSZT0NG4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3Ae6paFKMLwlg%2Cyo"
       ],
       "notFoundProbe": [],
       "liveUpstream": [],
@@ -176,7 +176,7 @@
         "excludeCount": 0
       },
       {
-        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4cRz8SQ%2Cyoutube%3A7UAMkY2IxOE",
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody&artist=Queen&variant=1&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AEyi-1APybjE%2Cyoutube%3AJfwqI9_Wgp0%2Cyoutube%3A001WSZT0NG4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3Ae6paFKMLwlg%2Cyoutube%3AsoHI4sKPQ3E%2Cyoutube%3Ar4BYQMyPqR8",
         "keys": [
           "artist",
           "exclude",
@@ -186,14 +186,14 @@
           "variant"
         ],
         "kind": "track",
-        "title": "Bohemian Rhapsody (Live At Wembley Stadium / July 1986)",
+        "title": "Bohemian Rhapsody",
         "artist": "Queen",
-        "variant": 0,
+        "variant": 1,
         "limit": 12,
-        "excludeCount": 5
+        "excludeCount": 8
       },
       {
-        "url": "/api/radio?kind=track&title=Is+This+the+World+We+Created%3F+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4cRz8SQ%2Cyoutube%3A7UAMkY2IxOE%2Cyoutube%3A6Wg1_YOfiM0%2Cyoutube%3AG4",
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody&artist=Queen&variant=2&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AEyi-1APybjE%2Cyoutube%3AJfwqI9_Wgp0%2Cyoutube%3A001WSZT0NG4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3Ae6paFKMLwlg%2Cyoutube%3AsoHI4sKPQ3E%2Cyoutube%3Ar4BYQMyPqR8%2Cyoutube%3AMG0lA2oRu7Y%",
         "keys": [
           "artist",
           "exclude",
@@ -203,14 +203,14 @@
           "variant"
         ],
         "kind": "track",
-        "title": "Is This the World We Created? (Live At Wembley Stadium / July 1986)",
+        "title": "Bohemian Rhapsody",
         "artist": "Queen",
-        "variant": 0,
+        "variant": 2,
         "limit": 12,
-        "excludeCount": 14
+        "excludeCount": 18
       },
       {
-        "url": "/api/radio?kind=track&title=A+Kind+of+Magic+%28Live+At+Wembley+Stadium+%2F+July+1986%29&artist=Queen&variant=0&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3AkM0Fpbz0W8U%2Cyoutube%3AXPwf4cRz8SQ%2Cyoutube%3A7UAMkY2IxOE%2Cyoutube%3A6Wg1_YOfiM0%2Cyoutube%3AG4rPKJPZ4Ws%2Cyout",
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody&artist=Queen&variant=2&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AEyi-1APybjE%2Cyoutube%3AJfwqI9_Wgp0%2Cyoutube%3A001WSZT0NG4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3Ae6paFKMLwlg%2Cyoutube%3AsoHI4sKPQ3E%2Cyoutube%3Ar4BYQMyPqR8%2Cyoutube%3AMG0lA2oRu7Y%",
         "keys": [
           "artist",
           "exclude",
@@ -220,11 +220,28 @@
           "variant"
         ],
         "kind": "track",
-        "title": "A Kind of Magic (Live At Wembley Stadium / July 1986)",
+        "title": "Bohemian Rhapsody",
         "artist": "Queen",
-        "variant": 0,
+        "variant": 2,
         "limit": 12,
-        "excludeCount": 22
+        "excludeCount": 19
+      },
+      {
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody&artist=Queen&variant=2&limit=12&exclude=youtube%3ABSTsnWoslP4%2Cyoutube%3AEyi-1APybjE%2Cyoutube%3AJfwqI9_Wgp0%2Cyoutube%3A001WSZT0NG4%2Cyoutube%3AN5Q8EeyOiKY%2Cyoutube%3Ae6paFKMLwlg%2Cyoutube%3AsoHI4sKPQ3E%2Cyoutube%3Ar4BYQMyPqR8%2Cyoutube%3AMG0lA2oRu7Y%",
+        "keys": [
+          "artist",
+          "exclude",
+          "kind",
+          "limit",
+          "title",
+          "variant"
+        ],
+        "kind": "track",
+        "title": "Bohemian Rhapsody",
+        "artist": "Queen",
+        "variant": 2,
+        "limit": 12,
+        "excludeCount": 18
       },
       {
         "url": "/api/radio?kind=artist&artist=Queen&variant=0&limit=12",
@@ -242,7 +259,7 @@
         "excludeCount": 0
       },
       {
-        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody+%28In+the+style+of+System+Of+A+Down%29&artist=Anthony+Vincent&variant=0&limit=12",
+        "url": "/api/radio?kind=track&title=Bohemian+Rhapsody+%28Operatic+Section+%2F+2011+A+Cappella+Mix%29&artist=Queen&variant=0&limit=12",
         "keys": [
           "artist",
           "kind",
@@ -251,8 +268,8 @@
           "variant"
         ],
         "kind": "track",
-        "title": "Bohemian Rhapsody (In the style of System Of A Down)",
-        "artist": "Anthony Vincent",
+        "title": "Bohemian Rhapsody (Operatic Section / 2011 A Cappella Mix)",
+        "artist": "Queen",
         "variant": 0,
         "limit": 12,
         "excludeCount": 0
@@ -307,6 +324,6 @@
     "blockedEndpoint": "/api/radio",
     "artistKey": "Queen"
   },
-  "pass": false,
+  "pass": true,
   "browser": "Edg/154.0.4258.37"
 }
