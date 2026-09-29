@@ -1022,6 +1022,8 @@ async function main() {
 
     // Reset every dataset through the real Settings control, then import it back.
     const feedback = `[data-testid="data-controls-feedback"]`;
+    const resetDone = `document.querySelector('${feedback}')?.textContent ?? ''`;
+    const resetReported = (text) => /reset/i.test(String(text));
     await trustedClickJs(buttonByText("Reset Spotivibe data"), "reset Spotivibe data");
     await waitFor(
       "the reset confirmation appears",
@@ -1029,26 +1031,55 @@ async function main() {
       Boolean,
       15000,
     );
+    // Same disclosed fallback as the artist link: a trusted click first, then an
+    // in-page `click()` on the same confirm button if nothing happened. The path
+    // taken is recorded rather than hidden.
+    const CONFIRM_RESET = `[data-testid="confirm-reset"] button:not([disabled])`;
     await trustedClickJs(
       `[...document.querySelectorAll('[data-testid="confirm-reset"] button')].find((b) => b.textContent.trim() === 'Reset everything')`,
       "confirm reset",
-    );
-    const resetFeedback = await waitFor(
-      "the reset reports completion",
-      `document.querySelector('${feedback}')?.textContent ?? null`,
-      (text) => typeof text === "string" && /reset/i.test(text),
-      30000,
     ).catch(() => null);
-    const afterReset = await evaluate(storedMixes);
+    let resetActivation = "trusted-click";
+    let resetFeedback = await waitFor("the reset reports completion", resetDone, resetReported, 6000).catch(
+      async () => {
+        resetActivation = "in-page-click";
+        await evaluate(
+          `[...document.querySelectorAll('${CONFIRM_RESET}')].find((b) => b.textContent.trim() === 'Reset everything')?.click(); true`,
+        );
+        return waitFor("the reset reports completion (in-page click)", resetDone, resetReported, 60000).catch(
+          () => null,
+        );
+      },
+    );
+    results.notes.resetActivation = resetActivation;
+    const afterReset = await waitFor(
+      "the mixes dataset is empty after a reset",
+      storedMixes,
+      (state) => state.mixes.length === 0,
+      20000,
+    ).catch(() => ({ mixes: [1] }));
     step(
       "resetting the local data really removes the mixes dataset",
-      Boolean(resetFeedback) && afterReset.mixes.length === 0,
-      `feedback="${(resetFeedback ?? "").replace(/\s+/g, " ").trim().slice(0, 60)}", stored mixes after reset=${afterReset.mixes.length}`,
+      resetReported(resetFeedback) && afterReset.mixes.length === 0,
+      `activation=${resetActivation}, feedback="${String(resetFeedback ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 60)}", stored mixes after reset=${afterReset.mixes.length}`,
     );
 
-    // Import the envelope the export produced, through the file picker.
+    // Import the envelope the export produced, through the real file input.
+    //
+    // Diagnostics first: whether the input exists, whether the files actually
+    // landed on it, and whether the dispatched event was observed at all. Those
+    // three distinguish "the picker never got the file" from "the app ignored the
+    // event", which are very different failures to read afterwards.
     const fixturePath = join(profileDir, "exported-backup.json");
     writeFileSync(fixturePath, envelopeText);
+    await evaluate(`
+      window.__changeSeen = 0;
+      document.addEventListener('change', () => { window.__changeSeen += 1; }, true);
+      true
+    `);
     const doc = await send("DOM.getDocument", { depth: 0 });
     const input = await send("DOM.querySelector", {
       nodeId: doc.root.nodeId,
@@ -1057,18 +1088,34 @@ async function main() {
     if (!input.nodeId) throw new Error("Import file input not found on /settings");
     await send("DOM.setFileInputFiles", { files: [fixturePath], nodeId: input.nodeId });
     await evaluate(
-      `document.querySelector('input[type=file]').dispatchEvent(new Event('change', { bubbles: true })); true`,
+      `(() => {
+        const el = document.querySelector('input[type=file]');
+        if (!el) return false;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`,
     );
+    const pickerState = await evaluate(`(() => {
+      const el = document.querySelector('input[type=file]');
+      return {
+        inputs: document.querySelectorAll('input[type=file]').length,
+        files: el ? el.files.length : -1,
+        firstName: el && el.files.length > 0 ? el.files[0].name : '',
+        firstBytes: el && el.files.length > 0 ? el.files[0].size : 0,
+        changeEvents: window.__changeSeen ?? 0,
+      };
+    })()`);
+    results.notes.importPicker = pickerState;
     const importFeedback = await waitFor(
       "import completion feedback",
-      `document.querySelector('${feedback}')?.textContent ?? null`,
-      (text) => typeof text === "string" && /Import complete/i.test(text),
-      60000,
-    );
+      `document.querySelector('${feedback}')?.textContent ?? ''`,
+      (text) => /Import complete|Import failed|unchanged/i.test(String(text)),
+      90000,
+    ).catch(() => null);
     step(
       "the exported envelope imports back through the Settings file picker",
-      /Import complete/i.test(importFeedback),
-      importFeedback,
+      /Import complete/i.test(String(importFeedback ?? "")),
+      `feedback="${String(importFeedback ?? "(no feedback)").replace(/\s+/g, " ").trim().slice(0, 70)}", files on input=${pickerState.files} ("${pickerState.firstName}", ${pickerState.firstBytes} bytes), change events observed=${pickerState.changeEvents}`,
     );
     const restoredMixes = await evaluate(storedMixes);
     step(

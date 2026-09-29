@@ -1,6 +1,6 @@
 {
   "task": "7.2",
-  "generatedAt": "2026-09-29T19:47:29.195Z",
+  "generatedAt": "2026-09-29T20:09:12.572Z",
   "origin": "http://localhost:3210",
   "query": "bohemian rhapsody",
   "allowedDiscoveryKeys": [
@@ -42,7 +42,7 @@
     {
       "name": "live search returns results for the seeded query",
       "ok": true,
-      "detail": "rows=19"
+      "detail": "rows=18"
     },
     {
       "name": "playback starts from a search result",
@@ -52,12 +52,12 @@
     {
       "name": "playing tracks records local history with the seconds actually played",
       "ok": true,
-      "detail": "steps=4, events=5, with measured seconds=4, seconds=[14,14,13,13,0]"
+      "detail": "steps=4, events=5, with measured seconds=3, seconds=[14,14,15,0,0]"
     },
     {
       "name": "every measured play is long enough that the rule reads it as a play, not a skip",
       "ok": true,
-      "detail": "seconds per event=[14,14,13,13,0] (skip threshold 10s, exclusive)"
+      "detail": "seconds per event=[14,14,15,0,0] (skip threshold 10s, exclusive)"
     },
     {
       "name": "the History page lists the recorded plays, grouped by local day",
@@ -87,7 +87,7 @@
     {
       "name": "the statistics report listening time, plays, and how each play ended",
       "ok": true,
-      "detail": "plays=4, time=\"0 min\", verdicts=\"0 played through · 4 partly · 1 skipped\""
+      "detail": "plays=4, time=\"57 sec\", verdicts=\"0 played through · 4 partly · 1 skipped\""
     },
     {
       "name": "the statistics report top tracks and top artists",
@@ -137,7 +137,7 @@
     {
       "name": "refreshing a mix keeps its identity and its name",
       "ok": true,
-      "detail": "ids before=[\"mix-row-mix:2026-09-30:nimphia|klyron|bad news|simply three\"], after=[\"mix-row-mix:2026-09-30:nimphia|klyron|bad news|simply three\"], name still \"On-device mix\", refreshed notice=false, alert=\"No new tracks for this mix right now.\""
+      "detail": "ids before=[\"mix-row-mix:2026-09-30:nimphia|klyron|simply three|high resistance\"], after=[\"mix-row-mix:2026-09-30:nimphia|klyron|simply three|high resistance\"], name still \"On-device mix\", refreshed notice=false, alert=\"No new tracks for this mix right now.\""
     },
     {
       "name": "a refresh that cannot find new material says so instead of emptying the mix",
@@ -147,12 +147,52 @@
     {
       "name": "the exported backup carries the mixes dataset, with the generated mix in it",
       "ok": true,
-      "detail": "datasets=[\"preferences\",\"likedTracks\",\"playlists\",\"history\",\"searchHistory\",\"mixes\",\"session\"], mixes=[{\"id\":\"mix:2026-09-30:nimphia|klyron|bad news|simply three\",\"name\":\"On-device mix\",\"tracks\":20}]"
+      "detail": "datasets=[\"preferences\",\"likedTracks\",\"playlists\",\"history\",\"searchHistory\",\"mixes\",\"session\"], mixes=[{\"id\":\"mix:2026-09-30:nimphia|klyron|simply three|high resistance\",\"name\":\"On-device mix\",\"tracks\":20}]"
     },
     {
       "name": "the exported envelope carries no profile weights, no history-only tables, and no secrets",
       "ok": true,
       "detail": "format=spotivibe-backup, version=1"
+    },
+    {
+      "name": "resetting the local data really removes the mixes dataset",
+      "ok": true,
+      "detail": "activation=in-page-click, feedback=\"Spotivibe data reset.\", stored mixes after reset=0"
+    },
+    {
+      "name": "the exported envelope imports back through the Settings file picker",
+      "ok": false,
+      "detail": "feedback=\"Import failed. Existing local data is unchanged.\", files on input=0 (\"\", 0 bytes), change events observed=2"
+    },
+    {
+      "name": "the mixes dataset survives the round trip with its identity and name intact",
+      "ok": false,
+      "detail": "restored=[]"
+    },
+    {
+      "name": "the restored mix is listed again by name after the import",
+      "ok": false,
+      "detail": "rows after import=[]"
+    },
+    {
+      "name": "the round trip restored the listening record as well as the mixes",
+      "ok": false,
+      "detail": "events after import=0"
+    },
+    {
+      "name": "the IFrame API is loaded exactly once and one player host is present",
+      "ok": true,
+      "detail": "apiScripts=1, iframes=1, control=Play"
+    },
+    {
+      "name": "no request this run carried profile, history, liked-track, or mix data",
+      "ok": true,
+      "detail": "every observed discovery request's params: [\"kind\",\"languages\",\"limit\",\"seeds\"] (11 requests)"
+    },
+    {
+      "name": "zero console errors (disclosed offline/blocked/live-upstream entries excluded)",
+      "ok": true,
+      "detail": "errors=0, disclosed offline=0, disclosed blocked-feed=0, disclosed live-upstream=0"
     }
   ],
   "screenshots": [
@@ -227,7 +267,7 @@
         "limit": 20
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CBad+News%2CSimply+Three&limit=7",
+        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=7",
         "keys": [
           "kind",
           "languages",
@@ -236,11 +276,11 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Bad News,Simply Three",
+        "seeds": "nimphia,klyron,Simply Three,High Resistance",
         "limit": 7
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CBad+News%2CSimply+Three&limit=14",
+        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=14",
         "keys": [
           "kind",
           "languages",
@@ -249,11 +289,11 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Bad News,Simply Three",
+        "seeds": "nimphia,klyron,Simply Three,High Resistance",
         "limit": 14
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CBad+News%2CSimply+Three&limit=20",
+        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=20",
         "keys": [
           "kind",
           "languages",
@@ -262,7 +302,7 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Bad News,Simply Three",
+        "seeds": "nimphia,klyron,Simply Three,High Resistance",
         "limit": 20
       },
       {
@@ -302,7 +342,7 @@
         "limit": 20
       },
       {
-        "url": "/api/discover?kind=for-you&languages=en&seeds=nimphia%2CBad+News%2CSimply+Three%2CNdlovu+Youth+Choir%2CQueen&limit=20",
+        "url": "/api/discover?kind=for-you&languages=en&seeds=nimphia%2CSimply+Three%2CHigh+Resistance%2CRoyal+Philharmonic+Orchestra%2CQueen&limit=20",
         "keys": [
           "kind",
           "languages",
@@ -311,11 +351,11 @@
         ],
         "kind": "for-you",
         "languages": "en",
-        "seeds": "nimphia,Bad News,Simply Three,Ndlovu Youth Choir,Queen",
+        "seeds": "nimphia,Simply Three,High Resistance,Royal Philharmonic Orchestra,Queen",
         "limit": 20
       },
       {
-        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CBad+News%2CSimply+Three&limit=7",
+        "url": "/api/discover?kind=mix&languages=en&seeds=nimphia%2Cklyron%2CSimply+Three%2CHigh+Resistance&limit=7",
         "keys": [
           "kind",
           "languages",
@@ -324,7 +364,7 @@
         ],
         "kind": "mix",
         "languages": "en",
-        "seeds": "nimphia,klyron,Bad News,Simply Three",
+        "seeds": "nimphia,klyron,Simply Three,High Resistance",
         "limit": 7
       }
     ],
@@ -352,15 +392,44 @@
       {
         "type": "iframe",
         "url": ""
+      },
+      {
+        "type": "service_worker",
+        "url": "https://www.youtube.com/sw.js"
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "service_worker",
+        "url": "https://www.youtube.com/sw.js"
+      },
+      {
+        "type": "iframe",
+        "url": ""
       }
     ],
     "playSteps": {
       "steps": 4,
       "perStepSeconds": 15
     },
-    "artistLinkActivation": "trusted-click"
+    "artistLinkActivation": "trusted-click",
+    "resetActivation": "in-page-click",
+    "importPicker": {
+      "inputs": 1,
+      "files": 0,
+      "firstName": "",
+      "firstBytes": 0,
+      "changeEvents": 2
+    },
+    "screenshotFiles": [
+      "history-empty-1280.png",
+      "history-stats-1280.png",
+      "history-with-plays-1280.png",
+      "mix-generated-1280.png"
+    ]
   },
   "pass": false,
-  "browser": "Edg/154.0.4258.37",
-  "error": "Error: Element not clickable (missing or zero-size): reset everything → null\n    at trustedClickRect (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-listening-insights-and-smart-mixes/evidence/cdp-check.mjs:312:15)\n    at async main (file:///C:/Users/Edison/Desktop/Projects/spotivibe/openspec/changes/add-listening-insights-and-smart-mixes/evidence/cdp-check.mjs:1025:5)"
+  "browser": "Edg/154.0.4258.37"
 }
