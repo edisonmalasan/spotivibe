@@ -12,7 +12,11 @@ interface SearchResultsProps {
   tracks: Track[];
   /** The query the sections are derived against (Top Result matching). */
   query: string;
-  /** Refine action for artist/album selection (query := entity name). */
+  /**
+   * Refine action for the Top Result's artist/album card (query := entity
+   * name). The derived artist/album tiles and the context menu open the real
+   * catalog routes instead, so this is no longer every entity activation.
+   */
   onRefine: (name: string) => void;
   /** Activate a song with its result set as playback context (design §9). */
   onPlay: (track: Track, context: Track[]) => void;
@@ -24,6 +28,11 @@ interface SearchResultsProps {
  * sections vertically. Every section renders only where it has entries, all
  * four sections derive from the canonical `Track[]` alone, and every song
  * result carries its context menu (like/playlist/navigation actions).
+ *
+ * The derived artist/album entries are links to the M9 catalog routes, not
+ * refine-the-query buttons; only the Top Result's artist/album card still
+ * refines, because it presents "the best match for this query" rather than an
+ * entity to browse.
  */
 export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResultsProps) {
   const { songs, artists, albums, topResult } = deriveResults(tracks, query);
@@ -37,7 +46,6 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
         isLiked={likedIds?.has(track.id) ?? false}
         onPlay={() => onPlay(track, context)}
         onToggleLike={() => void toggleLike(track)}
-        onRefine={onRefine}
       />
     );
   }
@@ -78,7 +86,7 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
             <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-2">
               {artists.map((artist) => (
                 <li key={artist.key}>
-                  <ArtistTile artist={artist} onSelect={onRefine} />
+                  <ArtistTile artist={artist} />
                 </li>
               ))}
             </ul>
@@ -90,7 +98,7 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
             <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-2">
               {albums.map((album) => (
                 <li key={album.key}>
-                  <AlbumTile album={album} onSelect={onRefine} />
+                  <AlbumTile album={album} />
                 </li>
               ))}
             </ul>

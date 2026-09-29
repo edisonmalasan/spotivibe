@@ -15,8 +15,10 @@ import type { Artwork, Track } from "@/data/repositories";
 const DEFAULT_ARTIST_LIMIT = 10;
 
 /**
- * One artist on the Popular Artists shelf. Activating an entry refines search
- * to `name` — M8 has no artist route (M9 owns artist pages).
+ * One artist on the Popular Artists shelf. `id` is a *stable derived identity*:
+ * the provider's artist id when the result carried one, else the normalized
+ * name — so a caller that needs display fidelity (a link key) must not read it
+ * as a display name. Activating an entry opens that artist's page (M9).
  */
 export interface ArtistEntry {
   /** Stable derived identity: the artist id when present, else the normalized name. */

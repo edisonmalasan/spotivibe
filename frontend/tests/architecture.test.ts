@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 /**
  * Static architecture invariants checked against the real source files
  * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1 +
- * M7 task 9.1 + M8 task 8.1) —
+ * M7 task 9.1 + M8 task 8.1 + M9 task 7.1) —
  * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
@@ -25,7 +25,10 @@ import { describe, expect, it } from "vitest";
  * repository-mediated, the client stores on the repository entry point and off
  * transport state, the server discovery modules off `@/data`, the discovery
  * route metadata-only with a four-parameter input surface, and
- * `lib/languages.ts` the single language catalog.
+ * `lib/languages.ts` the single language catalog; M9 keeps the artist, album,
+ * and related surfaces repository-mediated and off the player internals, the
+ * server catalog module off `@/data`, and the three catalog routes
+ * metadata-only with exactly their documented entity parameters.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -1138,5 +1141,303 @@ describe("architecture: lib/languages.ts is the only language catalog (M8 task 8
     expect(owners).toEqual([join("lib", "languages.ts")]);
     // Not vacuous: the canonical catalog is found by the very same detector.
     expect(languageCatalogDeclarations(readSource("lib", "languages.ts"))).toEqual(["LANGUAGES"]);
+  });
+});
+
+/**
+ * Catalog layering invariants (M9 task 7.1, design §1/§2/§3/§8).
+ *
+ * The M9 surfaces are repository-mediated exactly like the M5/M7/M8 ones: the
+ * client reaches local data only through repository interfaces, never the
+ * IndexedDB implementation, `src/server`, or a raw provider shape, and never the
+ * IFrame API loader or its YT types — the M3 player rule, *proven* to reach the
+ * new folders below rather than assumed to. The server catalog module keeps the
+ * dependency the other way round and imports nothing from `@/data`, so a
+ * resolved artist, release, or similar-track feed can never be composed out of
+ * local user data. The three catalog routes are metadata-only, and their input
+ * surface is *exactly* the documented entity identifiers: a future
+ * `liked`/`playlist`/`history` parameter fails this suite instead of shipping
+ * outward.
+ *
+ * `features` and `app` are already swept wholesale by {@link uiSourceFiles}, so
+ * this section deliberately does not open a second walker. It *proves* that
+ * coverage — naming the M9 directories, then re-running the real detectors over
+ * their files with a violating source substituted — which is what would catch a
+ * new directory silently falling out of the shared sweep.
+ */
+
+/**
+ * The M9 surfaces the repository-mediated and player-internals rules must reach.
+ * `features` and `app` are swept wholesale by {@link uiSourceFiles}; naming the
+ * directories here is how the tests below prove that sweep reaches them instead
+ * of assuming it.
+ */
+const M9_SURFACE_DIRECTORIES = [
+  "features/artist",
+  "features/album",
+  "features/related",
+  "app/artist",
+  "app/album",
+] as const;
+
+/** The M9 files, as the shared UI sweep sees them. */
+function m9SweptFiles(): Array<{ file: string; source: string }> {
+  const swept = uiSourceFiles();
+  return swept.filter(({ file }) =>
+    M9_SURFACE_DIRECTORIES.some((dir) => file.startsWith(join(srcDir, dir))),
+  );
+}
+
+/**
+ * Query keys that would carry local user data into a catalog request. The
+ * catalog endpoints identify an entity — or a source track — by public metadata
+ * only, so reading any of these would mean a request carries user state, which
+ * is exactly what a local-first, accountless design cannot have.
+ */
+const LIBRARY_QUERY_PARAMETERS = [
+  "liked",
+  "likedIds",
+  "playlist",
+  "playlists",
+  "history",
+  "listeningHistory",
+];
+
+/** Accepted query keys of a route handler that name a local dataset. */
+function libraryQueryParameterReads(source: string): string[] {
+  return acceptedQueryKeys(source).filter((key) => LIBRARY_QUERY_PARAMETERS.includes(key));
+}
+
+/** The three catalog route handlers and the input surface each one documents. */
+const M9_CATALOG_ROUTES = [
+  { name: "artist", accepted: ["id", "name"] },
+  { name: "album", accepted: ["artist", "id", "title"] },
+  { name: "similar", accepted: ["artist", "exclude", "title"] },
+] as const;
+
+/** A catalog route handler's source — the M9 transport boundary. */
+function readCatalogRoute(name: (typeof M9_CATALOG_ROUTES)[number]["name"]): string {
+  return readSource("app", "api", name, "route.ts");
+}
+
+/**
+ * The server modules that resolve catalog entities: the M8 feed pair and M9's
+ * resolver. They share one rule, so they are named once and swept together.
+ */
+const SERVER_CATALOG_MODULES = ["discovery.ts", "discoverySeeds.ts", "catalog.ts"] as const;
+
+describe("architecture violation detectors (M9 task 7.1)", () => {
+  it("flags a liked/playlist/history query key but passes the documented entity keys", () => {
+    expect(libraryQueryParameterReads('const id = params.get("likedIds");')).toEqual(["likedIds"]);
+    expect(libraryQueryParameterReads('const all = searchParams.getAll("playlists");')).toEqual([
+      "playlists",
+    ]);
+    expect(libraryQueryParameterReads('const since = params.get("history");')).toEqual(["history"]);
+    // The documented inputs carry no user data, and a zod schema is a bound on a
+    // value rather than an accepted parameter.
+    expect(
+      libraryQueryParameterReads(
+        'params.get("name");\nparams.get("id");\nparams.get("title");\nparams.get("artist");\nparams.get("exclude");',
+      ),
+    ).toEqual([]);
+    expect(
+      libraryQueryParameterReads("similarParamsSchema.safeParse({ title, artist, exclude });"),
+    ).toEqual([]);
+  });
+
+  it("fails the exact input surface as soon as a handler reads one undocumented key", () => {
+    const documented = [...M9_CATALOG_ROUTES[0].accepted].sort();
+    const clean = 'params.get("name");\nparams.get("id");';
+
+    expect([...acceptedQueryKeys(clean)].sort()).toEqual(documented);
+    // The only change is one local-data key, and it must break the comparison.
+    const widened = `${clean}\nparams.get("likedIds");`;
+    expect([...acceptedQueryKeys(widened)].sort()).not.toEqual(documented);
+    expect(libraryQueryParameterReads(widened)).toEqual(["likedIds"]);
+    // A dropped key breaks it too, so the rule is not satisfied by "at least".
+    expect([...acceptedQueryKeys('params.get("name");')].sort()).not.toEqual(documented);
+  });
+});
+
+describe("architecture: the M9 catalog surfaces stay repository-mediated (M9 task 7.1)", () => {
+  it("sweeps every M9 surface directory", () => {
+    const real = M9_SURFACE_DIRECTORIES.flatMap((dir) => readTree(join(srcDir, dir)));
+    for (const dir of M9_SURFACE_DIRECTORIES) {
+      expect(readTree(join(srcDir, dir)).length, dir).toBeGreaterThan(0);
+      // The repository-mediated sweep is the shared `uiSourceFiles` one.
+      const swept = uiSourceFiles().map(({ file }) => file);
+      expect(
+        swept.some((file) => file.startsWith(join(srcDir, dir))),
+        dir,
+      ).toBe(true);
+    }
+    // Nothing in the M9 surfaces falls out of that sweep: the swept set is
+    // exactly the real set of M9 files, so a new file is covered by default.
+    expect(
+      m9SweptFiles()
+        .map(({ file }) => file)
+        .sort(),
+    ).toEqual(real.map(({ file }) => file).sort());
+  });
+
+  it("flags a leak in any M9 surface — the sweep is proven, not assumed", () => {
+    // Substitute a violating source for every real M9 file: if a rule did not
+    // reach a file, that file would escape this list.
+    const injected = m9SweptFiles().map(({ file }) => ({
+      file,
+      source:
+        'import { createRepositories } from "@/data/indexeddb";\nimport { resolveArtist } from "@/server/music/catalog";\nconst node: MusicResponsiveListItemRenderer = input;',
+    }));
+    expect(injected.length).toBeGreaterThan(0);
+    const expected = injected.map(({ file }) => file);
+
+    expect(
+      injected
+        .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+        .map(({ file }) => file),
+    ).toEqual(expected);
+    // Each leak is reported for its own reason, so one rule cannot mask another.
+    expect(
+      injected.filter(({ source }) => hasDirectIndexedDbImport(source)).map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected
+        .filter(({ source }) => moduleSpecifiers(source).some(targetsServerModule))
+        .map(({ file }) => file),
+    ).toEqual(expected);
+    expect(
+      injected.filter(({ source }) => mentionsRawProviderShape(source)).map(({ file }) => file),
+    ).toEqual(expected);
+  });
+
+  it("finds no IndexedDB, server, or provider-shape leak in the M9 surfaces", () => {
+    const files = M9_SURFACE_DIRECTORIES.flatMap((dir) => readTree(join(srcDir, dir)));
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(({ source }) => librarySurfaceViolations(source).length > 0)
+      .map(({ file }) => relative(srcDir, file));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture: the M9 surfaces stay off the IFrame API loader and YT types (M9 task 7.1)", () => {
+  it("finds no player-internals import in the M9 surfaces", () => {
+    const files = m9SweptFiles();
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders = files
+      .filter(({ source }) => moduleSpecifiers(source).some(targetsPlayerInternals))
+      .map(({ file }) => relative(srcDir, file));
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags the loader and its types in any M9 surface — the sweep is proven, not assumed", () => {
+    const swept = m9SweptFiles();
+    expect(swept.length).toBeGreaterThan(0);
+    const expected = swept.map(({ file }) => file);
+
+    // Each internals module on its own: a rule that only caught one of the two
+    // would pass this list.
+    for (const specifier of ["@/player/ytApi", "@/player/types"]) {
+      const injected = swept.map(({ file }) => ({
+        file,
+        source: `import { internals } from "${specifier}";`,
+      }));
+      expect(
+        injected
+          .filter(({ source }) => moduleSpecifiers(source).some(targetsPlayerInternals))
+          .map(({ file }) => file),
+      ).toEqual(expected);
+    }
+  });
+});
+
+describe("architecture: the server catalog layer stays off local data (M9 task 7.1)", () => {
+  it("imports no @/data module from the server catalog modules", () => {
+    for (const name of SERVER_CATALOG_MODULES) {
+      const source = readSource("server", "music", name);
+      expect(source.length, name).toBeGreaterThan(0);
+      // Not vacuous: the module really does import its own dependencies.
+      expect(moduleSpecifiers(source).length, name).toBeGreaterThan(0);
+      expect(dataLayerImports(source), name).toEqual([]);
+    }
+  });
+
+  it("flags a data-layer import in any of them — the rule is proven, not assumed", () => {
+    const injected = SERVER_CATALOG_MODULES.map((name) => ({
+      name,
+      source:
+        'import { getLocalData } from "@/data/localData";\nimport { runChain } from "./chain";',
+    }));
+
+    expect(
+      injected.filter(({ source }) => dataLayerImports(source).length > 0).map(({ name }) => name),
+    ).toEqual([...SERVER_CATALOG_MODULES]);
+  });
+});
+
+describe("architecture: the catalog routes are metadata-only and bounded (M9 task 7.1)", () => {
+  it("accepts exactly the documented entity query keys on each route", () => {
+    for (const route of M9_CATALOG_ROUTES) {
+      expect([...acceptedQueryKeys(readCatalogRoute(route.name))].sort(), route.name).toEqual(
+        [...route.accepted].sort(),
+      );
+    }
+  });
+
+  it("reads no liked, playlist, or history parameter", () => {
+    for (const route of M9_CATALOG_ROUTES) {
+      expect(libraryQueryParameterReads(readCatalogRoute(route.name)), route.name).toEqual([]);
+    }
+  });
+
+  it("returns no media bytes and reaches no local dataset", () => {
+    for (const route of M9_CATALOG_ROUTES) {
+      const source = readCatalogRoute(route.name);
+      expect(mediaByteIndicators(source), route.name).toEqual([]);
+      expect(dataLayerImports(source), route.name).toEqual([]);
+    }
+  });
+
+  it("flags a widened input, a library parameter, and a media body — proven on the real handlers", () => {
+    // One violating source substituted for each real handler, carrying all three
+    // parts of the rule, so each is exercised against the exact files it guards.
+    const injected = M9_CATALOG_ROUTES.map((route) => ({
+      name: route.name,
+      source: [
+        'import { getLocalData } from "@/data/localData";',
+        'const name = params.get("name");',
+        'const liked = params.get("likedIds");',
+        'return new Response(bytes, { headers: { "Content-Type": "audio/mpeg" } });',
+      ].join("\n"),
+    }));
+    const expected = injected.map(({ name }) => name);
+
+    expect(
+      injected
+        .filter(({ source }) => libraryQueryParameterReads(source).length > 0)
+        .map(({ name }) => name),
+    ).toEqual(expected);
+    expect(
+      injected
+        .filter(({ source }) => mediaByteIndicators(source).length > 0)
+        .map(({ name }) => name),
+    ).toEqual(expected);
+    expect(
+      injected.filter(({ source }) => dataLayerImports(source).length > 0).map(({ name }) => name),
+    ).toEqual(expected);
+    // The exact-set rule fails on the same widening, not only the list rule: a
+    // route's own documented keys plus one local-data key is no longer the
+    // documented input surface.
+    for (const route of M9_CATALOG_ROUTES) {
+      const widened = [
+        ...route.accepted.map((key) => `params.get("${key}");`),
+        'params.get("likedIds");',
+      ].join("\n");
+      expect([...acceptedQueryKeys(widened)].sort(), route.name).not.toEqual(
+        [...route.accepted].sort(),
+      );
+    }
   });
 });

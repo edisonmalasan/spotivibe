@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { SearchResults } from "@/features/search/SearchResults";
 import { makeTrack } from "./helpers/music-fixtures";
@@ -7,9 +8,34 @@ import { makeTrack } from "./helpers/music-fixtures";
 /**
  * Rendering coverage for the derived result surface (design §1/§10, spec
  * "Result sections from canonical metadata"): sections gate on entries,
- * desktop keeps Top Result + Songs left and Artists + Albums right, and
- * artist/album selection refines the query.
+ * desktop keeps Top Result + Songs left and Artists + Albums right, and the
+ * Top Result card still refines the query. The derived artist/album tiles are
+ * links to the M9 catalog routes (task 6.1), not refine-the-query buttons.
  */
+
+// The derived tiles navigate through next/link; the per-result menu navigates
+// through the router (M9 task 6.1).
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+}));
+
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: { href: string; children: ReactNode } & Record<string, unknown>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 
 const getLucky = makeTrack({
   id: "youtube:aaa",
@@ -103,6 +129,8 @@ describe("search result sections (tasks 3.1 and 3.3)", () => {
 
 describe("Top Result (task 3.2)", () => {
   it("renders an exact artist match prominently and refines the query from it", () => {
+    // Top Result presents "the best match for this query", so it keeps
+    // refining; the entity tiles and the menu are what navigate (M9 task 6.1).
     const { onRefine } = renderResults([getLucky, instantCrush], " daft punk ");
 
     expect(screen.getByRole("heading", { level: 2, name: "Top Result" })).toBeInTheDocument();
@@ -138,24 +166,49 @@ describe("Top Result (task 3.2)", () => {
 });
 
 describe("artist and album tiles (task 3.3)", () => {
-  it("refines the query from the derived artist tile", () => {
-    const { onRefine } = renderResults([getLucky, instantCrush], "x");
+  it("links the derived artist tile to the artist route", () => {
+    renderResults([getLucky, instantCrush], "x");
 
-    const tile = within(section("Artists")).getByRole("button");
+    const tile = within(section("Artists")).getByRole("link");
     expect(tile).toHaveTextContent("Daft Punk");
-
-    fireEvent.click(tile);
-    expect(onRefine).toHaveBeenCalledWith("Daft Punk");
+    expect(tile).toHaveAttribute("href", "/artist/Daft%20Punk");
+    // The entry navigates; no refine-the-query control is left behind.
+    expect(within(section("Artists")).queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("refines the query from the derived album tile", () => {
-    const { onRefine } = renderResults([instantCrush], "x");
+  it("links the derived album tile to the album route", () => {
+    renderResults([instantCrush], "x");
 
-    const tile = within(section("Albums")).getByRole("button");
+    const tile = within(section("Albums")).getByRole("link");
     expect(tile).toHaveTextContent("Random Access Memories");
+    expect(tile).toHaveAttribute("href", "/album/Random%20Access%20Memories%20-%20Daft%20Punk");
+    expect(within(section("Albums")).queryByRole("button")).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(tile);
-    expect(onRefine).toHaveBeenCalledWith("Random Access Memories");
+  it("prefers a provider artist or release id when the result carries one", () => {
+    // The id is the entity's own identity; the text key is the fallback for the
+    // results whose tier supplied no id.
+    renderResults(
+      [
+        makeTrack({
+          id: "youtube:ddd",
+          providerId: "ddd",
+          title: "Identified",
+          artists: [{ id: "UCaurorachannel00000000", name: "Aurora" }],
+          album: { id: "MPREb1234567890abcdefghij", title: "Dawn Chorus" },
+        }),
+      ],
+      "x",
+    );
+
+    expect(within(section("Artists")).getByRole("link")).toHaveAttribute(
+      "href",
+      "/artist/UCaurorachannel00000000",
+    );
+    expect(within(section("Albums")).getByRole("link")).toHaveAttribute(
+      "href",
+      "/album/MPREb1234567890abcdefghij",
+    );
   });
 });
 

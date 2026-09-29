@@ -28,9 +28,6 @@ const MIN_OPAQUE_ID_LENGTH = 20;
 /** Route prefix for an artist page. */
 const ARTIST_ROUTE = "/artist";
 
-/** Route prefix for a release/album page. */
-const ALBUM_ROUTE = "/album";
-
 /** The two identifier shapes a route key may resolve to. */
 export type ArtistRequestKey = { name: string } | { id: string };
 
@@ -137,4 +134,3 @@ export function artistRequestKey(key: string): ArtistRequestKey | null {
 export function artistHref(key: string): string {
   return `${ARTIST_ROUTE}/${encodeURIComponent(key.trim())}`;
 }
-

@@ -91,6 +91,7 @@ See `proposal.md` — Why. Current state that constrains the approach:
 - **Two seeds per entity doubles provider work versus one** → seeds are sequential and bounded, and identical requests are served from the existing TTL cache + in-flight dedupe.
 - **Live upstream flakiness** → identical tolerance to M8: per-seed failure, structured error only when every seed fails, disclosed in browser evidence.
 - **Route-key heuristics can misclassify a name that looks like an id** → the rule is narrow (`UC…` prefix or a long alphanumeric token), documented, and unit-tested in both directions.
+- **Two main-spec requirements said artist/album navigation "refines search"** (`search` → "Result context actions", `discovery` → "Popular artists shelf") once the routes existed that was false, so this change carries MODIFIED deltas for both capabilities instead of letting the implementation drift. OpenSpec requires a MODIFIED block to retain every scenario name the main spec still has, so the two scenario *names* are kept verbatim with an inline comment marking that the asserted behavior changed; renaming them is not expressible as a scenario-level operation.
 
 ## Migration Plan
 
