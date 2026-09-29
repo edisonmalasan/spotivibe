@@ -613,20 +613,40 @@ describe("HomeView: popular artists", () => {
     expect(within(shelf).getAllByText("Artist")).toHaveLength(2);
   });
 
-  it("refines search when an artist entry is activated", async () => {
+  it("navigates to the artist route when an artist entry is activated", async () => {
     stubDiscovery((kind) =>
       kind === "trending" ? { tracks: [credited("a", "Alpha", "Aurora Sky")] } : { tracks: [] },
+    );
+    render(<HomeView />);
+    const shelf = await screen.findByTestId("home-section-popular-artists");
+    const entry = await within(shelf).findByTestId("home-artist-card");
+    expect(entry.tagName).toBe("A");
+    // M9 owns the artist route: the card links the entity, by text key when the
+    // shelf had no provider id for it.
+    expect(entry.getAttribute("href")).toBe("/artist/Aurora%20Sky");
+
+    // It is a navigation card, not a play control.
+    expect(within(shelf).queryAllByTestId("shelf-track-card")).toHaveLength(0);
+    expect(usePlayerStore.getState().currentTrack).toBeNull();
+  });
+
+  it("links an identified artist by its provider id", async () => {
+    stubDiscovery((kind) =>
+      kind === "trending"
+        ? {
+            tracks: [
+              credited("a", "Alpha", "Aurora", {
+                artists: [{ id: "UCaurorachannel00000000", name: "Aurora" }],
+              }),
+            ],
+          }
+        : { tracks: [] },
     );
     render(<HomeView />);
 
     const shelf = await screen.findByTestId("home-section-popular-artists");
     const entry = await within(shelf).findByTestId("home-artist-card");
-    expect(entry.tagName).toBe("A");
-    expect(entry.getAttribute("href")).toBe("/search?q=Aurora%20Sky");
-
-    // M9 owns artist pages, so the entry navigates and is not a play control.
-    expect(within(shelf).queryAllByTestId("shelf-track-card")).toHaveLength(0);
-    expect(usePlayerStore.getState().currentTrack).toBeNull();
+    expect(entry.getAttribute("href")).toBe("/artist/UCaurorachannel00000000");
   });
 
   it("shows the artist's best artwork when the entry has one", async () => {

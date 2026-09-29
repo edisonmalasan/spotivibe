@@ -1,9 +1,12 @@
 "use client";
 
 import { Ellipsis } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconButton } from "@/components/design-system/IconButton";
 import type { Track } from "@/data/repositories";
+import { albumHrefFromRelease } from "@/features/album/albumKeys";
+import { artistHref } from "@/features/artist/artistKeys";
 import { PlaylistPicker } from "@/features/search/PlaylistPicker";
 import { useQueueStore } from "@/stores/queueStore";
 
@@ -14,29 +17,58 @@ interface ResultMenuProps {
   onPlay(): void;
   /** Awaits the liked-tracks repository before the UI updates (design §8). */
   onToggleLike(): void;
-  /** Refine the search to the artist/album name (design §8). */
-  onRefine(name: string): void;
 }
 
 const itemClassName =
   "flex w-full items-center rounded-buttons px-3 py-2 text-left text-body-lg text-pure-white transition hover:bg-graphite";
 
 /**
+ * A metadata field that carries identity, or `undefined` when it carries none.
+ *
+ * A provider artist can be credited with an id and a blank name, and an album
+ * summary can arrive untitled. Neither is an entity called `""` — they are
+ * unresolvable metadata, so the item is omitted rather than linking to a route
+ * that could only render not-found. Same guard the pre-M9 `albumTitle &&` check
+ * applied, now applied to the id half too.
+ */
+function nonBlank(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+/**
  * Feature-local per-result context menu (design §8 — no shared menu primitive
  * until another feature needs one): `IconButton` trigger with
  * `aria-haspopup`/`aria-expanded`, `role="menu"` items in DOM order
  * (plain buttons, so Tab reaches each), Escape and outside-click close,
- * "Add to queue" appends through the queue store, and "Add to playlist"
- * opens the feature-local picker dialog.
+ * "Add to queue" appends through the queue store, "Add to playlist"
+ * opens the feature-local picker dialog, and "Go to artist"/"Go to album"
+ * open the real catalog surfaces (M9 task 6.1) rather than refining the query.
  */
-export function ResultMenu({ track, isLiked, onPlay, onToggleLike, onRefine }: ResultMenuProps) {
+export function ResultMenu({ track, isLiked, onPlay, onToggleLike }: ResultMenuProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const albumTitle = track.album?.title;
-  const artistName = track.artists[0]?.name;
+  const primaryArtist = track.artists[0];
+
+  // Catalog routes (M9): the provider id when the result carried one, else the
+  // text the entity is known by. Both shapes resolve, so a thin result still
+  // navigates somewhere real instead of dropping the item.
+  const artistKey = nonBlank(primaryArtist?.id) ?? nonBlank(primaryArtist?.name);
+  const artistRoute = artistKey === undefined ? undefined : artistHref(artistKey);
+  const albumTitle = nonBlank(track.album?.title);
+  const albumRoute =
+    albumTitle === undefined
+      ? undefined
+      : albumHrefFromRelease({
+          id: nonBlank(track.album?.id),
+          title: albumTitle,
+          artistName: nonBlank(primaryArtist?.name),
+        });
 
   /** Focus the trigger button (the IconButton does not forward a ref). */
   const focusTrigger = useCallback(() => {
@@ -141,22 +173,22 @@ export function ResultMenu({ track, isLiked, onPlay, onToggleLike, onRefine }: R
           >
             Add to playlist
           </button>
-          {artistName && (
+          {artistRoute !== undefined && (
             <button
               type="button"
               role="menuitem"
               className={itemClassName}
-              onClick={() => activate(() => onRefine(artistName))}
+              onClick={() => activate(() => router.push(artistRoute))}
             >
               Go to artist
             </button>
           )}
-          {albumTitle && (
+          {albumRoute !== undefined && (
             <button
               type="button"
               role="menuitem"
               className={itemClassName}
-              onClick={() => activate(() => onRefine(albumTitle))}
+              onClick={() => activate(() => router.push(albumRoute))}
             >
               Go to album
             </button>

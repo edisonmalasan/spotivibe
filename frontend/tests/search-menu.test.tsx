@@ -13,8 +13,8 @@ import { makeTrack } from "./helpers/music-fixtures";
 /**
  * Context-action coverage (tasks 5.1–5.4, spec "Result context actions")
  * against the real (fake-indexeddb) local-data layer: menu mechanics,
- * repository-persisted likes, playlist add/inline create, and menu-driven
- * query refinement.
+ * repository-persisted likes, playlist add/inline create, and the go-to
+ * navigation that opens the real artist/album surfaces (M9 task 6.1).
  */
 
 // Rendering + IndexedDB round-trips can exceed the 1s default on a cold
@@ -327,34 +327,29 @@ describe("playlist picker (task 5.3)", () => {
 });
 
 describe("go to artist / go to album (task 5.4)", () => {
-  it("refines the query to the artist name and re-issues the search", async () => {
+  it("opens the artist route instead of refining the query", async () => {
     const fetchMock = await renderResultsWithFetch();
 
     fireEvent.click(openMenuFor("Karma Police"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Go to artist" }));
 
-    expect(useSearchStore.getState().query).toBe("Radiohead");
-
-    await waitFor(() => {
-      expect(String(fetchMock.mock.calls.at(-1)?.[0])).toBe("/api/search?q=Radiohead&limit=20");
-    });
-    // Results re-derive for the refined query (exact artist match → Top Result).
-    await screen.findByTestId("top-result");
-    expect(nav.replace).toHaveBeenCalledWith("/search?q=Radiohead");
+    expect(nav.push).toHaveBeenCalledWith("/artist/Radiohead");
+    // The search is left alone: no refined query, no re-issued request, no URL write.
+    expect(useSearchStore.getState().query).toBe("radio");
+    expect(nav.replace).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("refines the query to the album name when album metadata exists", async () => {
+  it("opens the album route instead of refining the query", async () => {
     const fetchMock = await renderResultsWithFetch();
 
     fireEvent.click(openMenuFor("Karma Police"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Go to album" }));
 
-    expect(useSearchStore.getState().query).toBe("OK Computer");
-
-    await waitFor(() => {
-      expect(String(fetchMock.mock.calls.at(-1)?.[0])).toBe("/api/search?q=OK%20Computer&limit=20");
-    });
-    await screen.findByTestId("top-result"); // exact album match renders as Top Result
+    expect(nav.push).toHaveBeenCalledWith("/album/OK%20Computer%20-%20Radiohead");
+    expect(useSearchStore.getState().query).toBe("radio");
+    expect(nav.replace).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

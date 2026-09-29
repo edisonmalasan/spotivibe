@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ArtistCard } from "@/components/design-system/ArtistCard";
 import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
 import type { Track } from "@/data/repositories";
+import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
 import { genreHref, GENRE_CATALOG } from "@/features/home/genreCatalog";
 import {
   assertShelfRhythm,
@@ -25,7 +26,6 @@ import { ShelfTrackCard } from "@/features/home/ShelfTrackCard";
 import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDiscoveryShelf";
 import { LanguageOnboarding } from "@/features/preferences/LanguageOnboarding";
 import { groupArtistsByIdentity } from "@/features/recommendations/artists";
-import { buildSearchUrl } from "@/lib/searchUrl";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { usePreferencesStore } from "@/stores/preferencesStore";
@@ -278,7 +278,11 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
           {artists.map((artist) => (
             <Link
               key={artist.id}
-              href={buildSearchUrl(artist.name)}
+              // M9 (task 6.1): the card opens the artist page. The entry id is
+              // the provider's artist id when the shelf had one and the
+              // normalized name otherwise, and the artist route resolves either
+              // shape — so an id-less entry is a text-key link, not a dead card.
+              href={artistHref(isProviderEntityId(artist.id) ? artist.id : artist.name)}
               data-testid="home-artist-card"
               className="block w-full"
             >

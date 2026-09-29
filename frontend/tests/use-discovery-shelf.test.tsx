@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "@/data/repositories";
 import { DISCOVERY_KINDS, type DiscoveryErrorCode } from "@/features/home/discoveryApi";
 import { MAX_CONCURRENT_SHELF_REQUESTS } from "@/features/home/discoveryShelfQueue";
-import { useDiscoveryShelf } from "@/features/home/useDiscoveryShelf";
+import {
+  useDiscoveryShelf,
+  type ShelfTrackFetcher,
+  type ShelfTrackRequest,
+} from "@/features/home/useDiscoveryShelf";
 import { makeTrack } from "./helpers/music-fixtures";
 
 /**
@@ -12,6 +16,11 @@ import { makeTrack } from "./helpers/music-fixtures";
  * the acceptance criteria rest on — per-shelf failure isolation, skeleton →
  * content, an empty state that is explained rather than blank, and an abort on
  * unmount — plus the language interleaving that runs before tracks are exposed.
+ *
+ * M9 task 5.1 (design decision 8) extends this same file rather than adding a
+ * parallel suite: the `fetchTracks` override must reuse *this* state machine, so
+ * its cases sit beside the discovery ones and assert the discovery path is
+ * untouched by them.
  */
 
 /** A track attributed to a language, so interleaving is observable. */
@@ -567,5 +576,292 @@ describe("useDiscoveryShelf: the contract every kind shares", () => {
     for (const seed of (params.get("seeds") ?? "").split(",")) {
       expect(seed.length).toBeLessThanOrEqual(80);
     }
+  });
+});
+
+/**
+ * M9 task 5.1 (design decision 8): the same state machine, a different source.
+ *
+ * The override is the whole point of the generalization — "More Like This"
+ * resolves `/api/similar` for the playing track, and a second hook would have
+ * forked the loading/empty/error/retry/abort contract into two. These cases pin
+ * that the override inherits the contract unchanged, and that a discovery shelf
+ * is unaffected by the override's existence.
+ */
+
+/** A fetcher that records every attempt and answers with `tracks`. */
+function recordingFetcher(
+  resolve: (attempt: number, request: ShelfTrackRequest) => Promise<Track[]>,
+): { fetchTracks: ShelfTrackFetcher; calls: Array<{ limit?: number; signal: AbortSignal }> } {
+  const calls: Array<{ limit?: number; signal: AbortSignal }> = [];
+  const fetchTracks: ShelfTrackFetcher = async (request) => {
+    calls.push({ limit: request.limit, signal: request.signal });
+    return resolve(calls.length, request);
+  };
+  return { fetchTracks, calls };
+}
+
+describe("useDiscoveryShelf: a fetchTracks source reuses the same state machine", () => {
+  it("resolves the shelf from the override instead of the discovery endpoint", async () => {
+    const tracks = [langTrack("en", 7), langTrack("en", 8)];
+    const { fetchTracks, calls } = recordingFetcher(async () => tracks);
+    // The discovery endpoint is stubbed to fail loudly if it is ever called.
+    const discovery = stubDiscoveryFetch(() => errorBody("upstream_unavailable", 503));
+
+    const { result } = renderHook(() => useDiscoveryShelf({ scope: "similar:aaa", fetchTracks }));
+
+    expect(result.current.status).toBe("loading");
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.tracks.map((track) => track.id)).toEqual(tracks.map((t) => t.id));
+    // One call, and not one request to /api/discover.
+    expect(calls).toHaveLength(1);
+    expect(discovery.mock).not.toHaveBeenCalled();
+  });
+
+  it("passes the caller's limit and its own abort signal to the source", async () => {
+    const { fetchTracks, calls } = recordingFetcher(async () => [langTrack("en", 1)]);
+
+    renderHook(() => useDiscoveryShelf({ scope: "similar:aaa", fetchTracks, limit: 5 }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].limit).toBe(5);
+    // A live signal the caller can pass to its own transport.
+    expect(calls[0].signal).toBeInstanceOf(AbortSignal);
+    expect(calls[0].signal.aborted).toBe(false);
+  });
+
+  it("exposes the source's tracks in the source's own order", async () => {
+    // A related shelf is not a discovery feed, so the language-mixing step —
+    // a rule about the discovery catalog — does not reorder it.
+    const tracks = [langTrack("en", 1), langTrack("ja", 1), langTrack("en", 2)];
+    const { fetchTracks } = recordingFetcher(async () => tracks);
+
+    const { result } = renderHook(() => useDiscoveryShelf({ scope: "similar:aaa", fetchTracks }));
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.tracks.map((track) => track.language)).toEqual(["en", "ja", "en"]);
+  });
+
+  it("reports an empty source as the explained empty state", async () => {
+    const { fetchTracks } = recordingFetcher(async () => []);
+
+    const { result } = renderHook(() => useDiscoveryShelf({ scope: "similar:aaa", fetchTracks }));
+
+    await waitFor(() => expect(result.current.status).toBe("empty"));
+    expect(result.current.tracks).toEqual([]);
+  });
+
+  it("maps a source failure onto a retryable error and re-runs it on retry()", async () => {
+    let attempt = 0;
+    const { fetchTracks, calls } = recordingFetcher(async () => {
+      attempt += 1;
+      if (attempt === 1)
+        throw Object.assign(new Error("upstream"), { code: "upstream_unavailable" });
+      return [langTrack("en", 1)];
+    });
+
+    const { result } = renderHook(() => useDiscoveryShelf({ scope: "similar:aaa", fetchTracks }));
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    // The source's own designed code survives the trip through the hook.
+    expect(result.current.code).toBe("upstream_unavailable");
+
+    act(() => {
+      result.current.retry();
+    });
+    expect(result.current.status).toBe("loading");
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(calls).toHaveLength(2);
+  });
+
+  it("reports an unexpected source throw as a network failure", async () => {
+    const { fetchTracks } = recordingFetcher(async () => {
+      throw new TypeError("fetch failed");
+    });
+
+    const { result } = renderHook(() => useDiscoveryShelf({ scope: "similar:aaa", fetchTracks }));
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.code).toBe("network");
+  });
+
+  it("re-resolves when the scope changes, and aborts the superseded request", async () => {
+    // The first request stays open until its own signal aborts, so "the previous
+    // request was cancelled" is observed rather than inferred.
+    let release: (tracks: Track[]) => void = () => {};
+    const { fetchTracks, calls } = recordingFetcher(async (_attempt, request) => {
+      if (calls.length > 1) return [langTrack("en", 2)];
+      return new Promise<Track[]>((resolve, reject) => {
+        release = resolve;
+        request.signal.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ scope }: { scope: string }) => useDiscoveryShelf({ scope, fetchTracks }),
+      { initialProps: { scope: "similar:aaa" } },
+    );
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    const firstSignal = calls[0].signal;
+
+    rerender({ scope: "similar:bbb" });
+
+    // The superseded attempt is cancelled, not merely ignored.
+    expect(firstSignal.aborted).toBe(true);
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(result.current.status).toBe("ready");
+    expect(result.current.tracks.map((track) => track.id)).toEqual([langTrack("en", 2).id]);
+    // A late answer from the cancelled attempt is discarded, never written.
+    await act(async () => {
+      release([langTrack("en", 99)]);
+    });
+    expect(result.current.tracks.map((track) => track.id)).toEqual([langTrack("en", 2).id]);
+  });
+
+  it("does not restart the source for a re-render carrying an equal scope", async () => {
+    // An inline source, exactly as a component would produce it: a new function
+    // identity on every render, which must not become a new request. Only the
+    // content-based `scope` may restart it.
+    const calls: string[] = [];
+
+    const { rerender } = renderHook(
+      ({ scope }: { scope: string }) =>
+        useDiscoveryShelf({
+          scope,
+          fetchTracks: async () => {
+            calls.push(scope);
+            return [langTrack("en", 1)];
+          },
+        }),
+      { initialProps: { scope: "similar:aaa" } },
+    );
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    rerender({ scope: "similar:aaa" });
+    rerender({ scope: "similar:aaa" });
+    expect(calls).toHaveLength(1);
+
+    // A genuinely different scope does re-run it.
+    rerender({ scope: "similar:bbb" });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls).toEqual(["similar:aaa", "similar:bbb"]);
+  });
+
+  it("aborts a source request on unmount", async () => {
+    const { fetchTracks, calls } = recordingFetcher(
+      async (_attempt, request) =>
+        new Promise<Track[]>((_resolve, reject) => {
+          request.signal.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        }),
+    );
+
+    const { unmount } = renderHook(() => useDiscoveryShelf({ scope: "similar:aaa", fetchTracks }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].signal.aborted).toBe(false);
+
+    unmount();
+
+    expect(calls[0].signal.aborted).toBe(true);
+  });
+
+  it("issues no source call for a disabled source shelf", async () => {
+    const { fetchTracks, calls } = recordingFetcher(async () => [langTrack("en", 1)]);
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useDiscoveryShelf({ scope: "similar:aaa", fetchTracks, enabled }),
+      { initialProps: { enabled: false } },
+    );
+
+    expect(result.current.status).toBe("idle");
+    expect(calls).toHaveLength(0);
+
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(calls).toHaveLength(1);
+  });
+
+  it("shares the page-wide request cap with discovery shelves", async () => {
+    // The gate is page-wide, not per-source: three related shelves cannot put
+    // more work on the wire than three discovery shelves would.
+    const { fetchTracks } = recordingFetcher(async (_attempt, request) => {
+      void request;
+      return new Promise<Track[]>((resolve) => {
+        setTimeout(() => resolve([langTrack("en", 1)]), 0);
+      });
+    });
+
+    function SourceShelves() {
+      const a = useDiscoveryShelf({ scope: "similar:a", fetchTracks });
+      const b = useDiscoveryShelf({ scope: "similar:b", fetchTracks });
+      const c = useDiscoveryShelf({ scope: "similar:c", fetchTracks });
+      const d = useDiscoveryShelf({ scope: "similar:d", fetchTracks });
+      return (
+        <ul>
+          <li data-testid="a">{a.status}</li>
+          <li data-testid="b">{b.status}</li>
+          <li data-testid="c">{c.status}</li>
+          <li data-testid="d">{d.status}</li>
+        </ul>
+      );
+    }
+
+    render(<SourceShelves />);
+
+    await waitFor(() => expect(screen.getByTestId("d")).toHaveTextContent(/ready|empty|error/));
+    // All four settled, which is only possible if the fourth waited for a slot
+    // and then took it — the cap held and released.
+    expect(screen.getByTestId("a")).toHaveTextContent(/ready/);
+    expect(screen.getByTestId("d")).toHaveTextContent(/ready/);
+  });
+});
+
+describe("useDiscoveryShelf: the default discovery path is unchanged by the override", () => {
+  it("still requests the composed feed and interleaves it, with no source in sight", async () => {
+    const tracks = [langTrack("en", 1), langTrack("en", 2), langTrack("ja", 1)];
+    const { calls } = stubDiscoveryFetch(() => okBody(tracks));
+    // A source that must never be consulted by a discovery shelf.
+    const source = vi.fn<ShelfTrackFetcher>(async () => {
+      throw new Error("a discovery shelf must not use a source");
+    });
+
+    const { result } = renderHook(() =>
+      useDiscoveryShelf({ kind: "trending", languages: ["en", "ja"] }),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(calls).toHaveLength(1);
+    expect(paramsOf(calls[0]).get("kind")).toBe("trending");
+    expect(result.current.tracks.map((track) => track.language)).toEqual(["en", "ja", "en"]);
+    expect(source).not.toHaveBeenCalled();
+  });
+
+  it("keeps a discovery shelf and a source shelf independent of each other", async () => {
+    const { fetchTracks, calls } = recordingFetcher(async () => [langTrack("ja", 1)]);
+    const discovery = stubDiscoveryFetch(() => okBody([langTrack("en", 1)]));
+
+    function BothShelves() {
+      const feed = useDiscoveryShelf({ kind: "trending", languages: ["en"] });
+      const related = useDiscoveryShelf({ scope: "similar:aaa", fetchTracks });
+      return (
+        <ul>
+          <li data-testid="feed">{feed.status}</li>
+          <li data-testid="related">{related.status}</li>
+        </ul>
+      );
+    }
+
+    render(<BothShelves />);
+
+    await waitFor(() => expect(screen.getByTestId("feed")).toHaveTextContent("ready"));
+    await waitFor(() => expect(screen.getByTestId("related")).toHaveTextContent("ready"));
+    expect(calls).toHaveLength(1);
+    expect(discovery.calls).toHaveLength(1);
   });
 });

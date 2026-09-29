@@ -94,7 +94,12 @@ function SearchSurfaceView({
   surface: SearchSurface;
   query: string;
   retry(): void;
-  /** Refine action for artist/album selection (query := entity name). */
+  /**
+   * Refine action for the Top Result's artist/album card (query := entity
+   * name). Derived artist/album tiles and the context menu navigate to the M9
+   * catalog routes instead; refined search stays the behavior for genuine text
+   * queries (the top bar, recents, and Top Result).
+   */
   onRefine(name: string): void;
   /** Activate a result within its result set as playback context (design §9). */
   onPlay(track: Track, context: Track[]): void;
