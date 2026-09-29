@@ -2,6 +2,7 @@ import { act, render, renderHook, screen, waitFor } from "@testing-library/react
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "@/data/repositories";
 import { DISCOVERY_KINDS, type DiscoveryErrorCode } from "@/features/home/discoveryApi";
+import { MAX_CONCURRENT_SHELF_REQUESTS } from "@/features/home/discoveryShelfQueue";
 import { useDiscoveryShelf } from "@/features/home/useDiscoveryShelf";
 import { makeTrack } from "./helpers/music-fixtures";
 
@@ -79,6 +80,51 @@ function stubDiscoveryFetch(reply: (url: URL) => Reply): {
 /** Every request parameter a shelf sent, flattened for assertions. */
 function paramsOf(call: Recorded): URLSearchParams {
   return call.url.searchParams;
+}
+
+/**
+ * A fetch stub whose every call stays *open* until the test settles it, so
+ * "requests in flight" is a real observed gate rather than a timing guess.
+ * Each call answers with one track derived from its own index.
+ */
+function stubOpenFetch(): {
+  calls: Recorded[];
+  /** Settle the nth call made. */
+  settle: (index: number) => void;
+  /** Settle every call open at this moment (later arrivals wait for the next call). */
+  settleAll: () => void;
+} {
+  const calls: Recorded[] = [];
+  const open: Array<() => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const index = calls.length;
+      calls.push({
+        url: new URL(String(input), "http://localhost"),
+        signal: init?.signal ?? undefined,
+      });
+      return new Promise<Response>((resolve, reject) => {
+        open.push(() => {
+          resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ tracks: [langTrack("en", index + 1)], diagnostics: {} }),
+          } as unknown as Response);
+        });
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    }),
+  );
+  return {
+    calls,
+    settle: (index) => open[index]?.(),
+    settleAll: () => {
+      for (const resolve of [...open]) resolve();
+    },
+  };
 }
 
 afterEach(() => {
@@ -397,6 +443,107 @@ describe("useDiscoveryShelf: a disabled shelf is silent", () => {
 
     expect(result.current.status).toBe("idle");
     expect(result.current.tracks).toEqual([]);
+  });
+});
+
+describe("useDiscoveryShelf: a page of shelves shares one request gate", () => {
+  it("never runs more than MAX_CONCURRENT_SHELF_REQUESTS requests at once and starts the next shelf when a slot frees", async () => {
+    // A page's worth of shelves: Discover renders ten genre shelves, Home
+    // several catalog feeds, and they all mount at once.
+    function FiveShelves() {
+      const trending = useDiscoveryShelf({ kind: "trending", languages: ["en"] });
+      const podcast = useDiscoveryShelf({ kind: "podcast", languages: ["en"] });
+      const collection = useDiscoveryShelf({ kind: "collection", languages: ["en"] });
+      const genre = useDiscoveryShelf({ kind: "genre", languages: ["en"], seeds: ["jazz"] });
+      const mix = useDiscoveryShelf({ kind: "mix", languages: ["en"], seeds: ["jazz"] });
+      return (
+        <ul>
+          <li data-testid="trending">{trending.status}</li>
+          <li data-testid="podcast">{podcast.status}</li>
+          <li data-testid="collection">{collection.status}</li>
+          <li data-testid="genre">{genre.status}</li>
+          <li data-testid="mix">{mix.status}</li>
+        </ul>
+      );
+    }
+
+    const { calls, settle, settleAll } = stubOpenFetch();
+    render(<FiveShelves />);
+
+    // The cap is deliberately below the server limiter's four outbound slots, so
+    // one page's feeds cannot queue their own seeds against each other.
+    expect(MAX_CONCURRENT_SHELF_REQUESTS).toBe(3);
+    await waitFor(() => expect(calls).toHaveLength(MAX_CONCURRENT_SHELF_REQUESTS));
+    // The shelves beyond the cap wait their turn, and report it as what it is:
+    // they are still loading, never an error and never a blank region.
+    expect(screen.getByTestId("genre")).toHaveTextContent("loading");
+    expect(screen.getByTestId("mix")).toHaveTextContent("loading");
+    // Give the page every remaining chance to over-issue before saying it did
+    // not. This is the assertion that keeps a page of shelves from fanning out
+    // into the server's four-slot limiter and timing out on the queue.
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+    expect(calls).toHaveLength(MAX_CONCURRENT_SHELF_REQUESTS);
+
+    // Freeing one slot hands it straight to the next shelf in line, in mount
+    // order, and that shelf's request is the ordinary one.
+    await act(async () => {
+      settle(0);
+    });
+    await waitFor(() => expect(calls).toHaveLength(MAX_CONCURRENT_SHELF_REQUESTS + 1));
+    expect(paramsOf(calls[MAX_CONCURRENT_SHELF_REQUESTS]).get("kind")).toBe("genre");
+    expect(screen.getByTestId("trending")).toHaveTextContent("ready");
+
+    // Drain the page so the shared gate starts the next case empty.
+    for (let wave = 0; wave < 4; wave += 1) {
+      await act(async () => {
+        settleAll();
+      });
+    }
+    await waitFor(() => expect(screen.getByTestId("mix")).toHaveTextContent("ready"));
+  });
+
+  it("issues no request for a shelf that unmounts while queued, and leaves no slot stranded", async () => {
+    const { calls, settleAll } = stubOpenFetch();
+
+    // Three shelves take every slot and stay in flight...
+    const first = renderHook(() => useDiscoveryShelf({ kind: "trending", languages: ["en"] }));
+    const second = renderHook(() => useDiscoveryShelf({ kind: "podcast", languages: ["en"] }));
+    const third = renderHook(() => useDiscoveryShelf({ kind: "collection", languages: ["en"] }));
+    // ...so this one can only wait.
+    const queued = renderHook(() => useDiscoveryShelf({ kind: "mix", languages: ["en"] }));
+
+    await waitFor(() => expect(calls).toHaveLength(MAX_CONCURRENT_SHELF_REQUESTS));
+    expect(queued.result.current.status).toBe("loading");
+    expect(calls.some((call) => paramsOf(call).get("kind") === "mix")).toBe(false);
+
+    // It leaves while still queued: unmount.
+    queued.unmount();
+    await act(async () => {
+      settleAll();
+    });
+
+    // No request was ever issued on its behalf, not even after a slot freed.
+    expect(calls).toHaveLength(MAX_CONCURRENT_SHELF_REQUESTS);
+    expect(calls.some((call) => paramsOf(call).get("kind") === "mix")).toBe(false);
+    expect(first.result.current.status).toBe("ready");
+    expect(second.result.current.status).toBe("ready");
+    expect(third.result.current.status).toBe("ready");
+
+    // And it did not strand a slot: the next shelf starts on the first try.
+    const later = renderHook(() =>
+      useDiscoveryShelf({ kind: "for-you", languages: ["en"], seeds: ["jazz"] }),
+    );
+    await waitFor(() => expect(calls).toHaveLength(MAX_CONCURRENT_SHELF_REQUESTS + 1));
+    expect(paramsOf(calls[MAX_CONCURRENT_SHELF_REQUESTS]).get("kind")).toBe("for-you");
+
+    await act(async () => {
+      settleAll();
+    });
+    await waitFor(() => expect(later.result.current.status).toBe("ready"));
   });
 });
 

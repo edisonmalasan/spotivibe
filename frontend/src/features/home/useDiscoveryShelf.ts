@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Track } from "@/data/repositories";
+import { acquireShelfSlot, type ShelfSlot } from "@/features/home/discoveryShelfQueue";
 import {
   DiscoveryError,
   fetchDiscoveryFeed,
@@ -19,6 +20,16 @@ import { interleaveByLanguage } from "@/features/recommendations/interleave";
  * cancel, or overwrite a sibling's state. That isolation is exactly what the
  * acceptance criteria ask for, so it is structural here rather than something
  * the feed has to remember.
+ *
+ * Independence is not the same as "all at once", though. A page of shelves —
+ * Discover renders ten genre shelves, Home several catalog feeds — would
+ * otherwise put every request on the wire together and the server's bounded
+ * outbound limiter would queue most of them until their budgets ran out. So a
+ * shelf first takes one of the page-wide slots in
+ * `discoveryShelfQueue` (bounded by `MAX_CONCURRENT_SHELF_REQUESTS`); the
+ * shelves beyond the cap wait their turn, still reporting `"loading"`, and a
+ * shelf that unmounts while queued leaves the queue without ever issuing a
+ * request.
  *
  * The result is presentation-ready: `interleaveByLanguage` runs client-side over
  * the tracks before they are exposed (design §4), so a multi-language selection
@@ -88,7 +99,9 @@ function requestToken(options: UseDiscoveryShelfOptions, attempt: number): strin
  * Fetch one discovery shelf and expose its lifecycle.
  *
  * - `"idle"` — disabled by the caller: no request is issued.
- * - `"loading"` — one request is in flight for the current token.
+ * - `"loading"` — this shelf is in flight for the current token, or is queued
+ *   behind the page's other shelves waiting for a request slot (the cap is
+ *   deliberately invisible in the status vocabulary).
  * - `"ready"` — tracks are ready and already language-interleaved.
  * - `"empty"` — the feed resolved with nothing to show.
  * - `"error"` — this shelf's request failed; `code` names the reason and
@@ -100,8 +113,9 @@ function requestToken(options: UseDiscoveryShelfOptions, attempt: number): strin
  * retryable error state, and additionally warns the code so the cause is
  * debuggable instead of silently swallowed.
  *
- * Unmounting (or a superseded token) aborts the in-flight request, and a
- * response that arrives after that is discarded rather than written to state.
+ * Unmounting (or a superseded token) aborts the in-flight request — or the queue
+ * wait that has not issued one yet — and a response that arrives after that is
+ * discarded rather than written to state.
  */
 export function useDiscoveryShelf(options: UseDiscoveryShelfOptions): DiscoveryShelf {
   const { kind, languages, seeds, limit, enabled = true } = options;
@@ -116,12 +130,26 @@ export function useDiscoveryShelf(options: UseDiscoveryShelfOptions): DiscoveryS
   useEffect(() => {
     // Disabled shelves (no local seeds, offline Discover) issue no request.
     if (!enabled) return;
-    // One controller per instance, aborted on unmount or supersession.
+    // One controller per instance, aborted on unmount or supersession. It also
+    // carries the queue wait, so a shelf that leaves while queued is released
+    // from the gate without ever reaching the network.
     const controller = new AbortController();
     let cancelled = false;
 
-    void fetchDiscoveryFeed({ kind, languages, seeds, limit, signal: controller.signal })
-      .then((feed) => {
+    void (async () => {
+      let slot: ShelfSlot | undefined;
+      try {
+        // One of the page-wide slots; the shelves beyond the cap wait here and
+        // keep reporting "loading".
+        slot = await acquireShelfSlot(controller.signal);
+        if (cancelled) return;
+        const feed = await fetchDiscoveryFeed({
+          kind,
+          languages,
+          seeds,
+          limit,
+          signal: controller.signal,
+        });
         if (cancelled) return;
         const tracks = interleaveByLanguage(feed.tracks, languages);
         setSettled({
@@ -129,8 +157,9 @@ export function useDiscoveryShelf(options: UseDiscoveryShelfOptions): DiscoveryS
           status: tracks.length > 0 ? "ready" : "empty",
           tracks,
         });
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
+        // A wait or a request cancelled by unmount/supersession is not a
+        // failure to report — the next token's effect owns what happens next.
         if (cancelled) return;
         const code = error instanceof DiscoveryError ? error.code : "network";
         if (code === "invalid_request") {
@@ -142,7 +171,12 @@ export function useDiscoveryShelf(options: UseDiscoveryShelfOptions): DiscoveryS
           );
         }
         setSettled({ token, status: "error", tracks: [], code });
-      });
+      } finally {
+        // The slot is returned on every path — success, failure, or an abort
+        // that happened before the request was even issued.
+        slot?.release();
+      }
+    })();
 
     return () => {
       cancelled = true;

@@ -103,6 +103,7 @@ describe("GET /api/discover — success contract", () => {
       "languages",
       "resultCount",
       "seedsFailed",
+      "seedsSkipped",
       "seedsTried",
       "tiersTried",
     ]);

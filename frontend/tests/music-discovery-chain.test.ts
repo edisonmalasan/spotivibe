@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInflightDedup, createTtlCache } from "@/server/music/cache";
+import { REQUEST_BUDGET_MS, type ChainOptions } from "@/server/music/chain";
 import {
   DISCOVERY_CACHE_MAX_ENTRIES,
   DISCOVERY_CACHE_TTL_MS,
+  DISCOVERY_FEED_BUDGET_MS,
   DISCOVERY_SEED_CAP,
+  DISCOVERY_SEED_CONCURRENCY,
+  DISCOVERY_SEED_TIMEOUT_MS,
   discoveryCacheKey,
   resolveDiscovery,
   runDiscovery,
@@ -14,7 +18,6 @@ import {
 import { trendingSeedsFor } from "@/server/music/discoverySeeds";
 import { ProviderError } from "@/server/music/errors";
 import { outboundLimiter } from "@/server/music/limiter";
-import type { ChainOptions } from "@/server/music/chain";
 import type { MusicProvider, ProviderCandidate, TierId } from "@/server/music/types";
 import { makeCandidate } from "./helpers/music-fixtures";
 
@@ -25,13 +28,13 @@ afterEach(() => {
 /** Fake tier that records every query it was asked to run. */
 function fakeProvider(
   id: TierId,
-  impl: (request: { query: string }) => Promise<ProviderCandidate[]>,
+  impl: (request: { query: string; signal?: AbortSignal }) => Promise<ProviderCandidate[]>,
 ): MusicProvider & { calls: number; queries: string[] } {
   const provider = {
     id,
     calls: 0,
     queries: [] as string[],
-    async search(request: { query: string }) {
+    async search(request: { query: string; signal?: AbortSignal }) {
       provider.calls += 1;
       provider.queries.push(request.query);
       return impl(request);
@@ -77,6 +80,18 @@ function freshDeps(
     inflight: createInflightDedup(),
     ...(chainOptions ? { chainOptions } : {}),
   };
+}
+
+/**
+ * Let every already-queued microtask and macrotask run. Used to prove that
+ * *nothing else started* while a deferred provider call is still open — the
+ * evidence is the unreleased gate, and this only gives the runtime a chance to
+ * prove it wrong.
+ */
+function flushPendingWork(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 describe("resolveDiscovery — seed composition and language attribution", () => {
@@ -270,6 +285,175 @@ describe("resolveDiscovery — per-seed failure tolerance", () => {
         error !== null &&
         (error as { name?: unknown }).name === "AbortError",
     );
+  });
+});
+
+describe("resolveDiscovery — bounded seed concurrency and feed budget", () => {
+  it("keeps at most DISCOVERY_SEED_CONCURRENCY chain calls in flight, so no seed spends its budget queued on the limiter", async () => {
+    // Deferred answers: a seed stays "running" until this test releases it, so
+    // the observation is a real gate, not a timing guess.
+    const releases: Array<() => void> = [];
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const primary = fakeProvider("ytmusic", (request) => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      return new Promise<ProviderCandidate[]>((resolve) => {
+        const index = releases.length;
+        releases.push(() => {
+          inFlight -= 1;
+          resolve([makeCandidate({ videoId: `vid${index}`, title: `Track for ${request.query}` })]);
+        });
+      });
+    });
+
+    const pending = resolveDiscovery(baseRequest({ languages: ["en", "es"] }), {
+      providers: [primary],
+    });
+
+    // Four planned seeds. The first starts and stays open.
+    await vi.waitFor(() => expect(primary.calls).toBe(1));
+    await flushPendingWork();
+    // The other three wait their turn: with an unbounded fan-out they would all
+    // be inside the chain right now, each burning its budget on the limiter.
+    expect(primary.calls).toBe(1);
+    expect(primary.queries).toEqual([trendingSeedsFor("en")[0]]);
+    expect(peakInFlight).toBe(DISCOVERY_SEED_CONCURRENCY);
+
+    for (let started = 2; started <= 4; started += 1) {
+      releases[started - 2]?.();
+      await vi.waitFor(() => expect(primary.calls).toBe(started));
+      // Still exactly one at a time: the previous seed settled, this one began.
+      expect(peakInFlight).toBe(DISCOVERY_SEED_CONCURRENCY);
+    }
+    releases[3]?.();
+
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    // Every planned seed still contributed: bounding the fan-out must not
+    // shrink the feed.
+    if (result.ok) {
+      expect(result.tracks).toHaveLength(4);
+      expect(result.diagnostics.seedsTried).toBe(4);
+    }
+    expect(result.diagnostics.seedsSkipped).toEqual([]);
+    // Language-fair planning, still walked one seed at a time.
+    expect(primary.queries).toEqual([
+      trendingSeedsFor("en")[0],
+      trendingSeedsFor("es")[0],
+      trendingSeedsFor("en")[1],
+      trendingSeedsFor("es")[1],
+    ]);
+  });
+
+  it("gives every seed the discovery seed budget, never the chain's own 8s default", async () => {
+    // The chain builds its budget with `AbortSignal.timeout`, so the value each
+    // seed runs on is directly observable here.
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const primary = echoingProvider("ytmusic", "vid-");
+      const result = await resolveDiscovery(baseRequest({ languages: ["en", "es"] }), {
+        providers: [primary],
+      });
+
+      expect(result.ok).toBe(true);
+      const budgets = timeoutSpy.mock.calls.map(([ms]) => ms);
+      // One feed deadline, then one chain deadline per planned seed.
+      expect(budgets[0]).toBe(DISCOVERY_FEED_BUDGET_MS);
+      expect(budgets.slice(1)).toEqual(Array.from({ length: 4 }, () => DISCOVERY_SEED_TIMEOUT_MS));
+      // The regression this pins: a seed on the chain's default budget can
+      // exhaust it waiting for a limiter slot and be reported as `timeout`
+      // without a provider ever being asked.
+      expect(budgets).not.toContain(REQUEST_BUDGET_MS);
+      expect(DISCOVERY_SEED_TIMEOUT_MS).toBeGreaterThan(REQUEST_BUDGET_MS);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it("lets an explicit chain budget win, so a caller's own options still apply", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const primary = echoingProvider("ytmusic", "vid-");
+      await resolveDiscovery(baseRequest({ languages: ["en"] }), {
+        providers: [primary],
+        budgetMs: 1234,
+      });
+
+      const budgets = timeoutSpy.mock.calls.map(([ms]) => ms);
+      expect(budgets[0]).toBe(DISCOVERY_FEED_BUDGET_MS);
+      expect(budgets.slice(1)).toEqual([1234, 1234]);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it("returns the seeds it got and names the rest as budget-skipped, not failed", async () => {
+    const planned = [
+      trendingSeedsFor("en")[0],
+      trendingSeedsFor("es")[0],
+      trendingSeedsFor("en")[1],
+      trendingSeedsFor("es")[1],
+    ];
+    // The first seed outlasts the whole feed budget (4x the margin), so the
+    // remaining three are never attempted. Its answer is still honoured — a
+    // late result beats none.
+    const slowFirst = fakeProvider("ytmusic", async (request) => {
+      if (request.query === planned[0]) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 120);
+        });
+      }
+      return [
+        makeCandidate({
+          videoId: `vid-${request.query.replace(/\W+/g, "")}`,
+          title: `Track for ${request.query}`,
+        }),
+      ];
+    });
+
+    const result = await resolveDiscovery(baseRequest({ languages: ["en", "es"] }), {
+      providers: [slowFirst],
+      feedBudgetMs: 30,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.tracks).toHaveLength(1);
+    expect(result.tracks[0]?.language).toBe("en");
+    // The budget outcome is reported as its own thing: a skipped seed is not a
+    // provider failure, and must never be counted as one.
+    expect(result.diagnostics.seedsTried).toBe(1);
+    expect(result.diagnostics.seedsFailed).toEqual([]);
+    expect(result.diagnostics.seedsSkipped).toEqual(planned.slice(1));
+  });
+
+  it("returns the structured upstream failure when the budget stopped every seed", async () => {
+    // A tier that honours its signal, so the feed deadline ends the one seed
+    // that started and the rest are never attempted at all.
+    const hanging = fakeProvider(
+      "ytmusic",
+      ({ signal }) =>
+        new Promise<ProviderCandidate[]>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        }),
+    );
+
+    const result = await resolveDiscovery(baseRequest({ languages: ["en", "es"] }), {
+      providers: [hanging],
+      feedBudgetMs: 30,
+    });
+
+    // A feed that produced nothing is a failure either way, and it is still the
+    // structured upstream failure the route turns into a 503.
+    expect(result).toMatchObject({ ok: false, reason: "upstream" });
+    if (result.ok) return;
+    expect(result.diagnostics.seedsTried).toBe(0);
+    expect(result.diagnostics.seedsFailed).toEqual([]);
+    expect(result.diagnostics.seedsSkipped).toHaveLength(4);
+    expect(result.diagnostics.resultCount).toBe(0);
   });
 });
 
@@ -479,7 +663,10 @@ describe("runDiscovery — cache and dedup", () => {
 
     const first = runDiscovery(baseRequest({ languages: ["en"] }), deps);
     const second = runDiscovery(baseRequest({ languages: ["en"] }), deps);
-    // One composition of two planned seeds — not two compositions.
+    // One composition of two planned seeds — not two compositions. The seeds
+    // run one at a time, so each is released as it starts.
+    await vi.waitFor(() => expect(primary.calls).toBe(1));
+    releases.shift()?.();
     await vi.waitFor(() => expect(primary.calls).toBe(2));
     for (const release of releases) release();
 
