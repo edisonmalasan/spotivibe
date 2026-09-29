@@ -8,6 +8,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { PlayerHost } from "@/components/player/PlayerHost";
 import { useListeningRecorder } from "@/features/history/useListeningRecorder";
+import { RadioStartedTracker } from "@/features/personalization/RadioStartedTracker";
+import { RefillAgent } from "@/features/personalization/RefillAgent";
 import type { ReactNode } from "react";
 
 /**
@@ -23,6 +25,15 @@ import type { ReactNode } from "react";
  * The shell is also the one place the listening recorder is mounted (M8
  * design §5): the subscription must outlive route changes, and a hook keeps the
  * cross-store wiring out of every store.
+ *
+ * **M10 mounts its two observers here for the same reason** (`design §5`, and
+ * the single-video-host rule beside it): a radio outlives the route that started
+ * it, so anything that has to keep observing it has to live outside `children`.
+ * `<RefillAgent />` keeps a running queue playing (and renders the non-blocking
+ * refill-failure notice), and `<RadioStartedTracker />` keeps the radio's played
+ * set — which is what every later refill excludes — current. Both render nothing
+ * into the layout; this is wiring, not presentation, and it keeps the
+ * cross-store knowledge in the feature that owns it rather than here.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   useListeningRecorder();
@@ -41,6 +52,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
       {/* Connectivity status: shell-global, fixed clear of the player regions. */}
       <ConnectionBanner />
+      {/* Radio/autofill observers, mounted with the persistent player. */}
+      <RefillAgent />
+      <RadioStartedTracker />
       <PlayerHost />
     </div>
   );

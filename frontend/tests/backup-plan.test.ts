@@ -38,6 +38,7 @@ function makeDivergedLocal(): BackupData {
       autoplayNext: true,
       reduceMotion: false,
       onboardingComplete: false,
+      autofillQueue: false,
     },
     session: null,
   });
@@ -168,6 +169,7 @@ describe("planMerge", () => {
         autoplayNext: false,
         reduceMotion: true,
         onboardingComplete: false,
+        autofillQueue: false,
       },
     });
     const plan = planOf(backup, local);
@@ -177,6 +179,20 @@ describe("planMerge", () => {
     const same = planOf(makeBackupData(), local);
     expect(same.writes.preferences).toBeUndefined();
     expect(same.stats.preferences).toBe(0);
+  });
+
+  it("preferences: M10's autofillQueue alone still counts as a difference", () => {
+    // The write is suppressed by an "unchanged" verdict over the whole record, so
+    // a field missing from that comparison would silently drop a toggled setting
+    // on every merge import.
+    const local = makeBackupData();
+    const backup = makeBackupData({
+      preferences: { ...local.preferences, autofillQueue: false },
+    });
+
+    const plan = planOf(backup, local);
+    expect(plan.writes.preferences?.autofillQueue).toBe(false);
+    expect(plan.stats.preferences).toBe(1);
   });
 
   it("session: backup wins when present and different, null keeps local", () => {

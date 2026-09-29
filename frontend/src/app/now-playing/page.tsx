@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/design-system/Button";
 import { IconButton } from "@/components/design-system/IconButton";
 import {
   PlayPauseButton,
@@ -8,10 +9,11 @@ import {
   VolumeControls,
 } from "@/components/player/PlaybackControls";
 import { ProgressSlider } from "@/components/player/ProgressSlider";
+import { startTrackRadio, useRadioStatus } from "@/features/personalization/startRadio";
 import { MoreLikeThisShelf } from "@/features/related/MoreLikeThisShelf";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { usePlayerStore } from "@/stores/playerStore";
-import { ChevronDown, Heart, ListMusic, Music2, SkipBack, SkipForward } from "lucide-react";
+import { ChevronDown, Heart, ListMusic, Music2, Radio, SkipBack, SkipForward } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -47,6 +49,20 @@ import { useEffect, useRef, useState } from "react";
  * The surface reads exactly the same `playerStore`/`libraryStore` slices as
  * before, so it and the player region cannot disagree about the current track,
  * status, position, or like state without a reload.
+ *
+ * M10 adds the radio entry point (spec: `app-shell` — "Now Playing surface"):
+ *
+ * - **A radio action, omitted without a seed.** A radio needs an identity, so
+ *   the control is rendered only when there *is* a current track — never as a
+ *   disabled affordance, which would offer an action the surface cannot perform.
+ *   Activating it starts one radio from that track and replaces the queue.
+ * - **A radio indicator while one is playing.** Presentational only: it reads
+ *   `useRadioStatus`, so the label follows the same store the refill agent and
+ *   the queue view read and cannot disagree with them.
+ * - **A non-blocking retry after a refused start.** A start the engine could not
+ *   complete leaves the queue and playback untouched, so this surface says so
+ *   and offers to try again — a polite status line, never a modal and never a
+ *   disabled control.
  */
 export default function NowPlayingPage() {
   const router = useRouter();
@@ -58,6 +74,8 @@ export default function NowPlayingPage() {
   const hydrate = useLibraryStore((state) => state.hydrate);
   const toggleLike = useLibraryStore((state) => state.toggleLike);
   const isLiked = currentTrack != null && likedIds?.has(currentTrack.id) === true;
+  // M10: the radio's own state, read from the same store the refill agent uses.
+  const radio = useRadioStatus();
 
   useEffect(() => {
     void hydrate();
@@ -92,6 +110,27 @@ export default function NowPlayingPage() {
     // comparison is valid whichever state the previous title left behind.
     setTitleOverflows(text.scrollWidth > box.clientWidth);
   }, [displayTitle]);
+
+  /**
+   * M10: start a radio from the current track, or re-try one that was refused.
+   *
+   * One helper for both buttons so the two affordances cannot drift — they are
+   * the same action, offered at two moments. It takes the track from the closure
+   * rather than reading the store again, so it can never act on a track that
+   * changed between the render and the click.
+   */
+  const startRadioFromCurrent = (): void => {
+    if (currentTrack === null) return;
+    void startTrackRadio(currentTrack);
+  };
+
+  /**
+   * The retry line appears only when nothing is playing as a radio *and* the last
+   * attempt is what failed — a failed refill of a live radio is the refill
+   * agent's notice to show, and it clears the message itself when the radio
+   * resumes, so this surface never duplicates or contradicts it.
+   */
+  const showRadioRetry = radio.error !== null && !radio.active && currentTrack !== null;
 
   return (
     <div
@@ -184,6 +223,33 @@ export default function NowPlayingPage() {
 
         <ProgressSlider />
 
+        {/*
+          M10: the radio's two presentation pieces, both reading the same store
+          the refill agent and the queue view read. The indicator is text, not an
+          icon-only control, so the state is announced rather than implied.
+        */}
+        {radio.active ? (
+          <p
+            data-testid="now-playing-radio-indicator"
+            className="flex items-center gap-2 text-body-lg font-regular text-mist"
+          >
+            <Radio className="size-4" aria-hidden="true" />
+            <span>Radio</span>
+          </p>
+        ) : null}
+        {showRadioRetry ? (
+          <div
+            role="status"
+            data-testid="now-playing-radio-failure"
+            className="flex flex-wrap items-center justify-center gap-2"
+          >
+            <span className="text-body-lg font-regular text-pure-white">{radio.error}</span>
+            <Button variant="pill" onClick={startRadioFromCurrent}>
+              Try again
+            </Button>
+          </div>
+        ) : null}
+
         <div className="flex items-center gap-4">
           <IconButton
             label={isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"}
@@ -204,6 +270,16 @@ export default function NowPlayingPage() {
           <IconButton label="Queue" onClick={() => router.push("/queue")}>
             <ListMusic className="size-5" aria-hidden="true" />
           </IconButton>
+          {/* A radio needs a seed, so the action is omitted rather than disabled. */}
+          {currentTrack !== null ? (
+            <IconButton
+              label="Start track radio"
+              data-testid="now-playing-radio"
+              onClick={startRadioFromCurrent}
+            >
+              <Radio className="size-5" aria-hidden="true" />
+            </IconButton>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-4">

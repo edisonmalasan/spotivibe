@@ -330,6 +330,7 @@ describe("Settings data controls", () => {
       autoplayNext: true,
       reduceMotion: false,
       onboardingComplete: true,
+      autofillQueue: true,
     });
   });
 

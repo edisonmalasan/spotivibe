@@ -35,6 +35,9 @@ export const LISTENING_CONTEXT_BY_SOURCE: Readonly<Record<QueueSource, Listening
   browse: "home",
   library: "library",
   queue: "queue",
+  // A radio is its own listening context (M10): a track heard through one is
+  // recorded as radio playback, not as the surface its seed was started from.
+  radio: "radio",
   unknown: "other",
 };
 

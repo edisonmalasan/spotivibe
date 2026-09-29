@@ -38,6 +38,9 @@ export async function collectLocalData(repos: Repositories): Promise<BackupData>
       autoplayNext: preferences.autoplayNext,
       reduceMotion: preferences.reduceMotion,
       onboardingComplete: preferences.onboardingComplete,
+      // M10: the queue-autofill setting is part of the same preferences dataset,
+      // so a backup restores it like every other toggle.
+      autofillQueue: preferences.autofillQueue,
     },
     likedTracks,
     playlists,

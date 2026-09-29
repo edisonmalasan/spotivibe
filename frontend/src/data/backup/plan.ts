@@ -128,7 +128,11 @@ export function planMerge(envelope: BackupEnvelope, local: BackupData): Prepared
     sameLanguages(backupPreferences.languages, local.preferences.languages) &&
     backupPreferences.autoplayNext === local.preferences.autoplayNext &&
     backupPreferences.reduceMotion === local.preferences.reduceMotion &&
-    backupPreferences.onboardingComplete === local.preferences.onboardingComplete;
+    backupPreferences.onboardingComplete === local.preferences.onboardingComplete &&
+    // M10: the comparison covers *every* preference field — a field missing
+    // here would silently drop a toggle difference on merge, since "unchanged"
+    // is what suppresses the whole preferences write.
+    backupPreferences.autofillQueue === local.preferences.autofillQueue;
 
   const backupSession = envelope.data.session;
   let session: BackupSession | null | undefined;

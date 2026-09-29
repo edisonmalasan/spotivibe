@@ -28,6 +28,7 @@ export function makeBackupData(overrides: Partial<BackupData> = {}): BackupData 
       autoplayNext: true,
       reduceMotion: false,
       onboardingComplete: true,
+      autofillQueue: true,
     },
     likedTracks: [
       { trackId: "t1", track: makeTrack("t1"), likedAt: 1000 },

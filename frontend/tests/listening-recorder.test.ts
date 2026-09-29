@@ -71,6 +71,9 @@ describe("queue source → listening context mapping", () => {
       browse: "home",
       library: "library",
       queue: "queue",
+      // M10: a track heard through a radio is radio playback, whatever surface
+      // the radio was started from.
+      radio: "radio",
       unknown: "other",
     });
   });
@@ -174,6 +177,7 @@ describe("one event per track step", () => {
       ["browse", "home"],
       ["library", "library"],
       ["queue", "queue"],
+      ["radio", "radio"],
       ["unknown", "other"],
     ];
 

@@ -26,6 +26,7 @@ import { artistHref, artistRequestKey } from "@/features/artist/artistKeys";
 import { likedTracksByArtist } from "@/features/artist/likedByArtist";
 import { playFromShelf } from "@/features/home/browsePlayback";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
+import { startArtistRadio } from "@/features/personalization/startRadio";
 import { songCountLabel } from "@/lib/playlistPresentation";
 import { useLibraryStore } from "@/stores/libraryStore";
 
@@ -323,13 +324,26 @@ export function ArtistView({ artistKey }: ArtistViewProps) {
   }
 
   /**
-   * "Start artist radio" (design §5): seed playback from the *whole* resolved
-   * feed through the existing `browse` path, so the queue labels the context
-   * "From browse" and the artist page plays through. Radio *behaviour* (refill,
-   * dedupe, a `radio` queue source) is M10's acceptance criteria; this seeds it
-   * honestly rather than pretending to a continuous station.
+   * "Start artist radio" (M10 task 5.4; spec `radio` — "Radio entry points").
+   *
+   * The label, the button, and its test id are unchanged from M9; what changed is
+   * what it does: it now enters **radio mode** — the artist identity seeds the
+   * radio engine, which fills the queue, records the `radio` source, and starts
+   * playback once, and from then on the shared refill agent keeps it playing.
+   *
+   * The M9 fallback is deliberately kept (task 5.4): if the engine cannot
+   * deliver — the provider is unreachable, or it resolves nothing for this
+   * artist — the button still does what it always did, seeding playback from the
+   * *whole* resolved feed through the existing `browse` path, so the artist page
+   * is never a dead control. A refusal touches nothing that was already
+   * playing, so falling back cannot interrupt an existing queue.
    */
-  function startArtistRadio(): void {
+  async function beginArtistRadio(artist: { id?: string; name: string }): Promise<void> {
+    // Only the identity the radio actually uses is handed over: the seed is the
+    // radio's own record, and a resolved artist's artwork (or any field added to
+    // `ArtistIdentity` later) has no business being copied into it.
+    const outcome = await startArtistRadio({ id: artist.id, name: artist.name });
+    if (outcome.status === "started") return;
     const first = tracks[0];
     if (first === undefined) return;
     playFromShelf(first, tracks);
@@ -459,7 +473,9 @@ export function ArtistView({ artistKey }: ArtistViewProps) {
           </p>
           <div className="mt-2">
             <Button
-              onClick={startArtistRadio}
+              onClick={() => {
+                void beginArtistRadio(artist);
+              }}
               disabled={tracks.length === 0}
               data-testid="artist-radio"
             >

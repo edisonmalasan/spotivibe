@@ -12,6 +12,7 @@ import { makeTrack } from "./helpers/music-fixtures";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { resetQueueStore, useQueueStore } from "@/stores/queueStore";
+import { resetRadioStore, useRadioStore } from "@/stores/radioStore";
 
 /**
  * M9 tasks 3.3–3.4 (spec: `catalog` — "Artist page" / "Catalog entity keys and
@@ -96,6 +97,16 @@ interface Recorded {
   url: URL;
 }
 
+/** The one resolution the default stub answers with. */
+function artistResponse(resolution: Required<Resolution> = DEFAULT_RESOLUTION): Response {
+  const { artist, tracks, related, releases } = resolution;
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ artist, tracks, related, releases, diagnostics: {} }),
+  } as unknown as Response;
+}
+
 function stubArtist(reply: (call: number) => Reply = () => ({ resolve: DEFAULT_RESOLUTION })) {
   const calls: Recorded[] = [];
   const mock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -115,15 +126,39 @@ function stubArtist(reply: (call: number) => Reply = () => ({ resolve: DEFAULT_R
         json: async () => ({ error: { code: outcome.code } }),
       } as unknown as Response);
     }
-    const { artist, tracks, related, releases } = outcome.resolve;
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      json: async () => ({ artist, tracks, related, releases, diagnostics: {} }),
-    } as unknown as Response);
+    return Promise.resolve(artistResponse(outcome.resolve));
   });
   vi.stubGlobal("fetch", mock);
   return { mock, calls };
+}
+
+/**
+ * Answer the artist endpoint with the default resolution *and* the radio
+ * endpoint with real material (M10 task 5.4), so "Start artist radio" runs the
+ * whole engine rather than a mocked outcome.
+ */
+function stubArtistWithRadio(
+  radioTracks: Track[],
+  radioReply: "ok" | "unresolvable" | "unavailable" = "ok",
+): void {
+  stubArtist();
+  const mock = vi.fn((input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname !== "/api/radio") return Promise.resolve(artistResponse());
+    if (radioReply === "unavailable") {
+      return Promise.resolve({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: { code: "upstream_unavailable" } }),
+      } as unknown as Response);
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({ tracks: radioReply === "ok" ? radioTracks : [], variant: 0 }),
+    } as unknown as Response);
+  });
+  vi.stubGlobal("fetch", mock);
 }
 
 let repositories: RepositorySet;
@@ -132,6 +167,7 @@ beforeEach(async () => {
   resetLibraryStore();
   resetPlayerStore();
   resetQueueStore();
+  resetRadioStore();
   repositories = await getLocalData();
   await repositories.resetAll();
 });
@@ -361,18 +397,73 @@ describe("ArtistView: playing and liking a track", () => {
   });
 });
 
-describe("ArtistView: Start artist radio", () => {
-  it("seeds playback from the first track with the artist feed as the context", async () => {
+describe("ArtistView: Start artist radio (M10 task 5.4)", () => {
+  it("enters radio mode: the artist identity seeds it and the queue source becomes radio", async () => {
+    const radioTracks = [
+      makeTrack({ id: "youtube:r1", providerId: "r1", title: "Radio One" }),
+      makeTrack({ id: "youtube:r2", providerId: "r2", title: "Radio Two" }),
+    ];
+    const radioMock = vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname !== "/api/radio") return Promise.resolve(artistResponse());
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ tracks: radioTracks, variant: 0 }),
+      } as unknown as Response);
+    });
     stubArtist();
+    vi.stubGlobal("fetch", radioMock);
+
+    render(<ArtistView artistKey="Aurora" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start artist radio" }));
+
+    await waitFor(() => expect(useRadioStore.getState().seed).not.toBeNull());
+
+    // The radio carries the *artist* identity, not a track's, and the queue it
+    // filled is labelled as a radio rather than as a browse shelf.
+    expect(useRadioStore.getState().seed).toEqual({
+      kind: "artist",
+      artist: { id: CHANNEL_ID, name: "Aurora" },
+    });
+    expect(useRadioStore.getState().status).toBe("active");
+    expect(useQueueStore.getState().source).toBe("radio");
+    expect(queueIds()).toEqual(["youtube:r1", "youtube:r2"]);
+    expect(usePlayerStore.getState().currentTrack?.id).toBe("youtube:r1");
+
+    const radioRequest = radioMock.mock.calls
+      .map(([input]) => new URL(String(input), "http://localhost"))
+      .find((url) => url.pathname === "/api/radio");
+    expect(radioRequest?.searchParams.get("kind")).toBe("artist");
+    expect(radioRequest?.searchParams.get("artist")).toBe("Aurora");
+  });
+
+  it("keeps its seeded-playback behavior when the radio engine cannot deliver", async () => {
+    // Task 5.4: the button is never dead. The M9 fallback — the whole resolved
+    // feed under the `browse` source — is still what happens when the radio
+    // request fails.
+    stubArtistWithRadio([], "unavailable");
     render(<ArtistView artistKey="Aurora" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Start artist radio" }));
 
+    await waitFor(() => expect(usePlayerStore.getState().currentTrack).not.toBeNull());
     expect(usePlayerStore.getState().currentTrack?.id).toBe(alpha.id);
     expect(useQueueStore.getState().source).toBe("browse");
-    // The whole feed is the context, so the artist plays through.
     expect(queueIds()).toEqual([alpha.id, beta.id]);
-    expect(useQueueStore.getState().queueIndex).toBe(0);
+    // A refused start is not a half-started radio.
+    expect(useRadioStore.getState().seed).toBeNull();
+  });
+
+  it("falls back the same way when the provider resolves nothing for the artist", async () => {
+    stubArtistWithRadio([], "unresolvable");
+    render(<ArtistView artistKey="Aurora" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start artist radio" }));
+
+    await waitFor(() => expect(usePlayerStore.getState().currentTrack).not.toBeNull());
+    expect(useQueueStore.getState().source).toBe("browse");
+    expect(useRadioStore.getState().seed).toBeNull();
   });
 });
 

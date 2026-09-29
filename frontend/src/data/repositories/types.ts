@@ -120,6 +120,16 @@ export interface Preferences {
   reduceMotion: boolean;
   /** Onboarding completion flag. */
   onboardingComplete: boolean;
+  /**
+   * Playback preference (M10, spec `radio` — "Queue autofill"; design §6): let
+   * an ordinary queue be topped up with more tracks before it runs out.
+   *
+   * **Default on**, and the only setting radio behaviour has: autofill spends
+   * provider requests on the user's behalf, so it must be switchable; a radio
+   * only ever starts from an explicit "Start … radio" gesture, so it is never
+   * automatic and needs no opt-out.
+   */
+  autofillQueue: boolean;
 }
 
 /** Preferences store record (keyPath `id`). */
@@ -132,12 +142,19 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autoplayNext: true,
   reduceMotion: false,
   onboardingComplete: false,
+  autofillQueue: true,
 };
 
 export type RepeatMode = "off" | "context" | "track";
 
-/** Where the current queue context came from (M6 queue surface label). */
-export type QueueSource = "search" | "browse" | "library" | "queue" | "unknown";
+/**
+ * Where the current queue context came from (M6 queue surface label).
+ *
+ * `radio` (M10) is a *mode of the one queue* (design §1), not a second player:
+ * the tracks live in this same store, so an existing entry and a radio-refilled
+ * one are the same kind of thing and every queue surface works on day one.
+ */
+export type QueueSource = "search" | "browse" | "library" | "queue" | "radio" | "unknown";
 
 /** One played entry on the bounded queue-history stack (M6 bookkeeping). */
 export interface QueueHistoryEntry {

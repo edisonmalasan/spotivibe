@@ -235,3 +235,195 @@ describe("transport split (tasks 1.2 / 2.1)", () => {
     expect(queueState().source).toBe("unknown");
   });
 });
+
+/**
+ * M10 task 2.2 (spec `queue` — "Queue growth by refill and autofill"): growing a
+ * playing queue without disturbing it. The store never *decides* to grow — the
+ * refill/autofill engine does, from the low-water mark — so these cases pin what
+ * growth must preserve: the current track, the play order, the user's entries and
+ * their order, and the recorded source.
+ */
+describe("queue growth: appendUpcoming (task 2.2)", () => {
+  const grown1 = makeTrack({ id: "youtube:ggg", providerId: "ggg", title: "Growth One" });
+  const grown2 = makeTrack({ id: "youtube:hhh", providerId: "hhh", title: "Growth Two" });
+
+  function queueIds(): string[] {
+    return queueState().queue.map((track) => track.id);
+  }
+
+  /** The upcoming sequence the queue view displays, in traversal order. */
+  function upcomingIds(): string[] {
+    const { queue, queueIndex, playOrder } = queueState();
+    const position = playOrder.indexOf(queueIndex);
+    if (position === -1) return playOrder.map((at) => queue[at].id);
+    return playOrder.slice(position + 1).map((at) => queue[at].id);
+  }
+
+  it("inserts the growth after the current position and reports what it took", () => {
+    queueState().setContext(trackB, [trackA, trackB, trackC], "radio");
+
+    const result = queueState().appendUpcoming([grown1, grown2]);
+
+    expect(result.appended.map((track) => track.id)).toEqual([grown1.id, grown2.id]);
+    expect(result.skipped).toEqual([]);
+    // Array order reflects the growth; the current entry's own index is unchanged
+    // because nothing was inserted before it.
+    expect(queueIds()).toEqual([trackA.id, trackB.id, grown1.id, grown2.id, trackC.id]);
+    expect(queueState().queueIndex).toBe(1);
+    expect(queueState().queue[queueState().queueIndex].id).toBe(trackB.id);
+  });
+
+  it("puts the growth at the front of the upcoming sequence", () => {
+    queueState().setContext(trackA, [trackA, trackB, trackC], "search");
+
+    queueState().appendUpcoming([grown1, grown2]);
+
+    // They play next, ahead of the entries the user already had queued.
+    expect(upcomingIds()).toEqual([grown1.id, grown2.id, trackB.id, trackC.id]);
+  });
+
+  it("preserves the existing traversal order under shuffle, appending after the current one", () => {
+    // A shuffled traversal: the current entry leads, the rest in shuffled order.
+    useQueueStore.setState({
+      queue: [trackA, trackB, trackC],
+      queueIndex: 0,
+      playOrder: [0, 2, 1],
+      shuffle: true,
+    });
+
+    queueState().appendUpcoming([grown1]);
+
+    const { playOrder, queue } = queueState();
+    // Resolved through the traversal: the growth plays next, and the entries the
+    // shuffle had already ordered (Charlie, then Bravo) keep that order after it.
+    expect(playOrder.map((at) => queue[at].id)).toEqual([
+      trackA.id,
+      grown1.id,
+      trackC.id,
+      trackB.id,
+    ]);
+    expect(playOrder[0]).toBe(queueState().queueIndex);
+    // Growing the array in the middle moves later indices along, and the
+    // traversal followed them: it is still a permutation of the new length.
+    expect([...playOrder].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+    expect(queue.map((track) => track.id)).toEqual([trackA.id, grown1.id, trackB.id, trackC.id]);
+  });
+
+  it("refuses a track already in the queue, by id and by source+providerId", () => {
+    queueState().setContext(trackA, [trackA, trackB, trackC], "search");
+    const sameId = makeTrack({ id: trackB.id, providerId: "different" });
+    const sameProvider = makeTrack({ id: "youtube:other", providerId: trackB.providerId });
+
+    const result = queueState().appendUpcoming([sameId, sameProvider, grown1]);
+
+    expect(result.appended.map((track) => track.id)).toEqual([grown1.id]);
+    expect(result.skipped.map((track) => track.id)).toEqual([sameId.id, sameProvider.id]);
+    // The existing entry is untouched, not replaced.
+    expect(queueIds()).toEqual([trackA.id, grown1.id, trackB.id, trackC.id]);
+    expect(queueState().queue[2]).toEqual(trackB);
+  });
+
+  it("is safe to call repeatedly: the same batch appends once", () => {
+    queueState().setContext(trackA, [trackA, trackB], "search");
+
+    const first = queueState().appendUpcoming([grown1, grown2]);
+    const second = queueState().appendUpcoming([grown1, grown2]);
+    const third = queueState().appendUpcoming([grown2]);
+
+    expect(first.appended).toHaveLength(2);
+    expect(second.appended).toEqual([]);
+    expect(second.skipped.map((track) => track.id)).toEqual([grown1.id, grown2.id]);
+    expect(third.appended).toEqual([]);
+    expect(queueIds()).toEqual([trackA.id, grown1.id, grown2.id, trackB.id]);
+  });
+
+  it("dedupes a batch that repeats one track, and ignores an empty batch", () => {
+    queueState().setContext(trackA, [trackA, trackB], "search");
+
+    const result = queueState().appendUpcoming([grown1, grown1, grown2]);
+    expect(result.appended.map((track) => track.id)).toEqual([grown1.id, grown2.id]);
+    expect(result.skipped.map((track) => track.id)).toEqual([grown1.id]);
+
+    const empty = queueState().appendUpcoming([]);
+    expect(empty).toEqual({ appended: [], skipped: [] });
+    expect(queueIds()).toEqual([trackA.id, grown1.id, grown2.id, trackB.id]);
+  });
+
+  it("appends to the end when nothing is playing", () => {
+    // A stopped queue: no current entry to insert after.
+    useQueueStore.setState({
+      queue: [trackA, trackB],
+      queueIndex: -1,
+      playOrder: [0, 1],
+      source: "radio",
+    });
+
+    const result = queueState().appendUpcoming([grown1]);
+
+    expect(result.appended).toEqual([grown1]);
+    expect(queueIds()).toEqual([trackA.id, trackB.id, grown1.id]);
+    expect(queueState().playOrder).toEqual([0, 1, 2]);
+  });
+
+  it("grows an empty queue", () => {
+    const result = queueState().appendUpcoming([grown1, grown2]);
+
+    expect(result.appended).toHaveLength(2);
+    expect(queueIds()).toEqual([grown1.id, grown2.id]);
+    expect(queueState().playOrder).toEqual([0, 1]);
+  });
+
+  it("never changes the recorded source, the history, or the mode flags", () => {
+    queueState().setContext(trackA, [trackA, trackB], "radio");
+    queueState().cycleRepeat();
+    useQueueStore.setState({ history: [{ track: trackC, playedAt: 1_000 }] });
+
+    queueState().appendUpcoming([grown1]);
+
+    expect(queueState().source).toBe("radio");
+    expect(queueState().history).toEqual([{ track: trackC, playedAt: 1_000 }]);
+    expect(queueState().repeatMode).toBe("context");
+    expect(queueState().shuffle).toBe(false);
+  });
+
+  it("leaves remove, reorder, shuffle, and repeat with an un-grown queue's rules", () => {
+    queueState().setContext(trackB, [trackA, trackB, trackC], "radio");
+    queueState().appendUpcoming([grown1, grown2]);
+
+    // Removal: the growth is an ordinary entry, and the pointer stays put.
+    expect(queueState().remove(3)).toEqual({ currentRemoved: false, nextIndex: null });
+    expect(queueIds()).toEqual([trackA.id, trackB.id, grown1.id, trackC.id]);
+    expect(queueState().queueIndex).toBe(1);
+    expect(queueState().playOrder).toEqual([0, 1, 2, 3]);
+
+    // Reordering: within the upcoming region only, exactly as before growth.
+    expect(queueState().reorder(0, 1)).toBe(true);
+    expect(queueIds()).toEqual([trackA.id, trackB.id, trackC.id, grown1.id]);
+    expect(queueState().queueIndex).toBe(1);
+    expect(queueState().playOrder).toEqual([0, 1, 2, 3]);
+
+    // Shuffle: still a current-first permutation over the grown queue.
+    queueState().toggleShuffle();
+    expect(queueState().shuffle).toBe(true);
+    expect(queueState().playOrder[0]).toBe(1);
+    expect([...queueState().playOrder].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+
+    // Repeat: the same three-state cycle, unaffected by growth.
+    queueState().cycleRepeat();
+    expect(queueState().repeatMode).toBe("context");
+    queueState().cycleRepeat();
+    expect(queueState().repeatMode).toBe("track");
+    queueState().cycleRepeat();
+    expect(queueState().repeatMode).toBe("off");
+  });
+
+  it("does not touch transport while growing a playing queue", () => {
+    playerState().playTrack(trackB, [trackA, trackB, trackC], "radio");
+
+    queueState().appendUpcoming([grown1]);
+
+    expect(playerState().currentTrack).toEqual(trackB);
+    expect(playerState().status).toBe("loading");
+    expect(playerState().loadRequest).toMatchObject({ videoId: "bbb", mode: "load" });
+  });
+});
