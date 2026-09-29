@@ -1,61 +1,48 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { getLocalData } from "@/data/localData";
+import { useEffect } from "react";
 import type { Track } from "@/data/repositories";
+import { useLibraryStore } from "@/stores/libraryStore";
 
 /**
- * Like state for a rendered result set (design §8): `likedTracks.list()` is
- * read when results render, and every toggle awaits the repository before the
- * UI updates — the visible state is always the persisted state, with no
- * optimistic rollback to reconcile.
+ * Like state for a rendered result set (design §11): a thin wrapper over
+ * `libraryStore` — the hook triggers `hydrate()` and selects the shared
+ * `likedIds`, so a like toggled anywhere else (Liked Songs, Now Playing,
+ * another result set) reflects here without a remount.
+ *
+ * The API is unchanged from the M5 repository-backed hook: `likedIds` is
+ * `null` until the first read settles, and `toggleLike` never rejects —
+ * surfaces fire and forget it, so failures are logged rather than surfacing
+ * as unhandled rejections.
  */
 export function useLikedTracks(): {
   /** `null` until the first read settles. */
   likedIds: ReadonlySet<string> | null;
   toggleLike(track: Track): Promise<void>;
 } {
-  const [likedIds, setLikedIds] = useState<ReadonlySet<string> | null>(null);
+  const likedIds = useLibraryStore((state) => state.likedIds);
+  const hydrated = useLibraryStore((state) => state.hydrated);
+  const storeToggleLike = useLibraryStore((state) => state.toggleLike);
 
   useEffect(() => {
-    let cancelled = false;
-    void getLocalData()
-      .then((data) => data.likedTracks.list())
-      .then((records) => {
-        if (!cancelled) setLikedIds(new Set(records.map((record) => record.trackId)));
-      })
+    void useLibraryStore
+      .getState()
+      .hydrate()
       .catch((error: unknown) => {
         // Storage unavailable: expose "nothing liked" rather than a stuck menu;
         // the toggle path reports its own failures when the user acts.
         console.warn("[search] liked tracks unavailable:", error);
-        if (!cancelled) setLikedIds(new Set());
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  const toggleLike = useCallback(async (track: Track): Promise<void> => {
+  const toggleLike = async (track: Track): Promise<void> => {
     try {
-      const data = await getLocalData();
-      const liked = await data.likedTracks.isLiked(track.id);
-      if (liked) {
-        await data.likedTracks.unlike(track.id);
-      } else {
-        await data.likedTracks.like(track);
-      }
-      // Repository first, UI second (design §8).
-      setLikedIds((previous) => {
-        const next = new Set(previous ?? []);
-        if (liked) next.delete(track.id);
-        else next.add(track.id);
-        return next;
-      });
+      await storeToggleLike(track);
     } catch (error) {
       // Explicit failure: keep the persisted state on screen.
       console.warn("[search] like toggle failed:", error);
     }
-  }, []);
+  };
 
-  return { likedIds, toggleLike };
+  return { likedIds: hydrated ? likedIds : null, toggleLike };
 }

@@ -19,8 +19,15 @@ export type TierId = "ytmusic" | "ytweb" | "invidious" | "piped";
 /** Tier ids in chain order — the orchestrator iterates this. */
 export const TIER_ORDER: readonly TierId[] = ["ytmusic", "ytweb", "invidious", "piped"];
 
-/** Why a tier attempt failed (spec: failure taxonomy). */
-export type ProviderFailureKind = "timeout" | "network" | "http" | "parse" | "empty";
+/**
+ * Why a tier attempt failed (spec: failure taxonomy).
+ *
+ * `unavailable` is playlist-import only (design decision 9): a tier reached
+ * YouTube and received a definitive "this playlist is private/deleted/not
+ * found" answer — retrying other tiers cannot change it, so the chain stops.
+ */
+export type ProviderFailureKind =
+  "timeout" | "network" | "http" | "parse" | "empty" | "unavailable";
 
 /** An artwork candidate as offered by a tier; normalization picks the best. */
 export interface ArtworkCandidate {
@@ -116,3 +123,90 @@ export interface MusicProvider {
    */
   search(request: SearchRequest): Promise<ProviderCandidate[]>;
 }
+
+/* ------------------------------------------------------------------ *
+ * Playlist import (ROADMAP M7, design decision 9).
+ * ------------------------------------------------------------------ */
+
+/**
+ * Documented import cap: at most 500 entries are resolved per playlist
+ * (bounded serverless work; the response is marked `truncated` when more
+ * existed — design decision 9).
+ */
+export const PLAYLIST_ENTRY_CAP = 500;
+
+/**
+ * One playlist row: a candidate, or `null` for a row that exists upstream but
+ * cannot become a `Track` (unavailable/unnormalizable video). Nulls are
+ * skipped and counted as `skipped` — they are content the source listed, not
+ * absent content (design decision 9).
+ */
+export type PlaylistEntry = ProviderCandidate | null;
+
+/** What one tier's playlist resolver produced (raw entries, source order). */
+export interface PlaylistResolution {
+  title: string;
+  description?: string;
+  /** In source order, at most {@link PLAYLIST_ENTRY_CAP} entries. */
+  entries: PlaylistEntry[];
+  /** More entries existed beyond the cap (design decision 9). */
+  truncated: boolean;
+}
+
+/** What the chain hands one playlist resolver. */
+export interface PlaylistRequest {
+  playlistId: string;
+  /** Incoming request's abort signal — cancellation propagates upstream. */
+  signal?: AbortSignal;
+  /**
+   * Per-attempt upstream timeout. Set by the chain from its configured
+   * value; absent means the tier default.
+   */
+  timeoutMs?: number;
+}
+
+/**
+ * One playlist resolution tier. Implementations live beside their search
+ * counterparts in `src/server/music/providers/` and are server-only.
+ */
+export interface PlaylistResolver {
+  readonly id: TierId;
+  /**
+   * Fetch and parse one playlist, following continuations up to
+   * {@link PLAYLIST_ENTRY_CAP}.
+   *
+   * @throws {ProviderError} — kind `unavailable` is a definitive
+   * private/deleted/not-found answer (stops the chain); every other kind is
+   * a transport/parse failure (the chain falls through to the next tier).
+   */
+  resolvePlaylist(request: PlaylistRequest): Promise<PlaylistResolution>;
+}
+
+/** Diagnostics for a playlist resolution — tier ids/outcomes only. */
+export interface PlaylistDiagnostics {
+  tiers: TierOutcome[];
+}
+
+export interface PlaylistSuccess {
+  ok: true;
+  playlist: {
+    title: string;
+    description?: string;
+    /** Canonical tracks — no provider shapes, no quality scoring (design decision 9). */
+    tracks: Track[];
+    /** Source entries that could not become tracks (unavailable/unnormalizable). */
+    skipped: number;
+    /** Present only when the 500-entry cap cut the playlist short. */
+    truncated?: boolean;
+  };
+  diagnostics: PlaylistDiagnostics;
+}
+
+export interface PlaylistFailure {
+  ok: false;
+  /** `unavailable` → 404; `upstream` → 503 (design decision 9). */
+  reason: "unavailable" | "upstream";
+  tiers: TierOutcome[];
+}
+
+export type PlaylistResult = PlaylistFailure | PlaylistSuccess;

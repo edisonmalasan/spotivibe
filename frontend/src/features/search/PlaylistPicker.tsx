@@ -4,8 +4,8 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/design-system/Button";
 import { IconButton } from "@/components/design-system/IconButton";
-import { getLocalData } from "@/data/localData";
-import type { PlaylistRecord, Track } from "@/data/repositories";
+import type { Track } from "@/data/repositories";
+import { useLibraryStore } from "@/stores/libraryStore";
 
 interface PlaylistPickerProps {
   track: Track;
@@ -14,27 +14,39 @@ interface PlaylistPickerProps {
 }
 
 /**
- * Feature-local "add to playlist" dialog (design §8): picks an existing local
- * playlist or creates one inline (create → addTrack), both through repository
- * APIs only. Escape/backdrop/close dismiss; focus starts on the dialog.
+ * Feature-local "add to playlist" dialog (design §8/§11): picks an existing
+ * local playlist or creates one inline, both through `libraryStore` — the
+ * picker stays live with library changes made elsewhere, and the store's
+ * `addTrackToPlaylist` is the duplicate rule's single enforcement point: an
+ * `"added"` result closes the picker, a `"duplicate"` result keeps it open
+ * with an inline "Already in playlist" report (spec: the picker reports that
+ * the track is already there, playlist unchanged). Escape/backdrop/close
+ * dismiss; focus starts on the dialog.
  */
 export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
-  const [playlists, setPlaylists] = useState<PlaylistRecord[] | null>(null);
+  const playlists = useLibraryStore((state) => state.playlists);
+  const createPlaylist = useLibraryStore((state) => state.createPlaylist);
+  const addTrackToPlaylist = useLibraryStore((state) => state.addTrackToPlaylist);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  /** True once the shared library read has settled (or failed) on mount. */
+  const [resolved, setResolved] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void getLocalData()
-      .then((data) => data.playlists.list())
-      .then((list) => {
-        if (!cancelled) setPlaylists(list);
-      })
+    void useLibraryStore
+      .getState()
+      .hydrate()
       .catch((error: unknown) => {
+        // Storage unavailable: fall through to the empty list below, matching
+        // the previous repository-backed behavior.
         console.warn("[search] playlists unavailable:", error);
-        if (!cancelled) setPlaylists([]);
+      })
+      .finally(() => {
+        if (!cancelled) setResolved(true);
       });
     return () => {
       cancelled = true;
@@ -59,11 +71,22 @@ export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  async function run(action: () => Promise<unknown>): Promise<void> {
+  /**
+   * Run a store action: duplicate reports inline (picker stays open so the
+   * report is visible); success and hard failures behave as before.
+   */
+  async function run(action: () => Promise<"added" | "duplicate">): Promise<void> {
     setBusy(true);
     setFailure(null);
+    setNotice(null);
     try {
-      await action();
+      const outcome = await action();
+      if (outcome === "duplicate") {
+        // Spec: the playlist is unchanged and the picker reports the track
+        // is already in it.
+        setNotice(`Already in playlist — "${track.title}" is already there.`);
+        return;
+      }
       onClose();
     } catch (error) {
       console.warn("[search] add to playlist failed:", error);
@@ -74,10 +97,7 @@ export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
   }
 
   function addTo(playlistId: string): void {
-    void run(async () => {
-      const data = await getLocalData();
-      await data.playlists.addTrack(playlistId, track);
-    });
+    void run(() => addTrackToPlaylist(playlistId, track));
   }
 
   function createAndAdd(event: FormEvent): void {
@@ -85,9 +105,8 @@ export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
     const trimmed = name.trim();
     if (trimmed === "" || busy) return;
     void run(async () => {
-      const data = await getLocalData();
-      const playlist = await data.playlists.create({ name: trimmed });
-      await data.playlists.addTrack(playlist.id, track);
+      const playlist = await createPlaylist({ name: trimmed });
+      return addTrackToPlaylist(playlist.id, track);
     });
   }
 
@@ -112,7 +131,7 @@ export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
           </IconButton>
         </div>
 
-        {playlists === null ? (
+        {!resolved ? (
           <p className="text-body text-mist" role="status">
             Loading playlists…
           </p>
@@ -152,6 +171,11 @@ export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
           </Button>
         </form>
 
+        {notice && (
+          <p role="status" className="mt-3 text-body text-pure-white">
+            {notice}
+          </p>
+        )}
         {failure && (
           <p role="alert" className="mt-3 text-body text-pure-white">
             {failure}

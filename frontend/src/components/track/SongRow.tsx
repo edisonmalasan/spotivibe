@@ -52,8 +52,9 @@ function RowBody({ track, interactive }: { track: Track; interactive: boolean })
 }
 
 /**
- * Feature-local song row (design §8 keeps the primitive out of the design
- * system until another feature needs it): canonical track information in
+ * Shared song row (`components/track` — design §11 moved it out of
+ * `features/search` for its first non-search consumer, the M7 library):
+ * canonical track information in
  * relevance order — play affordance, artwork, title, artists, album, duration.
  * Activation covers the row body so "click the result" and keyboard activation
  * are the same control; context actions stay outside it (no nested buttons).

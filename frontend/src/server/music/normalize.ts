@@ -1,5 +1,5 @@
 import type { AlbumSummary, Artwork, ArtistSummary, Track } from "@/data/repositories";
-import type { ArtworkCandidate, ProviderCandidate } from "./types";
+import type { ArtworkCandidate, PlaylistEntry, ProviderCandidate } from "./types";
 
 /**
  * Shared normalization stage (design decision 1): every tier's candidates go
@@ -116,4 +116,46 @@ export function candidateToTrack(candidate: ProviderCandidate): Track {
     category: resolveCategory(candidate.categoryHint, candidate.durationSeconds),
     capabilities: { stream: true, offlineDownload: false },
   };
+}
+
+/** Canonical tracks plus the count of source entries that could not become one. */
+export interface FinalizedPlaylist {
+  tracks: Track[];
+  skipped: number;
+}
+
+/**
+ * Canonicalize playlist entries (design decision 9) — deliberately NOT the
+ * search pipeline: no junk filtering, no relevance scoring, no re-sorting.
+ * An import must reproduce its source (user-chosen content), so:
+ *
+ * - `null` entries (unavailable/unnormalizable rows) are skipped **and
+ *   counted**;
+ * - duplicates by `providerId` keep the **first** occurrence (counted in
+ *   neither direction — they resolved fine);
+ * - source order is preserved exactly.
+ */
+export function finalizePlaylistEntries(entries: readonly PlaylistEntry[]): FinalizedPlaylist {
+  let skipped = 0;
+  const tracks: Track[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of entries) {
+    if (entry === null) {
+      skipped += 1;
+      continue;
+    }
+    const track = candidateToTrack(entry);
+    // Defensive: a candidate that cannot yield a resolvable track is skipped
+    // and counted, never emitted half-formed.
+    if (track.providerId.length === 0 || track.title.length === 0) {
+      skipped += 1;
+      continue;
+    }
+    if (seen.has(track.providerId)) continue;
+    seen.add(track.providerId);
+    tracks.push(track);
+  }
+
+  return { tracks, skipped };
 }

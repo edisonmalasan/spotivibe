@@ -1,6 +1,6 @@
 import { HttpFetchError } from "@/server/http/fetchJson";
 import { ProviderError } from "../errors";
-import type { TierId } from "../types";
+import { PLAYLIST_ENTRY_CAP, type PlaylistEntry, type TierId } from "../types";
 
 /**
  * Shared helpers for the four provider tiers.
@@ -74,6 +74,73 @@ export function parseInstanceList(raw: string | undefined, defaults: readonly st
 
 function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+/**
+ * One fetched page during playlist collection: its entries plus the
+ * continuation token for the next page (absent when the playlist is done).
+ */
+export interface PlaylistEntryPage {
+  entries: PlaylistEntry[];
+  continuation?: string;
+}
+
+/**
+ * Hard bound on continuation hops per playlist. Real pages carry ≥100
+ * entries (observed 100–200), so the 500-entry cap needs at most 5 pages;
+ * the bound only guards against an upstream that hands out continuation
+ * tokens forever. Hitting it while a token is still pending marks the
+ * result `truncated`.
+ */
+export const MAX_PLAYLIST_PAGES = 10;
+
+/**
+ * Drive a tier's paged playlist fetch up to the entry cap (design decision
+ * 9): fetch → append in source order → follow continuation tokens.
+ *
+ * - Stops (not truncated) when a page reports no continuation.
+ * - Stops at `cap`, slicing to it; marks `truncated` when entries were cut
+ *   or a continuation was still pending.
+ * - Guards against upstreams that repeat a continuation token or keep
+ *   handing out tokens past {@link MAX_PLAYLIST_PAGES} (marks `truncated`
+ *   — we stopped while more was advertised).
+ *
+ * Page fetch failures propagate: a continuation failure fails the tier so
+ * the chain can retry from scratch on the next tier (design decision 9's
+ * transport-failure rule), rather than silently returning a partial list.
+ */
+export async function collectPlaylistEntries(
+  fetchPage: (continuation: string | undefined) => Promise<PlaylistEntryPage>,
+  cap: number = PLAYLIST_ENTRY_CAP,
+): Promise<{ entries: PlaylistEntry[]; truncated: boolean }> {
+  const entries: PlaylistEntry[] = [];
+  const seenTokens = new Set<string>();
+  let token: string | undefined;
+  let truncated = false;
+
+  for (let pages = 0; ; pages += 1) {
+    const page = await fetchPage(token);
+    entries.push(...page.entries);
+    const next = page.continuation;
+
+    if (entries.length >= cap) {
+      truncated = entries.length > cap || next !== undefined;
+      break;
+    }
+    if (next === undefined) break;
+    if (seenTokens.has(next)) {
+      truncated = true; // upstream repeats a token — stop instead of looping
+      break;
+    }
+    if (pages + 1 >= MAX_PLAYLIST_PAGES) {
+      truncated = true;
+      break;
+    }
+    seenTokens.add(next);
+    token = next;
+  }
+
+  return { entries: entries.slice(0, cap), truncated };
 }
 
 /**

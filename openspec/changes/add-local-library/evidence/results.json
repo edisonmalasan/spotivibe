@@ -1,0 +1,310 @@
+{
+  "task": "9.3",
+  "generatedAt": "2026-09-29T02:10:25.737Z",
+  "origin": "http://localhost:3210",
+  "queries": {
+    "search": "bohemian rhapsody"
+  },
+  "importSources": {
+    "invalid": "https://example.com/not-youtube",
+    "unavailable": "PLAAAAAAAAAAAAAAAAAAAAAA",
+    "live": "PLyORnIW1xT6wFaUUjhKa9Q6vcrxQiy9kc"
+  },
+  "copy": {
+    "offlineBanner": "You're offline — some things won't load until you reconnect.",
+    "importInvalid": "That doesn't look like a YouTube playlist link.",
+    "importUnavailable": "That playlist is private or unavailable.",
+    "importNetwork": "You're offline — import needs a connection.",
+    "importUpstream": "Couldn't reach YouTube — try again.",
+    "pickerNoticePrefix": "Already in playlist",
+    "npRemove": "Remove from Liked Songs",
+    "npSave": "Save to Liked Songs",
+    "queueSource": "From your library",
+    "emptyLiked": "No liked songs yet"
+  },
+  "steps": [
+    {
+      "name": "fresh profile loads Home with the hydrated top-bar search",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "live search returned rows and a ≥2:00 song for the library flow",
+      "ok": true,
+      "detail": "rows=19, picked index=0 title=\"Bohemian Rhapsody\""
+    },
+    {
+      "name": "like from search flips the result menu to Remove from Liked Songs",
+      "ok": true,
+      "detail": "menu item=\"Remove from Liked Songs\""
+    },
+    {
+      "name": "Liked Songs surface shows the liked row and count",
+      "ok": true,
+      "detail": "count=\"1 song\", row=\"Remove Bohemian Rhapsody from Liked Songs\""
+    },
+    {
+      "name": "grid/list toggle switches views with aria-pressed",
+      "ok": true,
+      "detail": "before={\"grid\":\"false\",\"list\":\"true\",\"rows\":1,\"tiles\":0}, after={\"grid\":\"false\",\"list\":\"true\",\"rows\":1,\"tiles\":0}"
+    },
+    {
+      "name": "shuffle play-all starts real playback from the liked collection",
+      "ok": true,
+      "detail": "position=0:01"
+    },
+    {
+      "name": "/queue labels the playback From your library with shuffle on (one iframe / one API script)",
+      "ok": true,
+      "detail": "sourceLabel=true, shuffle=true, control=Pause, iframes=1, apiScripts=1, nowRows=1"
+    },
+    {
+      "name": "Now Playing heart matches the liked state and unlike flips it",
+      "ok": true,
+      "detail": "initial=\"Remove from Liked Songs\", after unlike=\"Save to Liked Songs\""
+    },
+    {
+      "name": "unlike from Now Playing clears Liked Songs (empty state, inert bulk controls)",
+      "ok": true,
+      "detail": "emptyShown=true, playAllDisabled=true, shuffleDisabled=true"
+    },
+    {
+      "name": "re-like from Now Playing restores the Liked Songs row",
+      "ok": true,
+      "detail": "row=\"Remove Bohemian Rhapsody from Liked Songs\""
+    },
+    {
+      "name": "create playlist appears on the grid and the live sidebar entry",
+      "ok": true,
+      "detail": "card + sidebar entry \"Road Trip\" (no reload)"
+    },
+    {
+      "name": "add from search closes the picker on success",
+      "ok": true,
+      "detail": "added row index=0 \"Bohemian Rhapsody\" → \"Road Trip\""
+    },
+    {
+      "name": "re-adding reports Already in playlist and keeps the picker open",
+      "ok": true,
+      "detail": "pickerOpen=true, notice=\"Already in playlist — \"Bohemian Rhapsody\" is already there.\""
+    },
+    {
+      "name": "playlist detail renders the three added tracks in add order",
+      "ok": true,
+      "detail": "ids=[youtube:BSTsnWoslP4, youtube:MG0lA2oRu7Y, youtube:N5Q8EeyOiKY], titles=[\"Bohemian Rhapsody\",\"Bohemian Rhapsody\",\"Bohemian Rhapsody\"]"
+    },
+    {
+      "name": "keyboard reorder swaps playlist rows",
+      "ok": true,
+      "detail": "youtube:BSTsnWoslP4,youtube:MG0lA2oRu7Y,youtube:N5Q8EeyOiKY → youtube:MG0lA2oRu7Y,youtube:BSTsnWoslP4,youtube:N5Q8EeyOiKY (Move down + Enter on row 1)"
+    },
+    {
+      "name": "drag reorder drops playlist rows into the new order",
+      "ok": true,
+      "detail": "method=in-page DragEvent dispatch (fallback): youtube:MG0lA2oRu7Y,youtube:BSTsnWoslP4,youtube:N5Q8EeyOiKY → youtube:N5Q8EeyOiKY,youtube:MG0lA2oRu7Y,youtube:BSTsnWoslP4"
+    },
+    {
+      "name": "reload preserves playlist membership and order",
+      "ok": true,
+      "detail": "youtube:N5Q8EeyOiKY,youtube:MG0lA2oRu7Y,youtube:BSTsnWoslP4 → youtube:N5Q8EeyOiKY,youtube:MG0lA2oRu7Y,youtube:BSTsnWoslP4 (3 rows)"
+    },
+    {
+      "name": "rename updates the detail heading and sidebar entry",
+      "ok": true,
+      "detail": "heading + sidebar now \"Coastal Drive\""
+    },
+    {
+      "name": "delete cancel changes nothing; confirm removes the playlist",
+      "ok": true,
+      "detail": "cancel kept heading=\"Coastal Drive\" sidebar=true; confirm → grid+sidebar clear, liked entry kept=true"
+    },
+    {
+      "name": "import invalid input shows the invalid-input message",
+      "ok": true,
+      "detail": "alert=\"That doesn't look like a YouTube playlist link.\""
+    },
+    {
+      "name": "import unavailable playlist shows the unavailable message",
+      "ok": true,
+      "detail": "alert=\"That playlist is private or unavailable.\""
+    },
+    {
+      "name": "live public playlist import creates the playlist and reports counts",
+      "ok": true,
+      "detail": "src=PLyORnIW1xT6wFaUUjhKa9Q6vcrxQiy9kc, title=\"Popular Songs Right Now 2026 - Playlist Latest Music Hits 2026\", rows=50, summary=\"Import playlistImported 50 songs\", skipped=null, truncated=null"
+    },
+    {
+      "name": "offline banner appears and /library renders from IndexedDB",
+      "ok": true,
+      "detail": "banner=\"You're offline — some things won't load until you reconnect.\", onLine=false, playlistCards=1, likedCard=true"
+    },
+    {
+      "name": "offline: playlist detail and Liked Songs render fully from IndexedDB",
+      "ok": true,
+      "detail": "detail rows=50 heading=\"Popular Songs Right Now 2026 - Playlist Latest Music Hits 2026\"; liked row=true; banners=offline/offline"
+    },
+    {
+      "name": "offline import fails gracefully with the offline message",
+      "ok": true,
+      "detail": "alert=\"You're offline — import needs a connection.\", backs=2, path=/library"
+    },
+    {
+      "name": "reconnect clears the banner",
+      "ok": true,
+      "detail": "onLine=true, banner=false"
+    },
+    {
+      "name": "exactly one player iframe and one IFrame API script",
+      "ok": true,
+      "detail": "iframes=1, apiScripts=1, shuffle=true, control=Play"
+    },
+    {
+      "name": "zero console errors (disclosed offline/probe entries excluded)",
+      "ok": true,
+      "detail": "errors=0, disclosed offline=1, disclosed import-probe=2, disclosed live-upstream=0"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "liked-list-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/library/liked — list view with the search-liked row"
+    },
+    {
+      "file": "liked-grid-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/library/liked — grid view (aria-pressed swapped)"
+    },
+    {
+      "file": "queue-library-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/queue — From your library, shuffle on, one iframe"
+    },
+    {
+      "file": "now-playing-like-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/now-playing — heart matches the liked state"
+    },
+    {
+      "file": "library-create-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/library — Road Trip card + live sidebar entry"
+    },
+    {
+      "file": "duplicate-feedback-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "playlist picker — Already in playlist notice, picker still open"
+    },
+    {
+      "file": "playlist-reload-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/playlist/[id] — membership + order preserved after reload"
+    },
+    {
+      "file": "playlist-renamed-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/playlist/[id] — renamed to Coastal Drive, sidebar updated live"
+    },
+    {
+      "file": "library-after-delete-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/library — Coastal Drive gone from grid + sidebar, Liked Songs entry kept"
+    },
+    {
+      "file": "import-detail-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "imported playlist detail — created from the live public playlist"
+    },
+    {
+      "file": "offline-detail-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/playlist/[id] offline — rows rendered from IndexedDB, banner visible"
+    },
+    {
+      "file": "offline-import-error-1280.png",
+      "width": 1280,
+      "height": 900,
+      "note": "/library — offline import fails gracefully with the offline message"
+    }
+  ],
+  "consoleErrors": [],
+  "notes": {
+    "disclosures": {
+      "offlineWindow": [
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
+      ],
+      "importErrorProbe": [
+        "log: Failed to load resource: the server responded with a status of 400 (Bad Request)",
+        "log: Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "liveUpstream": []
+    },
+    "attachedTargets": [
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      },
+      {
+        "type": "iframe",
+        "url": ""
+      }
+    ],
+    "chosenRow": {
+      "rows": 19,
+      "index": 0,
+      "title": "Bohemian Rhapsody"
+    },
+    "pausedAfterQueue": true,
+    "dragCdpError": "undefined: Invalid parameters",
+    "dragMethod": "in-page DragEvent dispatch (fallback)",
+    "importSummary": {
+      "text": "Import playlistImported 50 songs",
+      "imported": 50,
+      "skippedLine": null,
+      "truncatedLine": null
+    },
+    "offlineEmulation": {
+      "calls": [
+        {
+          "command": "Network.emulateNetworkConditions {offline:true}",
+          "sessions": [
+            "main",
+            "F6B1B8EC122BEEDF40380FFD6FE531B8"
+          ]
+        },
+        {
+          "command": "Network.emulateNetworkConditions {offline:false}",
+          "sessions": [
+            "main",
+            "F6B1B8EC122BEEDF40380FFD6FE531B8"
+          ]
+        }
+      ]
+    }
+  },
+  "pass": true,
+  "browser": "Edg/154.0.4258.37"
+}

@@ -1,6 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import "fake-indexeddb/auto";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NowPlayingPage from "@/app/now-playing/page";
+import { getLocalData, type RepositorySet } from "@/data/localData";
+import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
@@ -25,11 +28,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ back: vi.fn(), forward: vi.fn(), push, replace: vi.fn() }),
 }));
 
-beforeEach(() => {
+let repositories: RepositorySet;
+
+beforeEach(async () => {
   resetPlayerStore();
+  resetLibraryStore();
   localStorage.clear();
   clearPlaybackBridge();
   push.mockClear();
+  repositories = await getLocalData();
+  await repositories.resetAll();
 });
 
 describe("Now Playing surface", () => {
@@ -119,5 +127,51 @@ describe("Now Playing with an active track", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Video unavailable");
     expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Next track" })).toBeEnabled();
+  });
+});
+
+describe("Now Playing like action (task 2.3)", () => {
+  const track = makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" });
+
+  it("saves the current track to Liked Songs and removes it again", async () => {
+    usePlayerStore.getState().playTrack(track, [track]);
+    usePlayerStore.getState().pause();
+
+    render(<NowPlayingPage />);
+
+    const save = await screen.findByRole("button", { name: "Save to Liked Songs" });
+    expect(save).toBeEnabled();
+
+    fireEvent.click(save);
+    await waitFor(async () => {
+      expect(await repositories.likedTracks.isLiked(track.id)).toBe(true);
+    });
+    // The store re-reads after the write, so the same control flips label
+    // and fills the heart.
+    const remove = await screen.findByRole("button", { name: "Remove from Liked Songs" });
+    expect(remove.querySelector("svg")?.getAttribute("class")).toContain("fill-current");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove from Liked Songs" }));
+    await waitFor(async () => {
+      expect(await repositories.likedTracks.isLiked(track.id)).toBe(false);
+    });
+    expect(await screen.findByRole("button", { name: "Save to Liked Songs" })).toBeInTheDocument();
+  });
+
+  it("shows a like persisted by another surface without a remount (design §11)", async () => {
+    usePlayerStore.getState().playTrack(track, [track]);
+    usePlayerStore.getState().pause();
+
+    render(<NowPlayingPage />);
+    const save = await screen.findByRole("button", { name: "Save to Liked Songs" });
+    expect(save.querySelector("svg")?.getAttribute("class")).not.toContain("fill-current");
+
+    // Another surface (search results) likes the same track through the store.
+    await useLibraryStore.getState().toggleLike(track);
+
+    const remove = await screen.findByRole("button", { name: "Remove from Liked Songs" });
+    expect(remove).not.toBeDisabled();
+    expect(remove.querySelector("svg")?.getAttribute("class")).toContain("fill-current");
+    expect(await repositories.likedTracks.isLiked(track.id)).toBe(true);
   });
 });

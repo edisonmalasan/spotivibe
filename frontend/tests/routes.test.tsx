@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -5,6 +6,7 @@ import HomePage from "@/app/page";
 import LibraryPage from "@/app/library/page";
 import QueuePage from "@/app/queue/page";
 import SearchPage from "@/app/search/page";
+import { resetLibraryStore } from "@/stores/libraryStore";
 import { resetQueueStore } from "@/stores/queueStore";
 
 vi.mock("next/link", () => ({
@@ -56,14 +58,18 @@ describe("route shells", () => {
     expect(screen.queryAllByRole("list")).toHaveLength(0);
   });
 
-  it("renders library with only an empty state", () => {
+  it("renders library with its surface chrome and an empty state (M7)", async () => {
+    resetLibraryStore();
     render(<LibraryPage />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Your Library" })).toBeInTheDocument();
-    expect(screen.getByText("Your library is empty")).toBeInTheDocument();
+    // The M7 surface hydrates from IndexedDB before choosing its state.
+    expect(await screen.findByText("Your library is empty")).toBeInTheDocument();
     expect(
       screen.getByText("Songs, albums, and playlists you save will appear here."),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create playlist" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import playlist" })).toBeInTheDocument();
   });
 
   it("renders the queue route with its empty state", () => {
@@ -76,10 +82,11 @@ describe("route shells", () => {
     expect(screen.queryAllByRole("region")).toHaveLength(0);
   });
 
-  it("introduces no functional search, library, or playback controls", () => {
+  // M7 makes `/library` a functional surface (its own coverage lives in
+  // library-surface.test.tsx); the remaining placeholder routes stay inert.
+  it("introduces no functional search or playback controls on placeholder surfaces", () => {
     render(<HomePage />);
     render(<SearchPage />);
-    render(<LibraryPage />);
 
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     expect(screen.queryAllByRole("button")).toHaveLength(0);
