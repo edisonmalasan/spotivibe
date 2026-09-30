@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 /**
  * Static architecture invariants checked against the real source files
  * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1 +
- * M7 task 9.1 + M8 task 8.1 + M9 task 7.1 + M10 task 6.1) —
+ * M7 task 9.1 + M8 task 8.1 + M9 task 7.1 + M10 task 6.1 + M11 task 6.1 +
+ * M12 task 8.1) -
  * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
@@ -33,7 +34,13 @@ import { describe, expect, it } from "vitest";
  * internals, `server/music/radio.ts` off `@/data`, the radio route
  * metadata-only with exactly its six documented query keys, no personalization
  * weight reachable from a module that builds a request, and `radioStore` a
- * queue mode rather than a second player.
+ * queue mode rather than a second player; and M12 keeps the podcast mode's
+ * four seams honest - `category` is the search route's only added input and
+ * carries no local data, a category-scoped filter rule is reachable only from
+ * inside its own category's guard in the filter module, the category selects
+ * tiers and upstream parameters but never a second provider capability, and the
+ * curated podcast catalog resolves through the one language catalog and the one
+ * preferences store while adding no podcast-specific local dataset.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -2348,5 +2355,413 @@ describe("architecture: /history is a thin route (M11 task 6.1)", () => {
     ]) {
       expect(moduleSpecifiers(source), view).toContain(view);
     }
+  });
+});
+
+/* ------------------------------------------------------------------------- *
+ * M12 - the podcast search mode (task 8.1)
+ *
+ * The mode is a *question*, threaded through the existing pipeline. Four things
+ * must therefore stay true, and each is a rule a future change could break by
+ * accident rather than by intent:
+ *
+ *   1. `category` is the only addition to the search route's input surface, and
+ *      it is not a channel for local data.
+ *   2. A category-scoped filter rule is reachable *only* from inside its own
+ *      category's guard, and only from the filter module.
+ *   3. The category selects tiers and upstream parameters - never a different
+ *      provider capability (a second endpoint or host) from a provider module.
+ *   4. The curated podcast catalog is a language catalog: it resolves through
+ *      the one shared language module and the one preferences store, declares no
+ *      second language list, and no podcast-specific local dataset exists.
+ * ------------------------------------------------------------------------- */
+
+/** The M12 files, named so the coverage proof pins files, not only directories. */
+const M12_TOUCHED_FILES = [
+  join("app", "api", "search", "route.ts"),
+  join("features", "search", "SearchResults.tsx"),
+  join("features", "search", "SearchView.tsx"),
+  join("features", "search", "PodcastCategoryList.tsx"),
+  join("features", "search", "podcastCategories.ts"),
+  join("features", "search", "searchApi.ts"),
+  join("features", "search", "useSearchController.ts"),
+  join("lib", "searchUrl.ts"),
+  join("server", "music", "chain.ts"),
+  join("server", "music", "filter.ts"),
+  join("server", "music", "normalize.ts"),
+  join("server", "music", "search.ts"),
+  join("server", "music", "types.ts"),
+  join("server", "music", "providers", "ytweb.ts"),
+  join("stores", "playerStore.ts"),
+] as const;
+
+/** The search route's documented input surface - the M3 pair plus the M12 one. */
+const SEARCH_ROUTE_ACCEPTED_QUERY_KEYS = ["q", "limit", "category"];
+
+/** The single module that owns the category-scoped filter rules. */
+const FILTER_MODULE = join("server", "music", "filter.ts");
+
+/** Rule constants, by the category whose guard they may only be reached from. */
+const CATEGORY_RULE_PATTERNS = [
+  { scope: "music", pattern: /\bMUSIC_ONLY_\w+_PATTERN\b/g },
+  { scope: "podcast", pattern: /\bPODCAST_ONLY_\w+_PATTERN\b/g },
+] as const;
+
+/**
+ * The `[start, end)` offsets of every `if (... category === "<name>" ...) { ... }`
+ * block, found by matching braces from the guard's opening brace.
+ *
+ * Comments and strings are not stripped, so a mention inside prose cannot shift a
+ * range: the guards in the code being checked are single-line conditions, and a
+ * violation has to place a rule *use* outside a real block to be reported.
+ */
+function categoryGuardRanges(source: string, category: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  for (const start of blockStarts(source, (condition) =>
+    condition.includes(`category === "${category}"`),
+  )) {
+    const end = blockEnd(source, start);
+    // The range starts at the `if` itself: a rule used inside the condition text
+    // (`a && b`) sits before the opening brace, and it is guarded just as much as
+    // one used in the body.
+    if (end > start) ranges.push([start, end]);
+  }
+  return ranges;
+}
+
+/**
+ * The offsets of every `if (...) {` block whose *whole* condition satisfies
+ * `matches`, found by tracking parenthesis depth.
+ *
+ * Depth-tracking rather than a regex over the condition: a regex would stop at the
+ * first `)` — which is the one inside `PATTERN.test(lowerTitle)`, i.e. exactly the
+ * case a guard has to be recognized for. The reported offset is the `if` keyword,
+ * so a call in the condition text is inside the block's range.
+ */
+function blockStarts(source: string, matches: (condition: string) => boolean): number[] {
+  const starts: number[] = [];
+  for (const match of source.matchAll(/\bif\s*\(/g)) {
+    const open = (match.index ?? 0) + match[0].length - 1;
+    let depth = 0;
+    for (let index = open; index < source.length; index += 1) {
+      if (source[index] === "(") depth += 1;
+      else if (source[index] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          const after = source.slice(index + 1);
+          if (matches(source.slice(open + 1, index)) && /^\s*\{/.test(after))
+            starts.push(match.index ?? 0);
+          break;
+        }
+      }
+    }
+  }
+  return starts;
+}
+
+/** The offset of the `}` closing a block whose `{` is at or after `start`. */
+function blockEnd(source: string, start: number): number {
+  const open = source.indexOf("{", start);
+  if (open < 0) return -1;
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    else if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+/**
+ * Every reference to a category-scoped rule constant that its own category guard
+ * does not cover.
+ *
+ * With `file` set to the filter module, the check is per rule: a music-only
+ * pattern used anywhere but inside a `category === "music"` block is a violation
+ * (and vice versa). For any other module, naming one at all is the violation -
+ * the rules belong to the filter stage, and a second implementation of them
+ * anywhere else is a rule that can drift from the one that ships.
+ */
+function categoryRuleViolations(source: string, file: string): string[] {
+  const violations: string[] = [];
+  for (const { scope, pattern } of CATEGORY_RULE_PATTERNS) {
+    for (const match of source.matchAll(pattern)) {
+      const offset = match.index ?? 0;
+      if (!file.endsWith(FILTER_MODULE)) {
+        violations.push(`${scope} rule used outside the filter module: ${match[0]}`);
+        continue;
+      }
+      // The declaration itself sits outside any guard by necessity, so a
+      // declaration line is not a use.
+      const lineStart = source.lastIndexOf("\n", offset) + 1;
+      if (source.slice(lineStart, offset).includes("const ")) continue;
+      const covered = categoryGuardRanges(source, scope).some(
+        ([start, end]) => offset > start && offset < end,
+      );
+      if (!covered) {
+        violations.push(`${scope} rule used outside a category === "${scope}" guard: ${match[0]}`);
+      }
+    }
+  }
+  // One report per rule, however many times it is referenced: the question a
+  // violation answers is "which rule", not "how often did you write it".
+  return [...new Set(violations)];
+}
+
+/** Endpoint/host indicators: a category must not select a different capability. */
+const CAPABILITY_BRANCH_INDICATORS = [
+  { label: "upstream URL", pattern: /https?:\/\// },
+  { label: "fetch call", pattern: /\bfetch\s*\(/ },
+  { label: "request builder", pattern: /new\s+URLSearchParams|\bRequest\s*\(/ },
+] as const;
+
+/**
+ * Category conditionals in a provider module whose body reaches a network
+ * capability.
+ *
+ * The category is a question about *what to look for*: it picks which tiers are
+ * asked, and which upstream parameters they are given. If a provider branched on
+ * it to reach a different host, endpoint, or request shape, the mode would
+ * quietly become a second provider integration - which is exactly the new
+ * capability the mode is required not to add.
+ */
+function providerCapabilityBranchViolations(source: string): string[] {
+  const violations: string[] = [];
+  for (const start of blockStarts(source, (condition) => /category/.test(condition))) {
+    const end = blockEnd(source, start);
+    const body = source.slice(start, end < 0 ? source.length : end);
+    for (const { label, pattern } of CAPABILITY_BRANCH_INDICATORS) {
+      if (pattern.test(body)) violations.push(`${label} inside a category conditional`);
+    }
+  }
+  // A ternary that picks between two capabilities is the same mistake in one line.
+  const ternary = /category\s*===\s*"podcast"\s*\?[^:]*https?:\/\/[^:]*:/g;
+  if (ternary.test(source)) violations.push("upstream URL selected by category");
+  return violations;
+}
+
+/** Language codes the one shared catalog defines. */
+function sharedLanguageCodes(): string[] {
+  return [...readSource("lib", "languages.ts").matchAll(/code:\s*"([\w-]+)"/g)].map(
+    (match) => match[1],
+  );
+}
+
+/**
+ * A curated-catalog violation: a second language list, a language key that is
+ * neither a shared code nor the neutral fallback key, or a category that can
+ * leave a selection with no query at all.
+ */
+function curatedCatalogViolations(source: string): string[] {
+  const violations: string[] = [];
+  violations.push(
+    ...languageCatalogDeclarations(source).map((name) => `second language catalog ${name}`),
+  );
+
+  const shared = new Set(sharedLanguageCodes());
+  const neutral = /const\s+NEUTRAL_LANGUAGE_KEY\s*=\s*"(\w+)"/.exec(source)?.[1];
+  if (neutral === undefined) {
+    violations.push("no neutral fallback key declared");
+  } else {
+    shared.add(neutral);
+  }
+
+  // Every `queries: { ... }` block's keys must be resolvable language keys. The
+  // keys are bare identifiers (`en: [...]`) or the computed neutral key
+  // (`[NEUTRAL_LANGUAGE_KEY]: [...]`), which is a key name rather than a code.
+  for (const block of source.matchAll(/queries:\s*\{([^{}]*)\}/g)) {
+    for (const key of block[1].matchAll(/\b([\w]+):\s*\[/g)) {
+      const name = key[1];
+      if (name === "NEUTRAL" || name === "NEUTRAL_LANGUAGE_KEY") continue;
+      if (!shared.has(name)) {
+        violations.push(`query text for a language the shared catalog does not define: ${name}`);
+      }
+    }
+  }
+  return violations;
+}
+
+/** Keys of the `Repositories` interface - the local dataset surface. */
+function extractRepositoryKeys(source: string): string[] {
+  const block = source.match(/export interface Repositories\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+  return [...block.matchAll(/^\s{2}(\w+):/gm)].map((match) => match[1]);
+}
+
+describe("architecture violation detectors (M12 task 8.1)", () => {
+  it("flags a category-scoped rule reached without its own guard, and passes a guarded use", () => {
+    // The music rule applied to every category - the exact mistake decision 4 was
+    // written to prevent, and the one that deleted podcast content.
+    expect(
+      categoryRuleViolations(
+        "function f(track) {\n  if (MUSIC_ONLY_NON_SONG_PATTERN.test(track.title)) return false;\n}",
+        FILTER_MODULE,
+      ),
+    ).toEqual([
+      'music rule used outside a category === "music" guard: MUSIC_ONLY_NON_SONG_PATTERN',
+    ]);
+    // The podcast rule behind a music guard is equally a violation.
+    expect(
+      categoryRuleViolations(
+        'function f(track) {\n  if (track.category === "music") {\n    if (PODCAST_ONLY_PROMO_PATTERN.test(track.title)) return false;\n  }\n}',
+        FILTER_MODULE,
+      ),
+    ).toEqual([
+      'podcast rule used outside a category === "podcast" guard: PODCAST_ONLY_PROMO_PATTERN',
+    ]);
+    // A declaration is not a use, and a correctly guarded use passes.
+    expect(
+      categoryRuleViolations(
+        'const MUSIC_ONLY_NON_SONG_PATTERN = /vlog/;\nfunction f(track) {\n  if (track.category === "music") {\n    if (MUSIC_ONLY_NON_SONG_PATTERN.test(track.title)) return false;\n  }\n}',
+        FILTER_MODULE,
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a category-scoped rule duplicated into another module", () => {
+    expect(
+      categoryRuleViolations(
+        'import { MUSIC_ONLY_NON_SONG_PATTERN } from "@/server/music/filter";\nif (track.category === "music") { if (MUSIC_ONLY_NON_SONG_PATTERN.test(t)) return false; }',
+        join("server", "music", "chain.ts"),
+      ),
+    ).toEqual(["music rule used outside the filter module: MUSIC_ONLY_NON_SONG_PATTERN"]);
+  });
+
+  it("flags a category branch that reaches a network capability, and passes a parameter branch", () => {
+    expect(
+      providerCapabilityBranchViolations(
+        'if (category === "podcast") {\n  const response = await fetch("https://podcasts.example.test/v1/search");\n}',
+      ),
+    ).toEqual([
+      "upstream URL inside a category conditional",
+      "fetch call inside a category conditional",
+    ]);
+    expect(
+      providerCapabilityBranchViolations(
+        'const url = category === "podcast" ? "https://a.test/s" : "https://b.test/s";',
+      ),
+    ).toEqual(["upstream URL selected by category"]);
+    // Passing the question in the request body is the mode's contract, not a new
+    // capability: no conditional, and no second host.
+    expect(
+      providerCapabilityBranchViolations(
+        'function body(query, category) {\n  return { context, query, ...(category === "podcast" ? { params } : {}) };\n}',
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a rival language catalog or an unresolvable language key", () => {
+    const good =
+      'const NEUTRAL_LANGUAGE_KEY = "neutral";\nexport const PODCAST_CATEGORIES = [{ id: "news", queries: { en: ["a"], [NEUTRAL_LANGUAGE_KEY]: ["b"] } }];';
+    expect(curatedCatalogViolations(good)).toEqual([]);
+    expect(
+      curatedCatalogViolations(
+        'const NEUTRAL_LANGUAGE_KEY = "neutral";\nexport const LANGUAGES = [{ code: "en", name: "English" }, { code: "es", name: "Spanish" }, { code: "fr", name: "French" }];',
+      ),
+    ).toEqual(["second language catalog LANGUAGES"]);
+    expect(
+      curatedCatalogViolations(
+        'const NEUTRAL_LANGUAGE_KEY = "neutral";\nexport const PODCAST_CATEGORIES = [{ id: "news", queries: { zz: ["a"], [NEUTRAL_LANGUAGE_KEY]: ["b"] } }];',
+      ),
+    ).toEqual(["query text for a language the shared catalog does not define: zz"]);
+    expect(curatedCatalogViolations("export const PODCAST_CATEGORIES = [];")).toEqual([
+      "no neutral fallback key declared",
+    ]);
+  });
+});
+
+describe("architecture: the M12 podcast surfaces hold (M12 task 8.1)", () => {
+  it("sweeps every M12 file, so the rules below are known to reach them", () => {
+    for (const file of M12_TOUCHED_FILES) {
+      expect(readSource(file).length, file).toBeGreaterThan(0);
+    }
+    expect(M12_TOUCHED_FILES.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it("keeps every category-scoped filter rule inside the filter module's own guards", () => {
+    for (const { file, source } of readTree(join(srcDir, "server", "music"))) {
+      expect(categoryRuleViolations(source, file), file).toEqual([]);
+    }
+    for (const { file, source } of readTree(join(srcDir, "features"))) {
+      expect(categoryRuleViolations(source, file), file).toEqual([]);
+    }
+    for (const { file, source } of readTree(join(srcDir, "stores"))) {
+      expect(categoryRuleViolations(source, file), file).toEqual([]);
+    }
+  });
+
+  it("keeps the search route's input surface at q, limit, and category", () => {
+    const source = readSource("app", "api", "search", "route.ts");
+    expect([...acceptedQueryKeys(source)].sort()).toEqual(
+      [...SEARCH_ROUTE_ACCEPTED_QUERY_KEYS].sort(),
+    );
+    // The one new key is a question, not a channel for the listener's data.
+    expect(libraryQueryParameterReads(source)).toEqual([]);
+    for (const key of ["deviceId", "profile", "likedTrackId", "trackIds", "playlistId"]) {
+      expect(acceptedQueryKeys(source), key).not.toContain(key);
+    }
+  });
+
+  it("keeps the M12 client surfaces off the server layer, raw provider shapes, and local data", () => {
+    for (const file of M12_TOUCHED_FILES.filter(
+      (path) =>
+        path.startsWith(join("features")) ||
+        path.startsWith(join("stores")) ||
+        path.startsWith(join("lib")),
+    )) {
+      const source = readSource(file);
+      expect(mentionsRawProviderShape(source), file).toBe(false);
+      expect(moduleSpecifiers(source).filter(targetsServerModule), file).toEqual([]);
+      expect(hasDirectIndexedDbImport(source), file).toBe(false);
+      // Exactly one of the M12 client modules talks to the network, and it is the
+      // search transport that already did (M5); the mode is a query parameter on
+      // it, not a second request path.
+      const fetches = /\bfetch\s*\(/.test(source);
+      expect(fetches, file).toBe(file === join("features", "search", "searchApi.ts"));
+    }
+  });
+
+  it("lets the category select tiers and parameters, never a provider capability", () => {
+    for (const { file, source } of readTree(join(srcDir, "server", "music", "providers"))) {
+      expect(providerCapabilityBranchViolations(source), file).toEqual([]);
+    }
+    // Tier selection happens once, in the chain: a category conditional may name a
+    // tier in no other module, so no provider can quietly drop or reorder a tier
+    // for a question it is only supposed to be asked.
+    const chain = readSource("server", "music", "chain.ts");
+    expect(chain).toMatch(/function\s+tiersForCategory/);
+    for (const { file, source } of readTree(join(srcDir, "server", "music"))) {
+      if (file.endsWith(join("music", "chain.ts"))) continue;
+      for (const start of blockStarts(source, (condition) => /category/.test(condition))) {
+        const end = blockEnd(source, start);
+        expect(source.slice(start, end < 0 ? source.length : end), file).not.toMatch(
+          /\b(?:ytmusic|ytweb|invidious|piped)\b/,
+        );
+      }
+    }
+  });
+
+  it("resolves the curated catalog through the one language catalog and the one store", () => {
+    const catalog = readSource("features", "search", "podcastCategories.ts");
+    expect(curatedCatalogViolations(catalog)).toEqual([]);
+    // No language list, no fetch, and no second preferences store: the catalog is
+    // query text, resolved by the caller.
+    expect(catalog).not.toMatch(/\bfetch\s*\(/);
+    expect(moduleSpecifiers(catalog)).not.toContain("@/data/localData");
+    // The caller reads the selected languages from the M8 preferences store.
+    const component = readSource("features", "search", "PodcastCategoryList.tsx");
+    expect(component).toMatch(/usePreferencesStore/);
+    expect(moduleSpecifiers(component)).toContain("@/features/search/podcastCategories");
+    expect(component).not.toMatch(/languages\s*=\s*\[/);
+  });
+
+  it("adds no podcast-specific local dataset", () => {
+    // Decision 8 in the strongest available form: the repository surface is
+    // byte-for-byte the whitelist, and the store list matches it too.
+    const keys = extractRepositoryKeys(readSource("data", "repositories", "index.ts"));
+    expect(keys).toEqual(STORE_WHITELIST);
+    expect(keys.some((key) => /podcast|episode/i.test(key))).toBe(false);
+    const storeNames = extractStoreDefinitionNames(readSource("data", "indexeddb", "schema.ts"));
+    expect(storeNames).toEqual(STORE_WHITELIST);
   });
 });

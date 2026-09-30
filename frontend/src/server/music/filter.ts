@@ -91,10 +91,15 @@ export function filterTracks(tracks: Track[]): Track[] {
 
     const lowerTitle = track.title.toLowerCase();
     if (ANY_CATEGORY_TITLE_PATTERN.test(lowerTitle)) return false;
+    // Each category-scoped rule sits behind an *explicit* `category === "..."`
+    // guard rather than an `else`, so the mapping between a rule and the category
+    // it belongs to is readable here and checkable by the M12 architecture rule
+    // (task 8.1) instead of being inferred from the branch order.
     if (track.category === "music") {
       if (MUSIC_ONLY_NON_SONG_PATTERN.test(lowerTitle)) return false;
       if (MUSIC_ONLY_VARIANT_PATTERN.test(lowerTitle)) return false;
-    } else if (PODCAST_ONLY_PROMO_PATTERN.test(lowerTitle)) {
+    }
+    if (track.category === "podcast" && PODCAST_ONLY_PROMO_PATTERN.test(lowerTitle)) {
       return false;
     }
 
