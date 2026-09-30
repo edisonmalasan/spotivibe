@@ -17,8 +17,16 @@
  * By **accessible name, role, and visible text**, which is what the flows a listener
  * performs are actually made of. That is a deliberate constraint: a flow driven by
  * `aria-label` can only pass if the control is genuinely labelled, so the suite
- * continuously re-proves the accessibility work M14 did. It also means the suite needs no
- * test-only markup in the application.
+ * continuously re-proves the accessibility work M14 did.
+ *
+ * It adds **no test-only markup** to the application — but it does use five `data-testid`
+ * attributes that already existed (`search-results`, `player-bar`, `compact-shell`,
+ * `queue-row`, `playlist-track-row`), for surfaces with no accessible name of their own.
+ * The first version's header claimed the suite needed no test-only markup *at all* without
+ * disclosing that, which is true of what it adds and misleading about what it uses. The
+ * render assertions look for each route's own heading rather than a root test id, because
+ * the views mostly have no root test id and adding one to five components so a test could
+ * find them would be worse than asserting on what a listener actually reads.
  *
  * ## What it does not prove
  *
@@ -27,6 +35,12 @@
  * fallback is exercised rather than assumed. Firefox, Android, and iOS are not driven
  * here — the automation protocol is a Chromium one — and the release gate lists them as
  * manual with their steps.
+ *
+ * Two further limits, because a suite that states only its favourable ones is not being
+ * honest: the fixture router covers `/api/*` only, so the browser still makes **real**
+ * requests for artwork from the provider's image host — harmless to every verdict here, but
+ * it means a run is not wholly third-party-independent; and the YouTube IFrame player's own
+ * state cannot be observed, so "playing" means the application put the track in its player.
  *
  * Usage:
  *   node end-to-end.mjs                     # Chromium (or the first available engine)
@@ -619,19 +633,20 @@ const FLOWS = {
       );
     }
 
-    // A second track, so there is an order to change.
-    await session
-      .click('[aria-label^="More options for"]:not(:first-of-type)')
-      .catch(() => undefined);
-    const addedSecond = await session.evaluate(`(() => {
-      const triggers = [...document.querySelectorAll('[aria-label^="More options for"]')];
-      const trigger = triggers.find((entry) => /Fixture Beta/.test(entry.getAttribute("aria-label") ?? ""));
+    // A second track, so there is an order to change. The menu for it is opened by finding
+    // the right trigger rather than by a positional selector: the first version clicked
+    // `:not(:first-of-type)` and discarded the outcome, which is a swallowed error that
+    // would have hidden a missing trigger.
+    const openedSecondMenu = await session.evaluate(`(() => {
+      const trigger = [...document.querySelectorAll('[aria-label^="More options for"]')]
+        .find((entry) => /Fixture Beta/.test(entry.getAttribute("aria-label") ?? ""));
       if (!trigger) return false;
       trigger.click();
       return true;
     })()`);
-    if (!addedSecond)
+    if (!openedSecondMenu) {
       throw new Error("could not open the menu for the second track");
+    }
     await session.waitFor(
       "the menu to open",
       `document.querySelector('[role="menu"]') !== null`,
@@ -1079,15 +1094,6 @@ const FLOWS = {
 /**
  * Prove the suite can fail (M15 task 2.5).
  *
- * Run with `--prove-can-fail`, the harness asserts a flow against a *deliberately
- * impossible* expectation and requires it to fail. A suite whose assertions have never
- * been observed failing is a report, not a check - M13's verification pass found three
- * evidence steps in this repository that could not fail, and the lesson has been written
- * down twice since.
- */
-/**
- * Prove the suite can fail (M15 task 2.5).
- *
  * Each probe runs a **real flow against a deliberately broken expectation** and requires
  * it to fail. A suite whose assertions have never been observed failing is a report, not a
  * check — M13's verification pass found three evidence steps in this repository that could
@@ -1208,12 +1214,49 @@ async function main() {
     console.error(`Unknown flow "${ONLY}". Known: ${ids.join(", ")}`);
     process.exit(2);
   }
-  session = await openSession({
-    repo: REPO,
-    port: PORT,
-    cdpPort: CDP_PORT,
-    engine: ENGINE,
-  });
+  // The session is opened *inside* the try, so a start-up failure is recorded rather than
+  // escaping as an unhandled rejection. The first version opened it outside: a missing
+  // production build, an unreachable server, or an unknown engine — `--browser=firefox`
+  // reproduces the last — killed the process with no results file written at all, and the
+  // *previous* run's file survived untouched and un-stamped. A stale artefact that reads as
+  // current is worse than none, because it is the one a reader will trust.
+  try {
+    session = await openSession({
+      repo: REPO,
+      port: PORT,
+      cdpPort: CDP_PORT,
+      engine: ENGINE,
+    });
+  } catch (error) {
+    console.error(`\nThe suite could not start: ${error?.message ?? error}`);
+    writeFileSync(
+      join(HERE, "end-to-end-results.json"),
+      `${JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          aborted: String(error?.message ?? error),
+          // The engines this run *would* have used, so even a run that never started says
+          // what it was about to attempt. The first version's abort record dropped the
+          // conditions entirely.
+          conditions: {
+            engine: ENGINE,
+            enginesInstalled: INSTALLED.map((entry) => entry.engine),
+            enginesRun: [],
+            started: false,
+          },
+          flowsExpected: ALL_FLOWS,
+          flowsRun: [],
+          flows: [],
+          proveCanFail: null,
+          pass: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
   const conditions = {
     engine: ENGINE,
     enginesInstalled: INSTALLED.map((entry) => entry.engine),
@@ -1237,10 +1280,14 @@ async function main() {
       await flow(id, REQUIREMENTS[id], FLOWS[id]);
     }
 
-    if (PROVE_CAN_FAIL) {
-      const proven = await proveCanFail();
-      if (!proven) process.exitCode = 1;
-    }
+    // The falsifiability proof participates in the verdict.
+    //
+    // The first version set `process.exitCode = 1` when a probe did not fail, and then
+    // overwrote it unconditionally three lines later — so a run whose proof had *failed*
+    // exited 0, wrote a results file indistinguishable from a good one, and did not record
+    // the probe outcome at all. Nothing would have caught its loss, and the release gate
+    // never passed the flag, so falsifiability sat entirely outside the gate.
+    const proof = PROVE_CAN_FAIL ? await proveCanFail() : null;
 
     // A `pass` requires the whole suite, and a filtered run says so.
     //
@@ -1254,9 +1301,9 @@ async function main() {
     const allRan = missing.length === 0;
     const allOk = results.length > 0 && results.every((entry) => entry.ok);
 
-    // The exit code covers the flows even on a prove-can-fail run, which the first version
-    // excluded: that run could exit 0 with failing flows recorded in the results file.
-    process.exitCode = allRan && allOk ? 0 : 1;
+    // One verdict, composed from every part of the run: the flows, and the proof when one
+    // was asked for.
+    process.exitCode = allRan && allOk && proof !== false ? 0 : 1;
 
     writeFileSync(
       join(HERE, "end-to-end-results.json"),
@@ -1267,7 +1314,10 @@ async function main() {
           flowsExpected: ALL_FLOWS,
           flowsRun: ranIds,
           flows: results,
-          pass: allRan && allOk,
+          // `null` when no proof was requested, so the record distinguishes "not asked"
+          // from "asked and failed" — a distinction the first version could not express.
+          proveCanFail: proof,
+          pass: allRan && allOk && proof !== false,
         },
         null,
         2,
@@ -1284,9 +1334,13 @@ async function main() {
         {
           generatedAt: new Date().toISOString(),
           aborted: String(error?.message ?? error),
+          // The conditions travel with an aborted run too, so a crashed run can still say
+          // which browser it was driving. The first version dropped them.
+          conditions: { ...conditions, partial: true, aborted: true },
           flowsExpected: ALL_FLOWS,
           flowsRun: results.map((entry) => entry.id),
           flows: results,
+          proveCanFail: null,
           pass: false,
         },
         null,

@@ -33,7 +33,15 @@
 
 import { spawnSync } from "node:child_process";
 import { availableEngines, defaultEngine } from "./lib/harness.mjs";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -150,9 +158,7 @@ const ITEMS = [
     // `tsc` never see them — which is why a backtick inside a comment inside a template
     // literal was able to end a string three times here without any gate noticing. This
     // item is the substitute, and it is cheap: `node --check` parses without executing.
-    args: [
-      join(CHANGE, "evidence", "check-parses.mjs"),
-    ],
+    args: [join(CHANGE, "evidence", "check-parses.mjs")],
     needsBrowser: false,
   },
   {
@@ -196,6 +202,25 @@ const ITEMS = [
     needsBrowser: true,
   },
   {
+    id: "falsifiability",
+    requirement: "The suite's own assertions are proven capable of failing",
+    how: "command",
+    command: "node",
+    // A suite whose assertions have never been observed failing is a report, not a check.
+    // This item is in the gate rather than run by hand because the first version left it
+    // outside entirely: a proof whose loss nothing would catch is not a gate item in
+    // anyone's sense. It runs the full suite so the exit code covers both the flows and
+    // the probes.
+    //
+    // Its own ports. The suite starts and stops a real server and a real browser, and the
+    // preceding `end-to-end` item has only just torn its own down; sharing a port made the
+    // second run fail for a reason that had nothing to do with falsifiability, which is the
+    // worst way for a gate item to fail — a failure that looks like the thing being checked.
+    args: [join(CHANGE, "evidence", "end-to-end.mjs"), "--prove-can-fail"],
+    env: { SPOTIVIBE_E2E_PORT: "3215", SPOTIVIBE_E2E_CDP_PORT: "9468" },
+    needsBrowser: true,
+  },
+  {
     id: "browser-second-engine",
     requirement: "The flows also pass in a second browser engine",
     how: "command",
@@ -210,6 +235,16 @@ const ITEMS = [
       "--browser=__SECOND_ENGINE__",
     ],
     needsBrowser: true,
+    // Steps for the not-run case. The first version omitted them, so an item that resolved
+    // to NOT RUN at run time reached the printer with no `steps` and no `reason`: the reader
+    // got one sentence and no instruction, while `--skip-browser` items — a different
+    // not-run path — did carry steps. The spec asks for "the reason together with the steps
+    // to perform it", and the gate was inconsistent precisely where it was being honest.
+    steps: [
+      "Install a second Chromium-family browser: Edge is preinstalled on Windows, Chrome on macOS and Linux.",
+      "Re-run the gate — it discovers installed engines at run time and names the second one.",
+      "Or run it directly: node openspec/changes/add-release-validation-and-deployment/evidence/end-to-end.mjs --browser=<engine>",
+    ],
     // Which engines exist is a property of the machine, not of the repository, so this is
     // resolved at run time. With fewer than two installed it reports NOT RUN and the
     // reason, because a second-engine run that did not happen must never read as one that
@@ -356,10 +391,18 @@ for (const item of ITEMS) {
     continue;
   }
   // An item may discover at run time that it cannot be run here, which is reported the
-  // same way a permanently manual item is: as not run, with the reason.
+  // same way a permanently manual item is: as not run, with the reason **and the steps**.
+  // The steps come from the item, so a run-time-resolved NOT RUN is as actionable as a
+  // hand-written one — the first version carried the reason alone, and the two not-run
+  // paths were inconsistent.
   const verdict = item.resolve?.();
   if (verdict?.manual) {
-    results.push({ item, status: "NOT RUN", detail: verdict.reason });
+    results.push({
+      item,
+      status: "NOT RUN",
+      detail: verdict.reason,
+      steps: item.steps ?? [],
+    });
     continue;
   }
   // Any placeholder the item wanted filled in is filled in now, so the command names
@@ -404,37 +447,94 @@ for (const item of ITEMS) {
     });
     continue;
   }
-  // The measurement harness writes its results *next to itself*, and that is inside M14's
-  // archive. Running it from here therefore rewrote an archived record — a claim about a
-  // run that happened during M14 — the first time this gate ran. So the archived file is
-  // captured before, restored after, and this change keeps a copy of the fresh run as its
-  // own evidence.
-  const archived = archivedResultsPath();
-  const archivedBefore = existsSync(archived)
-    ? readFileSync(archived, "utf8")
-    : null;
+  // M14's measurement harness writes several files next to itself - `results.json` and its
+  // screenshots - and all of them live inside that change's archive.
+  //
+  // The first version of this guard snapshotted one file, `results.json`, and the second
+  // verification pass found the screenshots being overwritten on every run while this
+  // change's own evidence README claimed "it never rewrites an archived record". That claim
+  // was false for every file but one, which is the same defect as the one being fixed: a
+  // stated property the code only half-implemented. So the whole directory is captured and
+  // restored.
+  //
+  // **Scoped to the measurement item alone.** An earlier version of this fix wrapped every
+  // command item, which is both wasteful and wrong in intent: `npm ci` has no business
+  // touching the archive, and a guard applied everywhere reads as thoroughness rather than
+  // as a claim about one specific harness.
+  //
+  // The guard **fails loudly** if the directory is missing rather than skipping quietly,
+  // because a protection that disappears when a path changes is not a protection.
+  const guardsArchive = item.id === "accessibility-performance";
+  const archive = archivedEvidenceDir();
+  if (guardsArchive && !existsSync(archive)) {
+    results.push({
+      item,
+      status: "FAIL",
+      detail: `the archived M14 evidence directory is missing at ${archive}, so the gate cannot guarantee it leaves archived material unchanged`,
+      output: "",
+    });
+    continue;
+  }
+  const archivedBefore = guardsArchive ? snapshot(archive) : null;
+
   // The repository root goes with it: the measurement harness finds the repository by
   // walking up from its own directory, which is one level too shallow once archived.
   const outcome = run(item.command, args, FRONTEND, {
     SPOTIVIBE_REPO: REPO,
+    // A per-item environment, so an item that needs its own port or can say so rather than
+    // colliding with whatever ran before it.
+    ...(item.env ?? {}),
   });
-  if (archivedBefore !== null && existsSync(archived)) {
-    const fresh = readFileSync(archived, "utf8");
-    if (fresh !== archivedBefore) {
-      writeFileSync(join(HERE, "measurement-results.json"), fresh);
-      writeFileSync(archived, archivedBefore);
+
+  let archiveNote = "";
+  let restored = true;
+  if (guardsArchive) {
+    // Restore unconditionally, including when the harness threw, and then *verify* the
+    // restore. A restore that silently failed would leave the archive damaged while the gate
+    // reported a pass.
+    const archivedAfter = snapshot(archive);
+    const changed = [
+      ...new Set([...archivedBefore.keys(), ...archivedAfter.keys()]),
+    ].filter(
+      (name) => !sameBytes(archivedBefore.get(name), archivedAfter.get(name)),
+    );
+    if (changed.length > 0) {
+      for (const name of archivedAfter.keys()) {
+        if (!archivedBefore.has(name))
+          rmSync(join(archive, name), { force: true });
+      }
+      for (const [name, bytes] of archivedBefore) {
+        writeFileSync(join(archive, name), bytes);
+      }
+      // This run's fresh measurement is this change's evidence, kept as a copy rather than
+      // left behind in the archive. Only the files the harness actually rewrote are copied:
+      // the directory also holds `audit.mjs` and its README, which the run did not touch,
+      // and copying those would put two more copies of M14's material in this change.
+      mkdirSync(join(HERE, "measurement"), { recursive: true });
+      for (const name of changed) {
+        const bytes = archivedAfter.get(name);
+        if (bytes) writeFileSync(join(HERE, "measurement", name), bytes);
+      }
+      const verified = snapshot(archive);
+      restored =
+        verified.size === archivedBefore.size &&
+        [...archivedBefore.keys()].every((name) =>
+          sameBytes(archivedBefore.get(name), verified.get(name)),
+        );
+      archiveNote = ` - restored ${changed.length} archived file(s) the harness overwrote`;
     }
+    archiveNote += restored ? "" : " - THE RESTORE DID NOT VERIFY";
   }
   results.push({
     item,
-    status: outcome.code === 0 ? "PASS" : "FAIL",
-    detail: `${(outcome.ms / 1000).toFixed(1)}s`,
+    status: outcome.code === 0 && restored ? "PASS" : "FAIL",
+    detail: `${(outcome.ms / 1000).toFixed(1)}s${archiveNote}`,
     output: outcome.output,
   });
 }
 
-/** M14's archived measurement results, which this gate must never leave modified. */
-function archivedResultsPath() {
+/** M14's archived evidence directory, which this gate must leave byte-for-byte unchanged. */
+function archivedEvidenceDir() {
   return join(
     REPO,
     "openspec",
@@ -442,8 +542,31 @@ function archivedResultsPath() {
     "archive",
     "2026-09-30-add-deployment-hardening",
     "evidence",
-    "results.json",
   );
+}
+
+/** Every file in a directory, as name to bytes. */
+function snapshot(directory) {
+  const files = new Map();
+  for (const name of readdirSync(directory)) {
+    const full = join(directory, name);
+    if (statSync(full).isFile()) files.set(name, readFileSync(full));
+  }
+  return files;
+}
+
+/**
+ * Byte equality, compared by content and not by identity.
+ *
+ * The first version of this guard compared two `Buffer` objects with `!==`, which is true
+ * for two distinct objects holding identical bytes - so every file always looked changed,
+ * every item reported having restored something, and the gate failed on all of them. A
+ * guard that cannot tell a change from a non-change is a guard that gets switched off, and
+ * this one very nearly was.
+ */
+function sameBytes(a, b) {
+  if (a === undefined || b === undefined) return a === b;
+  return a.length === b.length && Buffer.compare(a, b) === 0;
 }
 
 function stripAnsi(text) {
@@ -469,10 +592,9 @@ for (const entry of results) {
   console.log(`${mark} ${entry.item.id.padEnd(width)}  ${entry.detail ?? ""}`);
   console.log(`       ${" ".repeat(width)}  ${entry.item.requirement}`);
   if (entry.status === "NOT RUN") {
-    // Steps are optional: an item can resolve to NOT RUN at run time - a second browser
-    // engine that is not installed - without carrying hand-written steps. The first
-    // version assumed they were always present and crashed on exactly that item.
-    for (const step of entry.item.steps ?? [])
+    // Every not-run item carries its steps. A NOT RUN with no instruction is an omission
+    // wearing a label: the reader is told something was not done and given nothing to do.
+    for (const step of entry.steps ?? entry.item.steps ?? [])
       console.log(`         - ${step}`);
   }
 }
@@ -516,7 +638,19 @@ const CHECKLIST_COVERAGE = [
   { matches: /Attribution notices/i, item: "attribution" },
   { matches: /Vercel production build passes/i, item: "vercel-deploy" },
   { matches: /manifest.*service worker.*validate/i, item: "pwa-manifest" },
-  { matches: /Critical flows pass automated and manual/i, item: "end-to-end" },
+  {
+    // "automated **and manual**". The automated half is `end-to-end`; the manual half is
+    // the three matrix targets this tooling cannot drive, which are reported as NOT RUN
+    // above. The first version mapped this line to the automated item alone and carried no
+    // `partial` note, so the coverage summary counted it as fully covered — and the
+    // `partial` branch that should have said otherwise was dead code, because no entry had
+    // the property. A capability advertised and never used is how a reader ends up trusting
+    // a count that is wrong.
+    matches: /Critical flows pass automated and manual/i,
+    item: "end-to-end",
+    partial:
+      "the automated half is covered; the manual half is the Firefox, Android, and iOS entries above, which are NOT RUN",
+  },
 ];
 
 const ids = results.map((entry) => entry.item.id);
@@ -587,8 +721,15 @@ const report = {
     requirement: entry.item.requirement,
     status: entry.status,
     detail: entry.detail ?? null,
-    reason: entry.item.how === "manual" ? entry.item.reason : null,
-    steps: entry.item.steps ?? null,
+    // The reason for a not-run item, whether it was declared manual or discovered at run
+    // time. The first version only reported the declared kind, so a run-time NOT RUN was
+    // recorded with `reason: null` and `steps: null` — indistinguishable in the JSON from an
+    // item nobody had thought about.
+    reason:
+      entry.status === "NOT RUN"
+        ? (entry.detail ?? entry.item.reason ?? null)
+        : null,
+    steps: entry.steps ?? entry.item.steps ?? null,
   })),
   pass: failed.length === 0,
 };

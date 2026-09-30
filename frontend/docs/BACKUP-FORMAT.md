@@ -14,7 +14,7 @@ The current release writes **`spotivibe-backup` version 1**.
 | Validation | `backupEnvelopeSchema`, in the same file — a zod schema every import is parsed with |
 | Writing | `src/data/backup/serialize.ts` — `collectLocalData` then `serializeBackup` |
 | Reading | `src/data/backup/` — preparation, validation, and migration run *before* any transaction |
-| Held honest by | `tests/backup-export.test.ts` (envelope shape), `tests/backup-import.test.ts` (round trip), `tests/import-apply.test.ts` (application), `tests/backup-plan.test.ts` (mode planning) |
+| Held honest by | `tests/backup-export.test.ts` (envelope shape), `tests/backup-import.test.ts` (round trip), `tests/import-apply.test.ts` (application), `tests/backup-plan.test.ts` (mode planning), `tests/release-documentation.test.ts` (this document, and the export-safety claim below) |
 
 If this document and the code ever disagree, the code is right and this document is a bug.
 
@@ -84,7 +84,7 @@ restoring onto a new device wants the file to be the truth.
 ## What a backup never contains
 
 - **No credentials and no server configuration.** The export is produced on the device from
-  local datasets; `tests/release-exclusions.test.ts` asserts that no server-side value
+  local datasets; `tests/release-documentation.test.ts` asserts that no server-side value
   reaches an export, with provider configuration deliberately *set* so the test is not
   passing because the value was absent.
 - **No media.** Tracks are stored as identities and metadata — a video ID, a title, an

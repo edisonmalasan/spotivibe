@@ -281,9 +281,3 @@ export const FAILING_TRANSPORT_ROUTES = [
   { path: "/api/radio", match: /^\/api\/radio/, transport: "failed" },
   { path: "/api/discover", match: /^\/api\/discover/, transport: "failed" },
 ];
-
-/**
- * The transport-failure set, kept under the old name for the suite's own imports so a
- * reader is not left looking for a route set that was renamed out from under them.
- */
-export const FAILING_ROUTES = FAILING_BODY_ROUTES;

@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-09-30T17:31:32.668Z",
+  "generatedAt": "2026-09-30T18:37:23.231Z",
   "repo": "C:\\Users\\Edison\\Desktop\\Projects\\spotivibe",
   "skipBrowser": false,
   "totals": {
-    "passed": 17,
+    "passed": 18,
     "failed": 0,
     "notRun": 8,
     "skipped": 0
@@ -13,7 +13,7 @@
       "id": "gates-install",
       "requirement": "`npm ci` installs from the lockfile",
       "status": "PASS",
-      "detail": "29.1s",
+      "detail": "26.3s",
       "reason": null,
       "steps": null
     },
@@ -21,7 +21,7 @@
       "id": "gates-lint",
       "requirement": "`npm run lint` reports no errors",
       "status": "PASS",
-      "detail": "40.5s",
+      "detail": "34.4s",
       "reason": null,
       "steps": null
     },
@@ -29,7 +29,7 @@
       "id": "gates-format",
       "requirement": "`npm run format:check` passes",
       "status": "PASS",
-      "detail": "6.3s",
+      "detail": "5.5s",
       "reason": null,
       "steps": null
     },
@@ -37,7 +37,7 @@
       "id": "gates-typecheck",
       "requirement": "`npm run typecheck` passes in strict mode",
       "status": "PASS",
-      "detail": "9.1s",
+      "detail": "9.3s",
       "reason": null,
       "steps": null
     },
@@ -45,7 +45,7 @@
       "id": "gates-tests",
       "requirement": "`npm test` passes",
       "status": "PASS",
-      "detail": "71.7s",
+      "detail": "73.4s",
       "reason": null,
       "steps": null
     },
@@ -53,7 +53,7 @@
       "id": "gates-build",
       "requirement": "`npm run build` produces a production build",
       "status": "PASS",
-      "detail": "15.0s",
+      "detail": "13.8s",
       "reason": null,
       "steps": null
     },
@@ -61,7 +61,7 @@
       "id": "icons-drift",
       "requirement": "PWA icons match the committed generator's output",
       "status": "PASS",
-      "detail": "1.7s",
+      "detail": "1.9s",
       "reason": null,
       "steps": null
     },
@@ -93,7 +93,7 @@
       "id": "exclusions",
       "requirement": "No permanent product exclusion is present in the shipped sources",
       "status": "PASS",
-      "detail": "37 assertions",
+      "detail": "55 assertions",
       "reason": null,
       "steps": null
     },
@@ -125,7 +125,7 @@
       "id": "backup-format",
       "requirement": "The backup format is documented, and the document matches the code it describes",
       "status": "PASS",
-      "detail": "13 assertions",
+      "detail": "14 assertions",
       "reason": null,
       "steps": null
     },
@@ -133,7 +133,7 @@
       "id": "accessibility-performance",
       "requirement": "Contrast, names, keyboard reachability, and loading are within the stated targets",
       "status": "PASS",
-      "detail": "34.9s",
+      "detail": "35.1s - restored 1 archived file(s) the harness overwrote",
       "reason": null,
       "steps": null
     },
@@ -141,7 +141,15 @@
       "id": "end-to-end",
       "requirement": "The critical flows work in a real browser against a production build",
       "status": "PASS",
-      "detail": "36.6s",
+      "detail": "36.8s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "falsifiability",
+      "requirement": "The suite's own assertions are proven capable of failing",
+      "status": "PASS",
+      "detail": "46.5s",
       "reason": null,
       "steps": null
     },
@@ -150,8 +158,12 @@
       "requirement": "The flows also pass in a second browser engine",
       "status": "NOT RUN",
       "detail": "only one browser engine is installed here (edge); a second-engine run needs a second engine",
-      "reason": null,
-      "steps": null
+      "reason": "only one browser engine is installed here (edge); a second-engine run needs a second engine",
+      "steps": [
+        "Install a second Chromium-family browser: Edge is preinstalled on Windows, Chrome on macOS and Linux.",
+        "Re-run the gate — it discovers installed engines at run time and names the second one.",
+        "Or run it directly: node openspec/changes/add-release-validation-and-deployment/evidence/end-to-end.mjs --browser=<engine>"
+      ]
     },
     {
       "id": "vercel-deploy",

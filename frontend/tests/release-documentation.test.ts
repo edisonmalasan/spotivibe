@@ -90,7 +90,7 @@ describe("the backup document matches the format the code writes (M15 task 5.1)"
   });
 
   it("cites only tests that exist", () => {
-    // The specific defect the verification pass found: a citation to a check that was
+    // The specific defect the first verification pass found: a citation to a check that was
     // never written. Every `tests/...ts` path the document names must resolve, so a
     // citation cannot rot into a claim held by nothing.
     const text = documentText("BACKUP-FORMAT.md");
@@ -100,6 +100,55 @@ describe("the backup document matches the format the code writes (M15 task 5.1)"
     expect(cited.length, "the document must cite the code that holds it honest").toBeGreaterThan(3);
     for (const path of cited) {
       expect(existsSync(join(FRONTEND, path)), `${path} is cited but does not exist`).toBe(true);
+    }
+  });
+
+  it("cites the file that actually holds each claim, not merely one that exists", () => {
+    // Path resolution is the *weaker* half of the citation problem, and the second
+    // verification pass found the document still citing `release-exclusions.test.ts` for the
+    // export-safety claim after that claim had moved to this file. A guard that only checks
+    // a path resolves cannot see that: the wrong file exists, so the check passes. The
+    // document's claims are therefore matched against the *content* of the file each names.
+    const claims: Array<{ claim: string; phrase: RegExp; heldBy: string; must: RegExp }> = [
+      {
+        claim: "no server-side value reaches an export",
+        phrase: /no server-side value\s+reaches an export/i,
+        heldBy: "tests/release-documentation.test.ts",
+        must: /SPOTIVIBE_INVIDIOUS_INSTANCES[\s\S]{0,600}not\.toContain/,
+      },
+      {
+        claim: "the envelope's top-level keys are pinned",
+        phrase: /top-level keys/i,
+        heldBy: "tests/backup-export.test.ts",
+        must: /Object\.keys\(envelope\)/,
+      },
+    ];
+
+    const text = documentText("BACKUP-FORMAT.md");
+    const lines = text.split("\n");
+    for (const entry of claims) {
+      // Located in the joined text, then read as a window of lines. Two earlier versions of
+      // this matched line by line and found nothing, because the claim is wrapped across two
+      // lines and the test that holds it across three. A check that reads one line at a time
+      // reports a missing claim for a document that plainly makes it — which is how a check
+      // gets deleted for being "broken" when the document is right.
+      const offset = text.search(entry.phrase);
+      expect(offset, `the document must state: ${entry.claim}`).toBeGreaterThan(-1);
+      const lineOf = text.slice(0, offset).split("\n").length - 1;
+      const statement = lines.slice(Math.max(0, lineOf - 3), lineOf + 4).join("\n");
+      const named = [...statement.matchAll(/`(tests\/[A-Za-z0-9_./-]+\.ts)`/g)].map((m) => m[1]);
+      expect(named.length, `${entry.claim} must name a test`).toBeGreaterThan(0);
+      expect(
+        named,
+        `${entry.claim} must cite ${entry.heldBy}, not another file that happens to exist`,
+      ).toContain(entry.heldBy);
+      // And the named file must genuinely hold the claim, so a citation cannot be satisfied
+      // by pointing at a file that merely exists.
+      const source = readFileSync(join(FRONTEND, entry.heldBy), "utf8");
+      expect(
+        entry.must.test(source),
+        `${entry.heldBy} does not hold the claim: ${entry.claim}`,
+      ).toBe(true);
     }
   });
 

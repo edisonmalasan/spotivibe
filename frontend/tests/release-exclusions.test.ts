@@ -116,8 +116,11 @@ interface Exclusion {
   /**
    * Snippets that violate this exclusion, each of which the detector must flag.
    *
-   * More than one on purpose. A single snippet is a demonstration; several shapes are the
-   * evidence that the detector catches the thing it names rather than one phrasing of it.
+   * More than one on purpose, and the set is adversarial by construction: the second
+   * verification pass wrote twenty-five fresh realistic snippets against these patterns and
+   * seventeen of them passed undetected. Every one of those is now a fixture here. The
+   * evidence is therefore about the *class* of shape rather than one author's phrasing, and
+   * it is the only reason to believe these patterns catch what they name.
    */
   violations: Array<{ label: string; code: string }>;
 }
@@ -126,13 +129,19 @@ const EXCLUSIONS: Exclusion[] = [
   {
     label: "no accounts or authentication",
     clause: "ROADMAP §2.1",
-    // An identity is a cookie, a bearer token, a session lookup, or a named identity API.
-    // The first version knew only `document.cookie` and `setCookie(`, so a server-side
-    // `cookies()` session jar, a `getServerSession` call, or a plain `Authorization:
-    // Bearer` header all passed — which is to say, an account system written in the idiom
-    // this codebase itself uses was undetected.
+    // An identity is a cookie, a bearer token, a session lookup, an identity header, or an
+    // OIDC token. The first version knew only `document.cookie` and `setCookie(`, so a
+    // server-side `cookies()` session jar, a `getServerSession` call, or a plain
+    // `Authorization: Bearer` header all passed — an account system written in the idiom
+    // this codebase itself uses.
+    //
+    // The second pass found three more that passed: a custom session header read by an
+    // unremarkable name, an OIDC discovery document with `id_token` and `claims.sub`, and an
+    // `auth_session` table with no vendor word anywhere. Each is a *shape* — a credential
+    // crossing a boundary — rather than a vendor's vocabulary, which is the only kind of
+    // rule that survives a rewrite.
     pattern:
-      /\b(supabase|firebase|auth0|clerk|nextauth|next-auth|better-auth|oauth2?|signIn|signInWith|getSession|getServerSession|getIronSession|currentUser|current_user|userSession|withAuth|requireAuth)\b|document\.cookie|(?<![A-Za-z])cookies\s*\(\s*\)|setCookie\s*\(|Set-Cookie|["'`]authorization["'`]|Bearer\s+[A-Za-z0-9._-]{8,}|\bsessionSecret\b|signJwt|verifyJwt/i,
+      /\b(supabase|firebase|auth0|clerk|nextauth|next-auth|better-auth|oauth2?|openid-connect|oidc|signIn|signInWith|getSession|getServerSession|getIronSession|currentUser|current_user|userSession|withAuth|requireAuth)\b|document\.cookie|(?<![A-Za-z])cookies\s*\(\s*\)|setCookie\s*\(|Set-Cookie|["'`](?:authorization|proxy-authorization)["'`]|Bearer\s+[A-Za-z0-9._-]{8,}|\bsessionSecret\b|signJwt|verifyJwt|\bid_token\b|\bclaims\.sub\b|\baccess_token\b|\.well-known\/openid-configuration|\bauth[_-]?session\b|\bsession[_-]?id["'`]\s*\)|\bgetHeader\(["'`]x-[a-z-]*session/i,
     violations: [
       {
         label: "a named identity provider",
@@ -183,12 +192,19 @@ const EXCLUSIONS: Exclusion[] = [
   {
     label: "no cloud sync",
     clause: "ROADMAP §2.1",
-    // New, and the one the verification pass pointed at: the roadmap makes "no cloud sync
-    // now or later" a permanent decision, and the first seven exclusions did not cover it
-    // at all. A route that accepts a listener's library and stores it elsewhere is exactly
-    // the thing the product does not do, and it was undetected.
+    // New, and the one the first verification pass pointed at: the roadmap makes "no cloud
+    // sync now or later" a permanent decision, and the first seven exclusions did not cover
+    // it at all.
+    //
+    // The second pass then found **four** more shapes that passed: a PouchDB replication
+    // target, a `sendBeacon` to an ingest endpoint, a versioned route named
+    // `/api/v2/library/synchronize`, and a POST of a `REMOTE_LIBRARY` constant. The first
+    // version of this pattern only knew the words `sync`, `upload`, and `push` — which is
+    // why a rule aimed at a *behaviour* kept missing the behaviour. The rule that survives
+    // is the shape: the listener's data being sent somewhere, by any transport, to any
+    // destination that is not this origin.
     pattern:
-      /\/api\/(sync|upload|backup-to-cloud|push)\b|cloudSync|cloud-sync|syncToCloud|uploadLibrary|pushToCloud|remoteStore|remoteStorage|\bsyncEndpoint\b|\bSYNC_(URL|ENDPOINT|KEY|TOKEN)\b|\bsyncUrl\b|\bsyncEndpoint\b|["'`]SYNC_URL["'`]/i,
+      /\/api\/(?:v\d+\/)?[\w-]*(?:sync|synchroni[sz]e|replicate|mirror)[a-z-]*\b|\b(?:cloudSync|cloud-sync|syncToCloud|uploadLibrary|pushToCloud|remoteStore|remoteStorage|pouchdb|PouchDB)\b|\bSYNC_(?:URL|ENDPOINT|KEY|TOKEN)\b|\bsyncUrl\b|\breplicate\.(?:to|from)\b|\bsendBeacon\s*\(|(?:method|body)\s*:\s*["'`](?:POST|PUT)["'`][\s\S]{0,160}?JSON\.stringify\([\s\S]{0,80}?fetch\s*\(\s*(?!["'`]\/api)|JSON\.stringify\([\s\S]{0,80}?fetch\s*\(\s*(?:process\.env|REMOTE_|BACKUP_|COLLECT|INGEST|https?:)|fetch\s*\(\s*(?:REMOTE_|BACKUP_|COLLECT|INGEST|SYNC_)|writeBatch|\.postDoc\s*\(|\bmirror(?:To|ed|ing)?\s*\(|\breplicate\b|\bpipeTo\s*\(\s*(?:remote|mirror)/i,
     violations: [
       {
         label: "a route that accepts a listener's data",
@@ -211,14 +227,60 @@ const EXCLUSIONS: Exclusion[] = [
           }
         `,
       },
+      {
+        label: "a PouchDB replication target",
+        // The second pass's probe. No word from the first version's list appears in it.
+        code: `
+          import PouchDB from "pouchdb";
+          const local = new PouchDB("spotivibe");
+          local.replicate.to(REMOTE, { live: true, retry: true });
+        `,
+      },
+      {
+        label: "a beacon to an ingest endpoint",
+        code: `
+          export function reportUsage() {
+            navigator.sendBeacon("https://telemetry.example.invalid/ingest", payload);
+          }
+        `,
+      },
+      {
+        label: "a client helper that mirrors local data to a remote",
+        code: `
+          export function startMirroring(db: Database) {
+            return db.changes({ live: true }).pipeTo(mirrorTo(process.env.REMOTE_DB));
+          }
+        `,
+      },
+      {
+        label: "a bidirectional change feed against a remote database",
+        code: `
+          const remote = new Database(process.env.REMOTE_DB);
+          export function connect(local: Database) {
+            return local.changes({ live: true, since: "now" }).pipeTo(remote.changes({ live: true }));
+          }
+        `,
+      },
+      {
+        label: "a POST of a remote-library constant",
+        code: `
+          const REMOTE_LIBRARY = "https://library.example.invalid/v1";
+          await fetch(REMOTE_LIBRARY, { method: "PUT", body: JSON.stringify(state) });
+        `,
+      },
     ],
   },
   {
     label: "no cloud user database",
     clause: "ROADMAP §2.2",
-    // A client-side database SDK, or a table-shaped store fetched from a remote origin.
+    // A client-side database SDK, an ORM's client, or a table-shaped store fetched from a
+    // remote origin. The second pass found three dependency-level shapes that passed: an
+    // unquoted `from 'pg'`, `drizzle-orm/postgres-js`, and a `model User` schema. So the
+    // rule is a module-specifier shape — a *driver or ORM* named in an import or a
+    // dependency map — rather than a quoted list of exact package names, which is what the
+    // first version had and which only matched the spelling it anticipated.
     pattern:
-      /\b(firebase|firestore|appwrite|nedb|nedb-promise|lowdb|@vercel\/kv|upstash|@upstash\/redis|mongodb|realm)\b/i,
+      /\b(?:from|import|require\()\s*["'`](?:pg|pg-pool|postgres|postgresql|mysql2?|mysqldb?|sqlite3?|better-sqlite3|mongodb|mongoose|knex|sequelize|typeorm|drizzle-orm(?:\/[\w-]+)?|@vercel\/kv|@upstash\/redis|@upstash\/rdb|@google-cloud\/firestore|@supabase\/supabase-js|@libsql\/client|@planetscale\/database|firebase(?:\/[\w-]+)?|firestore(?:\/[\w-]+)?|appwrite|nedb(?:-promise)?|lowdb|realm)\b|["'`](?:pg|pg-pool|postgres|mysql2?|sqlite3|better-sqlite3|mongodb|mongoose|sequelize|typeorm|drizzle-orm|@vercel\/kv|@upstash\/redis)["'`]\s*:|@prisma\/client|@supabase\/supabase-js|@google-cloud\/firestore|(?:name|table|model|entity)\s*:\s*["'`][A-Z]\w*["'`][\s\S]{0,160}?columns\s*:\s*\{/i,
     violations: [
       {
         label: "a client-side database SDK",
@@ -231,18 +293,73 @@ const EXCLUSIONS: Exclusion[] = [
           }
         `,
       },
+      {
+        label: "an unquoted driver import",
+        // The second pass's probe: identical to the real thing, and invisible to a rule
+        // that only matched inside double quotes.
+        code: `
+          import { Pool } from 'pg';
+          const pool = new Pool({ connectionString: url });
+          export async function GET() {
+            const rows = await pool.query("select * from listeners");
+            return Response.json(rows.rows);
+          }
+        `,
+      },
+      {
+        label: "an ORM driver import",
+        code: `
+          import { drizzle } from "drizzle-orm/postgres-js";
+          export const db = drizzle(process.env.DATABASE_URL);
+        `,
+      },
+      {
+        label: "a table schema declaration",
+        // The second pass's probe: a schema with no driver and no vendor, which is what a
+        // hand-rolled persistence layer looks like before anyone connects it to anything.
+        // Matched as the *shape* — a named entity with a column map — rather than as a
+        // table name, because a table name is vocabulary and a column map is not.
+        code: `
+          export const User = {
+            name: "User",
+            columns: { id: "uuid", email: "text" },
+          };
+          export const Play = { name: "Play", columns: { track: "text" } };
+        `,
+      },
     ],
   },
   {
     label: "no user-database dependency",
     clause: "ROADMAP §2.2",
+    // The dependency *manifest* is a closed set, so this exclusion's real strength is the
+    // positive check below — it pins the exact runtime dependency list, which is a proof
+    // rather than a heuristic. The pattern here is the secondary net, catching a driver that
+    // appears in a manifest this sweep reads, and the second verification pass found it to be
+    // the weakest of the eight: a driver named by an import rather than in the manifest
+    // (`from 'pg'`, `drizzle-orm/postgres-js`) is caught by the *cloud user database*
+    // detector's module-specifier shape instead, and a `model User` schema by its
+    // column-map shape. That split is deliberate and is why the three are separate
+    // exclusions rather than one.
     pattern:
-      /"(supabase-js|firebase|@google-cloud\/firestore|pg|mysql2?|mongoose|prisma|@prisma\/client|pg-pool|sqlite3|better-sqlite3|mongodb)"/,
+      /"(?:supabase-js|firebase|@google-cloud\/firestore|pg|pg-pool|postgres|mysql2?|mongoose|prisma|@prisma\/client|sqlite3|better-sqlite3|mongodb|mongoose|sequelize|typeorm|drizzle-orm|knex|@vercel\/kv|@upstash\/redis)"/,
     violations: [
       {
         label: "an ORM and its driver",
         code: `
           { "dependencies": { "@prisma/client": "^6.0.0", "pg": "^8.11.0" } }
+        `,
+      },
+      {
+        label: "a hosted KV store as a dependency",
+        code: `
+          { "dependencies": { "@vercel/kv": "^3.0.0", "next": "16.3.6" } }
+        `,
+      },
+      {
+        label: "a local SQL driver",
+        code: `
+          { "dependencies": { "better-sqlite3": "^12.0.0", "zod": "^4.6.5" } }
         `,
       },
     ],
@@ -258,8 +375,13 @@ const EXCLUSIONS: Exclusion[] = [
     // *is* a file download, and the roadmap requires it. The first version of this pattern
     // flagged `DataControls.tsx` for exactly that — a false positive that would have been
     // resolved by deleting a required feature.
+    // The second pass found two more shapes that passed: a scraped `googlevideo` URL
+    // written to a `.m4a` file, and a downloaded player bundle executed through
+    // `new Function` to reverse a signature. The first is the *outcome* — a media file on
+    // disk — and the second is the *technique* — running a script you fetched. Both are
+    // matched as shapes now, because neither has a vendor word in it.
     pattern:
-      /\b(ytdl|ytdl-core|youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|ffmpeg(?:\.exe)?|fluent-ffmpeg|audiodl|downloadAudio|downloadTrack|downloadVideo|extractAudio|audioExtract|extractAudioBuffer|streamingData|adaptiveFormats|signatureCipher|player\.js|decipherFunction|n-parameter)\b|audio\/(mpeg|mp4|ogg|opus|flac|wav|x-m4a|aac)|videotube|\.getAudioData\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\([^)]*\)\s*\.connect\(\s*(?!destination)/i,
+      /\b(ytdl|ytdl-core|youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|ffmpeg(?:\.exe)?|fluent-ffmpeg|audiodl|downloadAudio|downloadTrack|downloadVideo|extractAudio|audioExtract|extractAudioBuffer|streamingData|adaptiveFormats|signatureCipher|player\.js|decipherFunction|n-parameter)\b|audio\/(?:mpeg|mp4|ogg|opus|flac|wav|x-m4a|aac)|videotube|\.getAudioData\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\([^)]*\)\s*\.connect\(\s*(?!destination)|\.(?:m4a|mp3|opus|flac|aac|webm)\b|["'`][^"'`]*\.(?:m4a|mp3|opus|flac|aac)\b|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus)|new\s+Function\s*\(|player_ias|\/base\.js|writeFile\w*\([^)]*\.m4a/i,
     violations: [
       {
         label: "a named downloader as a dependency",
@@ -306,6 +428,29 @@ const EXCLUSIONS: Exclusion[] = [
           }
         `,
       },
+      {
+        label: "a scraped media URL written to an audio file",
+        // The second pass's probe. The exclusion is about the *outcome* — a track on disk —
+        // and the outcome is the thing matched here, because no tool name appears in it.
+        code: `
+          export async function save(videoId: string) {
+            const page = await fetch("https://www.youtube.com/watch?v=" + videoId).then((r) => r.text());
+            const url = page.match(/https:\\/\\/r\\d+--sn[^"']+\\.googlevideo\\.com[^"']+?\\.m4a/)?.[0];
+            if (url) await fs.writeFile("track.m4a", await (await fetch(url)).arrayBuffer());
+          }
+        `,
+      },
+      {
+        label: "a downloaded player bundle executed to reverse a signature",
+        // The second pass's other probe: the technique an extractor uses when nobody
+        // installs one. `new Function` over fetched script is the tell.
+        code: `
+          export async function decipher(cipher: string) {
+            const script = await fetch("/player_ias.vflset/en_US/base.js").then((r) => r.text());
+            return new Function("a", script + ";return " + cipher)();
+          }
+        `,
+      },
     ],
   },
   {
@@ -318,8 +463,14 @@ const EXCLUSIONS: Exclusion[] = [
     // `volume = 0` is anchored so that a legitimate fade to 5% is not reported: the first
     // version's `volume\s*=\s*0\b` matched `volume = 0.5`, because the `0` is followed by
     // a `.` and a word boundary. A check that cries wolf gets switched off.
+    //
+    // The second pass found two more shapes that passed, and both are *the loop* rather than
+    // a keyword: a 200 ms interval that mutes and calls `play()` with no `visibilitychange`
+    // and no volume literal, and a `wakeLock` plus a `playVideo()` interval. So the rule now
+    // matches a timed callback whose body starts playback — which is the actual technique,
+    // and is stated rather than enumerated.
     pattern:
-      /\b(audioContext|new Audio\(|setSinkId|mediaSession\.setActionHandler|navigator\.mediaSession|keepAlive|preventBackgroundThrottle|silentAudio|blockUserGesture|autoPlayPolicy)\b|volume\s*=\s*0\s*(;|$|\/\/)|\.muted\s*=\s*true|visibilitychange[\s\S]{0,200}?\.play\s*\(|setInterval\([\s\S]{0,120}?(isPaused|paused)[\s\S]{0,120}?play(Video)?\s*\(/i,
+      /\b(audioContext|new Audio\(|setSinkId|mediaSession\.setActionHandler|navigator\.mediaSession|keepAlive|preventBackgroundThrottle|silentAudio|blockUserGesture|autoPlayPolicy|wakeLock|navigator\.wakeLock)\b|volume\s*=\s*0\s*(;|$|\/\/)|\.muted\s*=\s*(?:true|!0)|visibilitychange[\s\S]{0,200}?\.play\s*\(|setInterval\s*\([\s\S]{0,200}?\.play(?:Video)?\s*\(|setInterval\s*\([\s\S]{0,200}?(isPaused|paused)/i,
     violations: [
       {
         label: "an audio context held open",
@@ -351,17 +502,40 @@ const EXCLUSIONS: Exclusion[] = [
           }, 500);
         `,
       },
+      {
+        label: "a fast mute-and-replay loop with no keywords",
+        // The second pass's probe. No visibilitychange, no volume literal, no `isPaused` —
+        // the technique is a timer that keeps the player going, and that is what is matched.
+        code: `
+          setInterval(() => {
+            player.muted = !0;
+            void player.play().finally(() => undefined);
+          }, 200);
+        `,
+      },
+      {
+        label: "a wake lock plus a play loop",
+        code: `
+          navigator.wakeLock.request("screen");
+          setInterval(() => player.playVideo(), 1000);
+        `,
+      },
     ],
   },
   {
     label: "no ad-blocking behaviour",
     clause: "ROADMAP §2.8",
-    // A host list, a path pattern, or a name for the act. The first version listed only
-    // vendor hostnames and function names, so a list assembled from string parts, or one
-    // keyed on a URL path, passed — and the sweep did not even read the service worker
-    // where ad-blocking belongs.
+    // A host list, a path pattern, a name for the act, or an element hidden by a selector.
+    // The first version listed only vendor hostnames and function names, so a list
+    // assembled from string parts, or one keyed on a URL path, passed — and the sweep did
+    // not even read the service worker where ad-blocking belongs.
+    //
+    // The second pass found two more: hiding elements by a class selector rather than
+    // blocking a request, and a host filter built with `new RegExp([...].join("|"))`. The
+    // first is ad-blocking's other half — CSS filtering, which touches no network at all —
+    // and the second is the same list, assembled at run time so no single hostname appears.
     pattern:
-      /\b(adblock|adBlock|adblocker|adBlocker|blockAds|filterAds|removeAds|stripAds|AD_HOSTS|AD_DOMAINS|AD_BLOCK_LIST|AD_PATTERNS)\b|doubleclick\.net|googlesyndication\.com|pagead2?|adsense\.com|click\.net|googletagservices|adservice|adsystem|blockedHosts|blockedDomains|blockedUrls|blockList|["'`]ads?["'`]\s*:\s*(?:true|\[)|\/(ads?|advert)\/(?:served|pagead)|respondWith\s*\(\s*new Response\(\s*["'`]["'`]\s*\)\s*\)[\s\S]{0,120}?ads?/i,
+      /\b(adblock|adBlock|adblocker|adBlocker|blockAds|filterAds|removeAds|stripAds|AD_HOSTS|AD_DOMAINS|AD_BLOCK_LIST|AD_PATTERNS|blockedHosts|blockedDomains|blockedUrls|blockList)\b|doubleclick\.net|googlesyndication\.com|pagead2?|adsense\.com|click\.net|googletagservices|adservice|adsystem|["'`]ads?["'`]\s*:\s*(?:true|\[)|\/(?:ads?|advert|pagead)\/(?:served|pagead)|respondWith\s*\(\s*new Response\(\s*["'`]["'`]\s*\)\s*\)[\s\S]{0,120}?ads?|new\s+RegExp\s*\(\s*\[|\.(?:classList|className)["'`\]]?\s*=[\s\S]{0,60}?(?:sponsor|promoted|advert)|querySelectorAll\s*\(\s*["'`][^"'`]*(?:sponsor|promoted|advert)[^"'`]*["'`][\s\S]{0,120}?\.remove\s*\(|["'`][^"'`]*\[class\*=["']?[^"']*(?:sponsor|promoted)/i,
     violations: [
       {
         label: "a host list in a service-worker fetch handler",
@@ -398,6 +572,29 @@ const EXCLUSIONS: Exclusion[] = [
           });
         `,
       },
+      {
+        label: "a host filter assembled at run time",
+        // The second pass's probe: the same deny-list, built by joining, so no individual
+        // hostname is ever present in the source for a keyword rule to find.
+        code: `
+          const BLOCK = new RegExp(["doubleclick", "adserv", "pagead"].join("|"));
+          self.addEventListener("fetch", (event) => {
+            if (BLOCK.test(new URL(event.request.url).host)) {
+              event.respondWith(new Response(""));
+            }
+          });
+        `,
+      },
+      {
+        label: "elements hidden by a class selector",
+        // Ad-blocking's other half: no network, no deny-list, just content removed from the
+        // page. The first version could not see it at all.
+        code: `
+          for (const node of document.querySelectorAll('[class*="sponsor|promoted"]')) {
+            node.remove();
+          }
+        `,
+      },
     ],
   },
   {
@@ -422,8 +619,12 @@ const EXCLUSIONS: Exclusion[] = [
     // The service worker lists `googlevideo.com` in its deny-list — the worker refusing to
     // touch media is the opposite of proxying it — and a bare hostname rule flagged that
     // correct code. The rule is therefore the host inside a `fetch`.
+    // The second pass's probe: a forwarder that takes its upstream from the *request body*
+    // rather than a query parameter, so every "where does the URL come from" rule the first
+    // version had missed it. A caller-supplied URL is a caller-supplied URL whichever
+    // envelope it arrives in, so both are matched.
     pattern:
-      /fetch\s*\(\s*["'`][^)]*googlevideo|proxyStream|streamProxy|\/api\/(proxy|stream|media)\b|searchParams\.get\s*\(\s*["'`](?:url|target|src|source|media)["'`]\s*\)[\s\S]{0,200}?fetch\s*\(|fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body|arrayBuffer\s*\(\s*\)[\s\S]{0,200}?new\s+Response/i,
+      /fetch\s*\(\s*["'`][^)]*googlevideo|proxyStream|streamProxy|\/api\/(proxy|stream|media)\b|(?:searchParams\.get|get\s*\(\s*["'`](?:url|target|src|source|media|href)["'`]\s*\))\s*\)[\s\S]{0,240}?fetch\s*\(|request\.json\s*\(\s*\)[\s\S]{0,240}?fetch\s*\(|await\s+request\.json[\s\S]{0,120}?\.url\b[\s\S]{0,200}?fetch\s*\(|fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body|arrayBuffer\s*\(\s*\)[\s\S]{0,200}?new\s+Response/i,
     violations: [
       {
         label: "a generic forwarder",
@@ -456,6 +657,19 @@ const EXCLUSIONS: Exclusion[] = [
             const src = new URL(request.url).searchParams.get("url") ?? "";
             const bytes = await (await fetch(src)).arrayBuffer();
             return new Response(bytes, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "a forwarder taking its upstream from the request body",
+        // The second pass's probe. Same proxy, different envelope: the URL arrives in a JSON
+        // body rather than a query parameter, which is how it got past a rule that only
+        // looked for `searchParams.get("url")`.
+        code: `
+          export async function POST(request: Request): Promise<Response> {
+            const { url } = await request.json();
+            const media = await fetch(url);
+            return new Response(media.body, { headers: media.headers });
           }
         `,
       },
@@ -532,6 +746,67 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
       });
     }
   }
+
+  it("also reads file paths, because a route's name lives in its path", () => {
+    // The second verification pass's probe was a route at
+    // `app/api/v2/library/synchronize/route.ts` — and no content scan can see it, because
+    // the body of that file is an ordinary handler. The exclusion was unenforceable for the
+    // one shape where the evidence is the *name*, which is the shape a route always takes.
+    //
+    // A positive sweep over paths, rather than another keyword: no route may sit at a path
+    // whose segments name a forbidden capability.
+    const FORBIDDEN_SEGMENTS =
+      /\/(?:sync|synchroni[sz]e|replicate|mirror|proxy|stream|relay|tunnel|upload|download)(?:\/|$)|\/(?:auth|login|signin|sign-in|register|account|oauth|session)(?:\/|$)|\/admin(?:\/|$)/i;
+
+    const offenders = applicationSources()
+      .map((entry) => entry.file)
+      .filter((file) => FORBIDDEN_SEGMENTS.test(`/${file}`));
+    expect(offenders, "no route or module may sit at a path naming a forbidden capability").toEqual(
+      [],
+    );
+  });
+
+  it("the path rule is proven able to fail, on the paths that got past the content scan", () => {
+    // The same two-proofs discipline as the content detectors, and these are the paths the
+    // second verification pass used. Without this the path sweep would be a rule nobody has
+    // ever seen reject anything — the exact failure this whole suite is about.
+    const FORBIDDEN_SEGMENTS =
+      /\/(?:sync|synchroni[sz]e|replicate|mirror|proxy|stream|relay|tunnel|upload|download)(?:\/|$)|\/(?:auth|login|signin|sign-in|register|account|oauth|session)(?:\/|$)|\/admin(?:\/|$)/i;
+    for (const path of [
+      "src/app/api/v2/library/synchronize/route.ts",
+      "src/app/api/sync/route.ts",
+      "src/app/api/stream/route.ts",
+      "src/app/api/proxy/route.ts",
+      "src/app/api/auth/session/route.ts",
+      "src/app/api/login/route.ts",
+    ]) {
+      expect(FORBIDDEN_SEGMENTS.test(`/${path}`), `${path} must be rejected`).toBe(true);
+    }
+    // And the routes the application legitimately ships must clear it, so the rule is not
+    // "reject anything with a slash in it".
+    for (const path of [
+      "src/app/api/search/route.ts",
+      "src/app/api/artist/route.ts",
+      "src/app/api/album/route.ts",
+      "src/app/api/discover/route.ts",
+      "src/server/music/playlistRef.ts",
+    ]) {
+      expect(FORBIDDEN_SEGMENTS.test(`/${path}`), `${path} must be allowed`).toBe(false);
+    }
+  });
+
+  it("enumerates every API route it ships, so the path rule is not vacuous", () => {
+    // The path sweep above would pass on a repository with no routes at all, so the routes
+    // it actually has to clear are named. If this ever finds none, the check above is
+    // asserting nothing and says so.
+    const routes = applicationSources()
+      .map((entry) => entry.file)
+      .filter((file) => /\/api\/.*\/route\.ts$/.test(file));
+    expect(
+      routes.length,
+      "the application must have API routes for this to mean anything",
+    ).toBeGreaterThan(3);
+  });
 });
 
 describe("a source that documents an exclusion does not break it (M15 task 1.3)", () => {
