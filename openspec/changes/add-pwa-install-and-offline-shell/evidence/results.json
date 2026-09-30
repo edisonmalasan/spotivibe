@@ -1,0 +1,579 @@
+{
+  "task": "6.2",
+  "generatedAt": "2026-09-30T08:53:57.983Z",
+  "origin": "http://localhost:3210",
+  "copy": {
+    "offlineUnavailable": "need a connection",
+    "offlineRemains": "library, playlists, and history",
+    "databaseName": "spotivibe",
+    "workerVersion": "v1",
+    "cacheBounds": {
+      "assets": 200,
+      "pages": 20,
+      "metadata": 100,
+      "artwork": 300
+    }
+  },
+  "steps": [
+    {
+      "name": "the manifest is served with a manifest content type",
+      "ok": true,
+      "detail": "200 application/manifest+json"
+    },
+    {
+      "name": "the manifest declares standalone, a stable id, and the app's colors",
+      "ok": true,
+      "detail": "{\"display\":\"standalone\",\"id\":\"/\",\"start_url\":\"/\",\"theme\":\"#000000\"}"
+    },
+    {
+      "name": "the manifest declares an installable icon set including a maskable icon",
+      "ok": true,
+      "detail": "3 icons >= 144px, maskable: true"
+    },
+    {
+      "name": "icon /icon.svg is served at the declared size",
+      "ok": true,
+      "detail": "200 328B png=false n/apx vs any"
+    },
+    {
+      "name": "icon /icons/icon-192.png is served at the declared size",
+      "ok": true,
+      "detail": "200 1603B png=true 192px vs 192x192"
+    },
+    {
+      "name": "icon /icons/icon-512.png is served at the declared size",
+      "ok": true,
+      "detail": "200 6085B png=true 512px vs 512x512"
+    },
+    {
+      "name": "icon /icons/icon-maskable-512.png is served at the declared size",
+      "ok": true,
+      "detail": "200 3467B png=true 512px vs 512x512"
+    },
+    {
+      "name": "the served manifest carries no third-party brand",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the worker is served with a JavaScript content type and a body",
+      "ok": true,
+      "detail": "200 application/javascript; charset=UTF-8 16218B"
+    },
+    {
+      "name": "the app's own registration reaches an activated worker",
+      "ok": true,
+      "detail": "{\"scope\":\"http://localhost:3210/\",\"active\":true,\"state\":\"activated\"}"
+    },
+    {
+      "name": "exactly one worker controls the page and it is the app's own sw.js",
+      "ok": true,
+      "detail": "{\"supported\":true,\"controlled\":true,\"controllerScript\":\"http://localhost:3210/sw.js\",\"waiting\":false,\"installing\":false}"
+    },
+    {
+      "name": "the worker target is attached to this run, so 'offline' includes it",
+      "ok": true,
+      "detail": "types: background_page,page,service_worker | chrome-extension://ndcpkimcihhghdcddljkfmmjccdmcmof/background.rollup.js,/sw.js,/sw.js"
+    },
+    {
+      "name": "the worker's caches are its versioned ones, and each stayed within its bound",
+      "ok": true,
+      "detail": "{\"spotivibe-assets-v1\":21,\"spotivibe-pages-v1\":6}"
+    },
+    {
+      "name": "the worker answers SKIP_WAITING with ACTIVATED over a live message port",
+      "ok": true,
+      "detail": "{\"answered\":true,\"data\":{\"type\":\"ACTIVATED\"}}"
+    },
+    {
+      "name": "IndexedDB data survives the worker's activation",
+      "ok": true,
+      "detail": "{\"count\":1,\"hasEvidenceRow\":true}"
+    },
+    {
+      "name": "the worker deleted nothing outside its own versioned caches",
+      "ok": true,
+      "detail": "spotivibe-assets-v1, spotivibe-pages-v1"
+    },
+    {
+      "name": "the install row appears where installation is offered and stops offering once installed",
+      "ok": true,
+      "detail": "rowBefore=true rowAfter=false prompted=platform-default (steps since: 0)"
+    },
+    {
+      "name": "the origin really is refusing connections, so 'offline' is not an emulation",
+      "ok": true,
+      "detail": "originRefusedConnections=true external=false"
+    },
+    {
+      "name": "/library renders offline",
+      "ok": true,
+      "detail": "255 chars"
+    },
+    {
+      "name": "/library/liked renders offline",
+      "ok": true,
+      "detail": "240 chars"
+    },
+    {
+      "name": "/history renders offline",
+      "ok": true,
+      "detail": "796 chars"
+    },
+    {
+      "name": "/queue renders offline",
+      "ok": true,
+      "detail": "265 chars"
+    },
+    {
+      "name": "/settings renders offline",
+      "ok": true,
+      "detail": "1101 chars"
+    },
+    {
+      "name": "every offline document response was served by the service worker",
+      "ok": true,
+      "detail": "[{\"path\":\"/library\",\"status\":200,\"fromServiceWorker\":true},{\"path\":\"/library/liked\",\"status\":200,\"fromServiceWorker\":true},{\"path\":\"/history\",\"status\":200,\"fromServiceWorker\":true},{\"path\":\"/queue\",\"status\":200,\"fromServiceWorker\":true},{\"path\":\"/settings\",\"status\":200,\"fromServiceWorker\":true},{\"path\":\"/library\",\"status\":200,\"fromServiceWorker\":true},{\"path\":\"/settings\",\"status\":200,\"fromServiceW"
+    },
+    {
+      "name": "the offline banner names the capabilities that need a connection",
+      "ok": true,
+      "detail": "navigator.onLine=false text=You're offline — search and playback need a connection. Your library, playlists, and history still work."
+    },
+    {
+      "name": "a per-entity route offline is served the shell, from the worker, not a browser error page",
+      "ok": true,
+      "detail": "fromServiceWorker=true {\"chars\":1929,\"hasAppChrome\":true,\"namesTheProblem\":true,\"mentionsSpotivibe\":true,\"browserErrorPage\":false}"
+    },
+    {
+      "name": "the offline per-entity route says why, inside the application",
+      "ok": true,
+      "detail": "1929 chars, title is the app's: true"
+    },
+    {
+      "name": "a previously fetched metadata response is served while offline, from the cache",
+      "ok": true,
+      "detail": "online 200/15569B cachedAt=null → offline 200/15569B cachedAt=1790758450322"
+    },
+    {
+      "name": "search is never answered from cache, so it fails honestly offline",
+      "ok": true,
+      "detail": "{\"rejected\":true,\"error\":\"TypeError: Failed to fetch\"}"
+    },
+    {
+      "name": "an unvisited route offline opens the application, not the browser's error page",
+      "ok": true,
+      "detail": "fromServiceWorker=true {\"chars\":1929,\"sample\":\"Spotivibe Your Library Liked Songs Home Trending Now A rotating shelf built from provider queries, refreshed each visit. This shelf didn't l\",\"mentionsConnection\":true,\"ownErrorState\":true,\"headin"
+    },
+    {
+      "name": "the unvisited route opens a working application that states what is unavailable",
+      "ok": true,
+      "detail": "{\"chars\":1929,\"sample\":\"Spotivibe Your Library Liked Songs Home Trending Now A rotating shelf built from provider queries, refreshed each visit. This shelf didn't l\",\"mentionsConnection\":true,\"ownErrorState\":true,\"heading\":\"Your Library\",\"hasAppChrome\":true,\"b"
+    },
+    {
+      "name": "a backup export control exists on the settings surface",
+      "ok": true,
+      "detail": "{\"found\":true,\"label\":\"Export backup\"}"
+    },
+    {
+      "name": "the data controls remain usable with the network cut",
+      "ok": true,
+      "detail": "{\"chars\":1101,\"exportVisible\":true}"
+    },
+    {
+      "name": "zero console errors outside the disclosed offline window",
+      "ok": true,
+      "detail": "none"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "settings-install-row.png",
+      "note": "Settings after the install affordance resolved"
+    },
+    {
+      "file": "offline-settings.png",
+      "note": "Settings rendered with the network cut, banner visible"
+    },
+    {
+      "file": "offline-library.png",
+      "note": "Library rendered from the worker's cache while offline"
+    },
+    {
+      "file": "offline-entity-route.png",
+      "note": "An uncached artist route while offline: the app, with its own error state"
+    },
+    {
+      "file": "offline-search.png",
+      "note": "Search while offline: an honest failure, not a hang"
+    }
+  ],
+  "consoleErrors": [],
+  "notes": {
+    "disclosures": {
+      "offlineWindow": [
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=1bApncbIntB_L94f]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=1bApncbIntB_L94f]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=1bApncbIntB_L94f]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=1bApncbIntB_L94f]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=1bApncbIntB_L94f]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=1bApncbIntB_L94f]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=JmFnTkhJC5n8mJfW]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=JmFnTkhJC5n8mJfW]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=JmFnTkhJC5n8mJfW]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=JmFnTkhJC5n8mJfW]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=9-Iwjt6f_yfDxanV]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=9-Iwjt6f_yfDxanV]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=9-Iwjt6f_yfDxanV]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=9-Iwjt6f_yfDxanV]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=9-Iwjt6f_yfDxanV]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=9-Iwjt6f_yfDxanV]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/discover?kind=trending&languages=en&limit=20]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/discover?kind=podcast&languages=en&limit=20]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/discover?kind=collection&languages=en&limit=20]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/1bffadaabf893a1e-s.3-6t-g6q0vh0a.woff2]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/9c72aa0f40e4eef8-s.1y4-pdgsjb-pw.woff2]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/5476f68d60460930-s.2uwcyprjm3xu3.woff2]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/2bbe8d2671613f1f-s.0k62hbripvv8p.woff2]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=4AwEdr8VI5Z5k2yI]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/api/search?q=portishead&evidence=m13]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/discover?kind=trending&languages=en&limit=20]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/discover?kind=podcast&languages=en&limit=20]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/api/discover?kind=collection&languages=en&limit=20]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/1bffadaabf893a1e-s.3-6t-g6q0vh0a.woff2]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/9c72aa0f40e4eef8-s.1y4-pdgsjb-pw.woff2]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/5476f68d60460930-s.2uwcyprjm3xu3.woff2]",
+        "log: Failed to load resource: net::ERR_FAILED [http://localhost:3210/_next/static/media/2bbe8d2671613f1f-s.0k62hbripvv8p.woff2]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/search?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=5CB68i4pnAekjehf]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/manifest.webmanifest]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/settings?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/now-playing?_rsc=DQxjArDrgutTG17x]",
+        "log: Failed to load resource: net::ERR_INTERNET_DISCONNECTED [http://localhost:3210/library/liked?_rsc=DQxjArDrgutTG17x]"
+      ],
+      "platformEvents": [],
+      "notVerifiableHere": [
+        "A waiting worker needs a second, different build installed behind the current one, which a single static build cannot produce. The activation handshake is exercised for real (SKIP_WAITING → ACTIVATED over a live message port) and the waiting-worker state machine is covered by frontend/tests/pwa-client.test.tsx.",
+        "Installability as Chrome's install UI presents it, and real iOS/Android home-screen behavior: the manifest, the icon set and the iOS document metadata are verified as served, but a headless desktop browser cannot install to a home screen.",
+        "Offline artwork: no artwork is displayed on the pages this run visits, so the artwork cache is exercised by frontend/tests/pwa-service-worker.test.ts (serving, background revalidation and eviction) rather than by real image traffic.",
+        "A metadata response older than the 7-day freshness bound is exercised in the unit suite by aging the stored copy, not by waiting seven days here."
+      ],
+      "shellContent": "An uncached route offline is served the cached shell document, which was rendered for the site root. The application therefore boots and shows the Home route's content at the requested URL (observed: /search rendered the Home shell), and the connection banner states that search and playback need a connection. This is the known cost of a single offline shell: the listener gets a working application and an honest message instead of a browser error page, but not the exact route they asked for. Serving a per-route offline document would require a build-time asset manifest, which this application has no honest way to produce for its dynamic routes."
+    },
+    "attachedTargets": [
+      {
+        "type": "background_page",
+        "targetId": "0B30421D679B0B41C2AC6CA82B122ACC",
+        "url": "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold/_generated_background_page.html"
+      },
+      {
+        "type": "page",
+        "targetId": "38AEFFB0E20576C1677AB70283FA3851",
+        "url": "about:blank"
+      },
+      {
+        "type": "background_page",
+        "targetId": "5CBB25818CE87FD5313EC89DCDEF092A",
+        "url": "chrome-extension://nkeimhogjdpnpccoofpliimaahmaaome/background.html"
+      },
+      {
+        "type": "background_page",
+        "targetId": "5EA8D95DF08F60FEF8D6F502F2D3F0F3",
+        "url": "chrome-extension://ncbjelpjchkpbikbpkcchkhkblodoama/_generated_background_page.html"
+      },
+      {
+        "type": "background_page",
+        "targetId": "920EBD3663219EB3E9F04B840CC9FAF6",
+        "url": "chrome-extension://ihmafllikibpmigkcoadcmckbfhibefp/_generated_background_page.html"
+      },
+      {
+        "type": "background_page",
+        "targetId": "DD1AE5CA64DD1267C71C8769A39841B5",
+        "url": "chrome-extension://fikbjbembnmfhppjfnmfkahdhfohhjmg/_generated_background_page.html"
+      },
+      {
+        "type": "service_worker",
+        "targetId": "B7B0F649D777FE39160ED6467F8033AD",
+        "url": "chrome-extension://ndcpkimcihhghdcddljkfmmjccdmcmof/background.rollup.js"
+      },
+      {
+        "type": "page",
+        "targetId": "F763295068D762650376B06B13916695",
+        "url": "http://localhost:3210/library"
+      },
+      {
+        "type": "service_worker",
+        "targetId": "B76DE98C734FB54962A3DEBC2511522C",
+        "url": "http://localhost:3210/sw.js"
+      },
+      {
+        "type": "service_worker",
+        "targetId": "B76DE98C734FB54962A3DEBC2511522C",
+        "url": "http://localhost:3210/sw.js"
+      }
+    ],
+    "documentResponses": [
+      {
+        "path": "/library",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/library/liked",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/history",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/queue",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/library/liked",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/history",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/queue",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/artist/m13-never-visited-entity",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/search",
+        "status": 200,
+        "fromServiceWorker": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "fromServiceWorker": true
+      }
+    ],
+    "cacheReport": [
+      {
+        "phase": "after visiting every local page",
+        "entries": {
+          "spotivibe-assets-v1": 21,
+          "spotivibe-pages-v1": 6
+        }
+      },
+      {
+        "phase": "after activation",
+        "entries": [
+          "spotivibe-assets-v1",
+          "spotivibe-pages-v1"
+        ]
+      }
+    ],
+    "offlineMechanism": "The harness started the production server and stopped it (process tree) for the offline phase, so the origin refuses connections for the service worker as well as the page. CDP network emulation is additionally applied to the page, because the app derives its connection state from navigator.onLine and a stopped origin does not change that; results.notes.originRefusedConnections records that the port really was refusing.",
+    "networkEmulationErrors": [
+      {
+        "session": "C459D2FA24AB864A43D64855C89F98D7",
+        "error": "undefined: Session with given id not found."
+      }
+    ],
+    "pendingDocuments": {
+      "6098FB5C1AF6E5F9DC784D0B81425286": {
+        "url": "/library"
+      },
+      "D0FDD6648F8C9D4582383F531867D941": {
+        "url": "/library/liked"
+      },
+      "D1EB1B7BEFAD231DF9A724BAB6631393": {
+        "url": "/history"
+      },
+      "638DF2DA10A0007859BB827BBC5999D8": {
+        "url": "/queue"
+      },
+      "3063DFE0FEE5E8C6BE15B1FB181DEAD7": {
+        "url": "/settings"
+      },
+      "A2F7B225A7637A258545BBB0897A7FB5": {
+        "url": "/library"
+      },
+      "8E002B8E5C7BEB8F830DC640FBFA76A7": {
+        "url": "/settings"
+      },
+      "D7EDBEF44DAF97919F75FEBA4995639B": {
+        "url": "/library"
+      },
+      "20A506E0AD0B8AC84D622206C32BEF8F": {
+        "url": "/library/liked"
+      },
+      "58CF7F435D54F552EBF03D3B2B474F9E": {
+        "url": "/history"
+      },
+      "87DE756B438CF1067EFE65AFCE44C767": {
+        "url": "/queue"
+      },
+      "5DB81C6EEE07930BC625A4DC29ACC8C2": {
+        "url": "/settings"
+      },
+      "09D809A38431BCDCEA07211F7AED43DE": {
+        "url": "/library"
+      },
+      "5356F91EE43FEE5200F78DA3AF6B0E9F": {
+        "url": "/artist/m13-never-visited-entity"
+      },
+      "151C7E700C28DFAC04078F70DAFE79E0": {
+        "url": "/library"
+      },
+      "C93B212039D9965F55D7ACBA3BF5C5BB": {
+        "url": "/search"
+      },
+      "0B36851ED756EA87E509AC21449A8937": {
+        "url": "/settings"
+      }
+    },
+    "installOffer": {
+      "realPlatformEventObserved": true,
+      "note": "This browser fired beforeinstallprompt for real; the row and the prompt() call below use the platform's own deferred event."
+    },
+    "metadataProbe": {
+      "online": {
+        "status": 200,
+        "length": 15569,
+        "cachedAt": null
+      }
+    },
+    "originRefusedConnections": true,
+    "offlinePages": [
+      {
+        "path": "/library",
+        "ok": true,
+        "chars": 255,
+        "sample": "Spotivibe Your Library Liked Songs Your Library Create playlist Import playlist "
+      },
+      {
+        "path": "/library/liked",
+        "ok": true,
+        "chars": 240,
+        "sample": "Spotivibe Your Library Liked Songs Something went wrong Please try again. Try ag"
+      },
+      {
+        "path": "/history",
+        "ok": true,
+        "chars": 796,
+        "sample": "Spotivibe Your Library Liked Songs History Smart Mixes Build a mix Mixes appear "
+      },
+      {
+        "path": "/queue",
+        "ok": true,
+        "chars": 265,
+        "sample": "Spotivibe Your Library Liked Songs Queue Nothing queued yet Play something and y"
+      },
+      {
+        "path": "/settings",
+        "ok": true,
+        "chars": 1101,
+        "sample": "Spotivibe Your Library Liked Songs Settings Install Spotivibe can open like an a"
+      }
+    ],
+    "originRestored": true
+  },
+  "pass": true,
+  "browser": "Edg/154.0.4258.37",
+  "summary": {
+    "steps": 34,
+    "passed": 34,
+    "failed": 0,
+    "screenshots": 5,
+    "consoleErrors": 0,
+    "offlineWindowEntries": 83
+  }
+}

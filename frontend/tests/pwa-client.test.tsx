@@ -300,15 +300,36 @@ describe("the install affordance (tasks 5.1, 5.2)", () => {
     expect(event.preventDefault).toHaveBeenCalled();
     expect(observer.state()).toBe("install");
 
-    expect(await observer.install()).toBe("accepted");
+    expect(await observer.install()).toBe("shown");
     expect(prompt).toHaveBeenCalledTimes(1);
     // The event is single-use: a second request must not re-prompt a dead handle.
     expect(await observer.install()).toBe("unavailable");
-    // An accepted prompt means the app is installed, so there is nothing left to
-    // offer - without this the row would still show an Install button for an app
-    // that is already on the home screen.
-    expect(observer.state()).toBe("installed");
-    expect(isInstallCompleted()).toBe(true);
+    // Having asked, the affordance withdraws: the app does not re-ask on its own,
+    // and `appinstalled` (not this call) is what records an actual installation.
+    expect(observer.state()).toBe("hidden");
+    await Promise.resolve();
+    expect(isInstallCompleted()).toBe(false);
+  });
+
+  it("does not wait for a choice the platform may never report", async () => {
+    // Headless Edge (and some embedded browsers) accept `prompt()` and never resolve
+    // `userChoice`. A row that awaited it would sit on "installing" forever, so
+    // `install()` resolves as soon as the prompt is up and the choice is recorded
+    // only if it ever arrives.
+    const event = new Event("beforeinstallprompt") as Event & {
+      prompt: () => Promise<void>;
+      userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+    };
+    Object.defineProperty(event, "prompt", { value: vi.fn(async () => undefined) });
+    Object.defineProperty(event, "userChoice", { value: new Promise(() => {}) });
+    event.preventDefault = vi.fn();
+
+    const observer = observeInstallability({ userAgent: "Chrome/120" });
+    window.dispatchEvent(event);
+    expect(observer.state()).toBe("install");
+    // Resolves rather than hanging: that is the whole point of the contract.
+    expect(await observer.install()).toBe("shown");
+    expect(observer.state()).toBe("hidden");
   });
 
   it("remembers a dismissal across mounts, and an installation", async () => {
@@ -324,8 +345,9 @@ describe("the install affordance (tasks 5.1, 5.2)", () => {
 
     const first = observeInstallability({ userAgent: "Chrome/120" });
     window.dispatchEvent(declined);
-    expect(await first.install()).toBe("dismissed");
-    expect(isInstallDismissed()).toBe(true);
+    expect(await first.install()).toBe("shown");
+    // The dismissal is recorded when the platform reports it, not before.
+    await waitFor(() => expect(isInstallDismissed()).toBe(true));
     expect(localStorage.getItem(INSTALL_DISMISSAL_KEY)).toBe("1");
 
     // A fresh observer - a later visit - must not resurrect the affordance.

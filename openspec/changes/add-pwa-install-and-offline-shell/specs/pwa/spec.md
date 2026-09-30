@@ -27,7 +27,7 @@ The application SHALL expose a Web App Manifest describing it as a standalone ap
 
 ### Requirement: Service worker caching strategy
 
-The application SHALL register a service worker that classifies every request before deciding what to do with it, and SHALL apply a documented rule per class rather than a blanket policy. The worker SHALL serve the application shell and its content-hashed static assets from cache, SHALL serve navigations network-first with a cached fallback for the application's own prerendered routes, and SHALL NOT offer a cached fallback for a route whose content is per-entity. Bounded caches of shell assets, provider metadata, and artwork SHALL each have a maximum entry count enforced by the worker, and the bounds SHALL be named values in the worker rather than implicit browser behavior.
+The application SHALL register a service worker that classifies every request before deciding what to do with it, and SHALL apply a documented rule per class rather than a blanket policy. The worker SHALL serve the application shell and its content-hashed static assets from cache, and SHALL serve every same-origin navigation network-first with a documented fallback chain: the route's own cached response when it has one, and the cached application shell when it does not. A navigation SHALL NEVER be answered with a cached response belonging to a different route, and a route whose content is per-entity SHALL never be answered with another entity's cached response. Bounded caches of shell assets, provider metadata, and artwork SHALL each have a maximum entry count enforced by the worker, and the bounds SHALL be named values in the worker rather than implicit browser behavior.
 
 #### Scenario: The shell and its assets are available offline
 
@@ -39,10 +39,20 @@ The application SHALL register a service worker that classifies every request be
 - **WHEN** a navigation to one of the application's own prerendered routes fails because the device is offline
 - **THEN** the previously cached response for that route is served instead of a network error
 
-#### Scenario: A per-entity route is not answered from someone else's cache
+#### Scenario: A route that was never visited still opens the application
 
-- **WHEN** a navigation to a per-entity route (an artist, an album, or an imported playlist) fails because the device is offline and no cached response for that exact entity exists
-- **THEN** the worker does not substitute a cached response for a different entity, and the route's own error state is what the listener sees
+- **WHEN** a navigation fails because the device is offline and no cached response exists for that exact route
+- **THEN** the cached application shell is served so the application loads and the route renders its own state, rather than the browser's own "no internet" page, which would take away the navigation, the player, and any way back
+
+#### Scenario: A per-entity route falls back to the shell, never to another entity
+
+- **WHEN** a navigation to a per-entity route (an artist, an album, or an imported playlist) fails because the device is offline and no cached response exists for that exact entity
+- **THEN** the worker serves the cached application shell so the application itself still loads, it does not substitute a cached response for a different entity, and the route renders its own "could not load" state because its data request cannot succeed
+
+#### Scenario: The offline fallback is the app, not the browser's error page
+
+- **WHEN** a per-entity route is opened for the first time while offline
+- **THEN** the application shell renders - navigation, player region, and the route's own error state - rather than the browser's own "no internet" page, because a browser error page is a dead end the listener cannot leave
 
 #### Scenario: Caches are bounded and evicted
 

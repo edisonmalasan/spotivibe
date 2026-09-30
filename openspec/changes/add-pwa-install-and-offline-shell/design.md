@@ -50,8 +50,7 @@ rule. Nothing is "cached by default":
 | Non-GET, or a `Range` request | **deny** — straight to the network | A partial or mutating request answered from cache is a bug, not a feature. |
 | `youtube.com` / `googlevideo.com` / any player script | **deny** | The IFrame player API must always be the live one: a cached player script is a playback-compliance and correctness hazard (M4's attribution and visible-surface requirements depend on it). |
 | `/_next/static/*` (content-hashed), same-origin icons | cache-first, bounded | Content-hashed URLs cannot go stale; a cache hit is correct by construction. |
-| Navigations to a **prerendered** route | network-first, fall back to the cached response | The page must be fresh when online (it carries the current build's RSC payload) and available when not. |
-| Navigations to a **dynamic** route | network-first, **no** cached fallback | A cached `/artist/x` for `/artist/y` would be a lie. The route's own error state is the honest offline answer. |
+| Any **same-origin navigation** | network-first, then this route's own cached document, then the cached **shell** | A page must be fresh when online (it carries the current build's RSC payload) and available when not. A cached `/artist/x` for `/artist/y` would be a lie, so a route is never answered with another route's content. But failing the navigation outright is also a dead end: the browser's own "no internet" page takes over and the listener loses the navigation, the player, and every other affordance. So the chain ends at the shell document, which boots the application and lets the route render its own state. **Amended by the M13 evidence run**, twice: first because the original "no fallback" rule handed the listener a browser error page for an artist route, and then because the amended version still did so for a *prerendered* route that had never been visited (`/search` offline). One rule for every navigation, with an ordered fallback chain, is both smaller and more honest than two rules with a boundary between them. |
 | `GET /api/{artist,album,similar,discover}` | network-first, fall back to the cached response, bounded + TTL | These are keyless, profile-free **metadata** endpoints (their specs say so), so a stale copy is safe and genuinely useful offline. |
 | `GET /api/search`, `/api/radio`, `/api/playlist` | **deny** | A search is a live question; a radio request is a rotation; a playlist resolution is an import path. Serving any of them from cache would answer a question nobody asked today. |
 | Image GETs (artwork) | cache-first with background revalidate, bounded, opaque allowed | Artwork is display-only and third-party; a bounded cache makes a revisited page look right offline. Opaque responses are stored as-is, which is all an `<img>` needs. |
@@ -205,6 +204,10 @@ Claiming cross-device verification (rejected: it would be a fabricated result).
 - **Opaque artwork responses cannot be validated.** The worker stores what the image
   host returned without inspecting it, which is all an `<img>` needs and avoids
   pretending to verify third-party content.
+- **The shell fallback for an uncached dynamic route is a trade.** The application
+  boots with a document that was rendered for `/`, so the route's client-side data
+  request is what fails. That is strictly better than a browser error page, and it
+  is bounded: the app shows its own honest state, never another entity's content.
 - **A service worker is hard to un-ship.** A broken worker can outlive a rollback. The
   versioned cache names and the `skipWaiting` flow exist so a new build always wins,
   and the worker's failure mode is "go to the network", never "deny the request".

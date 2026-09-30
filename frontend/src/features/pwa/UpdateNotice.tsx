@@ -71,7 +71,7 @@ export function UpdateNotice() {
  * visit is a prompt they learn to ignore. Here it is a row in the place people
  * already go to change settings, and it says what the platform will do.
  */
-export function InstallRow({ userAgent }: { userAgent?: string; onInstalled?(): void }) {
+export function InstallRow({ userAgent }: { userAgent?: string }) {
   const [busy, setBusy] = useState(false);
 
   // One observer per user agent, created lazily, and read through

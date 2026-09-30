@@ -109,8 +109,11 @@ export function isManualInstallPlatform(userAgent: string): boolean {
 
 /** The observer handle, so a caller can stop listening. */
 export interface InstallObserver {
-  /** Ask the platform to install, when it offered to. Resolves to the outcome. */
-  install(): Promise<"accepted" | "dismissed" | "unavailable">;
+  /**
+   * Ask the platform to install, when it offered to. Resolves once the platform's
+   * prompt has been shown - not once it reports an outcome.
+   */
+  install(): Promise<"shown" | "unavailable">;
   /** The state a render should show right now. */
   state(): InstallAffordance;
   /**
@@ -169,26 +172,34 @@ export function observeInstallability(
     async install() {
       if (prompt === null) return "unavailable" as const;
       const deferred = prompt;
-      // The event is single-use by specification, and holding it after a
-      // dismissed prompt is how an affordance ends up offering a dead button.
+      // The event is single-use by specification, and holding it after a prompt is
+      // how an affordance ends up offering a dead button.
       prompt = null;
-      await deferred.prompt();
-      const choice = await deferred.userChoice;
-      if (choice?.outcome === "dismissed") {
-        dismissed = true;
-        writeFlag(INSTALL_DISMISSAL_KEY, true);
-      } else {
-        // An accepted prompt means the platform installed the app, and the
-        // affordance must not offer to install what is already installed. The
-        // `appinstalled` event records the same fact when it arrives; setting it
-        // here as well is what makes the row disappear at the moment the listener
-        // accepted, rather than a moment later, and it covers a platform that
-        // never fires the event.
-        completed = true;
-        writeFlag(INSTALL_COMPLETED_KEY, true);
-      }
+      // Asked, therefore no longer offered: the app does not re-ask on its own. The
+      // row therefore leaves as soon as the platform's prompt is up, which is also
+      // the behavior that keeps this affordance from being a nag.
+      offered = false;
       notify();
-      return choice?.outcome ?? "dismissed";
+      await deferred.prompt();
+      // The platform reports the choice asynchronously, and in some environments it
+      // never reports at all. Recording a *dismissal* when it arrives is worth
+      // doing; awaiting it is not, because a prompt that never answers would leave
+      // the row stuck saying "installing" with no way out (learned from the M13
+      // evidence run, where headless Edge accepted the prompt and never replied).
+      // Completion is the `appinstalled` event's job, which is the authoritative
+      // signal for an app that is actually on the home screen.
+      void deferred.userChoice
+        ?.then((choice) => {
+          if (choice?.outcome === "dismissed") {
+            dismissed = true;
+            writeFlag(INSTALL_DISMISSAL_KEY, true);
+            notify();
+          }
+        })
+        .catch(() => {
+          /* no choice reported: the offer simply stays withdrawn */
+        });
+      return "shown" as const;
     },
     state,
     subscribe(listener) {

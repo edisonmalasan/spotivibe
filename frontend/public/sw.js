@@ -12,14 +12,19 @@
  *     googlevideo are never cached, whatever the request looks like;
  *   - an *uncached shell* makes the whole milestone pointless, so hashed build
  *     assets are cache-first (their URLs cannot go stale).
+ *   - a *browser error page* is a dead end, so a per-entity navigation that cannot
+ *     reach the network falls back to the cached shell document: the application
+ *     still loads and the route shows its own "could not load" state. It never
+ *     falls back to another entity's response.
  *
  * Rules, in the order they are applied:
  *
  *   1. non-GET, or a `Range` request                      -> network only
  *   2. player/YouTube hosts                                -> network only
  *   3. content-hashed `/_next/static/*`, same-origin icons  -> cache first
- *   4. navigations to a prerendered route                  -> network, then cache
- *   5. navigations to a per-entity route                   -> network only
+ *   4. any same-origin navigation                         -> network, then this
+ *                                                          route's own cached
+ *                                                          document, then the shell
  *   6. `GET /api/{artist,album,similar,discover}`          -> network, then cache
  *   7. other `/api/*`                                     -> network only
  *   8. image requests (artwork)                            -> cache first
@@ -83,6 +88,15 @@ const PRERENDERED_PATHS = [
   "/search",
   "/settings",
 ];
+
+/**
+ * The shell document a per-entity navigation falls back to.
+ *
+ * The site root, because it is the one route every listener has visited before
+ * opening any entity route - and because it is the route whose document is a shell
+ * rather than an entity's content.
+ */
+const SHELL_URL = "/";
 
 /** Hosts the worker must never mediate: the live player, and its media. */
 const NEVER_CACHE_HOSTS = [
@@ -172,7 +186,14 @@ async function enforceBound(cacheName, max) {
   }
 }
 
-/** Store a response and keep the cache within its bound. */
+/**
+ * Store a response and keep the cache within its bound.
+ *
+ * The key is a `Request` or a URL string. The string form matters: the Cache API
+ * resolves it against the worker's scope, and `new Request("/")` throws inside a
+ * worker - which is a bug this function's own first draft had, silently swallowed
+ * by the precache's catch block.
+ */
 async function store(cacheName, request, response, max) {
   if (!response || !response.ok) return response;
   const cache = await caches.open(cacheName);
@@ -208,18 +229,43 @@ async function cacheFirst(request, cacheName, max) {
   return store(cacheName, request, response, max);
 }
 
-/** A prerendered page: always fresh when online, available when not. */
-async function networkFirst(request, cacheName, max) {
-  const cache = await caches.open(cacheName);
+/**
+ * A navigation: always fresh when online, and never a dead end when not.
+ *
+ * Three outcomes, in order:
+ *   1. the network answers - the response is returned and cached for next time;
+ *   2. the network cannot answer and this exact route was cached before - that
+ *      route's own document, which is the right content for the right URL;
+ *   3. the network cannot answer and this route was never visited - the cached
+ *      *shell document*, so the application still loads and the route renders its
+ *      own state (a search page that cannot search, an error surface for an artist
+ *      that cannot load). Failing the navigation instead hands the listener the
+ *      browser's own error page: no navigation, no player, no way back.
+ */
+async function navigationFirst(request) {
+  const cache = await caches.open(CACHES.pages);
   try {
     const response = await fetch(request);
-    return await store(cacheName, request, response, max);
+    return await store(CACHES.pages, request, response, MAX_ENTRIES.pages);
   } catch (error) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
+    const own = await cache.match(request);
+    if (own) return own;
+    const shell = await cache.match(SHELL_URL);
+    if (shell) return shell;
+    // Nothing cached at all: the failure is the honest answer, and the browser says so.
     throw error;
   }
 }
+
+/*
+ * A per-entity navigation uses the same three outcomes as any other navigation
+ * (`navigationFirst`): never another entity's response, and never a browser error
+ * page. Offline, `/artist/someone` has no cached document of its own, so the shell
+ * document boots the application and the route's own client-side data request is
+ * what then fails, leaving the route's own "could not load" state on screen
+ * (spec `pwa` - "A per-entity route falls back to the shell, never to another
+ * entity").
+ */
 
 /** Metadata: live when reachable, cached within its freshness bound otherwise. */
 async function metadataFirst(request) {
@@ -271,6 +317,26 @@ self.addEventListener("install", (event) => {
   // Take over as soon as the new worker is installed: a waiting worker is
   // announced to the page, which decides when to activate it (design decision 6).
   event.waitUntil(self.skipWaiting());
+  // One entry, fetched at install time: the shell document. Every per-entity
+  // navigation falls back to it (see `navigationFirst`), so without it the very
+  // first offline visit to an artist would hand the listener a browser error page
+  // if they had never landed on the site root. A single HTML document is the
+  // cheapest possible guarantee that "the app opens offline" is true from the
+  // first visit rather than from the second.
+  event.waitUntil(
+    (async () => {
+      try {
+        const response = await fetch(SHELL_URL, { credentials: "same-origin" });
+        if (response.ok) {
+          await store(CACHES.pages, SHELL_URL, response, MAX_ENTRIES.pages);
+        }
+      } catch {
+        // An install that cannot reach the network still installs: the precache is
+        // an improvement, not a precondition, and the worker's failure mode is
+        // "go to the network", never "deny the request".
+      }
+    })(),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -324,18 +390,21 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(cacheFirst(request, cacheName, MAX_ENTRIES.assets));
       return;
     case "page":
-      event.respondWith(networkFirst(request, cacheName, MAX_ENTRIES.pages));
+      event.respondWith(navigationFirst(request));
       return;
     case "metadata":
       event.respondWith(metadataFirst(request));
+      return;
+    case "entity-page":
+      event.respondWith(navigationFirst(request));
       return;
     case "artwork":
       event.respondWith(artworkFirst(request));
       return;
     default:
-      // `mutation`, `player`, `entity-page`, `live-api`, `passthrough`: the
-      // browser's own network path, untouched. Saying so explicitly is the point
-      // of the table — an unlisted request is not a decision, it is a default.
+      // `mutation`, `player`, `live-api`, `passthrough`: the browser's own network
+      // path, untouched. Saying so explicitly is the point of the table — an
+      // unlisted request is not a decision, it is a default.
       return;
   }
 });

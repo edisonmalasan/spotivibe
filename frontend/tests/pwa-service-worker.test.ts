@@ -23,6 +23,11 @@ const workerSource = readFileSync(WORKER_PATH, "utf8");
 
 const ORIGIN = "https://app.test";
 
+/** The absolute URL a request or relative string key names, as a real cache sees it. */
+function absoluteKey(request: Request | string): string {
+  return typeof request === "string" ? new URL(request, ORIGIN).href : request.url;
+}
+
 /** A minimal in-memory Cache Storage, with the ordering `keys()` must have. */
 function createCacheStorage() {
   const stores = new Map<string, Map<string, Response>>();
@@ -37,15 +42,21 @@ function createCacheStorage() {
           return [...entries.keys()].map((url) => new Request(url));
         },
         async match(request: Request | string) {
-          const url = typeof request === "string" ? request : request.url;
-          const hit = entries.get(url);
+          // The real Cache resolves a string key against the worker's scope, so
+          // `match("/")` finds the entry stored for the site root. A fake that
+          // compared strings literally would report a cache miss that does not
+          // happen in a browser, which is how a working rule looks broken.
+          const key = typeof request === "string" ? new URL(request, ORIGIN).href : request.url;
+          const hit = entries.get(key);
           return hit === undefined ? undefined : hit.clone();
         },
+        // Keys are normalized to absolute URLs on the way in, exactly as the real
+        // Cache API does when a worker stores a relative string key.
         async put(request: Request | string, response: Response) {
-          entries.set(typeof request === "string" ? request : request.url, response);
+          entries.set(absoluteKey(request), response);
         },
         async delete(request: Request | string) {
-          entries.delete(typeof request === "string" ? request : request.url);
+          entries.delete(absoluteKey(request));
           return true;
         },
       };
@@ -245,12 +256,73 @@ describe("the worker's request classification (task 2.1)", () => {
     expect(await offline?.text()).toBe("live");
   });
 
-  it("refuses to substitute another entity's cached page", async () => {
-    // A cached `/artist/x` answering for `/artist/y` would be a lie, so a
-    // per-entity navigation has no cached fallback at all.
+  it("serves a visited route its own cached document, and an unvisited one the shell", async () => {
+    // One rule for every navigation, with an ordered fallback chain. The M13
+    // evidence run forced the second half: a per-entity rule that fell back to the
+    // shell left a *prerendered* route that had never been visited failing the
+    // navigation, and the listener got the browser's own "no internet" page.
+    // Path-tagged bodies so "this route's own document", "the shell" and "some
+    // other route's document" are three distinguishable outcomes.
+    worker.fetchMock.mockImplementation(
+      async (request) => new Response(`body:${new URL(String(request.url)).pathname}`),
+    );
+    await worker.respond(get(`${ORIGIN}/`, { mode: "navigate" }));
+    await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(2);
+
+    // The network is gone from here on.
     worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
-    const response = await worker.respond(get(`${ORIGIN}/artist/Bjork`, { mode: "navigate" }));
-    expect(response).toBeUndefined();
+    const own = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    expect(await own?.text()).toBe("body:/library");
+    const entity = await worker.respond(get(`${ORIGIN}/artist/Portishead`, { mode: "navigate" }));
+    expect(await entity?.text()).toBe("body:/");
+    const unvisited = await worker.respond(get(`${ORIGIN}/search`, { mode: "navigate" }));
+    expect(await unvisited?.text()).toBe("body:/");
+    // Nothing was written for a response that never arrived.
+    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(2);
+  });
+
+  it("never answers one route with another route's cached document", async () => {
+    // The half of the chain that matters: the shell is a fallback, not a wildcard.
+    worker.fetchMock.mockImplementation(
+      async (request) => new Response(`body:${new URL(String(request.url)).pathname}`),
+    );
+    await worker.respond(get(`${ORIGIN}/`, { mode: "navigate" }));
+    await worker.respond(get(`${ORIGIN}/history`, { mode: "navigate" }));
+
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    const neverVisited = await worker.respond(
+      get(`${ORIGIN}/queue-insights`, { mode: "navigate" }),
+    );
+    // The shell (`/`), never `/history`.
+    expect(await neverVisited?.text()).toBe("body:/");
+  });
+
+  it("precaches the shell document on install, so the fallback exists from visit one", async () => {
+    // Without this, the first offline visit to an artist by a listener who landed
+    // straight on /library has no shell to serve and hands them a browser error
+    // page instead of the application.
+    await worker.fire("install");
+    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(1);
+    const cached = await worker.caches.open("spotivibe-pages-v1");
+    expect((await cached.keys()).map((key) => key.url)).toEqual([`${ORIGIN}/`]);
+
+    // And a network that is already gone at install time does not fail the install:
+    // the worker's failure mode is "go to the network", never "deny the request".
+    const offlineWorker = loadWorker();
+    offlineWorker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    await offlineWorker.fire("install");
+    expect(offlineWorker.caches.sizeOf("spotivibe-pages-v1")).toBe(0);
+    expect(offlineWorker.scope.skipWaiting).toHaveBeenCalled();
+  });
+
+  it("fails a per-entity navigation honestly when no shell is cached yet", async () => {
+    // Before the shell has ever been visited there is nothing to boot the
+    // application with, and pretending otherwise would render a broken page.
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    await expect(
+      worker.respond(get(`${ORIGIN}/artist/Bjork`, { mode: "navigate" })),
+    ).rejects.toThrow();
     expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(0);
   });
 });
