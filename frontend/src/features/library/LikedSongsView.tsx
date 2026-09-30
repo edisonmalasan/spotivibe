@@ -8,7 +8,7 @@ import { IconButton } from "@/components/design-system/IconButton";
 import { SearchInput } from "@/components/design-system/SearchInput";
 import { PlaylistCover } from "@/components/playlist/PlaylistCover";
 import { SongRow } from "@/components/track/SongRow";
-import { renderableTracks, type Track } from "@/data/repositories";
+import type { Track } from "@/data/repositories";
 import { libraryFilterMatches } from "@/features/library/libraryFilter";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
 import { playAll, shufflePlay } from "@/lib/libraryPlayback";

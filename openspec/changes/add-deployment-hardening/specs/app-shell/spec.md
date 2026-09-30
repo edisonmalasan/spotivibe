@@ -4,7 +4,7 @@
 
 ### Requirement: Accessibility fundamentals
 
-The shell SHALL provide a keyboard-accessible path to every primary control, a visible focus indicator on keyboard focus, semantic elements for actions and navigation, accessible names for controls that present only an icon, and motion that respects a reduced-motion preference. Text and meaningful non-text indicators SHALL meet a minimum contrast ratio against the backgrounds the design tokens produce, and that ratio SHALL be computable from the shipped tokens rather than asserted by eye. These properties SHALL be verifiable by measurement in a real browser, and the measurement SHALL be able to fail.
+The shell SHALL provide a keyboard-accessible path to every primary control, a visible focus indicator on keyboard focus, semantic elements for actions and navigation, accessible names for controls that present only an icon, and motion that respects a reduced-motion preference. All interactive shell controls SHALL be keyboard reachable, expose visible focus states, and carry accessible names; icon-only controls MUST have text alternatives (e.g. `aria-label`), and landmarks (banner/navigation/main/complementary) SHALL be expressed with semantic elements — the shell intentionally has no `contentinfo` region (the player areas are application chrome, not document footer content). Text and meaningful non-text indicators SHALL meet a minimum contrast ratio against the backgrounds the design tokens produce, and that ratio SHALL be computable from the shipped tokens rather than asserted by eye. These properties SHALL be verifiable by measurement in a real browser, and the measurement SHALL be able to fail.
 
 #### Scenario: Icon-only controls have accessible names
 

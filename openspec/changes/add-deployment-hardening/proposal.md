@@ -112,7 +112,8 @@ Four waves, each independently verifiable, in the order the risk justifies:
   standing rule is that a dependency needs a concrete reason.
 - **No new dataset, no new API route, no provider behavior change.**
 - **Known limitations, stated rather than hidden**: process-local throttling is not
-  durable and not per-user (there are no users); a CSP strict enough for XSS still has
-  to permit the domains the YouTube player needs, so `frame-src` for
-  `youtube-nocookie.com` stays; CWV measured on one machine is a regression signal,
-  not a lab score, and the harness says so.
+  durable, not per-user (there are no users), and keyed on a header a client can set;
+  a CSP strict enough for XSS still has to permit the domains the YouTube player needs,
+  so `script-src` and `frame-src` name the embed host and no other frame, and inline
+  script and style stay permitted with a recorded debt; CWV measured on one machine is
+  a regression signal, not a lab score, and the harness says so.

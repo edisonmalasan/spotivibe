@@ -112,6 +112,32 @@ describe("nothing is transmitted about the person using the application (task 3.
   });
 });
 
+describe("an export carries nothing but the listener's own data (spec security)", () => {
+  it("holds no server-side value, even while provider configuration is present", async () => {
+    // The scenario the independent verification pass found untested. Provider
+    // configuration lives in the environment and is read server-side; nothing in the
+    // export path may reach for it, and the assertion is made with such a value
+    // genuinely *set* rather than merely absent - "it was not there to leak" is not the
+    // same claim as "it would not be exported if it were".
+    const { serializeBackup } = await import("@/data/backup");
+    const { makeBackupData } = await import("./helpers/backup-fixtures");
+    const secret = "spotivibe-test-secret-value";
+    const name = "SPOTIVIBE_YT_COOKIE";
+    const previous = process.env[name];
+    process.env[name] = secret;
+    try {
+      const envelope = JSON.stringify(serializeBackup(makeBackupData()));
+      expect(envelope).not.toContain(secret);
+      // Nor the name of a provider setting: an export that carried configuration
+      // *names* would tell a reader what this deployment reads.
+      expect(envelope).not.toContain("SPOTIVIBE");
+    } finally {
+      if (previous === undefined) delete process.env[name];
+      else process.env[name] = previous;
+    }
+  });
+});
+
 describe("local lists stay bounded (task 3.4)", () => {
   it("names the bound, and states it where the list is truncated", () => {
     // A bound nobody can see is a bound the next person will raise by accident.
@@ -143,6 +169,13 @@ describe("local lists stay bounded (task 3.4)", () => {
   });
 });
 
+/**
+ * What this sweep cannot see, stated rather than implied: a self-rescheduling
+ * `setTimeout`, a `requestAnimationFrame` loop, or an interval reached only through
+ * indirection. The original task asked for a test that counts timers across an idle
+ * mount and a playback start/stop; that needs a fake YouTube-player harness to reach
+ * the engine's poll, so the check here is a sweep, and the task was amended to say so.
+ */
 describe("nothing repeats while the application is idle (task 3.5)", () => {
   it("has exactly one interval in the application, and it belongs to the player", () => {
     const intervals: string[] = [];

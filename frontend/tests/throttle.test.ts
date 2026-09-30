@@ -105,15 +105,24 @@ describe("the limiter's own bounds", () => {
   });
 
   it("evicts the oldest entry rather than the newest", () => {
-    // FIFO specifically: a client's recent activity is what should survive a spray,
-    // so evicting the newest would let an attacker push honest keys out.
+    // FIFO specifically: a client's recent activity is what should survive a spray, so
+    // evicting the newest would let an attacker push honest keys out.
+    //
+    // The assertion is about the *budget*, not about being allowed. The first version
+    // asserted `allowed === true`, which is true both for a key that was evicted (a
+    // fresh window) and for one that was retained (a live window with a slot spent) -
+    // so it passed under LIFO as well, and proved nothing about order. A fresh key gets
+    // the whole ceiling; a retained one has one request already counted against it.
     const victim = throttleKeyFor("203.0.113.1", "/api/search");
     consumeThrottle(victim);
     for (let index = 0; index < THROTTLE_MAX_KEYS; index += 1) {
       consumeThrottle(`sprayed-${index}|/api/search`);
     }
-    // The victim was the oldest, so it is the one that went.
-    expect(consumeThrottle(victim).allowed).toBe(true);
+    // The victim was the oldest entry, so it is the one that went: a full ceiling.
+    for (let index = 0; index < THROTTLE_LIMIT; index += 1) {
+      expect(consumeThrottle(victim).allowed, `request ${index + 1} after eviction`).toBe(true);
+    }
+    expect(consumeThrottle(victim).allowed, "and no more than the ceiling").toBe(false);
   });
 });
 

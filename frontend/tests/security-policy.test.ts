@@ -152,7 +152,10 @@ describe("the declared security headers (task 1.1, 1.2)", () => {
     ]);
     // The values with an obviously right answer, asserted so a typo cannot pass.
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
-    expect(headers["Referrer-Policy"]).toBe("no-referrer");
+    // `strict-origin-when-cross-origin`, not the fully suppressive value: the `playback`
+    // spec of record requires that the player does not suppress the page referrer, and
+    // the architecture suite enforces that across this config as well as across `src`.
+    expect(headers["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
     expect(headers["X-Frame-Options"]).toBe("DENY");
     // The permissions the application never asks for are closed explicitly, which is
     // the point of declaring them rather than relying on a browser default.
@@ -299,10 +302,33 @@ describe("production carries no development relaxation (task 1.1)", () => {
 describe("every permissive directive records its debt (task 1.3)", () => {
   it("names a reason next to each unsafe directive in the declaration", () => {
     const config = readFileSync(join(FRONTEND, "next.config.ts"), "utf8");
-    // Two declared relaxations (script and style), each with a DEBT note above it.
-    const unsafe = [...config.matchAll(/'unsafe-[a-z]+'/g)].length;
-    expect(unsafe).toBeGreaterThan(0);
+    // Counted on the directive lists rather than on raw occurrences, and read as a list
+    // rather than a tally. The first version allowed one note to satisfy two
+    // relaxations (`debts >= unsafe - 1`), which is the kind of slack a debt note should
+    // never have.
+    //
+    // There are three relaxations in the file: inline script and inline style, both in
+    // the production policy, and `unsafe-eval`, which only the development branch adds.
+    const relaxations = [...config.matchAll(/'unsafe-([a-z]+)'/g)].map((match) => match[1]);
+    expect(relaxations.sort(), "the declared relaxations, and no others").toEqual([
+      "eval",
+      "inline",
+      "inline",
+    ]);
     const debts = [...config.matchAll(/DEBT:/g)].length;
-    expect(debts, "every unsafe directive needs a DEBT note").toBeGreaterThanOrEqual(unsafe - 1);
+    // One note per relaxation the *production* policy carries, which is two.
+    expect(debts, "each production relaxation carries its own DEBT note").toBeGreaterThanOrEqual(2);
+    // And the note is adjacent to the directive it explains, not merely somewhere in
+    // the file: the text between each relaxation and the nearest preceding DEBT must be
+    // short enough that the pairing is unambiguous.
+    for (const match of config.matchAll(/'unsafe-[a-z]+'/g)) {
+      const preceding = config.slice(0, match.index);
+      const debt = preceding.lastIndexOf("DEBT:");
+      const between = preceding.slice(debt);
+      expect(
+        between.split("\n").length,
+        "the DEBT note sits next to its directive",
+      ).toBeLessThanOrEqual(14);
+    }
   });
 });

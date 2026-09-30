@@ -20,6 +20,19 @@ import type { PlaylistRecord, Track } from "@/data/repositories";
  * stated here rather than rediscovered per surface.
  */
 
+/**
+ * A copy of `value` without one key.
+ *
+ * Written this way rather than as `const { key: _unused, ...rest } = value`, which trips
+ * `no-unused-vars` - and the lint gate does not fail on warnings, so the destructuring
+ * idiom accumulated eight warnings under a green gate.
+ */
+function withoutKey<T extends object, K extends keyof T>(value: T, key: K): Omit<T, K> {
+  const copy: T = { ...value };
+  delete copy[key];
+  return copy;
+}
+
 const COMPLETE_TRACK = {
   providerId: "dQw4w9WgXcQ",
   title: "A Title",
@@ -31,14 +44,24 @@ const COMPLETE_TRACK = {
 describe("isRenderableTrack (task 2.4)", () => {
   it("accepts a complete track", () => {
     expect(isRenderableTrack(COMPLETE_TRACK)).toBe(true);
-    // Artwork is optional; a track with none is still renderable.
+    // An empty artwork list is fine: the rows fall back to a placeholder.
     expect(isRenderableTrack({ ...COMPLETE_TRACK, artwork: [] })).toBe(true);
-    expect(isRenderableTrack({ ...COMPLETE_TRACK, artwork: undefined })).toBe(true);
+  });
+
+  it("rejects a track with no artwork field at all", () => {
+    // Found by the independent verification pass: six surfaces index `track.artwork[0]`
+    // without optional chaining, so a record whose `artwork` is missing passed the guard
+    // and then threw inside the row - the route-error-boundary outcome this predicate
+    // exists to prevent. An empty array is renderable; an absent field is not.
+    expect(isRenderableTrack({ ...COMPLETE_TRACK, artwork: undefined })).toBe(false);
+    const withoutArtwork = withoutKey(COMPLETE_TRACK, "artwork");
+    expect(isRenderableTrack(withoutArtwork)).toBe(false);
+    expect(isRenderableTrack({ ...COMPLETE_TRACK, artwork: "cover.jpg" })).toBe(false);
   });
 
   it("rejects the record that crashed /library/liked", () => {
     // The exact shape M13's browser run found: a stored track with no artists at all.
-    const { artists: _artists, ...withoutArtists } = COMPLETE_TRACK;
+    const withoutArtists = withoutKey(COMPLETE_TRACK, "artists");
     expect(isRenderableTrack(withoutArtists)).toBe(false);
   });
 
@@ -61,7 +84,7 @@ describe("isRenderableTrack (task 2.4)", () => {
     // `providerId` is how playback resolves a track; a row without one fails when
     // pressed, so it is not offered as a row at all.
     expect(isRenderableTrack({ ...COMPLETE_TRACK, providerId: "" })).toBe(false);
-    const { providerId: _id, ...withoutId } = COMPLETE_TRACK;
+    const withoutId = withoutKey(COMPLETE_TRACK, "providerId");
     expect(isRenderableTrack(withoutId)).toBe(false);
   });
 
@@ -74,7 +97,7 @@ describe("renderableTracks (task 2.4)", () => {
   it("keeps what it can render, in the order it received it, and skips the rest", () => {
     const good = { ...COMPLETE_TRACK, title: "Kept" };
     const alsoGood = { ...COMPLETE_TRACK, title: "Also Kept" };
-    const { artists: _a, ...broken } = COMPLETE_TRACK;
+    const broken = withoutKey(COMPLETE_TRACK, "artists");
     const kept = renderableTracks([good, broken, null, alsoGood, { ...COMPLETE_TRACK, title: "" }]);
     expect(kept.map((track) => track.title)).toEqual(["Kept", "Also Kept"]);
   });
@@ -136,7 +159,7 @@ describe("isRenderableEvent (task 2.4)", () => {
 
   it("accepts a complete event and judges it by its track", () => {
     expect(isRenderableEvent(completeEvent)).toBe(true);
-    const { artists: _artists, ...brokenTrack } = COMPLETE_TRACK;
+    const brokenTrack = withoutKey(COMPLETE_TRACK, "artists");
     // The event is intact; its track is not renderable, so the row is not either.
     expect(
       isRenderableEvent({

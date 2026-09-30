@@ -102,15 +102,17 @@ function luminance(hex: string): number {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 }
 
-export function contrastRatio(foreground: string, background: string): number {
-  const [light, dark] = [luminance(foreground), luminance(bbackgroundGuard(background))].sort(
-    (a, b) => b - a,
-  );
+function contrastRatio(foreground: string, background: string): number {
+  const [light, dark] = [luminance(foreground), luminance(asHex(background))].sort((a, b) => b - a);
   return (light + 0.05) / (dark + 0.05);
 }
 
 /** Accept either a raw hex value or a token name, so callers read clearly. */
-function bbackgroundGuard(background: string): string {
+/**
+ * Accept either a raw hex value or a token name, so a call site reads as the pair it
+ * checks. (Named `asHex` after a typo: `bbackgroundGuard`.)
+ */
+function asHex(background: string): string {
   return background.startsWith("#") ? background : (tokens().get(background) ?? "#000000");
 }
 
@@ -184,7 +186,6 @@ describe("readable text only ever uses a token that clears AA (task 4.3)", () =>
       // One className attribute at a time, so a colour on a parent and a size on a
       // child are not mistaken for one element.
       for (const match of source.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)) {
-        const attribute = source.slice(0, match.index);
         const classNames = `${match[1] ?? ""} ${match[2] ?? ""}`;
         if (!SIZE_UTILITIES.some((utility) => classNames.includes(utility))) continue;
 
@@ -260,8 +261,3 @@ describe("readable text only ever uses a token that clears AA (task 4.3)", () =>
     }
   });
 });
-
-/** Token names present in the token layer, for the usage rule's validation. */
-function declaredTokens(): Set<string> {
-  return new Set(tokens().keys());
-}

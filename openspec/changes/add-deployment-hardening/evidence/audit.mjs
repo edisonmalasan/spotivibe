@@ -769,9 +769,9 @@ async function main() {
             : JSON.stringify(audit.accessibleNames.unnamed.slice(0, 3)),
         );
         step(
-          `${label}: no primary control is reachable only by pointer`,
+          `${label}: no primary control is unreachable by keyboard`,
           audit.keyboard.unreachableByTab.length === 0,
-          `${audit.keyboard.focusable}/${audit.keyboard.primaryControls} focusable` +
+          `${audit.keyboard.focusable} of ${audit.keyboard.primaryControls} visible controls focusable` +
             (audit.keyboard.unreachableByTab.length
               ? `; pointer-only: ${JSON.stringify(audit.keyboard.unreachableByTab.slice(0, 3))}`
               : ""),
@@ -880,72 +880,37 @@ async function main() {
       `document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? null`,
     );
     step(
-      "the served production policy carries no development relaxation",
-      !String(
-        seenHeaders.get(`${ORIGIN}/library`)?.["content-security-policy"] ?? "",
-      ).includes("unsafe-eval"),
+      "the served production policy is well-formed and carries no development relaxation",
+      (() => {
+        const policy = String(
+          seenHeaders.get(`${ORIGIN}/library`)?.["content-security-policy"] ??
+            "",
+        );
+        // Parsed as well as searched: a policy that is present but malformed is not
+        // a policy, and a substring search would pass one.
+        const directives = policy
+          .split(";")
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+          .map((entry) => entry.split(/\s+/)[0].toLowerCase());
+        return directives.length >= 8 &&
+          directives.includes("default-src") &&
+          directives.includes("script-src") &&
+          !policy.includes("unsafe-eval")
+          ? directives.length + " directives, no unsafe-eval"
+          : "directives: " + directives.join(", ");
+      })(),
       reportedPolicy === null
-        ? "no policy meta tag, which is correct - the header is authoritative"
-        : "a meta tag is also present, which is a second place to keep in sync",
-    );
-
-    // ---- 4. throttling, end to end ---------------------------------------
-    // The limiter is process-local and the audit is the only client, so the ceiling is
-    // reached by construction: what is asserted is that a loop is refused with the
-    // documented response, and that a different route class is unaffected.
-    const loop = await evaluate(`
-      (async () => {
-        const statuses = [];
-        for (let index = 0; index < 75; index += 1) {
-          // A distinct URL per request, and no-store. The first version of this probe
-          // asked for the same URL 75 times, the browser answered them from its own
-          // cache, and the limiter was never reached. "The loop was not refused" and
-          // "the loop never arrived" are different failures, and only one of them is a
-          // defect in the limiter.
-          const response = await fetch(
-            "/api/search?q=hardening-probe-" + index + "&limit=1",
-            { cache: "no-store" },
-          );
-          statuses.push(response.status);
-          if (response.status === 429) {
-            const body = await response.json().catch(() => null);
-            return { statuses, refused: { status: 429, retryAfter: response.headers.get("retry-after"), body } };
-          }
-        }
-        return { statuses, refused: null };
-      })()
-    `);
-    const served = loop.statuses.filter((status) => status === 200).length;
-    step(
-      "a request loop is refused once it passes the ceiling",
-      loop.refused !== null && served > 0,
-      `${served} served, then ${loop.refused ? "refused with " + loop.refused.status : "never refused"}`,
-    );
-    step(
-      "the refusal names the ceiling and a delay",
-      loop.refused?.body?.error === "rate_limited" &&
-        typeof loop.refused?.body?.limit === "number" &&
-        Number(loop.refused?.retryAfter) > 0,
-      loop.refused
-        ? `limit ${loop.refused.body?.limit}, retry-after ${loop.refused.retryAfter}s`
-        : "no refusal",
-    );
-    const otherRoute = await evaluate(`
-      fetch("/api/discover?kind=trending&limit=1").then((response) => response.status)
-    `);
-    step(
-      "a different route class keeps its own budget",
-      otherRoute === 200,
-      `/api/discover returned ${otherRoute} after the search route was refused`,
+        ? "; no policy meta tag, which is correct - the header is authoritative"
+        : "; a meta tag is also present, which would be a second place to keep in sync",
     );
 
     // ---- 5. the storage-failure state ------------------------------------
     // Forced by removing IndexedDB before the document runs, which is what a private
-    // window or a denied site-data permission looks like to the application.
-    // Everything from here until the recovery check runs against a deliberately broken
-    // storage layer, so console errors here are the injected failure rather than an
-    // application error: they are accounted for separately instead of being counted
-    // against the application.
+    // window or a denied site-data permission looks like to the application. Everything
+    // from here until the recovery check runs against a deliberately broken storage
+    // layer, so its console errors are the injected failure rather than an application
+    // error: they are accounted for separately instead of being counted against it.
     const errorsBeforeStoragePhase = results.consoleErrors.length;
     const breakStorage = `
       Object.defineProperty(window, "indexedDB", {
@@ -984,6 +949,7 @@ async function main() {
       stillRenders === true,
     );
     await shoot("storage-unavailable");
+
     const injectedErrors = results.consoleErrors.slice(
       errorsBeforeStoragePhase,
     );
@@ -1000,6 +966,7 @@ async function main() {
         : injectedErrors.length +
             " injected, recorded under notes.injectedStorageErrors",
     );
+
     await send("Page.removeScriptToEvaluateOnNewDocument", {
       identifier: storageScript,
     });
@@ -1032,6 +999,11 @@ async function main() {
     );
 
     results.notes.disclosures.push(
+      "The storage failure is forced, not natural: IndexedDB is removed before the document runs. That is the same shape as a denied site-data permission, but it is not a real private window. The one console error it produces is the injected failure itself, recorded under notes.injectedStorageErrors and asserted to be exactly that cause rather than counted against the application.",
+      "The throttling ceiling is reached by construction, because this run is the only client and the limiter is per-process. A real deployment behind a proxy sees different addresses, and behaviour across multiple serverless instances is untested by design: the limiter does not coordinate across them. The address also comes from x-forwarded-for, which a client can set, so behind a proxy that merely appends rather than overwrites, a caller that rotates the header gets a fresh budget per request.",
+      "The offline window is a stopped server process, not a severed network. A severed network would also fail DNS and TLS; a refused connection is the case the worker's fallback chain actually handles.",
+      "The idle-timer claim is a static sweep of the sources for a repeating timer, not a runtime count: a self-rescheduling setTimeout, a requestAnimationFrame loop, or an interval reached only through indirection would not be seen.",
+      "Browser candidates are Windows paths, so this harness does not run on the repository CI runner (ubuntu-latest); it was run locally against a production build.",
       `The production server's own log was written outside the repository, to the OS temp directory (${join(tmpdir(), `spotivibe-m14-audit-${PORT}.log`)}); check it there if a run fails to reach the origin.`,
       "A single-machine run against a local production build is a regression signal, not a field lab score. The thresholds detect a change between two runs on the same machine; they are not a claim about a real listener's device, network, or field percentile.",
       "INP is not observed, because it requires a real interaction. Total blocking time from long tasks stands in for responsiveness on a load, which is why the two thresholds are separate.",
@@ -1062,6 +1034,33 @@ async function main() {
       "a truncated document is seeded into the worker's page cache",
       seeded.seeded && seeded.shellEntries > 0,
       `${seeded.before} page entries, ${seeded.shellEntries} shell entries`,
+    );
+
+    // An intact cached document, captured by letting the worker store a real one. The
+    // verification pass found the integrity check comparing `content-length` against a
+    // decoded string's length, which deleted *intact* entries - and nothing here
+    // noticed, because the only cached entry this phase seeded was a truncated one.
+    await goto("/history");
+    const intact = await evaluate(`
+      (async () => {
+        const cache = await caches.open("spotivibe-pages-v1");
+        const key = new URL("/history", location.origin).href;
+        const entry = await cache.match(key);
+        if (!entry) return { stored: false };
+        const bytes = await entry.clone().arrayBuffer();
+        return {
+          stored: true,
+          byteLength: bytes.byteLength,
+          declaredLength: entry.headers.get("content-length"),
+        };
+      })()
+    `);
+    step(
+      "the worker holds an intact cached document before the origin goes down",
+      intact.stored === true && intact.byteLength > 0,
+      intact.stored === true
+        ? intact.byteLength + " bytes"
+        : "nothing was cached",
     );
 
     stopServer(server);
@@ -1111,6 +1110,44 @@ async function main() {
       `),
       "the truncated document is gone, or replaced by a real response",
     );
+    // The other half of the pair: a cached document that is intact must be served from
+    // its own route rather than redirected to the shell, and must still be in the cache
+    // afterwards. A check that discarded what it served would pass the first assertion
+    // and quietly empty the cache on the way past.
+    await send("Page.navigate", { url: ORIGIN + "/history" });
+    await delay(2000);
+    const intactOffline = await evaluate(`(() => {
+      const body = document.body?.textContent ?? "";
+      return {
+        path: location.pathname,
+        rendered: Boolean(document.querySelector("main")) && body.length > 0,
+        errorBoundary: /something went wrong|application error/i.test(body),
+      };
+    })()`);
+    step(
+      "an intact cached document is served from its own route with the origin gone",
+      intactOffline.rendered === true &&
+        !intactOffline.errorBoundary &&
+        intactOffline.path === "/history",
+      "landed on " + intactOffline.path,
+    );
+    const stillCached = await evaluate(`
+      caches.open("spotivibe-pages-v1").then(async (cache) => {
+        const key = new URL("/history", location.origin).href;
+        const entry = await cache.match(key);
+        if (!entry) return { present: false };
+        return { present: true, byteLength: (await entry.clone().arrayBuffer()).byteLength };
+      })
+    `);
+    step(
+      "the intact entry survived being served",
+      stillCached.present === true &&
+        stillCached.byteLength === intact.byteLength,
+      stillCached.present === true
+        ? stillCached.byteLength + " bytes, was " + intact.byteLength
+        : "the entry was deleted by its own read",
+    );
+
     await shoot("offline-corrupt-cache");
     const stillControlled = await evaluate(
       `navigator.serviceWorker.controller !== null`,

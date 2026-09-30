@@ -23,7 +23,7 @@
 - [x] 3.2 Assert the thresholds so a regression fails the run, with each target naming what it protects — verify: a deliberately degraded page fails the harness, proving the assertion can fire.
 - [x] 3.3 Show the measurement collects nothing: no analytics, beacon, or remote-reporting call exists in the client — verify: a scan of the shipped sources for reporting calls, plus the architecture suite.
 - [x] 3.4 Prove local lists are bounded with named constants, and that each truncated surface states its bound to the listener — verify: a test with a large synthetic history asserts the rendered entry count and the copy that states the bound (spec: `performance` — "Local lists stay bounded").
-- [x] 3.5 Prove nothing repeats while the application is idle: no interval from playback, persistence, or synchronization is scheduled when nothing is happening, and playback-driven work stops with playback — verify: a test counts timers scheduled by an idle mount and by playback start and stop (spec: `performance` — "No interval runs while the application is idle").
+- [x] 3.5 Prove nothing repeats while the application is idle: no interval from playback, persistence, or synchronization is scheduled when nothing is happening, and playback-driven work stops with playback — verify: a sweep of every source for a repeating timer, asserting exactly one and that it is the player's, plus the engine's idempotent start and its stop, and a scan of the stores for none (spec: `performance` — "No interval runs while the application is idle"). **Amended after the verification pass:** the task originally promised a test that counts timers across an idle mount and a playback start/stop. That was not built — it needs a full fake YouTube-player harness to reach the engine's poll — so the requirement is unchanged and the check is a static sweep instead, with its limit recorded in the test's own documentation and in `evidence/README.md`. A self-rescheduling `setTimeout`, a `requestAnimationFrame` loop, or an interval reached indirectly would not be seen.
 
 ## 4. Accessibility
 
@@ -37,7 +37,7 @@
 - [x] 5.2 Produce browser evidence against a production build: the headers on a document, a static asset, the manifest, and the worker file; the throttling loop refused and a human burst accepted; offline rendering with a corrupt cache entry; the storage-failure state; the performance and accessibility audits; exactly one worker; and zero console errors — verify: `results.json` reports `"pass": true` with screenshots and a reproduce-path README disclosing every deviation, including the machine the measurement ran on.
 - [ ] 5.3 Run the full quality gates from the repository root (`cd frontend && npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`) — verify: every command exits `0`.
 - [ ] 5.4 Re-verify the quality gates from a clean clone of the branch head, including the production build under the declared headers — verify: all six commands exit `0` in the fresh clone.
-- [ ] 5.5 Update `ROADMAP.md`: the M14 status row, the section checklist items this change delivers, and the targets the acceptance criteria refer to, with the reasoning that chose each number — verify: `git diff` shows the status cell, the ticked items, and the targets.
+- [x] 5.5 Update `ROADMAP.md`: the M14 status row, the section checklist items this change delivers, and the targets the acceptance criteria refer to, with the reasoning that chose each number — verify: `git diff` shows the status cell, the ticked items, and the targets.
 
 ## Verification record
 
@@ -102,4 +102,68 @@ Run from `frontend/` at the branch head, and again from a clean clone of it:
 
 ### Independent verification pass
 
-_(filled in below by the reviewer)_
+Run against this change's own specification and nothing else. Verdict: **NOT MERGEABLE**
+— two CRITICAL findings, both in this change's own work, both verified by execution
+rather than by reading.
+
+**CRITICAL 1 — the integrity check compared a byte count to a character count.**
+`isIntactResponse` compared `content-length` against the length of a *decoded* string,
+which counts UTF-16 code units. Every prerendered page in this application contains
+non-ASCII punctuation, so the check deleted **intact** cached documents: four of the nine
+routes behaved as if never visited, and the artwork cache could never serve a hit. The
+reviewer measured the difference directly — `/library` is 26463 bytes and 26461
+characters, `/history` 30566 and 30564. Fixed by reading an `ArrayBuffer` and comparing
+`byteLength`, with three unit tests that drive non-ASCII bodies and binary artwork
+through the check, and with a browser assertion that an intact document is served from
+its own route *and survives* the read. It was not caught here because the unit tests
+built responses with no `content-length` (so the comparison never ran) and the evidence
+seeded only a truncated entry (so the false-positive path was never exercised) — both
+gaps are now closed.
+
+**CRITICAL 2 — `Referrer-Policy: no-referrer` contradicted the `playback` spec of
+record.** That capability requires the player "SHALL NOT suppress the page referrer", and
+this change does not modify it. A response-level `no-referrer` suppresses the referrer
+for exactly the attribution navigations the requirement is about, application-wide — and
+the proposal cited the M11 rule about those links as the reason the header was missing.
+Fixed by using `strict-origin-when-cross-origin`.
+
+It was not caught because the M11 architecture guard — which exists precisely to catch
+this — matched only an inline `"Referrer-Policy": "no-referrer"` pair, while the header
+was declared as a `{ key, value }` array entry. Its self-test asserted the inline form,
+so it passed over a real violation. The detector now matches any declaration shape,
+strips comments first (a comment cannot suppress a referrer, and without that the rule
+flagged `next.config.ts` for *explaining* why the suppressive value is wrong), and its
+self-test exercises the shape the real code uses. This is the "an assertion nobody can
+falsify is not evidence" failure M13 documented, reintroduced by the change that cites
+that lesson.
+
+**Fourteen WARNINGs**, all fixed: the record guard's `artwork` hole that six surfaces
+would have crashed on; `readUsable` not surviving a cache it could not *open*; the
+throttle's client-settable identity (documented rather than hidden); three README
+disclosures absent from `results.json`; the no-middleware guard checking a filename Next
+16 renamed; an eviction test that passed under LIFO as well as FIFO; task 3.5 promising a
+runtime timer count that was never built (the task was amended, the requirement
+unchanged); two spec scenarios with no test; the `app-shell` delta having dropped the
+landmark obligation; the bottom-nav fix overriding the active label's colour; and
+`form-action 'none'` resting on "there are no forms", where there are four.
+
+**Nits**, all fixed: a dead export, a dead import, a typo, three unused test locals, a
+`DEBT` count that let one note satisfy two directives, two evidence steps whose detail did
+not match their assertion, a keyboard step name that read stronger than its check, a stale
+`youtube-nocookie` claim in the proposal, and Windows-only browser paths in the harness.
+
+Two findings were **accepted and recorded** rather than fixed:
+
+- The limiter's key uses the first `x-forwarded-for` entry, which a client can set. Behind
+  a proxy that *appends* rather than overwrites, rotating the header buys a fresh budget.
+  A durable fix needs a trusted-proxy assumption or a shared store, and this project has
+  no server; the limitation is now stated in the module, the spec, and the disclosures.
+- Task 3.5's check is a static sweep, not a runtime timer count. Reaching the engine's
+  poll needs a full fake YouTube-player harness, which is out of proportion to one
+  scenario; the task text was amended to say what exists, and the limit is recorded.
+
+The pass also reported what it could not verify: it did not execute the browser harness
+(it starts and `taskkill`s a server and a browser), did not run `npm ci` or the
+clean-clone gates, could not confirm `main`'s test count by checkout, and did not confirm
+Vercel's `x-forwarded-for` behaviour. The orchestrator ran the gates; the numbers in the
+table above are the orchestrator's, not the reviewer's.

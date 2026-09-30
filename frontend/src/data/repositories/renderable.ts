@@ -18,9 +18,10 @@
  *
  * It **skips** what cannot be rendered. It does not repair: a record missing its title
  * is not given an invented one, because a fabricated title in someone's library is
- * worse than an absent row — it is something they cannot tell apart from real data. A
- * field that is present but empty is defaulted; a field that is absent or the wrong type
- * disqualifies the record.
+ * worse than an absent row — it is something they cannot tell apart from real data.
+ * Nothing is defaulted. A field that is absent, empty, or the wrong type disqualifies
+ * the whole record, and only *lists* may legitimately be empty — an album with no
+ * artwork renders a placeholder, an album with no artists renders nothing to say.
  *
  * ## Why these are predicates, not a normalizer
  *
@@ -70,7 +71,12 @@ export function isRenderableTrack(value: unknown): value is RenderableTrack {
     isText(track.providerId) &&
     isText(track.title) &&
     isArtistList(track.artists) &&
-    (track.artwork === undefined || Array.isArray(track.artwork))
+    // `artwork` must be an array, not merely absent-or-array. The independent
+    // verification pass found six surfaces that index `track.artwork[0]` without
+    // optional chaining, so a stored record with no `artwork` passed this guard and then
+    // threw inside the row - the route-error-boundary outcome this predicate exists to
+    // prevent. An empty array is fine: the rows fall back to a placeholder.
+    Array.isArray(track.artwork)
   );
 }
 

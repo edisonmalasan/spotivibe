@@ -410,11 +410,30 @@ function extractionIndicators(source: string): string[] {
   );
 }
 
-/** True when source suppresses the referrer (link rel or policy header). */
-function suppressesReferrer(source: string): boolean {
+/**
+ * True when source suppresses the referrer, by link `rel` or by policy header.
+ *
+ * The header form matches *any* declaration shape, not just an inline
+ * `"Referrer-Policy": "no-referrer"` pair: the independent verification pass added
+ * `Referrer-Policy` to `next.config.ts` as a `{ key, value }` array entry, which this
+ * pattern did not match, so a rule written specifically to catch a suppressing header
+ * sat green over one. A self-test that only exercises a form the code never takes is
+ * the failure mode M13's verification pass documented, reintroduced by the change that
+ * cites that lesson.
+ */
+function suppressesReferrer(raw: string): boolean {
+  // Comments are removed first, because a comment cannot suppress a referrer. Without
+  // this, the rule flagged `next.config.ts` for *explaining* why the fully suppressive
+  // value is wrong - and the only ways out of that were to stop documenting the
+  // decision or to weaken the rule, neither of which is a fix.
+  const source = raw.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
   return (
     /\bnoreferrer\b/i.test(source) ||
-    /referrer[-_]?policy["']?\s*[:=]\s*["']?no-referrer/i.test(source)
+    // An inline value, a JSON entry, a `key: "value"` pair, or a `key`/`value` object
+    // property - with any amount of whitespace and either quote style.
+    /referrer[-_]?policy["']?\s*[:=]\s*["'`]?\s*no-referrer/i.test(source) ||
+    // A separated declaration: the name in one property, the value in another.
+    (/referrer[-_]?policy/i.test(source) && /\bno-referrer\b/i.test(source))
   );
 }
 
@@ -457,8 +476,37 @@ describe("architecture violation detectors (task 5.1)", () => {
     expect(suppressesReferrer('<a rel="noopener noreferrer" href={url} />')).toBe(true);
     expect(suppressesReferrer('"Referrer-Policy": "no-referrer"')).toBe(true);
     expect(suppressesReferrer('referrerPolicy="no-referrer"')).toBe(true);
+    // The shape the real declaration takes: a header table entry, where the name and
+    // the value live in separate properties. The first version of this test did not
+    // include it, which is how a `no-referrer` header reached `next.config.ts` under a
+    // rule written to forbid one.
+    expect(suppressesReferrer('{ key: "Referrer-Policy", value: () => "no-referrer" }')).toBe(true);
+    expect(suppressesReferrer('{ key: "Referrer-Policy", value: noReferrer }')).toBe(true);
+    expect(suppressesReferrer('{ key: "Referrer-Policy", value: () => "no-referrer",\n  },')).toBe(
+      true,
+    );
     expect(suppressesReferrer('<a rel="noopener" target="_blank" href={url} />')).toBe(false);
     expect(suppressesReferrer('referrerPolicy="origin"')).toBe(false);
+    // A comment naming the forbidden value is documentation, not a declaration.
+    expect(
+      suppressesReferrer(
+        '// this is NOT no-referrer\n{ key: "Referrer-Policy", value: () => "origin" }',
+      ),
+    ).toBe(false);
+    expect(
+      suppressesReferrer("/* no-referrer would suppress the attribution referrer */\nconst x = 1;"),
+    ).toBe(false);
+    // And a real declaration after a comment is still caught.
+    expect(
+      suppressesReferrer('// headers follow\n{ key: "Referrer-Policy", value: "no-referrer" }'),
+    ).toBe(true);
+    // And the value this milestone settled on must pass, or the header and the rule
+    // contradict each other.
+    expect(
+      suppressesReferrer(
+        '{ key: "Referrer-Policy", value: () => "strict-origin-when-cross-origin" }',
+      ),
+    ).toBe(false);
   });
 });
 
@@ -3065,17 +3113,18 @@ describe("architecture: the M14 security policy is declared once (M14 task 5.1)"
       const config: NextConfig = { async headers() { return [{ source: "/x", headers: [] }]; } };
     `;
     expect(routeWithHeaders).toContain("headers()");
-    for (const route of readdirSync(join(srcDir, "app"), { withFileTypes: true })) {
-      void route;
-    }
     const appTree = readTree(join(srcDir, "app"));
     for (const file of appTree) {
       expect(file.source, file.file).not.toMatch(/export const headers|async headers\(\)/);
       expect(file.source, file.file).not.toMatch(/Content-Security-Policy/);
     }
-    // And no middleware, which would be a second runtime place the policy could differ.
-    expect(existsSync(join(srcDir, "..", "middleware.ts"))).toBe(false);
-    expect(existsSync(join(srcDir, "..", "middleware.js"))).toBe(false);
+    // And no request-interception hook, which would be a second runtime place the
+    // policy could differ from the declaration. Next 16 renamed middleware to Proxy, so
+    // the old filename alone is not a sufficient check: a guard written before the
+    // rename would not see `proxy.ts`, which is the same hook under its new name.
+    for (const name of ["middleware.ts", "middleware.js", "proxy.ts", "proxy.js", "proxy.mjs"]) {
+      expect(existsSync(join(srcDir, "..", name)), name).toBe(false);
+    }
   });
 
   it("keeps the audit harness out of the application bundle", () => {

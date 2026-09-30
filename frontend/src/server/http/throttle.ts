@@ -24,10 +24,16 @@
  *   searches and navigation is normal, a tight loop is not.
  * - A **bounded map** that evicts its own oldest entries. An unbounded limiter is a slow
  *   memory leak with a security-shaped name.
+ * - A **documented weakness in the identity**: the address comes from
+ *   `x-forwarded-for`, which a client can set. Behind a proxy that *overwrites* that
+ *   header it is the real client; behind one that merely appends, the first entry is the
+ *   caller's own claim, so a caller that rotates the header gets a fresh budget per
+ *   request. The independent verification pass found this, and the honest response is to
+ *   say so rather than to imply the loop is unconditionally closed: the route-class half
+ *   of the key still holds, and the ceiling still bounds any single address.
  * - The key includes the **route class**, not the full path, so `/api/artist?id=a` and
  *   `?id=b` share one budget: the cost is the fan-out, not the query.
  */
-import { requestToAddress } from "./requestAddress";
 
 /** Requests allowed per key per window. Generous for human use, useless for a loop. */
 export const THROTTLE_LIMIT = 60;
@@ -121,11 +127,6 @@ export function throttleKeyFor(address: string, pathname: string): string {
   const segments = pathname.split("/").filter(Boolean);
   const routeClass = segments[0] === "api" ? `/${segments.slice(0, 2).join("/")}` : "/other";
   return `${address}|${routeClass}`;
-}
-
-/** The address a request came from, or a placeholder when it cannot be determined. */
-export function addressOf(request: Request): string {
-  return requestToAddress(request);
 }
 
 /**

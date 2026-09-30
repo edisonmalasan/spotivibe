@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * Spotivibe service worker (M13; design decisions 1, 2, 3, 6).
  *
@@ -231,12 +230,21 @@ async function enforceBound(cacheName, max) {
  * @returns {Promise<Response | undefined>}
  */
 async function readUsable(cacheName, key, options = {}) {
-  const cache = await caches.open(cacheName);
+  // Both the open and the read are guarded. The open was not, while the comment claimed
+  // a cache that cannot be opened was an empty cache - so a throwing `caches.open`
+  // rejected out of `readUsable`, out of the navigation strategy, and out of
+  // `event.respondWith`, taking the listener's page with it. `store()` has always
+  // guarded the identical call, and the asymmetry read as an oversight.
+  let cache;
+  try {
+    cache = await caches.open(cacheName);
+  } catch {
+    return undefined;
+  }
   let entry;
   try {
     entry = await cache.match(key);
   } catch {
-    // A cache that cannot be opened or read is an empty cache, not a failure.
     return undefined;
   }
   if (!entry) return undefined;
@@ -259,9 +267,16 @@ async function readUsable(cacheName, key, options = {}) {
 async function isIntactResponse(response, { requireBody = false } = {}) {
   try {
     const declaredLength = response.headers.get("content-length");
-    const body = await response.clone().text();
-    if (declaredLength !== null && Number(declaredLength) !== body.length) return false;
-    if (requireBody && body.length === 0) return false;
+    // Compared in **bytes**, which is what `content-length` counts. The first version
+    // of this check compared it to `body.length` from a decoded string, and a decoded
+    // string is UTF-16 code units: every prerendered page in this application contains
+    // non-ASCII punctuation, so its byte length and its character length differ, and
+    // the check deleted *intact* cached documents - a regression in the exact
+    // behaviour it was written to protect. A response with no `content-length` (a
+    // chunked one) is not judged on length at all.
+    const body = await response.clone().arrayBuffer();
+    if (declaredLength !== null && Number(declaredLength) !== body.byteLength) return false;
+    if (requireBody && body.byteLength === 0) return false;
     return true;
   } catch {
     return false;

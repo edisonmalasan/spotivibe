@@ -32,7 +32,10 @@ const ORIGIN = "https://app.test";
  * must survive is "the cache cannot be read", not "the cache is absent".
  */
 function withUnreadableCaches(harness: WorkerHarness, names: string[]): void {
-  for (const name of names) {
+  // One wrapper per name, so the layers compose and a test can make one cache
+  // unreadable while the others still work. The name is not needed by the wrapper
+  // itself - it closes over the list - so the loop binds nothing.
+  for (let installed = 0; installed < names.length; installed += 1) {
     const original = harness.caches.open;
     harness.caches.open = async (requested: string) => {
       const cache = await original(requested);
@@ -509,6 +512,102 @@ describe("bounded metadata and artwork (task 3.3)", () => {
   });
 });
 
+describe("an intact cache entry is served and kept (M14 task 2.1, verification C1)", () => {
+  /**
+   * A response whose declared length is its **byte** length, not its character length.
+   *
+   * The independent verification pass found the integrity check comparing
+   * `content-length` against a decoded string's length, which are different quantities
+   * for any non-ASCII body. Every prerendered page in this application contains
+   * non-ASCII punctuation, so the check deleted *intact* cached documents - four of the
+   * nine routes behaved as if never visited, and the artwork cache could never serve a
+   * hit. These tests exist so that regression cannot come back quietly.
+   */
+  function byteLengthOf(text: string): number {
+    return new TextEncoder().encode(text).length;
+  }
+
+  function documentWith(text: string): Response {
+    return new Response(text, {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-length": String(byteLengthOf(text)),
+      },
+    });
+  }
+
+  const NON_ASCII =
+    "<!doctype html><title>Spotivibe</title><p>Listening history \u2014 your day</p>";
+
+  it("serves an intact non-ASCII document from cache and keeps it", async () => {
+    expect(byteLengthOf(NON_ASCII), "the fixture must not be ASCII").toBeGreaterThan(
+      NON_ASCII.length,
+    );
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    const key = `${ORIGIN}/history`;
+    await cache.put(key, documentWith(NON_ASCII));
+
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    const response = await worker.respond(get(key, { mode: "navigate" }));
+
+    // The cached document, not the shell redirect that a discarded entry would produce.
+    expect(response?.status).toBe(200);
+    expect(await response?.text()).toBe(NON_ASCII);
+    // And it is still there afterwards: a check that deletes what it just served would
+    // pass the first assertion and quietly empty the cache on the way past.
+    const entry = await cache.match(key);
+    expect(entry, "the entry survived its own read").toBeDefined();
+    expect(await entry?.text()).toBe(NON_ASCII);
+  });
+
+  it("serves intact artwork with a declared length, rather than refetching it", async () => {
+    // The same code path serves artwork, where a wrong comparison would delete and
+    // re-download every image on every read - a cache that can never hit.
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe,
+    ]);
+    const cache = await worker.caches.open("spotivibe-artwork-v1");
+    const key = "https://img.test/cover.jpg";
+    await cache.put(
+      key,
+      new Response(bytes, {
+        status: 200,
+        headers: { "content-type": "image/jpeg", "content-length": String(bytes.byteLength) },
+      }),
+    );
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+
+    const response = await worker.respond(get(key, { destination: "image" }));
+    expect(response?.status).toBe(200);
+    expect((await response?.arrayBuffer())?.byteLength).toBe(bytes.byteLength);
+    expect(await cache.match(key), "the artwork entry survived").toBeDefined();
+  });
+
+  it("still discards a genuinely truncated non-ASCII document", async () => {
+    // The other half of the pair: the check must still catch what it is for. The shell
+    // is installed first because the honest answer for an unreadable route is a
+    // redirect to it, and without it the honest answer is the network failure.
+    await worker.fire("install");
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    const key = `${ORIGIN}/discover`;
+    await cache.put(key, documentWith(NON_ASCII));
+    // Overwrite it with a body shorter than its declared length.
+    await cache.put(
+      key,
+      new Response("\u2014 trunc", {
+        status: 200,
+        headers: { "content-type": "text/html", "content-length": "99999" },
+      }),
+    );
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+
+    const response = await worker.respond(get(key, { mode: "navigate" }));
+    expect(response?.status).toBe(302);
+    expect(await cache.match(key), "the truncated entry was deleted").toBeUndefined();
+  });
+});
+
 describe("a corrupt cache entry is a miss, not an answer (M14 task 2.1)", () => {
   it("discards a truncated document and serves it from the network instead", async () => {
     // A cache is the one component that can hold bytes the application did not just
@@ -546,6 +645,22 @@ describe("a corrupt cache entry is a miss, not an answer (M14 task 2.1)", () => 
     worker.fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
     await expect(worker.respond(get(url, { mode: "cors" }))).rejects.toThrow();
     expect(await worker.caches.sizeOf("spotivibe-metadata-v1")).toBe(0);
+  });
+
+  it("treats a cache that cannot be opened as empty too", async () => {
+    // `caches.open` was outside the try, so a store that cannot be opened rejected the
+    // whole navigation - the listener's page died on a cache problem, which is the one
+    // thing this helper exists to prevent. `store()` has always guarded this call.
+    const original = worker.caches.open;
+    worker.caches.open = async (name: string) => {
+      if (name.startsWith("spotivibe-")) {
+        throw new DOMException("cache storage is unavailable", "SecurityError");
+      }
+      return original(name);
+    };
+    const page = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    expect(await page?.text()).toBe("live");
+    worker.caches.open = original;
   });
 
   it("treats an unreadable cache as empty rather than failing the request", async () => {

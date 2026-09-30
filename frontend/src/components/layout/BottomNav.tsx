@@ -45,10 +45,16 @@ export function BottomNav() {
             }`}
           >
             <Icon className="size-6" aria-hidden="true" />
-            {/* M14: the inactive state keeps `fog` on the icon but paints the label
-                in `mist`. Inheriting `fog` painted this 12px label at 4.16:1 on the
-                nav's carbon background, under the 4.5:1 minimum for small text. */}
-            <span className="text-caption font-regular text-mist">{item.label}</span>
+            {/* M14: the label picks its own colour rather than inheriting one. It used
+                to inherit `fog`, which painted this 12px label at 4.16:1 on the nav's
+                carbon background - under the 4.5:1 minimum for small text. `mist` is
+                what DESIGN.md specifies for secondary text, and the active destination
+                keeps pure white, which the first fix here lost. */}
+            <span
+              className={`text-caption font-regular ${active ? "text-pure-white" : "text-mist"}`}
+            >
+              {item.label}
+            </span>
           </Link>
         );
       })}

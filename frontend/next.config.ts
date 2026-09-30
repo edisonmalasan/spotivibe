@@ -41,12 +41,13 @@ function contentSecurityPolicy(isProduction: boolean): string {
   const scriptSrc = [
     "'self'",
     ...CLIENT_SCRIPT_ORIGINS,
-    // DEBT: inline script is required because the App Router bootstraps hydration
-    // with inline payload scripts that are not enumerable at config time. Removing it
-    // needs per-request nonces, which means a middleware that mints one — a build and
-    // deployment change, deliberately not taken in this milestone. Until then this
-    // directive blocks *remote* script injection, which is the vector that matters
-    // for an application with no third-party script bundles.
+    // DEBT: inline script is permitted because the App Router bootstraps hydration with
+    // inline payload scripts that are not enumerable at config time. Removing it needs
+    // per-request nonces, which means a middleware that mints one — a build and
+    // deployment change, deliberately not taken in this milestone. What this directive
+    // costs, stated plainly: inline script is permitted, so an injected inline <script>
+    // would run. What it still blocks is *remote* script, because `script-src` names the
+    // hosts above; that protection comes from the host list, not from this entry.
     "'unsafe-inline'",
     ...(isProduction ? [] : ["'unsafe-eval'"]),
   ];
@@ -58,7 +59,12 @@ function contentSecurityPolicy(isProduction: boolean): string {
   ];
   return [
     "default-src 'self'",
-    // A form submission anywhere would exfiltrate data; there are none, and this says so.
+    // Every <form> in this application is a dialog that calls preventDefault, so no
+    // submission ever leaves the page — and that is the real invariant, not "there are
+    // no forms", which was the first version's claim and was wrong: there are four.
+    // `security-policy.test.ts` holds the invariant by asserting each form prevents the
+    // default, so a future form that forgets fails a test rather than silently
+    // exfiltrating whatever it contains.
     "form-action 'none'",
     "object-src 'none'",
     // Frames are the player's own; this app never frames another site, so anything
@@ -92,7 +98,16 @@ const SECURITY_HEADERS = [
     value: (isProduction: boolean) => contentSecurityPolicy(isProduction),
   },
   { key: "X-Content-Type-Options", value: () => "nosniff" },
-  { key: "Referrer-Policy", value: () => "no-referrer" },
+  // `strict-origin-when-cross-origin`, NOT `no-referrer`. The `playback` spec of record
+  // requires that the player "SHALL NOT suppress the page referrer", and its
+  // attribution links deliberately carry no `referrerPolicy` for that reason. A
+  // response-level `no-referrer` would suppress the referrer for exactly those
+  // navigations, application-wide - the first version of this header did, and the
+  // independent verification pass caught it. `strict-origin-when-cross-origin` withholds
+  // the path and query of same-origin requests and sends nothing to third parties on a
+  // cross-origin navigation from an `https` page, which is the strongest value that
+  // leaves the attribution requirement intact.
+  { key: "Referrer-Policy", value: () => "strict-origin-when-cross-origin" },
   { key: "X-Frame-Options", value: () => "DENY" },
   {
     key: "Permissions-Policy",
