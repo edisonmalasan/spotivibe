@@ -175,3 +175,48 @@ The pass also reported what it could not verify: it did not execute the browser 
 clean-clone gates, could not confirm `main`'s test count by checkout, and did not confirm
 Vercel's `x-forwarded-for` behaviour. The orchestrator ran the gates; the numbers in the
 table above are the orchestrator's, not the reviewer's.
+
+## Archive record
+
+Archived as `2026-09-30-add-deployment-hardening`, moved with `git mv` so the history
+follows the files rather than being rewritten.
+
+| Stage | PR | Merge |
+| --- | --- | --- |
+| Propose | #58 | `0d855f9` |
+| Apply | #59 | `d65abb4` |
+| Sync | #60 | `a6cfb1c` |
+| Archive | this PR | see `ROADMAP.md` |
+
+**State at archive.** 24 of 24 tasks ticked, all four artifacts `done`, and
+`openspec validate --specs --strict` reporting **18 capabilities passed, 0 failed** — 16
+before this change, plus the two it added. No active changes remain.
+
+**What the milestone delivered, in one line each.** A response security policy declared
+once and derived from the code (`security`, 4 requirements); best-effort per-instance
+throttling on the public boundary; cache-corruption recovery that treats an unusable
+entry as absent rather than as an answer (`pwa`); a listener-visible storage-failure
+state and shared predicates for untrusted stored records (`local-data`); a
+dependency-free harness that measures Core Web Vitals and audits contrast, names and
+keyboard reachability at both viewports (`performance`, `app-shell`).
+
+**Two design decisions were amended after the verification pass**, and the amendments are
+in `design.md` rather than quietly dropped: decision 2 named four origins the shipped
+policy does not permit and omitted the referrer decision entirely; decision 4 described
+the corruption check without its unit, and the unit was the bug.
+
+**The evidence's own limits, carried forward as the record.** These are not open work;
+they are the boundaries of what was verified, and they are reproduced in
+`evidence/results.json` and `evidence/README.md` so a reader of the numbers cannot miss
+them: a single-machine run against a local production build is a regression signal rather
+than a field lab score; INP is not observed, because observing it requires a real
+interaction; the browser harness does not run on this repository's own CI runner, because
+its browser candidates are Windows paths; the throttling ceiling is reached by
+construction, since the run is the only client and the limiter is per-process; and the
+address the limiter keys on comes from a header a client can set.
+
+**Permanently out of scope, by design rather than by omission.** Rate limiting across
+serverless instances needs a server and an account model this project excludes.
+Nonce-based script and style hashing needs a build step and a deployment change, and is
+recorded as debt against the two directives that must stay permissive. Durable
+cross-instance throttling is the same exclusion as the first.
