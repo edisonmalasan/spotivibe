@@ -1,5 +1,6 @@
 import { SectionHeader } from "@/components/design-system/SectionHeader";
 import { DataControls } from "@/features/backup/DataControls";
+import { InstallRow } from "@/features/pwa/UpdateNotice";
 import { AutofillSettingsSection } from "@/features/preferences/AutofillSettingsSection";
 import { LanguagesSettingsSection } from "@/features/preferences/LanguagesSettingsSection";
 
@@ -9,11 +10,23 @@ import { LanguagesSettingsSection } from "@/features/preferences/LanguagesSettin
  * M8 adds Languages, which reopens the shared language picker so a first-run
  * choice stays changeable (spec: languages are changeable after onboarding).
  * M10 adds Playback, the one control that gates queue autofill (design §6).
+ * M13 adds the install affordance here rather than as a shell banner: installing
+ * is a decision someone makes once, so it belongs in the place people already come
+ * to change how the app behaves (spec: `pwa` — "Install affordance").
  */
 export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-8 px-6 py-6">
       <h1 className="sr-only">Settings</h1>
+
+      <section>
+        <SectionHeader title="Install" />
+        <p className="mb-6 max-w-2xl text-body-lg font-regular text-mist">
+          Spotivibe can open like an app. Your library, playlists, and history stay available
+          without a connection; search and playback need one.
+        </p>
+        <InstallRow />
+      </section>
 
       <section>
         <SectionHeader title="Languages" />
