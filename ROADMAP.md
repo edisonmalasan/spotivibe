@@ -120,7 +120,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M11 | Listening history, stats, streaks, and Smart Mixes | `DONE` | M2, M7, M10 |
 | M12 | Podcasts | `DONE` | M3, M4, M5 |
 | M13 | PWA installation, offline shell, offline metadata experience | `DONE` | M1, M2, M6 |
-| M14 | Hardening: performance, security, accessibility, resilience | `APPLY MERGED` | M3–M13 |
+| M14 | Hardening: performance, security, accessibility, resilience | `DONE` | M3–M13 |
 | M15 | Test matrix, release validation, Vercel deployment | `NOT STARTED` | M0–M14 |
 
 ---
@@ -1244,8 +1244,32 @@ comment in JSX children position that rendered as page text.
 Every milestone from M13 runs an independent read-only verification pass before its Apply
 PR is merged. For M14 it checked the implementation against the change's own five spec
 files, its eight design decisions, the evidence's falsifiability, and the correctness of
-the throttle, the worker, and the record predicates; its findings are recorded in the
-change's `tasks.md`.
+the throttle, the worker, and the record predicates. It returned **NOT MERGEABLE**, with
+two CRITICAL findings that were both in this change's own work and both verified by
+executing rather than reading: an integrity check that compared a **byte** count to a
+**character** count and so deleted *intact* cached entries, and a `Referrer-Policy:
+no-referrer` that contradicted the `playback` spec's own "SHALL NOT suppress the page
+referrer" — which slipped past the M11 guard written to catch it, because that guard
+matched an inline JSON-style pair while the header was declared as a `{ key, value }`
+array entry. Fourteen warnings and the nits followed. All are recorded in the archived
+change's `tasks.md` and `evidence/README.md`.
+
+**Lifecycle.** Propose #58 `0d855f9`, Apply #59 `d65abb4`, Sync #60 `a6cfb1c`, Archive
+#61 `e2362f9`; archived as
+`openspec/changes/archive/2026-09-30-add-deployment-hardening/`. The change added two
+capabilities (`security`, `performance`) and amended three (`pwa`, `local-data`,
+`app-shell`), taking the specs of record from **16 to 18 capabilities**, all validating.
+`openspec validate --specs --strict` reports **18 passed, 0 failed**; 15 changes are
+archived and none is active.
+
+**Reconciled at Sync.** Two verification tasks were still unticked, and reconciling them
+found that the change's own gate table *understated* what had been verified — 2225 tests,
+written before the verification pass's fixes added their regression tests, where the
+clean-clone run produced **2231**. The table now carries the run's own number and names
+the commit it describes, the evidence harness's `task` field was corrected from four tasks
+to the ten it actually covers, and the gate table states the lint warning count, because
+`npm run lint` exits 0 with warnings and eight had accumulated under a green build. The
+repository is at **zero**.
 
 ---
 
