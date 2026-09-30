@@ -2956,3 +2956,272 @@ describe("architecture: the M13 PWA shell holds (M13 task 6.1)", () => {
     }
   });
 });
+
+/* ------------------------------------------------------------------------- *
+ * architecture: the M14 hardening holds (M14 tasks 1.6, 2.4, 5.1)
+ *
+ * Each rule below is proven against a violating snippet before it is applied to the
+ * real code. A detector that has never been shown to fire is a comment.
+ * ------------------------------------------------------------------------- */
+
+describe("architecture: the M14 request boundary is one boundary (M14 task 1.6)", () => {
+  /** Every API route handler, as (name, source). */
+  function apiRoutes(): Array<{ name: string; source: string }> {
+    const routesDir = join(srcDir, "app", "api");
+    return readdirSync(routesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => ({
+        name: entry.name,
+        source: readFileSync(join(routesDir, entry.name, "route.ts"), "utf8"),
+      }));
+  }
+
+  it("finds every route, so the rules below are known to reach them", () => {
+    const routes = apiRoutes();
+    expect(routes.length).toBeGreaterThanOrEqual(7);
+    for (const route of routes) {
+      expect(route.source, route.name).toMatch(/export async function GET\b/);
+    }
+  });
+
+  it("guards every route through the one shared entry point, proven on a violating snippet", () => {
+    // The violation: a route that validates and fans out to providers without ever
+    // crossing the throttle. A snippet, so the rule is known to be able to fail.
+    const unguarded = `
+      import { z } from "zod";
+      export async function GET(request: Request): Promise<Response> {
+        const params = new URL(request.url).searchParams;
+        return Response.json({ ok: await runSearch(params.get("q") ?? "") });
+      }
+    `;
+    const firstStatement = (source: string) =>
+      source.slice(source.indexOf("export async function GET")).split("\n").slice(1, 4).join("\n");
+    expect(firstStatement(unguarded), "the snippet is the violation").not.toContain("guardRequest");
+    expect(firstStatement(readSource("app", "api", "search", "route.ts"))).toContain(
+      "guardRequest",
+    );
+
+    for (const route of apiRoutes()) {
+      expect(firstStatement(route.source), route.name).toContain("guardRequest(request)");
+    }
+  });
+
+  it("serves only GET and consumes no request body, proven on a violating snippet", () => {
+    // A body-consuming method on a public route would be the one place local data
+    // could be posted to the server, and the spec says the boundary accepts none.
+    const bodyRoute = `
+      export async function POST(request: Request): Promise<Response> {
+        const body = await request.json();
+        return Response.json({ stored: body });
+      }
+    `;
+    const methodNames = (source: string) =>
+      [...source.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)].map(
+        (match) => match[1],
+      );
+    expect(methodNames(bodyRoute)).toEqual(["POST"]);
+    for (const route of apiRoutes()) {
+      expect(methodNames(route.source), route.name).toEqual(["GET"]);
+      expect(route.source, route.name).not.toMatch(
+        /await request\.(json|text|formData|arrayBuffer)\(/,
+      );
+    }
+  });
+
+  it("keeps the throttle out of the provider layer and the client", () => {
+    // The limiter is a property of the public boundary. If the provider chain imported
+    // it, a cached catalog seed would be refused for a request the listener never
+    // made - and a client import would put per-process state in the browser.
+    // Named modules, not the directory: `server/http/fetchJson` is the provider layer's
+    // own HTTP helper from M3, and a rule that forbade the directory would have been
+    // wrong about code this milestone did not write.
+    const THROTTLE_MODULES = /from "@\/server\/http\/(throttle|guard|requestAddress)"/;
+    for (const file of readTree(join(srcDir, "server", "music"))) {
+      expect(file.source, file.file).not.toMatch(THROTTLE_MODULES);
+    }
+    const clientTree = readTree(join(srcDir, "app"))
+      // `src/app/api/**` runs in Node: those route handlers are the boundary, and the
+      // guard is theirs to call. Everything else under `src/app` is client code.
+      .filter((file) => !file.file.includes(`${join("app", "api")}`))
+      .concat(readTree(join(srcDir, "components")), readTree(join(srcDir, "features")));
+    for (const file of clientTree) {
+      expect(file.source, file.file).not.toMatch(THROTTLE_MODULES);
+    }
+    // Sanity: the sweep is not vacuous, and the routes really do import it.
+    expect(clientTree.length).toBeGreaterThan(20);
+    expect(readSource("app", "api", "search", "route.ts")).toMatch(THROTTLE_MODULES);
+    // And the provider's own helper is still where it was.
+    expect(readSource("server", "http", "fetchJson.ts")).toContain("export");
+  });
+});
+
+describe("architecture: the M14 security policy is declared once (M14 task 5.1)", () => {
+  it("declares the headers in the config only, proven on a violating snippet", () => {
+    const config = readFileSync(join(srcDir, "..", "next.config.ts"), "utf8");
+    expect(config).toContain("headers()");
+    // A route that declares its own headers is a second place to forget to update, and
+    // a way for one route to end up with weaker protection than the rest.
+    const routeWithHeaders = `
+      const config: NextConfig = { async headers() { return [{ source: "/x", headers: [] }]; } };
+    `;
+    expect(routeWithHeaders).toContain("headers()");
+    for (const route of readdirSync(join(srcDir, "app"), { withFileTypes: true })) {
+      void route;
+    }
+    const appTree = readTree(join(srcDir, "app"));
+    for (const file of appTree) {
+      expect(file.source, file.file).not.toMatch(/export const headers|async headers\(\)/);
+      expect(file.source, file.file).not.toMatch(/Content-Security-Policy/);
+    }
+    // And no middleware, which would be a second runtime place the policy could differ.
+    expect(existsSync(join(srcDir, "..", "middleware.ts"))).toBe(false);
+    expect(existsSync(join(srcDir, "..", "middleware.js"))).toBe(false);
+  });
+
+  it("keeps the audit harness out of the application bundle", () => {
+    // The harness drives a browser over CDP. Shipping it would put a measurement tool
+    // - and the notion that measuring is a runtime concern - into the application.
+    for (const file of readTree(srcDir)) {
+      expect(file.source, file.file).not.toMatch(/evidence\/audit|cdp-check/);
+    }
+    const tsconfig = readFileSync(join(srcDir, "..", "tsconfig.json"), "utf8");
+    expect(tsconfig).not.toContain("openspec");
+  });
+});
+
+describe("architecture: a stored record is untrusted everywhere (M14 task 2.4)", () => {
+  /**
+   * Surfaces that render listener-owned records, and the store that feeds them.
+   *
+   * The guard lives in the store rather than the view because that is where a
+   * repository read lands: one place to get right, and every consumer inherits it.
+   */
+  const LISTENER_OWNED_SURFACES: Array<{ file: string; feed: string }> = [
+    { file: "features/library/LikedSongsView.tsx", feed: "useLibraryStore" },
+    { file: "features/library/LibraryView.tsx", feed: "useLibraryStore" },
+    { file: "features/history/HistoryView.tsx", feed: "useHistoryStore" },
+  ];
+
+  it("guards the store that feeds each listener-owned surface", () => {
+    expect(LISTENER_OWNED_SURFACES.length).toBeGreaterThan(2);
+    const libraryStore = readSource("stores", "libraryStore.ts");
+    const historyStore = readSource("stores", "historyStore.ts");
+    for (const surface of LISTENER_OWNED_SURFACES) {
+      const view = readSource(...surface.file.split("/"));
+      // The surface reads the store...
+      expect(view, surface.file).toContain(surface.feed);
+      // ...and the store guards what it hands over.
+      const store = surface.feed === "useLibraryStore" ? libraryStore : historyStore;
+      expect(store, surface.feed).toMatch(/renderable(Tracks|Playlists|Events)\(/);
+    }
+  });
+
+  it("keeps rendering surfaces off the repositories, proven on a violating snippet", () => {
+    // The violation: a view that opens storage itself, so the guard in the store is
+    // bypassed for exactly the records it is there to protect.
+    const viewReadingStorage = `
+      export function LikedView() {
+        const [tracks, setTracks] = useState<Track[]>([]);
+        useEffect(() => {
+          void getLocalData().then((data) => data.likedTracks.list().then(setTracks));
+        }, []);
+        return <ul>{tracks.map((track) => <li key={track.providerId}>{track.title}</li>)}</ul>;
+      }
+    `;
+    expect(viewReadingStorage, "the snippet is the violation").toContain("getLocalData()");
+
+    for (const surface of LISTENER_OWNED_SURFACES) {
+      const view = readSource(...surface.file.split("/"));
+      expect(view, surface.file).not.toContain("getLocalData");
+    }
+  });
+
+  it("names every feature that reads storage directly, with its reason", () => {
+    // These are derivation and management paths, not rendering paths: statistics
+    // aggregate, mix generation selects, local search filters, backup and the settings
+    // dialogs manage. Each reads records to compute something or to hand them to a
+    // caller that guards them, and each is named here so a new direct reader is a
+    // deliberate addition rather than a silent bypass.
+    const DIRECT_READERS: Record<string, string> = {
+      "features/backup/DataControls.tsx":
+        "backup export and import, which serialize records itself",
+      "features/insights/StatsView.tsx": "aggregates the whole history into statistics",
+      "features/mixes/generateMix.ts": "selects tracks for a generated mix",
+      "features/search/localSearch.ts": "filters the local search-history index",
+      "features/search/RecentSearches.tsx":
+        "renders search entries, a record type with no track fields",
+      "features/search/useSearchController.ts":
+        "rewrites the local search-history index on a query",
+      "features/storage/storageStatus.ts": "M14: observes the connection so a failure can be named",
+      "player/persistence.ts": "restores the playback session",
+    };
+    const found = new Set<string>();
+    for (const file of readTree(srcDir)) {
+      if (file.source.includes("getLocalData")) {
+        found.add(relative(srcDir, file.file).replace(/\\/g, "/"));
+      }
+    }
+    // The stores read through the same accessor and are the surfaces that guard.
+    for (const store of [
+      "stores/historyStore.ts",
+      "stores/libraryStore.ts",
+      "stores/mixStore.ts",
+      "stores/preferencesStore.ts",
+    ]) {
+      expect(found.has(store), store).toBe(true);
+    }
+    const features = [...found].filter(
+      (file) => file.startsWith("features/") || file.startsWith("player/"),
+    );
+    expect(features.sort(), "every direct reader is named, with its reason").toEqual(
+      Object.keys(DIRECT_READERS).sort(),
+    );
+    for (const [file, reason] of Object.entries(DIRECT_READERS)) {
+      expect(reason.length, `${file} must state why`).toBeGreaterThan(20);
+    }
+  });
+
+  it("keeps the record guard in the data layer, with no presentation dependency", () => {
+    const guard = readSource("data", "repositories", "renderable.ts");
+    // It judges record shapes, so it belongs beside them and imports nothing else.
+    expect(guard).toMatch(/from "\.\/types"/);
+    expect(guard).not.toMatch(/from "react"|from "@\/(components|features|stores|server)/);
+    // And it skips rather than repairs: a fabricated title in someone's library is
+    // something they cannot tell apart from real data.
+    expect(guard).toContain("It does not repair");
+  });
+});
+
+describe("architecture: the M14 resilience items stay implemented (M14 task 2.5)", () => {
+  it("keeps the caps and the chain that ROADMAP M14 already had implemented", () => {
+    // Confirmed rather than re-implemented, with the named constant in each case, so
+    // this fails if a later change quietly removes a cap.
+    const engine = readSource("player", "engine.ts");
+    expect(engine).toMatch(/export const MAX_RETRY_ATTEMPTS = \d+;/);
+    const support = readSource("server", "music", "providers", "support.ts");
+    expect(support).toMatch(/export const MAX_INSTANCE_ATTEMPTS = \d+;/);
+    const catalog = readSource("server", "music", "catalog.ts");
+    expect(catalog).toMatch(/export const CATALOG_SEED_TIMEOUT_MS = [\d_]+;/);
+    expect(catalog).toMatch(/export const CATALOG_SEED_CONCURRENCY = \d+;/);
+    // The in-flight deduplication the roadmap credits M3 with.
+    expect(readSource("server", "music", "cache.ts")).toMatch(/createInflightDedup/);
+  });
+
+  it("keeps the worker's cache reads behind the usability check", () => {
+    const worker = readFileSync(join(srcDir, "..", "public", "sw.js"), "utf8");
+    // Every strategy goes through the one helper; a direct `cache.match` outside it is
+    // an entry that can be served without being checked.
+    // Exactly one, and it is the helper's own: every other read would be an entry
+    // served without being checked for usability.
+    const directMatches = [...worker.matchAll(/cache\.match\(/g)].length;
+    expect(directMatches, "only the helper reads a cache directly").toBe(1);
+    const helperStart = worker.indexOf("async function readUsable");
+    const helperEnd = worker.indexOf("async function isIntactResponse");
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(worker.slice(helperStart, helperEnd), "the one read is inside the helper").toContain(
+      "cache.match(",
+    );
+    expect(worker).toContain("readUsable");
+    expect(worker).toContain("isIntactResponse");
+  });
+});

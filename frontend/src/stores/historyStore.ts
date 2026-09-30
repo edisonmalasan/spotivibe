@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { getLocalData } from "@/data/localData";
-import type { ListeningEventRecord, NewListeningEvent } from "@/data/repositories";
+import {
+  renderableEvents,
+  type ListeningEventRecord,
+  type NewListeningEvent,
+} from "@/data/repositories";
 
 /**
  * `historyStore` (ROADMAP M8, design §5/§6): the client authority for the
@@ -65,7 +69,9 @@ export function resetHistoryStore(): void {
 async function refreshEvents(): Promise<void> {
   const token = ++refreshToken;
   const data = await getLocalData();
-  const events = await data.listeningHistory.list(RECENT_HISTORY_LIMIT);
+  // Guarded for the same reason as the library store: a stored event whose track
+  // cannot be rendered is skipped rather than crashing the history surface.
+  const events = renderableEvents(await data.listeningHistory.list(RECENT_HISTORY_LIMIT));
   if (token === refreshToken) useHistoryStore.setState({ events, hydrated: true });
 }
 

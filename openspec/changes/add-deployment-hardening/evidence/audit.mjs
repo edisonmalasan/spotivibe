@@ -130,7 +130,10 @@ function findBrowser() {
 }
 
 function startServer() {
-  const log = join(EVIDENCE_DIR, "server.log");
+  // In the OS temp directory, not next to this script: a run's server log is a
+  // diagnostic for that run, and writing it into the evidence directory made every run
+  // produce a diff in a directory that is otherwise the record of one specific run.
+  const log = join(tmpdir(), `spotivibe-m14-audit-${PORT}.log`);
   const child = spawn(
     process.execPath,
     [
@@ -769,6 +772,7 @@ async function main() {
     );
 
     results.notes.disclosures.push(
+      `The production server's own log was written outside the repository, to the OS temp directory (${join(tmpdir(), `spotivibe-m14-audit-${PORT}.log`)}); check it there if a run fails to reach the origin.`,
       "A single-machine run against a local production build is a regression signal, not a field lab score. The thresholds detect a change between two runs on the same machine; they are not a claim about a real listener's device, network, or field percentile.",
       "INP is not observed, because it requires a real interaction. Total blocking time from long tasks stands in for responsiveness on a load, which is why the two thresholds are separate.",
       "Contrast is computed for text whose background the browser can resolve to an opaque colour. Text painted over a third-party album image is not computable from the DOM and is excluded rather than guessed; the audit records how many pairs it checked so the exclusion is visible.",

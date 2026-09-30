@@ -295,21 +295,23 @@ async function store(cacheName, request, response, max) {
 
 /** A cached metadata response that is still an acceptable answer, or `null`. */
 async function freshMetadata(request) {
+  // One read, through the one helper: the entry is checked for usability first, and the
+  // freshness stamp is read from the entry that would actually be served. Reading the
+  // cache directly to inspect the stamp and then validating separately is two reads of
+  // the same key, one of which bypasses the check.
   const cache = await caches.open(CACHES.metadata);
-  const cached = await cache.match(request);
+  const cached = await readUsable(CACHES.metadata, request, {
+    validate: (response) => isIntactResponse(response, { requireBody: true }),
+  });
   if (!cached) return null;
   const storedAt = Number(cached.headers.get("x-spotivibe-cached-at") ?? "0");
   if (!Number.isFinite(storedAt) || storedAt === 0) return null;
+  // Past its freshness bound an entry is deleted, which is a *freshness* answer, not a
+  // usability one: the entry may be perfectly intact and simply too old to serve.
   if (Date.now() - storedAt > METADATA_MAX_AGE_MS) {
-    await cache.delete(request);
+    await cache.delete(request).catch(() => undefined);
     return null;
   }
-  // Past its freshness bound an entry is deleted, and so is an entry that cannot be
-  // served: both are "not an answer", and only one of them is about age.
-  const intact = await readUsable(CACHES.metadata, request, {
-    validate: (response) => isIntactResponse(response, { requireBody: true }),
-  });
-  if (!intact) return null;
   return cached;
 }
 
