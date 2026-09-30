@@ -146,3 +146,4 @@ export interface Repositories {
 
 export * from "./types";
 export * from "./errors";
+export * from "./renderable";

@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { getLocalData } from "@/data/localData";
-import { LocalDataError, type PlaylistRecord, type Track } from "@/data/repositories";
+import {
+  LocalDataError,
+  renderablePlaylists,
+  renderableTracks,
+  type PlaylistRecord,
+  type Track,
+} from "@/data/repositories";
 
 /**
  * `libraryStore` (ROADMAP M7, design §1): the single library state authority
@@ -115,8 +121,11 @@ async function readLibrary(): Promise<{
   const [liked, playlists] = await Promise.all([data.likedTracks.list(), data.playlists.list()]);
   return {
     likedIds: new Set(liked.map((record) => record.trackId)),
-    likedTracks: liked.map((record) => record.track),
-    playlists,
+    // A stored record is untrusted data (spec `local-data`: a record that cannot be
+    // rendered does not fail the surface). Guarding here rather than in each view means
+    // one place to get right, and every consumer of the store inherits it.
+    likedTracks: renderableTracks(liked.map((record) => record.track)),
+    playlists: renderablePlaylists(playlists),
   };
 }
 

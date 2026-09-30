@@ -204,8 +204,11 @@ export function MixList({
         ) : null}
       </div>
 
+      {/* M14: this alert was `text-error`, which matches no declared token, so it was
+          painting in the inherited colour. `ErrorState` uses mist for its copy, and the
+          announcement comes from the role rather than from the colour. */}
       {error !== null ? (
-        <p role="alert" className="text-body-lg text-error">
+        <p role="alert" className="text-body-lg text-mist">
           {error}
         </p>
       ) : null}

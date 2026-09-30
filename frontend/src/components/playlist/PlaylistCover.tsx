@@ -22,7 +22,7 @@ export function PlaylistCover({ urls, className = "" }: PlaylistCoverProps) {
   if (urls.length === 0) {
     return (
       <div className={`flex items-center justify-center ${box}`} aria-hidden="true">
-        <Music2 className="size-8 text-fog" />
+        <Music2 className="size-8 text-fog" aria-hidden="true" />
       </div>
     );
   }

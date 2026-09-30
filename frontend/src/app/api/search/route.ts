@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runSearch, SEARCH_CACHE_TTL_MS } from "@/server/music/search";
+import { guardRequest } from "@/server/http/guard";
 import type { SearchDiagnostics, SearchResult } from "@/server/music/types";
 
 /**
@@ -72,6 +73,11 @@ function safeDiagnostics(diagnostics: SearchDiagnostics): SearchDiagnostics {
 }
 
 export async function GET(request: Request): Promise<Response> {
+  // Throttled before anything else: a refused request must not have already
+  // cost a provider call (spec `security` — bounded per-instance throttling).
+  const throttled = guardRequest(request);
+  if (throttled) return throttled;
+
   const params = new URL(request.url).searchParams;
   const parsed = searchParamsSchema.safeParse({
     q: params.get("q") ?? undefined,

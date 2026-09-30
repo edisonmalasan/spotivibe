@@ -9,6 +9,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { PlayerHost } from "@/components/player/PlayerHost";
 import { useListeningRecorder } from "@/features/history/useListeningRecorder";
 import { UpdateNotice } from "@/features/pwa/UpdateNotice";
+import { StorageNotice } from "@/features/storage/StorageNotice";
 import { attachServiceWorker } from "@/features/pwa/serviceWorker";
 import { RadioStartedTracker } from "@/features/personalization/RadioStartedTracker";
 import { RefillAgent } from "@/features/personalization/RefillAgent";
@@ -61,6 +62,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <ConnectionBanner />
       {/* M13: a waiting build is announced here, on every route. */}
       <UpdateNotice />
+      {/* M14: a storage failure is named here, on every route, so it is never mistaken
+          for an empty library. */}
+      <StorageNotice />
       {/* Radio/autofill observers, mounted with the persistent player. */}
       <RefillAgent />
       <RadioStartedTracker />

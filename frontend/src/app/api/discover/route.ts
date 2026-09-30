@@ -9,6 +9,7 @@ import {
   type DiscoveryResult,
 } from "@/server/music/discovery";
 import { DISCOVERY_KINDS } from "@/server/music/discoverySeeds";
+import { guardRequest } from "@/server/http/guard";
 
 /**
  * Discovery-feed transport boundary (design decisions 1–3):
@@ -94,6 +95,11 @@ function errorResponse(
 }
 
 export async function GET(request: Request): Promise<Response> {
+  // Throttled before anything else: a refused request must not have already
+  // cost a provider call (spec `security` — bounded per-instance throttling).
+  const throttled = guardRequest(request);
+  if (throttled) return throttled;
+
   const params = new URL(request.url).searchParams;
   const parsed = discoveryParamsSchema.safeParse({
     kind: params.get("kind") ?? undefined,

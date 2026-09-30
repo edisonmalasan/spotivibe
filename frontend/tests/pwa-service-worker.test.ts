@@ -24,6 +24,48 @@ const workerSource = readFileSync(WORKER_PATH, "utf8");
 const ORIGIN = "https://app.test";
 
 /** The absolute URL a request or relative string key names, as a real cache sees it. */
+/**
+ * A cache that fails to read, standing in for the corrupted or half-deleted store a
+ * real device eventually has.
+ *
+ * `match` and `delete` throw, and `open` still succeeds: the failure mode the worker
+ * must survive is "the cache cannot be read", not "the cache is absent".
+ */
+function withUnreadableCaches(harness: WorkerHarness, names: string[]): void {
+  // One wrapper per name, so the layers compose and a test can make one cache
+  // unreadable while the others still work. The name is not needed by the wrapper
+  // itself - it closes over the list - so the loop binds nothing.
+  for (let installed = 0; installed < names.length; installed += 1) {
+    const original = harness.caches.open;
+    harness.caches.open = async (requested: string) => {
+      const cache = await original(requested);
+      if (!names.includes(requested)) return cache;
+      return {
+        async keys() {
+          return cache.keys();
+        },
+        async match() {
+          throw new DOMException("cache is corrupted", "InvalidStateError");
+        },
+        async put() {
+          throw new DOMException("cache is corrupted", "InvalidStateError");
+        },
+        async delete() {
+          throw new DOMException("cache is corrupted", "InvalidStateError");
+        },
+      };
+    };
+  }
+}
+
+/** A response whose declared length does not match its body: a truncated write. */
+function truncatedResponse(declaredLength: number, body = "half a doc"): Response {
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/html", "content-length": String(declaredLength) },
+  });
+}
+
 function absoluteKey(request: Request | string): string {
   return typeof request === "string" ? new URL(request, ORIGIN).href : request.url;
 }
@@ -467,6 +509,195 @@ describe("bounded metadata and artwork (task 3.3)", () => {
     // And the revalidation does not wait for the response: the artwork was served
     // from cache, not from the network.
     expect(await worker.caches.sizeOf("spotivibe-artwork-v1")).toBe(1);
+  });
+});
+
+describe("an intact cache entry is served and kept (M14 task 2.1, verification C1)", () => {
+  /**
+   * A response whose declared length is its **byte** length, not its character length.
+   *
+   * The independent verification pass found the integrity check comparing
+   * `content-length` against a decoded string's length, which are different quantities
+   * for any non-ASCII body. Every prerendered page in this application contains
+   * non-ASCII punctuation, so the check deleted *intact* cached documents - four of the
+   * nine routes behaved as if never visited, and the artwork cache could never serve a
+   * hit. These tests exist so that regression cannot come back quietly.
+   */
+  function byteLengthOf(text: string): number {
+    return new TextEncoder().encode(text).length;
+  }
+
+  function documentWith(text: string): Response {
+    return new Response(text, {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-length": String(byteLengthOf(text)),
+      },
+    });
+  }
+
+  const NON_ASCII =
+    "<!doctype html><title>Spotivibe</title><p>Listening history \u2014 your day</p>";
+
+  it("serves an intact non-ASCII document from cache and keeps it", async () => {
+    expect(byteLengthOf(NON_ASCII), "the fixture must not be ASCII").toBeGreaterThan(
+      NON_ASCII.length,
+    );
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    const key = `${ORIGIN}/history`;
+    await cache.put(key, documentWith(NON_ASCII));
+
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    const response = await worker.respond(get(key, { mode: "navigate" }));
+
+    // The cached document, not the shell redirect that a discarded entry would produce.
+    expect(response?.status).toBe(200);
+    expect(await response?.text()).toBe(NON_ASCII);
+    // And it is still there afterwards: a check that deletes what it just served would
+    // pass the first assertion and quietly empty the cache on the way past.
+    const entry = await cache.match(key);
+    expect(entry, "the entry survived its own read").toBeDefined();
+    expect(await entry?.text()).toBe(NON_ASCII);
+  });
+
+  it("serves intact artwork with a declared length, rather than refetching it", async () => {
+    // The same code path serves artwork, where a wrong comparison would delete and
+    // re-download every image on every read - a cache that can never hit.
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe,
+    ]);
+    const cache = await worker.caches.open("spotivibe-artwork-v1");
+    const key = "https://img.test/cover.jpg";
+    await cache.put(
+      key,
+      new Response(bytes, {
+        status: 200,
+        headers: { "content-type": "image/jpeg", "content-length": String(bytes.byteLength) },
+      }),
+    );
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+
+    const response = await worker.respond(get(key, { destination: "image" }));
+    expect(response?.status).toBe(200);
+    expect((await response?.arrayBuffer())?.byteLength).toBe(bytes.byteLength);
+    expect(await cache.match(key), "the artwork entry survived").toBeDefined();
+  });
+
+  it("still discards a genuinely truncated non-ASCII document", async () => {
+    // The other half of the pair: the check must still catch what it is for. The shell
+    // is installed first because the honest answer for an unreadable route is a
+    // redirect to it, and without it the honest answer is the network failure.
+    await worker.fire("install");
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    const key = `${ORIGIN}/discover`;
+    await cache.put(key, documentWith(NON_ASCII));
+    // Overwrite it with a body shorter than its declared length.
+    await cache.put(
+      key,
+      new Response("\u2014 trunc", {
+        status: 200,
+        headers: { "content-type": "text/html", "content-length": "99999" },
+      }),
+    );
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+
+    const response = await worker.respond(get(key, { mode: "navigate" }));
+    expect(response?.status).toBe(302);
+    expect(await cache.match(key), "the truncated entry was deleted").toBeUndefined();
+  });
+});
+
+describe("a corrupt cache entry is a miss, not an answer (M14 task 2.1)", () => {
+  it("discards a truncated document and serves it from the network instead", async () => {
+    // A cache is the one component that can hold bytes the application did not just
+    // write, so serving one that cannot be served is a silent wrong answer.
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    const key = `${ORIGIN}/library`;
+    await cache.put(key, truncatedResponse(9999));
+    expect(await worker.caches.sizeOf("spotivibe-pages-v1")).toBe(1);
+
+    const response = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    // The live response, not the truncated one...
+    expect(await response?.text()).toBe("live");
+    // ...and the entry is gone, so the next visit cannot be fooled by it either.
+    const keys = (await cache.keys()).map((entry) => entry.url);
+    expect(keys.filter((url) => url === key)).toHaveLength(1);
+    expect(await (await cache.match(key))?.text()).toBe("live");
+  });
+
+  it("discards a truncated metadata response rather than serving stale metadata", async () => {
+    const url = `${ORIGIN}/api/artist?name=x`;
+    const cache = await worker.caches.open("spotivibe-metadata-v1");
+    await worker.respond(get(url, { mode: "cors" }));
+    const [key] = await cache.keys();
+    // Replace the good copy with a truncated one that still carries the freshness
+    // stamp: a corrupt entry must not be served merely because it looks recent.
+    const headers = new Headers({
+      "content-length": "99999",
+      "x-spotivibe-cached-at": String(Date.now()),
+    });
+    await cache.put(
+      key!,
+      new Response(JSON.stringify({ truncated: true }), { status: 200, headers }),
+    );
+
+    worker.fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
+    await expect(worker.respond(get(url, { mode: "cors" }))).rejects.toThrow();
+    expect(await worker.caches.sizeOf("spotivibe-metadata-v1")).toBe(0);
+  });
+
+  it("treats a cache that cannot be opened as empty too", async () => {
+    // `caches.open` was outside the try, so a store that cannot be opened rejected the
+    // whole navigation - the listener's page died on a cache problem, which is the one
+    // thing this helper exists to prevent. `store()` has always guarded this call.
+    const original = worker.caches.open;
+    worker.caches.open = async (name: string) => {
+      if (name.startsWith("spotivibe-")) {
+        throw new DOMException("cache storage is unavailable", "SecurityError");
+      }
+      return original(name);
+    };
+    const page = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    expect(await page?.text()).toBe("live");
+    worker.caches.open = original;
+  });
+
+  it("treats an unreadable cache as empty rather than failing the request", async () => {
+    // A cache that throws on read must not take the page's request down with it: the
+    // worker falls through to the network and the listener's page still loads.
+    withUnreadableCaches(worker, ["spotivibe-pages-v1", "spotivibe-shell-v1"]);
+    const page = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    expect(await page?.text()).toBe("live");
+
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    // And with the network gone too, the unvisited-route fallback still cannot read
+    // the shell - so the failure is the honest one rather than a thrown cache error.
+    await expect(
+      worker.respond(get(`${ORIGIN}/artist/Nobody`, { mode: "navigate" })),
+    ).rejects.toThrow();
+  });
+
+  it("does not serve a document with an empty body as if it were a page", async () => {
+    // Install first, so the shell the fallback redirects to actually exists - without
+    // it the honest answer is the network failure, which the previous test covers.
+    await worker.fire("install");
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    await cache.put(`${ORIGIN}/queue`, new Response("", { status: 200 }));
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    // An empty document is not a page; the shell redirect is the honest answer.
+    const response = await worker.respond(get(`${ORIGIN}/queue`, { mode: "navigate" }));
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get("location")).toBe(`${ORIGIN}/`);
+  });
+
+  it("still returns a live response when the cache cannot be written", async () => {
+    // Found by the unreadable-cache test above: a `put` that throws used to reject the
+    // whole request, so a device with a full or corrupted store could lose the network
+    // response it had already been given.
+    withUnreadableCaches(worker, ["spotivibe-pages-v1", "spotivibe-shell-v1"]);
+    const response = await worker.respond(get(`${ORIGIN}/history`, { mode: "navigate" }));
+    expect(await response?.text()).toBe("live");
   });
 });
 

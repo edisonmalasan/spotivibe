@@ -136,8 +136,11 @@ export function StatsView() {
         </p>
       </header>
 
+      {/* M14: this alert was `text-error`, which matches no declared token, so it was
+          painting in the inherited colour. `ErrorState` uses mist for its copy, and the
+          announcement comes from the role rather than from the colour. */}
       {failed ? (
-        <p role="alert" className="text-body-lg text-error">
+        <p role="alert" className="text-body-lg text-mist">
           Your statistics could not be read from local storage.
         </p>
       ) : null}
