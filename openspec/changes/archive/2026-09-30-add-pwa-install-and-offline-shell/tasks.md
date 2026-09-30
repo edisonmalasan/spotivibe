@@ -38,6 +38,24 @@
 - [x] 6.4 Re-verify the quality gates from a clean clone of the branch head — verify: all six commands exit `0` in the fresh clone.
 - [x] 6.5 Update `ROADMAP.md`: M13 status row → `DONE` and the M13 items the change delivers ticked in the feature checklist — verify: `git diff` shows the status cell, the ticked items, and a short delivery record for the M13 section.
 
+## Archive record
+
+Archived 2026-09-30 after Apply and Sync were merged.
+
+- **Apply**: PR #54 (`feat/pwa-install-and-offline-shell`), merge commit `6bdc296`.
+- **Sync**: PR #55 (`docs/pwa-spec-sync`), merge commit `74307b8`. Its two capabilities
+  were re-verified against the main specs before this move: all six `pwa` requirements
+  and all five scenarios of the modified `network` requirement are present in
+  `openspec/specs/`, with every pre-existing scenario retained.
+- **Verification at archive time**: `openspec validate --specs --strict` → 16
+  capabilities passed, 0 failed. All six quality gates exit `0` from the branch head
+  and from a clean clone: 2152 tests across 134 files, and a browser evidence run
+  reporting `"pass": true` with 34/34 steps and 0 console errors.
+- **Not verified here, and still not verified**: real iOS or Android home-screen
+  installation, a waiting-worker swap (a single build cannot produce one), offline
+  artwork traffic, and the 7-day metadata freshness bound. Each is listed under
+  `notes.disclosures` in `evidence/results.json` with where its evidence lives instead.
+
 ## Verification record
 
 All twenty tasks are implemented and verified. What each kind of evidence actually
