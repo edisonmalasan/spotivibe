@@ -1,6 +1,6 @@
 {
   "task": "3.1, 3.2, 4.1, 4.2",
-  "generatedAt": "2026-09-30T13:09:16.030Z",
+  "generatedAt": "2026-09-30T13:43:17.209Z",
   "origin": "http://localhost:3212",
   "targets": {
     "lcpMs": 2500,
@@ -42,7 +42,7 @@
     {
       "name": "desktop /library: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "desktop /search: every text style meets its contrast minimum",
@@ -62,7 +62,7 @@
     {
       "name": "desktop /search: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "desktop /history: every text style meets its contrast minimum",
@@ -82,7 +82,7 @@
     {
       "name": "desktop /history: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 60ms (≤2500), CLS 0.0598 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 124ms (≤2500), CLS 0.0598 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "desktop /settings: every text style meets its contrast minimum",
@@ -102,7 +102,7 @@
     {
       "name": "desktop /settings: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 40ms (≤2500), CLS 0.0132 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0.0132 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "desktop /now-playing: every text style meets its contrast minimum",
@@ -122,7 +122,7 @@
     {
       "name": "desktop /now-playing: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 40ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /library: every text style meets its contrast minimum",
@@ -142,7 +142,7 @@
     {
       "name": "compact /library: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 64ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 92ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /search: every text style meets its contrast minimum",
@@ -162,7 +162,7 @@
     {
       "name": "compact /search: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 64ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 72ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /history: every text style meets its contrast minimum",
@@ -182,7 +182,7 @@
     {
       "name": "compact /history: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 36ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /settings: every text style meets its contrast minimum",
@@ -202,7 +202,7 @@
     {
       "name": "compact /settings: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /now-playing: every text style meets its contrast minimum",
@@ -222,18 +222,114 @@
     {
       "name": "compact /now-playing: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 80ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "a document carries the security policy and the hardening headers",
+      "ok": true,
+      "detail": "17 headers"
+    },
+    {
+      "name": "the manifest carries the security policy and the hardening headers",
+      "ok": true,
+      "detail": "15 headers"
+    },
+    {
+      "name": "the service worker file carries the security policy and the hardening headers",
+      "ok": true,
+      "detail": "15 headers"
+    },
+    {
+      "name": "a content-hashed static asset carries them too",
+      "ok": true,
+      "detail": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2"
+    },
+    {
+      "name": "the served production policy carries no development relaxation",
+      "ok": true,
+      "detail": "no policy meta tag, which is correct - the header is authoritative"
+    },
+    {
+      "name": "a request loop is refused once it passes the ceiling",
+      "ok": true,
+      "detail": "60 served, then refused with 429"
+    },
+    {
+      "name": "the refusal names the ceiling and a delay",
+      "ok": true,
+      "detail": "limit 60, retry-after 29s"
+    },
+    {
+      "name": "a different route class keeps its own budget",
+      "ok": true,
+      "detail": "/api/discover returned 200 after the search route was refused"
+    },
+    {
+      "name": "a database that cannot be opened is named, and says the data was not deleted",
+      "ok": true,
+      "detail": "Spotivibe could not read your local data.Nothing was deleted — your library, playlists, an"
+    },
+    {
+      "name": "the application still renders around the storage failure",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the only console errors during the storage phase are the injected failure",
+      "ok": true,
+      "detail": "1 injected, recorded under notes.injectedStorageErrors"
+    },
+    {
+      "name": "the notice clears once storage opens again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "exactly one service worker is registered, and it controls the page",
+      "ok": true,
+      "detail": "1 registration(s): /"
     },
     {
       "name": "zero console errors across every measured surface",
       "ok": true,
       "detail": "none"
+    },
+    {
+      "name": "a truncated document is seeded into the worker's page cache",
+      "ok": true,
+      "detail": "5 page entries, 1 shell entries"
+    },
+    {
+      "name": "the origin is genuinely refusing connections",
+      "ok": true,
+      "detail": "refused"
+    },
+    {
+      "name": "the application loads with the origin gone and a corrupt cached document present",
+      "ok": true,
+      "detail": "landed on /: SpotivibeYour LibraryStart your libraryPlayli t  and  ong  you  ave will live here.Open libraryDi cover  omething newSea"
+    },
+    {
+      "name": "the corrupt entry was discarded rather than served",
+      "ok": true,
+      "detail": "the truncated document is gone, or replaced by a real response"
+    },
+    {
+      "name": "the worker survives the failure and still controls the page",
+      "ok": true,
+      "detail": ""
     }
   ],
-  "screenshots": [],
+  "screenshots": [
+    "desktop-library.png",
+    "compact-library.png",
+    "storage-unavailable.png",
+    "offline-corrupt-cache.png"
+  ],
   "consoleErrors": [],
   "notes": {
     "disclosures": [
+      "The production server's own log was written outside the repository, to the OS temp directory (C:\\Users\\Edison\\AppData\\Local\\Temp\\spotivibe-m14-audit-3212.log); check it there if a run fails to reach the origin.",
       "A single-machine run against a local production build is a regression signal, not a field lab score. The thresholds detect a change between two runs on the same machine; they are not a claim about a real listener's device, network, or field percentile.",
       "INP is not observed, because it requires a real interaction. Total blocking time from long tasks stands in for responsiveness on a load, which is why the two thresholds are separate.",
       "Contrast is computed for text whose background the browser can resolve to an opaque colour. Text painted over a third-party album image is not computable from the DOM and is excluded rather than guessed; the audit records how many pairs it checked so the exclusion is visible.",
@@ -251,11 +347,11 @@
     },
     "desktoplibrary": {
       "vitals": {
-        "lcp": 60,
+        "lcp": 52,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 60,
+        "firstContentfulPaint": 52,
         "observedDuringLoad": true
       },
       "contrastChecked": 11,
@@ -267,11 +363,11 @@
     },
     "desktopsearch": {
       "vitals": {
-        "lcp": 60,
+        "lcp": 48,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 60,
+        "firstContentfulPaint": 48,
         "observedDuringLoad": true
       },
       "contrastChecked": 11,
@@ -283,11 +379,11 @@
     },
     "desktophistory": {
       "vitals": {
-        "lcp": 60,
+        "lcp": 124,
         "cls": 0.0598,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 40,
+        "firstContentfulPaint": 100,
         "observedDuringLoad": true
       },
       "contrastChecked": 13,
@@ -299,11 +395,11 @@
     },
     "desktopsettings": {
       "vitals": {
-        "lcp": 40,
+        "lcp": 60,
         "cls": 0.0132,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 40,
+        "firstContentfulPaint": 60,
         "observedDuringLoad": true
       },
       "contrastChecked": 21,
@@ -315,11 +411,11 @@
     },
     "desktopnow-playing": {
       "vitals": {
-        "lcp": 40,
+        "lcp": 52,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 40,
+        "firstContentfulPaint": 52,
         "observedDuringLoad": true
       },
       "contrastChecked": 8,
@@ -331,11 +427,11 @@
     },
     "compactlibrary": {
       "vitals": {
-        "lcp": 64,
+        "lcp": 92,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 44,
+        "firstContentfulPaint": 76,
         "observedDuringLoad": true
       },
       "contrastChecked": 8,
@@ -347,11 +443,11 @@
     },
     "compactsearch": {
       "vitals": {
-        "lcp": 64,
+        "lcp": 72,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 48,
+        "firstContentfulPaint": 56,
         "observedDuringLoad": true
       },
       "contrastChecked": 8,
@@ -363,11 +459,11 @@
     },
     "compacthistory": {
       "vitals": {
-        "lcp": 36,
+        "lcp": 52,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 36,
+        "firstContentfulPaint": 52,
         "observedDuringLoad": true
       },
       "contrastChecked": 10,
@@ -379,11 +475,11 @@
     },
     "compactsettings": {
       "vitals": {
-        "lcp": 48,
+        "lcp": 60,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 48,
+        "firstContentfulPaint": 60,
         "observedDuringLoad": true
       },
       "contrastChecked": 19,
@@ -395,11 +491,11 @@
     },
     "compactnow-playing": {
       "vitals": {
-        "lcp": 48,
+        "lcp": 80,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 48,
+        "firstContentfulPaint": 80,
         "observedDuringLoad": true
       },
       "contrastChecked": 7,
@@ -408,13 +504,216 @@
       "unnamed": 0,
       "primaryControls": 20,
       "unreachableByTab": 0
-    }
+    },
+    "observedResponses": [
+      {
+        "path": "/library",
+        "status": 200,
+        "headerCount": 17,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+        "status": 200,
+        "headerCount": 14,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/2_wf25ahthilb.css",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/19mx3mg6lkumu.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/0bma92pht_c97.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/2-rtuqsgzmno4.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/turbopack-43vu1xwipchft.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/3fntmmi971322.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/34ldk_p_h920t.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/06aa882zd2gkl.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/1jpr12kqzkc5o.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/manifest.webmanifest",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/now-playing",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/search",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/discover",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/1kgsd09e9q64c.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/icon.svg",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/1h22qh4kr7ih4.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/1qkc8_-3dl8t-.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/now-playing",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/search",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/discover",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/134mtf0a5yfa4.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/0mv73rdxoqz7s.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/2z8-sngjjo0tr.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/sw.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      }
+    ],
+    "injectedStorageErrors": [
+      "exception: SecurityError: storage denied"
+    ]
   },
   "pass": true,
   "browser": "Edg/154.0.4258.37",
   "summary": {
-    "steps": 44,
-    "passed": 44,
+    "steps": 62,
+    "passed": 62,
     "failed": 0,
     "consoleErrors": 0
   }

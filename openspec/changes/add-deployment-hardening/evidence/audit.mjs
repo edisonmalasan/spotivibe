@@ -555,10 +555,20 @@ async function main() {
     on("Target.attachedToTarget", async (params) => {
       sessions.set(String(params.targetInfo?.targetId ?? ""), params.sessionId);
       try {
+        if (params.targetInfo?.type === "service_worker") {
+          // The worker fetches the manifest, its own file, and static assets on behalf
+          // of the page, and those responses are only reported on the worker's session.
+          // Without this, the three responses the policy most needs to cover - the two
+          // files a browser fetches before it renders anything, and the assets - looked
+          // header-less because nobody had enabled the domain that reports them.
+          await sendTo(params.sessionId, "Network.enable");
+          return;
+        }
         if (params.targetInfo?.type !== "page") return;
         await sendTo(params.sessionId, "Page.enable");
         await sendTo(params.sessionId, "Runtime.enable");
         await sendTo(params.sessionId, "Log.enable");
+        await sendTo(params.sessionId, "Network.enable");
       } catch {
         /* a target that closed before its domains were enabled is not a failure */
       }
@@ -634,6 +644,20 @@ async function main() {
       throw new Error(
         `Timed out waiting for ${description} (last: ${JSON.stringify(last)})`,
       );
+    };
+    /**
+     * Capture a screenshot next to this script.
+     *
+     * Three are worth having, and each shows something a text result cannot: the
+     * desktop shell, the compact shell (whose inactive navigation label is the contrast
+     * defect this milestone fixed, and which a desktop-sized screenshot would not
+     * contain at all), and the application rendering with the origin gone.
+     */
+    const shoot = async (name) => {
+      const { data } = await send("Page.captureScreenshot", { format: "png" });
+      const file = join(EVIDENCE_DIR, `${name}.png`);
+      writeFileSync(file, Buffer.from(data, "base64"));
+      results.screenshots.push(file.split(/[\\/]/).pop());
     };
     const goto = async (path, ready = "document.readyState") => {
       await send("Page.navigate", { url: `${ORIGIN}${path}` });
@@ -762,8 +786,244 @@ async function main() {
             audit.vitals.longestTask <= TARGETS.longestTaskMs,
           `LCP ${Math.round(audit.vitals.lcp ?? 0)}ms (≤${TARGETS.lcpMs}), CLS ${audit.vitals.cls} (≤${TARGETS.cls}), TBT ${audit.vitals.totalBlockingTime}ms (≤${TARGETS.tbtMs}), longest task ${Math.round(audit.vitals.longestTask)}ms (≤${TARGETS.longestTaskMs})`,
         );
+        if (path === "/library") await shoot(`${viewport.name}-library`);
       }
     }
+
+    // ---- 3. the security policy, as the browser receives it --------------
+    await send("Network.enable");
+    const seenHeaders = new Map();
+    const seenStatus = new Map();
+    on("Network.responseReceived", (params) => {
+      // Deliberately not filtered by session. With a controlling service worker a
+      // response is reported on the *worker's* session, and an earlier version of this
+      // harness filtered to the page's - which is why the worker file and the static
+      // asset appeared to carry no headers at all. They did; they were not being
+      // listened to.
+      const url = params.response.url;
+      if (url.startsWith(ORIGIN) && !seenHeaders.has(url)) {
+        // Lower-cased on the way in: the protocol reports headers with the casing they
+        // were sent in, so a lowercase-only lookup finds nothing. That is why four
+        // responses looked header-less while carrying every header.
+        const lower = {};
+        for (const [name, value] of Object.entries(
+          params.response.headers ?? {},
+        )) {
+          lower[name.toLowerCase()] = value;
+        }
+        seenHeaders.set(url, lower);
+        seenStatus.set(url, params.response.status);
+      }
+    });
+    await goto("/library");
+    // A document, the manifest, the worker file, and a content-hashed asset: the four
+    // kinds of response a browser fetches before anyone can interact, and the four a
+    // header rule that only covered pages would miss.
+    await evaluate(`(async () => {
+      await fetch("/manifest.webmanifest");
+      await fetch("/sw.js");
+      const asset = [...document.querySelectorAll('link[rel="stylesheet"], script[src]')]
+        .map((element) => element.href || element.src)
+        .find(Boolean);
+      if (asset) await fetch(asset);
+      return true;
+    })()`);
+    await delay(800);
+
+    // Every same-origin response the browser reported, kept as evidence rather than as
+    // a debugging aid: a reader asking "which responses did this actually see?" should
+    // be able to answer it from the file.
+    results.notes.observedResponses = [...seenHeaders.entries()].map(
+      ([url, headers]) => ({
+        path: new URL(url).pathname,
+        status: seenStatus.get(url) ?? null,
+        headerCount: Object.keys(headers).length,
+        hasPolicy: Boolean(headers["content-security-policy"]),
+      }),
+    );
+
+    const REQUIRED_HEADERS = [
+      "content-security-policy",
+      "x-content-type-options",
+      "referrer-policy",
+      "x-frame-options",
+      "permissions-policy",
+    ];
+    for (const [label, path] of [
+      ["a document", `${ORIGIN}/library`],
+      ["the manifest", `${ORIGIN}/manifest.webmanifest`],
+      ["the service worker file", `${ORIGIN}/sw.js`],
+    ]) {
+      const headers = seenHeaders.get(path);
+      const missing = REQUIRED_HEADERS.filter((name) => !headers?.[name]);
+      step(
+        `${label} carries the security policy and the hardening headers`,
+        headers !== undefined && missing.length === 0,
+        missing.length === 0
+          ? Object.keys(headers).length + " headers"
+          : "missing: " + missing.join(", "),
+      );
+    }
+    const assetUrl = [...seenHeaders.keys()].find(
+      (url) => url.includes("/_next/static/") && !url.endsWith(".map"),
+    );
+    const assetHeaders = assetUrl ? seenHeaders.get(assetUrl) : undefined;
+    step(
+      "a content-hashed static asset carries them too",
+      assetHeaders !== undefined &&
+        REQUIRED_HEADERS.every((name) => Boolean(assetHeaders[name])),
+      assetUrl ? new URL(assetUrl).pathname : "no static asset observed",
+    );
+    // The policy a browser actually parsed, read back from the page itself rather than
+    // from the header map: a header that arrived malformed would still be present.
+    const reportedPolicy = await evaluate(
+      `document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? null`,
+    );
+    step(
+      "the served production policy carries no development relaxation",
+      !String(
+        seenHeaders.get(`${ORIGIN}/library`)?.["content-security-policy"] ?? "",
+      ).includes("unsafe-eval"),
+      reportedPolicy === null
+        ? "no policy meta tag, which is correct - the header is authoritative"
+        : "a meta tag is also present, which is a second place to keep in sync",
+    );
+
+    // ---- 4. throttling, end to end ---------------------------------------
+    // The limiter is process-local and the audit is the only client, so the ceiling is
+    // reached by construction: what is asserted is that a loop is refused with the
+    // documented response, and that a different route class is unaffected.
+    const loop = await evaluate(`
+      (async () => {
+        const statuses = [];
+        for (let index = 0; index < 75; index += 1) {
+          // A distinct URL per request, and no-store. The first version of this probe
+          // asked for the same URL 75 times, the browser answered them from its own
+          // cache, and the limiter was never reached. "The loop was not refused" and
+          // "the loop never arrived" are different failures, and only one of them is a
+          // defect in the limiter.
+          const response = await fetch(
+            "/api/search?q=hardening-probe-" + index + "&limit=1",
+            { cache: "no-store" },
+          );
+          statuses.push(response.status);
+          if (response.status === 429) {
+            const body = await response.json().catch(() => null);
+            return { statuses, refused: { status: 429, retryAfter: response.headers.get("retry-after"), body } };
+          }
+        }
+        return { statuses, refused: null };
+      })()
+    `);
+    const served = loop.statuses.filter((status) => status === 200).length;
+    step(
+      "a request loop is refused once it passes the ceiling",
+      loop.refused !== null && served > 0,
+      `${served} served, then ${loop.refused ? "refused with " + loop.refused.status : "never refused"}`,
+    );
+    step(
+      "the refusal names the ceiling and a delay",
+      loop.refused?.body?.error === "rate_limited" &&
+        typeof loop.refused?.body?.limit === "number" &&
+        Number(loop.refused?.retryAfter) > 0,
+      loop.refused
+        ? `limit ${loop.refused.body?.limit}, retry-after ${loop.refused.retryAfter}s`
+        : "no refusal",
+    );
+    const otherRoute = await evaluate(`
+      fetch("/api/discover?kind=trending&limit=1").then((response) => response.status)
+    `);
+    step(
+      "a different route class keeps its own budget",
+      otherRoute === 200,
+      `/api/discover returned ${otherRoute} after the search route was refused`,
+    );
+
+    // ---- 5. the storage-failure state ------------------------------------
+    // Forced by removing IndexedDB before the document runs, which is what a private
+    // window or a denied site-data permission looks like to the application.
+    // Everything from here until the recovery check runs against a deliberately broken
+    // storage layer, so console errors here are the injected failure rather than an
+    // application error: they are accounted for separately instead of being counted
+    // against the application.
+    const errorsBeforeStoragePhase = results.consoleErrors.length;
+    const breakStorage = `
+      Object.defineProperty(window, "indexedDB", {
+        configurable: true,
+        get() { throw new DOMException("storage denied", "SecurityError"); },
+      });
+    `;
+    const { identifier: storageScript } = await send(
+      "Page.addScriptToEvaluateOnNewDocument",
+      {
+        source: breakStorage,
+      },
+    );
+    await goto("/library");
+    const notice = await waitFor(
+      "the storage notice",
+      `(() => {
+        const element = document.querySelector('[data-testid="storage-notice"]');
+        return element ? element.textContent : null;
+      })()`,
+      (value) => typeof value === "string" && value.length > 0,
+      15000,
+    ).catch(() => null);
+    step(
+      "a database that cannot be opened is named, and says the data was not deleted",
+      typeof notice === "string" &&
+        /could not read your local data/i.test(notice) &&
+        /nothing was deleted/i.test(notice),
+      typeof notice === "string" ? notice.slice(0, 90) : "no notice appeared",
+    );
+    const stillRenders = await evaluate(
+      `Boolean(document.querySelector("main")) && document.body.textContent.length > 0`,
+    );
+    step(
+      "the application still renders around the storage failure",
+      stillRenders === true,
+    );
+    await shoot("storage-unavailable");
+    const injectedErrors = results.consoleErrors.slice(
+      errorsBeforeStoragePhase,
+    );
+    results.notes.injectedStorageErrors = injectedErrors;
+    results.consoleErrors.length = errorsBeforeStoragePhase;
+    step(
+      "the only console errors during the storage phase are the injected failure",
+      injectedErrors.length > 0 &&
+        injectedErrors.every((entry) =>
+          /storage denied|SecurityError/.test(entry),
+        ),
+      injectedErrors.length === 0
+        ? "none - the failure was silent"
+        : injectedErrors.length +
+            " injected, recorded under notes.injectedStorageErrors",
+    );
+    await send("Page.removeScriptToEvaluateOnNewDocument", {
+      identifier: storageScript,
+    });
+    await goto("/library");
+    const recovered = await waitFor(
+      "the notice to clear once storage works again",
+      `document.querySelector('[data-testid="storage-notice"]') === null`,
+      (value) => value === true,
+      10000,
+    ).catch(() => false);
+    step("the notice clears once storage opens again", recovered === true);
+
+    // ---- 6. exactly one worker -------------------------------------------
+    const registrations = await evaluate(`
+      navigator.serviceWorker.getRegistrations().then((list) => ({
+        count: list.length,
+        scopes: list.map((registration) => new URL(registration.scope).pathname),
+      }))
+    `);
+    step(
+      "exactly one service worker is registered, and it controls the page",
+      registrations.count === 1 && registrations.scopes[0] === "/",
+      `${registrations.count} registration(s): ${registrations.scopes.join(", ") || "none"}`,
+    );
 
     step(
       "zero console errors across every measured surface",
@@ -779,6 +1039,87 @@ async function main() {
       "Keyboard reachability is checked through the elements' own semantics and tabindex, not by pressing Tab through the application; a control that is focusable but hidden behind a focus trap would not be caught.",
       "Both the desktop and the compact viewport are measured, because the compact shell does not render at the desktop size. A surface that renders at neither size is not covered by this run.",
     );
+    // ---- 7. corrupt cache recovery, with the origin genuinely gone ---------
+    // "Offline" here means the server process has been stopped, not that a request was
+    // intercepted: M13 recorded that as the only definition worth trusting, because a
+    // simulated offline mode can still be served from a renderer cache.
+    //
+    // This is the last phase, because it takes the origin down.
+    const seeded = await evaluate(`
+      (async () => {
+        const cache = await caches.open("spotivibe-pages-v1");
+        const key = new URL("/library", location.origin).href;
+        await cache.put(key, new Response("half a document", {
+          status: 200,
+          headers: { "content-type": "text/html", "content-length": "9999" },
+        }));
+        const shell = await caches.open("spotivibe-shell-v1");
+        const shellEntries = (await shell.keys()).length;
+        return { seeded: true, shellEntries, before: (await cache.keys()).length };
+      })()
+    `);
+    step(
+      "a truncated document is seeded into the worker's page cache",
+      seeded.seeded && seeded.shellEntries > 0,
+      `${seeded.before} page entries, ${seeded.shellEntries} shell entries`,
+    );
+
+    stopServer(server);
+    server = undefined;
+    await delay(600);
+    // Proof the origin is genuinely refusing connections, rather than assumed to be.
+    const originDown = await evaluate(
+      `fetch("/manifest.webmanifest", { cache: "no-store" })
+         .then(() => "answered")
+         .catch(() => "refused")`,
+    );
+    step(
+      "the origin is genuinely refusing connections",
+      originDown === "refused",
+      originDown,
+    );
+
+    await send("Page.navigate", { url: `${ORIGIN}/library` });
+    await delay(2500);
+    const offlineState = await evaluate(`(() => {
+      const main = document.querySelector("main");
+      const body = document.body?.textContent ?? "";
+      return {
+        url: location.pathname,
+        rendered: Boolean(main) && body.length > 0,
+        // An error boundary's own copy, so a crash page cannot pass as "rendered".
+        errorBoundary: /something went wrong|application error|try again later/i.test(body),
+        bodySample: body.replace(/\s+/g, " ").trim().slice(0, 120),
+      };
+    })()`);
+    step(
+      "the application loads with the origin gone and a corrupt cached document present",
+      offlineState.rendered && !offlineState.errorBoundary,
+      `landed on ${offlineState.url}: ${offlineState.bodySample}`,
+    );
+    step(
+      "the corrupt entry was discarded rather than served",
+      await evaluate(`
+        caches.open("spotivibe-pages-v1")
+          .then(async (cache) => {
+            const key = new URL("/library", location.origin).href;
+            const entry = await cache.match(key);
+            if (entry === undefined) return true;
+            const body = await entry.text();
+            return !body.startsWith("half a document");
+          })
+      `),
+      "the truncated document is gone, or replaced by a real response",
+    );
+    await shoot("offline-corrupt-cache");
+    const stillControlled = await evaluate(
+      `navigator.serviceWorker.controller !== null`,
+    );
+    step(
+      "the worker survives the failure and still controls the page",
+      stillControlled === true,
+    );
+
     results.pass = results.steps.every((entry) => entry.ok);
   } catch (error) {
     step(
