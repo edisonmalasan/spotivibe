@@ -4,11 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "@/data/repositories";
 import { SearchResults } from "@/features/search/SearchResults";
 import { PodcastCategoryList } from "@/features/search/PodcastCategoryList";
-import {
-  PODCAST_CATEGORIES,
-  podcastCategoryQueries,
-  podcastCategoryById,
-} from "@/features/search/podcastCategories";
+import { PODCAST_CATEGORIES, podcastCategoryQueries } from "@/features/search/podcastCategories";
 import { SEARCH_MODE_OPTIONS } from "@/features/search/SearchView";
 import { isSearchMode, searchModeFromParam, SEARCH_MODE_PARAM } from "@/features/search/searchApi";
 import { buildSearchUrl } from "@/lib/searchUrl";
@@ -47,6 +43,13 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/search",
   useSearchParams: () => new URLSearchParams(),
 }));
+
+/** The one category several assertions name, looked up the way a caller would. */
+function newsCategory() {
+  const category = PODCAST_CATEGORIES.find((entry) => entry.id === "news");
+  if (category === undefined) throw new Error("the catalog has no news category");
+  return category;
+}
 
 const episode = (id: string, title: string, channel: string): Track => ({
   id: `youtube:${id}`,
@@ -200,19 +203,18 @@ describe("podcast results are presented as episodes", () => {
 
 describe("curated podcast categories", () => {
   it("resolves a language's own query text", () => {
-    const news = podcastCategoryById("news");
-    expect(news).toBeDefined();
-    expect(podcastCategoryQueries(news!, ["en"])).toEqual(["news podcasts", "daily news podcast"]);
-    expect(podcastCategoryQueries(news!, ["es"])).toEqual(["podcasts de noticias"]);
+    const news = newsCategory();
+    expect(podcastCategoryQueries(news, ["en"])).toEqual(["news podcasts", "daily news podcast"]);
+    expect(podcastCategoryQueries(news, ["es"])).toEqual(["podcasts de noticias"]);
   });
 
   it("falls back to the neutral entry for a language it does not cover", () => {
-    const news = podcastCategoryById("news");
+    const news = newsCategory();
     // A language with no entry must still produce a usable query, in the order the
     // selected languages are given, and then the neutral text.
-    expect(podcastCategoryQueries(news!, ["zz"])).toEqual(news!.queries.neutral);
-    expect(podcastCategoryQueries(news!, ["zz", "fr"])).toEqual(news!.queries.fr);
-    expect(podcastCategoryQueries(news!, [])).toEqual(news!.queries.neutral);
+    expect(podcastCategoryQueries(news, ["zz"])).toEqual(news.queries.neutral);
+    expect(podcastCategoryQueries(news, ["zz", "fr"])).toEqual(news.queries.fr);
+    expect(podcastCategoryQueries(news, [])).toEqual(news.queries.neutral);
   });
 
   it("gives every category a neutral fallback, so no selection can fall through", () => {

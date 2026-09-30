@@ -24,10 +24,11 @@ import {
  * Tier 2 — YouTube Web Innertube (secondary discovery provider,
  * ROADMAP §7.2 / §6.1 KEEP-REFACTOR).
  *
- * The web search appends ` song` to the query when not in podcast-only mode,
- * matching the reference behavior (Lyrix `innertubeService.ts`:
- * `query: options?.webOnly ? query : query + " song"`); podcast-only mode is
- * out of scope for M3 (M12).
+ * The web search appends ` song` to the query in music mode, matching the
+ * reference behavior (Lyrix `innertubeService.ts`:
+ * `query: options?.webOnly ? query : query + " song"`). In podcast mode (M12) the
+ * suffix is dropped and YouTube's podcast type hint is sent instead — the query
+ * the listener typed, asked as a different question, on the same endpoint.
  *
  * Parsing is improved over the reference: results are candidates only —
  * duration/title/channel filtering and scoring are centralized (§6.1

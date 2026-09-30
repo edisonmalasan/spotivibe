@@ -9,12 +9,22 @@ import type { Track } from "@/data/repositories";
  * Lyrix-verified (reference: `innertubeService.ts` music-mode extraction,
  * `filterService.ts` scoring signals) and owned here as Spotivibe constants.
  *
- * M12 splits the title rules in two, because one list cannot do both jobs the
+ * M12 splits the title rules by category, because one list cannot do both jobs the
  * roadmap asks for: music results must lose vlogs/reactions/Shorts, and podcast
  * results must *not* lose an episode whose title happens to contain "interview",
- * "react", or "remix". The music-only markers are therefore scoped to
- * `category: "music"`, while Shorts and promo fragments are rejected in every
- * category because they are not podcast content either.
+ * "react", or "remix". Three scopes, each explicit:
+ *
+ * - **any category** — Shorts. The one marker both modes reject.
+ * - **music only** — the non-song markers and the production variants, kept
+ *   byte-identical to the pre-M12 rules so the split cannot widen or narrow music
+ *   results (decision 4; guarded by the table in `tests/music-filter.test.ts`).
+ * - **podcast only** — promotional fragments. A 30-second "trailer"/"teaser"/
+ *   "preview" is a promo rather than an episode, and a promo belongs next to other
+ *   episodes. These are *not* an any-category rule: the pre-M12 music rules never
+ *   rejected them, and newly rejecting a music result titled "Preview" would be a
+ *   change to music behavior this change does not get to make. The `podcasts` spec
+ *   delta was corrected to match (design decision 4, as amended by the M12
+ *   verification pass).
  */
 
 /**

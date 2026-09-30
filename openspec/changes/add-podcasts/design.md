@@ -25,11 +25,13 @@ Current state, verified in the code:
 
 ### 2. Podcast mode skips YouTube Music, because that tier is music-only
 
-**Decision.** In podcast mode the chain is `ytweb → invidious → piped`. `ytweb` sends the query unmodified plus YouTube's podcast type hint; `invidious` and `piped` search their own indices unchanged. In music mode nothing changes.
+**Decision.** In podcast mode the chain is `ytweb → invidious → piped`. `ytweb` sends the query unmodified plus YouTube's podcast type hint; `piped` sends **no** `filter=music_songs` parameter (its unfiltered default) because that parameter asks its instance for the *song* index; `invidious` has no category-scoped search parameter, so it sends the same `type=video` in both modes. In music mode nothing changes.
 
 **Why.** The primary tier is YouTube *Music*'s Innertube surface and `ytweb` appends `" song"`. Both are music-biased by construction, so a podcast-mode request through them returns music — the exact failure M12 exists to remove. Skipping a tier that cannot answer the question is cheaper and more honest than fetching results and filtering them. The fallbacks are still there, so the tier-bypass is not a single point of failure.
 
-**Alternatives considered.** Keeping the full chain and relying on category pinning (rejected: it would label music results as podcasts — a fabricated claim, worse than a missing tier). Using only `ytweb` (rejected: it makes one tier a single point of failure for the whole mode).
+**Amended by the M12 verification pass.** This decision originally said `invidious` and `piped` "search their own indices unchanged". That was true for `invidious` and wrong for `piped`: its `filter=music_songs` is an explicitly music-scoped upstream parameter, so a podcast request was asking the one tier that answered it to search songs. The `music-provider` spec requires the remaining tiers to be "queried with podcast-appropriate query parameters", and the spec outranks this document — so the **code** moved, not the sentence. The change is a parameter value on the same host and path, which is what keeps it inside "no new provider capability"; the architecture rule that guards that (`providerCapabilityBranchViolations`) is satisfied because no category conditional in a provider module reaches a URL. A scenario now pins it, and `pipedSearchFilter` is the one place the value is decided.
+
+**Alternatives considered.** Keeping the full chain and relying on category pinning (rejected: it would label music results as podcasts — a fabricated claim, worse than a missing tier). Using only `ytweb` (rejected: it makes one tier a single point of failure for the whole mode). Narrowing the spec sentence to "tiers that expose a category parameter receive it" (rejected: it would have legalized a tier asking its upstream a music question on behalf of a podcast listener, which is the failure the spec was written to prevent).
 
 ### 3. The category comes from the request in podcast mode, and from the heuristic in music mode
 

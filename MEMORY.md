@@ -24,7 +24,7 @@ branch + PR per stage; merge commits only) and keeping `ROADMAP.md` current.
 | **M12** (propose merged) | `add-podcasts` (Apply in progress on `feat/podcast-search-mode`) | #49 propose `b914875`; apply/sync/archive pending |
 
 Baseline at the M11 merge (`fa3e262`): **125 test files / 1987 tests**; after M12:
-**130 test files / 2077 tests**, all six gates green in a clean clone. Main specs:
+**130 test files / 2084 tests**, all six gates green in a clean clone. Main specs:
 `podcasts` (new), `music-provider`/`search`/`playback` updated. 12 archived changes.
 Next objective after M12: **M13 (PWA installation and offline metadata)**, then M14
 hardening, M15 release validation and deployment.
@@ -34,7 +34,7 @@ hardening, M15 release validation and deployment.
   `tasks.md` all 10 sections ticked plus a §10 verification record and a deviations
   list (7 entries: five test-home/split corrections, one pre-existing bug fixed, one
   pre-existing characteristic documented rather than changed).
-- Evidence: `evidence/{cdp-check.mjs,results.json,README.md}` — `pass: true`, 30 steps,
+- Evidence: `evidence/{cdp-check.mjs,results.json,README.md}` — `pass: true`, 32 steps,
   0 console errors, 6 screenshots, production build in headless Edge, port 3210.
 - Baseline note: the M11 ledger said "129 test files"; the verified count at `fa3e262`
   is 125 (vitest counts what it collects), so M12's delta is +5 files / +90 tests.
@@ -98,6 +98,16 @@ hardening, M15 release validation and deployment.
 - **The remote-empty search state is unreachable**: the chain reports "no tier produced
   a usable result" as a 503, which is the *error* state. Exercising an empty state in a
   browser needs one stubbed 200 response (disclosed).
+- **The verification pass caught a music-scoped upstream parameter** in `piped`:
+  `filter=music_songs` was sent for podcast requests too, so the one tier that answered
+  a podcast query was asked to search songs. `pipedSearchFilter(category)` now omits it
+  for podcasts. Note *which* artifact was wrong: the spec was right and design.md's
+  "the fallbacks search their own indices unchanged" was not - amend the design and keep
+  the spec. That is the reverse of the promo-marker case, where the delta's requirement
+  text was the thing to fix. Decide per finding which artifact the finding indicts.
+- **A local-library fallback in podcast mode renders under an "Episodes" heading**, so a
+  liked song matching a podcast query became a mislabelled row. `searchLocalLibrary` now
+  takes the mode and keeps podcast records only in podcast mode.
 
 ## Hard-won lessons
 1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
@@ -144,3 +154,22 @@ hardening, M15 release validation and deployment.
     `PATTERN.test(lowerTitle)` — exactly the case a guard must be recognized for. The
     reported range must start at the `if`, because a rule used in `a && b` sits before
     the block's brace.
+15. **Do not rewrite a large file with PowerShell line splicing.** A failed
+    `List[string].AddRange` left the harness truncated to 38 lines with no error
+    message; the run only survived because the file was committed. Use the edit tool
+    for targeted changes, and `git checkout HEAD -- <file>` is the recovery when a
+    scripted rewrite goes wrong mid-file.
+16. **Run prettier from the directory that owns `.prettierignore`.** From the repo
+    root, `prettier --write frontend/src frontend/tests` reformatted
+    `frontend/tests/fixtures/**` — 15 byte-exact captured provider responses the
+    repository forbids touching, ~22k diff lines. `.prettierignore` is at
+    `frontend/`, so it was never consulted. Restore with
+    `git checkout main -- frontend/tests/fixtures` and run prettier from `frontend/`.
+17. **Assert the exact property, not a weaker inequality.** The evidence clamp check
+    accepted `position >= 0 && position <= duration`, which a silent restart from 0:00
+    would also pass. Exact comparisons, with constants read from the source at run
+    time, turn a tautology into a check.
+18. **A selection probe may retry; an assertion step may not.** A 503 while *choosing*
+    a workable query is an upstream hiccup, and reading it as "no results exist"
+    fabricates a conclusion. Retry the probe (recording every attempt) and never retry
+    the thing being asserted.

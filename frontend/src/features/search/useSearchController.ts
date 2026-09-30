@@ -134,7 +134,7 @@ export function useSearchController(
      */
     async function localMatches(): Promise<Track[] | null> {
       try {
-        return searchLocalLibrary(await loadLocalLibrary(), trimmed);
+        return searchLocalLibrary(await loadLocalLibrary(), trimmed, mode);
       } catch (error) {
         console.warn("[search] local fallback read failed:", error);
         return null;

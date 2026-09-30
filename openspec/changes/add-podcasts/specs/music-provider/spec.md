@@ -66,7 +66,7 @@ The search API SHALL expose a query endpoint that validates input (non-empty aft
 
 ### Requirement: Centralized filtering and quality scoring
 
-All tier results SHALL pass through one shared filtering and scoring stage before returning: reject Shorts and promotional fragments in every category; in music results additionally reject reaction/vlog/unboxing/interview content and unwanted remix/mashup/slowed+reverb/bass-boost/DJ-mix variants; reject invalid durations; collapse exact duplicates by video ID and near-duplicates by normalized title plus artist; assign `qualityScore` values and order results by them. The same rules apply regardless of which tier produced a track. Duration bounds SHALL be per-category, with music keeping a song-shaped window and podcasts a long-form window, so an episode longer than a song is never rejected for being long and a clip shorter than an episode is not presented as one. Podcast results SHALL NOT be rejected for words that legitimately occur in spoken-word titles.
+All tier results SHALL pass through one shared filtering and scoring stage before returning: reject Shorts in every category and promotional fragments in podcast results; in music results reject reaction/vlog/unboxing/interview content and unwanted remix/mashup/slowed+reverb/bass-boost/DJ-mix variants; reject invalid durations; collapse exact duplicates by video ID and near-duplicates by normalized title plus artist; assign `qualityScore` values and order results by them. The same rules apply regardless of which tier produced a track. Duration bounds SHALL be per-category, with music keeping a song-shaped window and podcasts a long-form window, so an episode longer than a song is never rejected for being long and a clip shorter than an episode is not presented as one. Podcast results SHALL NOT be rejected for words that legitimately occur in spoken-word titles, and the filtering a category applies SHALL NOT change which results the other category accepts or rejects.
 
 #### Scenario: Non-music and Shorts results are rejected
 
@@ -92,6 +92,11 @@ All tier results SHALL pass through one shared filtering and scoring stage befor
 
 - **WHEN** the same junk content arrives from a fallback tier as from the primary tier
 - **THEN** it is filtered by the same rules
+
+#### Scenario: A podcast request is not asked a music-scoped question
+
+- **WHEN** a podcast-category request reaches a tier that exposes a music-scoped upstream search parameter
+- **THEN** that parameter is omitted for the podcast request and kept for the music request, on the same endpoint
 
 #### Scenario: Podcast results keep words that music results reject
 

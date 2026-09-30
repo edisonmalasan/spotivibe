@@ -107,10 +107,17 @@ const STUB_QUERY = "zzq stubbed empty podcast search";
 function extractConstants() {
   const read = (...parts) => readFileSync(join(FRONTEND, ...parts), "utf8");
   const onboarding = read("src/features/preferences/LanguageOnboarding.tsx");
+  const playerStore = read("src/stores/playerStore.ts");
   const pick = (re, source, name) => {
     const value = re.exec(source)?.[1];
     if (!value) throw new Error(`Could not extract ${name} from sources.`);
     return value;
+  };
+  const pickNumber = (re, source, name) => {
+    const value = re.exec(source)?.[1];
+    if (value === undefined)
+      throw new Error(`Could not extract ${name} from sources.`);
+    return Number(value);
   };
   return {
     onboardingLabel: pick(
@@ -122,6 +129,13 @@ function extractConstants() {
       /confirmLabel="([^"]+)"/,
       onboarding,
       "onboarding confirm label",
+    ),
+    // The clamp's tail, read from the source: the browser assertion compares the
+    // restored position against the shipped constant rather than a copy of it.
+    endCueTailSeconds: pickNumber(
+      /END_CUE_TAIL_SECONDS = (\d+)/,
+      playerStore,
+      "player store END_CUE_TAIL_SECONDS",
     ),
   };
 }
@@ -173,8 +187,29 @@ async function newTarget(url, timeoutMs = 30000) {
   throw new Error("Could not create a CDP target.");
 }
 
-/** Ask the running server directly, for the two questions the UI cannot answer. */
-async function probeSearch(query, category) {
+/**
+ * Ask the running server directly, for the two questions the UI cannot answer.
+ *
+ * A 503 or a transport failure is retried (bounded, with a pause) because the
+ * probe is used to *select* a workable podcast query: a transient upstream hiccup
+ * during selection would otherwise read as "this query has no podcast results",
+ * which is a claim the probe cannot make. Every attempt is recorded, so a run that
+ * needed retries is visible in `results.json` rather than hidden in a delay.
+ */
+async function probeSearch(query, category, { attempts = 3 } = {}) {
+  let last = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const probe = await probeSearchOnce(query, category, attempt);
+    if (probe.status === 200) return probe;
+    last = probe;
+    if (probe.status !== 503 && probe.status !== -1) break; // a real answer
+    if (attempt < attempts) await delay(3000);
+  }
+  return last;
+}
+
+/** One probe attempt. */
+async function probeSearchOnce(query, category, attempt) {
   const url = new URL("/api/search", ORIGIN);
   url.searchParams.set("q", query);
   url.searchParams.set("limit", "20");
@@ -186,6 +221,7 @@ async function probeSearch(query, category) {
     return {
       query,
       category: category ?? "(absent)",
+      attempt,
       status: response.status,
       count: Array.isArray(body?.tracks) ? body.tracks.length : -1,
       tier: body?.diagnostics?.tier ?? null,
@@ -205,6 +241,7 @@ async function probeSearch(query, category) {
     return {
       query,
       category: category ?? "(absent)",
+      attempt,
       status: -1,
       count: -1,
       tier: null,
@@ -916,29 +953,53 @@ async function main() {
         musicProbe.tier !== null,
       `query="${MUSIC_QUERY}", status=${musicProbe.status}, answering tier=${musicProbe.tier}, results=${musicProbe.count}`,
     );
-    const podcastTitles = new Set(
-      (podcastProbe?.titles ?? []).map((entry) => entry.title),
+    // The same words, asked in both modes. The two result sets are compared
+    // directly, and the run does *not* claim they are disjoint: the live provider
+    // does not promise that, and the same episode can answer both questions. What
+    // the run claims, and asserts, is that the podcast-mode answer came from a tier
+    // that was asked the podcast question, is labelled podcast, and clears the
+    // long-form floor. The title overlap is measured and reported either way.
+    const sameWordsMusic =
+      podcastQuery === null
+        ? { count: -1, tier: null, titles: [], status: 0, query: null }
+        : await probeSearch(podcastQuery, undefined);
+    if (podcastQuery !== null)
+      results.notes.upstreamProbes.push(sameWordsMusic);
+    const podcastTitles = (podcastProbe?.titles ?? []).map(
+      (entry) => entry.title,
     );
-    const onlyInPodcast =
-      Boolean(
-        podcastProbe &&
+    const musicTitles = sameWordsMusic.titles.map((entry) => entry.title);
+    const sharedTitles = podcastTitles.filter((title) =>
+      musicTitles.includes(title),
+    );
+    results.notes.sameWordsComparison = {
+      query: podcastQuery,
+      podcastCount: podcastProbe?.count ?? -1,
+      musicCount: sameWordsMusic.count,
+      podcastTier: podcastProbe?.tier ?? null,
+      musicTier: sameWordsMusic.tier,
+      sharedTitles,
+    };
+    step(
+      "the same words are answered by different tiers in the two modes",
+      Boolean(podcastProbe) &&
+        sameWordsMusic.tier === "ytmusic" &&
+        podcastProbe.tier !== "ytmusic",
+      `podcast mode answered by ${podcastProbe?.tier} (YouTube Music skipped), music mode by ${sameWordsMusic.tier}`,
+    );
+    step(
+      "a podcast-mode search returns podcast-labelled results",
+      Boolean(podcastProbe) &&
         podcastProbe.count > 0 &&
         (podcastProbe.titles ?? []).every(
           (entry) => entry.category === "podcast",
         ),
-      ) &&
-      ![...podcastTitles].some((title) =>
-        musicProbe.titles.some((music) => music.title === title),
-      );
-    step(
-      "a podcast-mode search returns podcast-labelled results that music search does not",
-      onlyInPodcast,
       `podcast results=${podcastProbe?.count}, all labelled podcast=${Boolean(
         podcastProbe &&
         (podcastProbe.titles ?? []).every(
           (entry) => entry.category === "podcast",
         ),
-      )}, none shared with the music result set (${podcastTitles.size} compared)`,
+      )}, titles the music-mode answer for the same words also returned=${JSON.stringify(sharedTitles)} (measured, not asserted - the provider may answer both questions with the same episode)`,
     );
     step(
       "podcast-mode results respect the long-form floor the mode promises",
@@ -1263,7 +1324,7 @@ async function main() {
     );
     const playing = await evaluate(playerState);
     step(
-      "an episode plays in the persistent player, with no autoplay and one iframe",
+      "an episode plays in the persistent player, through the one IFrame API script",
       playing.control === "Pause" &&
         playing.iframes <= 1 &&
         playing.apiScripts <= 1,
@@ -1397,14 +1458,20 @@ async function main() {
     );
     const clampedPosition = clockToSeconds(clamped.position);
     const clampedDuration = clockToSeconds(clamped.duration);
+    // The exact clamp, not merely "inside the track": `position === 0` would also
+    // satisfy an inequality, so a player that silently restarted from the beginning
+    // would pass. `END_CUE_TAIL_SECONDS` is read from the source, so the assertion
+    // tracks the shipped constant instead of restating it.
+    const expectedCue = (clampedDuration ?? 0) - COPY.endCueTailSeconds;
     step(
       "a stored position beyond the duration is clamped at load, not cued past the end",
       wrote &&
         liveDuration !== null &&
         clampedPosition !== null &&
-        clampedPosition < clampSeconds &&
-        clampedPosition <= clampedDuration,
-      `episode duration=${liveDuration}s, stored position forced to ${clampSeconds}s → the player shows ${clamped.position} of ${clamped.duration} (position ${clampedPosition}s, duration ${clampedDuration}s)`,
+        clampedDuration !== null &&
+        clampedPosition === expectedCue &&
+        clampedPosition < clampSeconds,
+      `episode duration=${liveDuration}s, stored position forced to ${clampSeconds}s → the player shows ${clamped.position} of ${clamped.duration} (position ${clampedPosition}s, duration ${clampedDuration}s, expected ${expectedCue}s)`,
     );
     await shoot(
       1280,
@@ -1479,7 +1546,7 @@ async function main() {
       30000,
     );
     step(
-      "the History surface lists the episode with a verdict and no podcast-only surface",
+      "the History surface lists the episode with a verdict, a time, and its own surface",
       historySurface.rows >= 1 &&
         historySurface.verdicts.every((verdict) => verdict.length > 0) &&
         historySurface.hasClock &&
@@ -1501,7 +1568,7 @@ async function main() {
       })()`,
     );
     step(
-      "the statistics count the podcast play, with no podcast-specific dataset or surface",
+      "the statistics count the podcast play, and the insights surfaces carry no podcast-specific one",
       Boolean(stats) &&
         Number(stats.plays) >= 1 &&
         stats.topTracks.trim().length > 0 &&

@@ -32,7 +32,8 @@
   - **Done.** `category: z.enum(["music", "podcast"]).default("music")` in the existing schema, so an unknown value takes the same 400 `invalid_query` path as an empty query. Enumerated rather than free text: a permissive string would let a caller label results arbitrarily.
   - **Verified** in `tests/search-route-mode.test.ts` (accept / default / reject-without-contacting-a-provider, and the podcast response labelled end to end). The pre-existing `tests/search-route.test.ts` still passes unchanged, which is itself evidence that music requests are unaffected.
 - [x] 3.2 Assert the parameter is the only addition to the route's accepted input surface, and that no local-data parameter was added — verify: the architecture suite's accepted-query-key rule fails a widened key, proven on the real handler.
-  - **Done.** The M12 section of `tests/architecture.test.ts` reads the real handler's accepted keys and compares them to exactly `["q", "limit", "category"]`, and asserts the local-data key list (`liked`, `likedIds`, `playlist`, `history`, `listeningHistory`, plus `deviceId`/`profile`/`trackIds`/`playlistId`) is absent. The same set is asserted in `tests/search-route-mode.test.ts` so a widened key fails both the static and the behavioral suite.
+  - **Done.** The M12 section of `tests/architecture.test.ts` reads the real handler's accepted keys and compares them to exactly `["q", "limit", "category"]`, and asserts the local-data key list (`liked`, `likedIds`, `playlist`, `history`, `listeningHistory`, plus `deviceId`/`profile`/`trackIds`/`playlistId`) is absent. The same set is asserted in `tests/search-route-mode.test.ts`, so a widened key fails two independent scans.
+  - **Corrected by the verification pass:** both checks are *static* — a source scan of the real handler, not a request against it. A new "flags a widened search-route input surface" case (task 8.1) now exercises both helpers against a violating snippet, so the rule is known to fail when the surface widens rather than merely passing on the clean tree. The behavioral counterpart is the 400-path test in `tests/search-route-mode.test.ts` (`expect(fetchMock).not.toHaveBeenCalled()`), which proves the *enumeration* is enforced at request time.
 
 ## 4. Podcast mode on the search surface
 
@@ -49,7 +50,7 @@
   - **Deviation:** the planned `tests/search-presentation.test.ts` does not exist in this repository (presentation is covered per surface); the assertions live in the M12 surface suite instead, which renders the same `SearchResults` component.
 - [x] 4.4 Give a podcast search that returns nothing an explanation naming the mode and the query, distinct from the offline and generic failure states — verify: an empty-state test per mode.
   - **Done.** The `empty` surface renders a podcast-specific `EmptyState`: `No podcasts found for "<query>"` plus "Podcast search looks for episodes of at least 10 minutes…". The offline and error states are separate branches and were not touched.
-  - **Verified** live in the evidence run (with one disclosed stubbed response, because the chain reports "nothing usable" as a 503 and the remote-empty state is otherwise unreachable), which reads both modes' empty states from the DOM in one window and asserts the podcast one is not the music wording.
+  - **Verified** in `tests/search-mode-route.test.tsx` ("explains an empty podcast search in podcast terms, and an empty music search in music terms"): one stubbed empty response drives both modes, and the test asserts the music wording, the podcast wording, the stated 10-minute floor, that the music wording is *gone* in podcast mode, and that no result list or retry affordance appears (an empty set is not a failure). It is covered live too, with one disclosed stubbed response in the harness, because the server reports "nothing usable" as a 503 and the remote-empty state is otherwise unreachable.
 
 ## 5. Curated podcast categories
 
@@ -75,7 +76,7 @@
   - **Done, as planned — the change adds no storage at all.** The recorder writes the whole `Track`, so `category: "podcast"` and the canonical metadata travel with the event; `Repositories`, the IndexedDB `STORE` map, and the backup envelope are untouched.
   - **Verified** in `tests/podcast-playback-history.test.ts` (one event carrying the podcast category, the show/channel, the 3-hour duration, and the `search` context; the step's measured seconds landing when the step ends; and "no podcast-specific store was added") and statically in `tests/architecture.test.ts`, which compares the `Repositories` keys and the store definitions against the existing whitelist and asserts no key matches `/podcast|episode/i`.
 - [x] 7.2 Assert podcast plays appear on the M11 History surface and count toward the local statistics, and that clearing the history clears them the same way — verify: `tests/history-view.test.tsx` / `tests/stats-view.test.tsx` gain podcast cases.
-  - **Done.** `tests/history-view.test.tsx` gained a podcast case: the episode is listed beside a music play, its verdict is shown, its show links to that show's surface, `StatsView` counts it (`1` play, `20 min`, the episode as the top track, the show as the top artist, `podcast` in the category breakdown), and clearing the History clears the statistics with no second action. `tests/podcast-playback-history.test.ts` covers the same counting and clearing at the derivation layer.
+  - **Done.** `tests/history-view.test.tsx` gained a podcast case: the episode is listed beside a music play, its verdict is shown, and its show links to that show's surface; clearing the History empties the row list. The statistics assertions (play count `1`, `20 min`, the episode as the top track, the show as the top artist, `podcast` present in the category breakdown, and the statistics falling back to zero after a clear) live in `tests/podcast-playback-history.test.ts`, at the derivation layer where the category breakdown and the verdict rule are decided. Both files together cover task 7.2; the split is deliberate rather than accidental.
   - **Also evidenced live:** the evidence run reads the dataset out of IndexedDB, reads the History rows and the statistics from the DOM, and records `plays=1` for three events — the two zero-second steps being the honest consequence of the reloads the run performs.
 
 ## 8. Architecture and route contracts
@@ -93,11 +94,45 @@
 - [x] 9.1 Run the full quality gates from the repository root (`cd frontend && npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`) — verify: every command exits `0`.
   - **Done** — see §10 for the recorded results of the final pass.
 - [x] 9.2 Produce CDP browser evidence against a production server: a podcast-mode search returns podcast-labelled results that music search would not; the category entries start podcast searches; an episode plays in the persistent player and its position survives a reload; a position beyond the duration is clamped rather than cued past the end; a played episode appears on the local History surface with its verdict and is counted by the statistics; music-mode search is unchanged by the same build; exactly one player iframe/API script; zero console errors with disclosed deliberate windows — verify: `results.json` reports `"pass": true` with screenshots and a reproduce-path README (disclosing live-run deviations, including what the live provider actually returned for a podcast query) under the change's `evidence/`.
-  - **Done.** `evidence/cdp-check.mjs` (Node built-ins only) drives a production build in headless Edge: **30 steps, all passing, `"pass": true`, exit 0**, 6 screenshots at 1280×900, and an empty `consoleErrors` array with the deliberate stub window disclosed. `evidence/README.md` gives the reproduce path and discloses, among others, what the live provider actually returned: for `true crime podcast` in podcast mode the recorded run went `ytmusic → skipped`, `ytweb → empty`, `invidious → timeout`, `piped → ok` — the fallback chain carried the request — while an earlier run of the same harness got `invidious → ok`. The README also discloses the one stubbed response (the remote-empty state is unreachable because the chain reports "nothing usable" as a 503), the wall-clock playback pacing, the pre-M12-style session debounce that requires a pause before the record settles, and the two zero-second events the run's own reloads create.
-- [x] 9.3 Update `ROADMAP.md`: M12 status row → `DONE`; tick the §12 items M12 delivers (Podcast mode, Podcast categories, Podcast playback, Podcast history) — verify: `git diff` shows only those lines plus the status cell.
-  - **Done.**
+  - **Done.** `evidence/cdp-check.mjs` (Node built-ins only) drives a production build in headless Edge: **32 steps, all passing, `"pass": true`, exit 0**, 6 screenshots at 1280×900, and an empty `consoleErrors` array with the deliberate stub window disclosed. `evidence/README.md` gives the reproduce path and discloses, among others, what the live provider actually returned: for `true crime podcast` in podcast mode the recorded run went `ytmusic → skipped`, `ytweb → empty`, `invidious → timeout`, `piped → ok` — the fallback chain carried the request — while an earlier run of the same harness got `invidious → ok`. The README also discloses the one stubbed response (the remote-empty state is unreachable because the chain reports "nothing usable" as a 503), the wall-clock playback pacing, the pre-M12-style session debounce that requires a pause before the record settles, and the two zero-second events the run's own reloads create.
+- [x] 9.3 Update `ROADMAP.md`: M12 status row → `DONE`; tick the items M12 delivers (Podcast mode, Podcast categories, Podcast playback, Podcast history) — verify: `git diff` shows the status cell, the two feature-checklist items M12 delivers, and a short delivery record for the section.
+  - **Done, with the plan's reference corrected.** The feature checklist is section 11 in the document (the plan called it §12), and it holds two M12 items — "Podcast search/category" and "Podcasts" — both now ticked; the four capability names in the plan are not separate checkboxes, so the M12 milestone section records them as a "Delivered by M12" list rather than inventing four new boxes. The diff is the status cell, those two ticks, the two acceptance criteria, and that 13-line record. No other milestone's bookkeeping was touched.
 - [x] 9.4 Re-verify the quality gates from a clean clone of the branch head — verify: all six commands exit `0` in the fresh clone.
   - **Done** — see §10.
+
+## 8b. Corrections forced by the verification pass
+
+An independent read-only verification agent compared the implementation, the specs, the
+tests, and the evidence against this plan. Four findings were CRITICAL, thirteen were
+WARNINGs, and every one is resolved below. Nothing was suppressed to make a check
+pass; where the *spec* was wrong, the spec was amended and the rationale recorded in
+`design.md`.
+
+| # | Finding | Resolution |
+| --- | --- | --- |
+| C1 | The `music-provider` delta required rejecting promotional fragments "in every category", while the code rejects them podcast-only (and the regression table asserts a music "trailer" is kept). The spec outranks the plan, and the plan's split would have newly rejected music results. | **Spec amended** (requirement text, scenario names untouched): the promo rule is now written as podcast-only, plus a new clause that one category's filtering SHALL NOT change the other's verdicts. `design.md` decision 4 and the `filter.ts` header now state the three scopes. |
+| C2 | `piped` hardcoded `&filter=music_songs` — an explicitly music-scoped upstream filter — for every request, so the one tier that answered a podcast query was asked to search songs, contradicting the delta's "queried with podcast-appropriate query parameters". | **Code moved, not the sentence**: `pipedSearchFilter(category)` sends no filter in podcast mode and keeps it in music mode, on the same host and path. A new scenario ("A podcast request is not asked a music-scoped question") plus `tests/providers/piped.test.ts` pin it; the architecture rule that forbids a new capability still passes because no category conditional in a provider module reaches a URL. `design.md` decision 2 records the amendment. |
+| C3 | The evidence step claimed podcast results were "results music search would not return" while comparing against a *different* query's results, and the run's own data showed a same-words overlap. | Step rewritten: it now probes the **same words** in both modes, asserts the tiers differ and the labels and long-form floor hold, and *measures* the title overlap into `notes.sameWordsComparison` instead of claiming disjointness. `evidence/README.md` claim #2 was rewritten to match. |
+| C4 | 15 captured provider fixtures were reformatted (~22k diff lines) by a `prettier --write` run from the repository root, which bypassed `frontend/.prettierignore` — a documented byte-exact-provenance boundary. Semantically identical, but the boundary was real. | Fixtures restored from `main` (`git checkout main -- frontend/tests/fixtures`); the change now carries no fixture edits. Recorded here because the violation, not just the fix, is the useful part. |
+| W1 | `PODCAST_ONLY_PROMO_PATTERN` was pinned by no test: both promo assertions used a 60 s duration, which the podcast floor rejects on its own. | Two in-window rows added (`music-filter.test.ts` table row at 1800 s; `music-podcast-mode.test.ts` at 900 s), plus a case showing the rule follows the **resolved** category: a 45-minute promo asked in *music* mode is resolved as a podcast and so is rejected. |
+| W2 | The podcast empty state had no automated test. | Added in `tests/search-mode-route.test.tsx` (see task 4.4). |
+| W3 | "30 steps" appeared in the README, `tasks.md`, and `MEMORY.md`; `results.json` had 31. | Counts are now read from the recorded run after the final corrections: **32 steps**. |
+| W4 | Task 3.2 claimed the key rule was "proven on the real handler"; both checks are static scans. | Reworded, and the detectors are now proven against a violating snippet. |
+| W5 | Task 7.2 credited `history-view.test.tsx` with assertions it does not make. | Split stated per file. |
+| W6 | Task 9.3's verification said the diff would show "only those lines plus the status cell". | Reworded to describe what the diff actually contains (status cell, two checklist ticks, and a short "Delivered by M12" block). |
+| W7 | The README claimed the run asserts the absence of podcast surfaces on Library/Home/Now Playing; the only absence probe runs on `/history`. | Reworded: the absence is checked on the insights surface, and the static claim rests on the dataset-whitelist rule and the unit tests. |
+| W8 | Two evidence step names claimed more than their assertions (a "no autoplay" claim, an `<= 1` iframe count recorded as 0, and a "no podcast-only surface" claim made one step before the check). | Both steps renamed to what they assert; the no-autoplay claim rests on the restore step and `search-mode-route.test.tsx`. |
+| W9 | The clamp accepted `position >= 0 && position <= duration`, so a silent restart from 0 would pass. | The assertion is now exact (`position === duration − END_CUE_TAIL_SECONDS`), and the tail is **read from `playerStore.ts` at runtime** so it tracks the shipped constant. |
+| W10 | Stale comments: `ytweb.ts` still said podcast mode "is out of scope for M3 (M12)"; `filter.ts` claimed promos were rejected in every category. | Both rewritten to describe what the code does. |
+| W11 | `podcastCategoryById` was a test-only export with no production caller. | Removed, with a note on what would earn it back (a deep link, which implies a route decision). |
+| W12 | The podcast presentation scenario's artwork clause was unasserted (fixtures had `artwork: []`). | The route-level episode fixture carries a real artwork URL and the new test asserts the rendered `img` uses it, with an empty `alt`. |
+| W13 | Task 8.1 claimed all four detectors were proven against violating snippets; the route-key rule was not. | Added "flags a widened search-route input surface", which runs the same helpers against a widened snippet and the current one. |
+
+One suggestion was taken as well: podcast mode now narrows the **local-library
+fallback** to podcast records (`searchLocalLibrary(library, query, mode)`), because
+the fallback renders under an **Episodes** heading and a liked song there would be a
+mislabelled row. Pinned in `tests/search-local.test.ts`, and music mode's behavior is
+unchanged (the parameter defaults to music).
 
 ## 10. Verification record
 
@@ -113,10 +148,10 @@ exit code was read from the run, not assumed.
 | `npm test` | exit 0 — **2077 tests, 130 files**, 0 failed |
 | `npm run build` | exit 0 — compiled successfully, 19 routes in the output |
 | Six gates again, from a clean clone of the branch head | exit 0, same test count |
-| `node openspec/changes/add-podcasts/evidence/cdp-check.mjs` | exit 0, `"pass": true`, 30 steps |
+| `node openspec/changes/add-podcasts/evidence/cdp-check.mjs` | exit 0, `"pass": true`, **32 steps** |
 
 Baseline at the M11 merge (`fa3e262`): 125 test files / 1987 tests. M12 adds
-**5 test files and 90 tests**, all of them about the mode, plus one regression test
+**5 test files and 97 tests**, all of them about the mode, plus one regression test
 for the pre-existing blank-id link (design decision 9) inside an existing file.
 
 ### Deviations from this plan, collected
@@ -144,3 +179,12 @@ for the pre-existing blank-id link (design decision 9) inside an existing file.
    while playback keeps reporting positions. The harness pauses before reading. This
    is M6 behavior, unchanged by M12, and fixing it belongs to whichever change owns
    session persistence rather than to this one.
+8. **One upstream parameter changed** (task 1.3, amended by the verification pass):
+   `piped` no longer sends `filter=music_songs` for a podcast request. The plan said
+   the fallbacks would "search their own indices unchanged"; that was true for
+   `invidious` and wrong for `piped`, whose filter is a music scope. See §8b C2.
+9. **The local-library fallback is narrowed in podcast mode.** Not in the plan: a
+   liked song matching a podcast query would have been presented under an **Episodes**
+   heading, which the record does not support. Music mode is unchanged.
+10. **Captured fixtures were reformatted and then restored** (§8b C4). No fixture
+    change remains in this branch.

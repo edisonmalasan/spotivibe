@@ -2702,6 +2702,26 @@ describe("architecture: the M12 podcast surfaces hold (M12 task 8.1)", () => {
     }
   });
 
+  it("flags a widened search-route input surface, proven on a violating snippet", () => {
+    // The rule above is only worth having if it fails when the surface widens, so
+    // the comparison is exercised against snippets: one with a fourth parameter, and
+    // one that reads the listener's own data.
+    const widened =
+      'const q = params.get("q");\nconst limit = params.get("limit");\nconst category = params.get("category");\nconst liked = params.get("likedIds");';
+    expect([...acceptedQueryKeys(widened)].sort()).not.toEqual(
+      [...SEARCH_ROUTE_ACCEPTED_QUERY_KEYS].sort(),
+    );
+    expect(libraryQueryParameterReads(widened)).toEqual(["likedIds"]);
+
+    // The exact current surface passes, so the detector is not simply always-fail.
+    const current =
+      'const q = params.get("q");\nconst limit = params.get("limit");\nconst category = params.get("category");';
+    expect([...acceptedQueryKeys(current)].sort()).toEqual(
+      [...SEARCH_ROUTE_ACCEPTED_QUERY_KEYS].sort(),
+    );
+    expect(libraryQueryParameterReads(current)).toEqual([]);
+  });
+
   it("keeps the M12 client surfaces off the server layer, raw provider shapes, and local data", () => {
     for (const file of M12_TOUCHED_FILES.filter(
       (path) =>

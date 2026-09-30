@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SearchPage from "@/app/search/page";
 import { useSearchStore } from "@/stores/searchStore";
@@ -59,7 +59,9 @@ const episode = {
   providerId: "ep1",
   title: "Interview: The Fall of Rome",
   artists: [{ name: "History Hour" }],
-  artwork: [],
+  // Artwork is part of the presentation contract, so the fixture carries a real
+  // URL rather than an empty list the row could satisfy with a placeholder.
+  artwork: [{ url: "https://example.test/ep1.jpg", width: 120, height: 120 }],
   durationSeconds: 3600,
   category: "podcast" as const,
   capabilities: { stream: true, offlineDownload: false },
@@ -80,14 +82,15 @@ const song = {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 /** Answer according to the request's own `category` parameter. */
-function stubSearch() {
+function stubSearch(empty = false) {
   fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost");
     const podcast = url.searchParams.get("category") === "podcast";
+    const tracks = empty ? [] : podcast ? [episode] : [song];
     return {
       ok: true,
       status: 200,
-      json: async () => ({ tracks: podcast ? [episode] : [song] }),
+      json: async () => ({ tracks }),
     } as unknown as Response;
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -207,6 +210,52 @@ describe("the mode control on the search route", () => {
     );
     expect(await screen.findByText("Episodes")).toBeInTheDocument();
   });
+  it("explains an empty podcast search in podcast terms, and an empty music search in music terms", async () => {
+    // The two empty states are the *same* surface reading different mode-specific
+    // copy. A single stubbed empty response for both requests is the only way to
+    // reach them, because the server reports "nothing usable" as a 503 — which is
+    // the error state, a third thing (asserted separately below).
+    stubSearch(true);
+    nav.q = "nothing at all";
+    const { rerender } = render(<SearchPage />);
+
+    expect(await screen.findByText(/^No results for "nothing at all"$/)).toBeInTheDocument();
+    // Music mode does not claim a long-form floor it is not applying.
+    expect(screen.queryByText(/at least 10 minutes/i)).not.toBeInTheDocument();
+
+    // The mode switch is a URL write, so the mocked router has to apply it: the
+    // click asks for the change, and the navigation carrying it is what the
+    // component reads back. `nav` is the mock's URL state and `rerender` re-reads it.
+    fireEvent.click(screen.getByTestId("search-mode-podcast"));
+    nav.mode = "podcast";
+    rerender(<SearchPage />);
+
+    const podcastEmpty = await screen.findByText(/^No podcasts found for "nothing at all"$/);
+    expect(podcastEmpty).toBeInTheDocument();
+    // The mode is named and the floor that caused it is stated, so an empty result
+    // does not read as "no podcasts exist".
+    expect(screen.getByText(/at least 10 minutes/i)).toBeInTheDocument();
+    // And the music wording is gone: the two states are distinct, not stacked.
+    expect(screen.queryByText(/^No results for /)).not.toBeInTheDocument();
+    // An empty result set shows no episodes and no retry affordance — it is not a failure.
+    expect(document.querySelector('[data-testid="search-results"]')).toBeNull();
+  });
+
+  it("renders an episode with its artwork from the canonical track", async () => {
+    nav.q = "rome";
+    nav.mode = "podcast";
+    render(<SearchPage />);
+
+    await screen.findByText("Episodes");
+    const rows = within(screen.getByTestId("search-results")).getAllByRole("listitem");
+    const image = rows[0]?.querySelector("img");
+    // The artwork URL is the canonical track's own, so the row renders what the
+    // server sent rather than a placeholder of its own.
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toBe(episode.artwork[0]?.url);
+    expect(image?.getAttribute("alt")).toBe("");
+  });
+
   it("never autoplays a podcast result (M12 long-form requirement)", async () => {
     nav.q = "rome";
     nav.mode = "podcast";

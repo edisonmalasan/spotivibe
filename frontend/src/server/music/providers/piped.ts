@@ -9,6 +9,7 @@ import type {
   PlaylistResolution,
   PlaylistResolver,
   ProviderCandidate,
+  SearchCategory,
 } from "../types";
 import {
   ATTEMPT_TIMEOUT_MS,
@@ -90,6 +91,22 @@ export function parsePipedSearch(body: unknown): ProviderCandidate[] {
   return candidates;
 }
 
+/**
+ * The upstream search filter this tier sends.
+ *
+ * `music_songs` is Piped's *music* scope: it asks the instance to search its song
+ * index, which is the right question for a music search and the wrong one for a
+ * podcast search (M12). A podcast request sends no filter at all, which is
+ * Piped's unfiltered default — the mode decides *what to look for*, and a
+ * hard-coded "songs" filter would have quietly re-asked the music question on the
+ * podcast tier. The mode selects a parameter value, never a different endpoint:
+ * the host and path above are built identically in both modes, which is what the
+ * `music-provider` spec's "no new provider capability" rule requires.
+ */
+export function pipedSearchFilter(category: SearchCategory = "music"): string {
+  return category === "podcast" ? "" : "&filter=music_songs";
+}
+
 /** Tier implementation — rotates through up to two instances on failure. */
 export const pipedProvider: MusicProvider = {
   id: "piped",
@@ -98,11 +115,12 @@ export const pipedProvider: MusicProvider = {
       getServerEnv().SPOTIVIBE_PIPED_INSTANCES,
       DEFAULT_INSTANCES,
     ).slice(0, MAX_INSTANCE_ATTEMPTS);
+    const filter = pipedSearchFilter(request.category);
 
     let lastFailure: unknown;
     for (const instance of instances) {
       try {
-        const url = `${instance}/search?q=${encodeURIComponent(request.query)}&filter=music_songs`;
+        const url = `${instance}/search?q=${encodeURIComponent(request.query)}${filter}`;
         const body = await fetchJson<unknown>(url, {
           headers: {
             Accept: "application/json",

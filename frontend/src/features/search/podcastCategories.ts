@@ -158,7 +158,7 @@ export function podcastCategoryQueries(
   return category.queries[NEUTRAL] ?? [category.label];
 }
 
-/** The catalog as a lookup by id, for a caller that holds one id. */
-export function podcastCategoryById(id: string): PodcastCategory | undefined {
-  return PODCAST_CATEGORIES.find((category) => category.id === id);
-}
+// Deliberately no id lookup: the only consumer is `PodcastCategoryList`, which
+// iterates the catalog, and an export nothing in the application calls is a
+// second surface to keep honest. A future deep link to one category would earn
+// its own accessor — with the route decision it implies.

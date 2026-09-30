@@ -337,11 +337,15 @@
                                                                 }
                                                               },
                                                               "createPlaylistServiceEndpoint": {
-                                                                "videoIds": ["AY-JjVwBdkI"],
+                                                                "videoIds": [
+                                                                  "AY-JjVwBdkI"
+                                                                ],
                                                                 "params": "CAQ%3D"
                                                               }
                                                             },
-                                                            "videoIds": ["AY-JjVwBdkI"],
+                                                            "videoIds": [
+                                                              "AY-JjVwBdkI"
+                                                            ],
                                                             "videoCommand": {
                                                               "clickTrackingParams": "CGYQ8FsiEwipsNaf2pGXAxWsNXsHHc-_BN7KAQRznTB4",
                                                               "commandMetadata": {
@@ -924,11 +928,15 @@
                                                                 }
                                                               },
                                                               "createPlaylistServiceEndpoint": {
-                                                                "videoIds": ["bRbtTCYbU6c"],
+                                                                "videoIds": [
+                                                                  "bRbtTCYbU6c"
+                                                                ],
                                                                 "params": "CAQ%3D"
                                                               }
                                                             },
-                                                            "videoIds": ["bRbtTCYbU6c"],
+                                                            "videoIds": [
+                                                              "bRbtTCYbU6c"
+                                                            ],
                                                             "videoCommand": {
                                                               "clickTrackingParams": "CF0Q8FsiEwipsNaf2pGXAxWsNXsHHc-_BN7KAQRznTB4",
                                                               "commandMetadata": {
@@ -1510,11 +1518,15 @@
                                                                 }
                                                               },
                                                               "createPlaylistServiceEndpoint": {
-                                                                "videoIds": ["SznJo953I4o"],
+                                                                "videoIds": [
+                                                                  "SznJo953I4o"
+                                                                ],
                                                                 "params": "CAQ%3D"
                                                               }
                                                             },
-                                                            "videoIds": ["SznJo953I4o"],
+                                                            "videoIds": [
+                                                              "SznJo953I4o"
+                                                            ],
                                                             "videoCommand": {
                                                               "clickTrackingParams": "CFQQ8FsiEwipsNaf2pGXAxWsNXsHHc-_BN7KAQRznTB4",
                                                               "commandMetadata": {
@@ -2096,11 +2108,15 @@
                                                                 }
                                                               },
                                                               "createPlaylistServiceEndpoint": {
-                                                                "videoIds": ["mGTJq6dfpSE"],
+                                                                "videoIds": [
+                                                                  "mGTJq6dfpSE"
+                                                                ],
                                                                 "params": "CAQ%3D"
                                                               }
                                                             },
-                                                            "videoIds": ["mGTJq6dfpSE"],
+                                                            "videoIds": [
+                                                              "mGTJq6dfpSE"
+                                                            ],
                                                             "videoCommand": {
                                                               "clickTrackingParams": "CEsQ8FsiEwipsNaf2pGXAxWsNXsHHc-_BN7KAQRznTB4",
                                                               "commandMetadata": {
@@ -2682,11 +2698,15 @@
                                                                 }
                                                               },
                                                               "createPlaylistServiceEndpoint": {
-                                                                "videoIds": ["s8lwfUJqfcc"],
+                                                                "videoIds": [
+                                                                  "s8lwfUJqfcc"
+                                                                ],
                                                                 "params": "CAQ%3D"
                                                               }
                                                             },
-                                                            "videoIds": ["s8lwfUJqfcc"],
+                                                            "videoIds": [
+                                                              "s8lwfUJqfcc"
+                                                            ],
                                                             "videoCommand": {
                                                               "clickTrackingParams": "CEIQ8FsiEwipsNaf2pGXAxWsNXsHHc-_BN7KAQRznTB4",
                                                               "commandMetadata": {
@@ -3268,11 +3288,15 @@
                                                                 }
                                                               },
                                                               "createPlaylistServiceEndpoint": {
-                                                                "videoIds": ["DiUWuaQKBL4"],
+                                                                "videoIds": [
+                                                                  "DiUWuaQKBL4"
+                                                                ],
                                                                 "params": "CAQ%3D"
                                                               }
                                                             },
-                                                            "videoIds": ["DiUWuaQKBL4"],
+                                                            "videoIds": [
+                                                              "DiUWuaQKBL4"
+                                                            ],
                                                             "videoCommand": {
                                                               "clickTrackingParams": "CDkQ8FsiEwipsNaf2pGXAxWsNXsHHc-_BN7KAQRznTB4",
                                                               "commandMetadata": {
@@ -3854,11 +3878,15 @@
                                                                 }
                                                               },
                                                               "createPlaylistServiceEndpoint": {
-                                                                "videoIds": ["S8GpX3SAeig"],
+                                                                "videoIds": [
+                                                                  "S8GpX3SAeig"
+                                                                ],
                                                                 "params": "CAQ%3D"
                                                               }
                                                             },
-                                                            "videoIds": ["S8GpX3SAeig"],
+                                                            "videoIds": [
+                                                              "S8GpX3SAeig"
+                                                            ],
                                                             "videoCommand": {
                                                               "clickTrackingParams": "CDAQ8FsiEwipsNaf2pGXAxWsNXsHHc-_BN7KAQRznTB4",
                                                               "commandMetadata": {

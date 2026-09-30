@@ -152,6 +152,8 @@ describe("the shared pipeline applies the mode's rules", () => {
   });
 
   it("still drops Shorts and podcast promo fragments in podcast mode", () => {
+    // A Shorts *inside* the podcast window: the marker is the only thing that can
+    // reject it, since 900s clears the podcast floor.
     const shorts = makeCandidate({
       videoId: "s1",
       title: "History Shorts: Rome in 60 seconds",
@@ -159,18 +161,34 @@ describe("the shared pipeline applies the mode's rules", () => {
     });
     const trailer = makeCandidate({
       videoId: "t1",
-      title: "The Fall of Rome — Season trailer",
-      durationSeconds: 60,
+      title: "Season trailer: the Fall of Rome",
+      durationSeconds: 900,
     });
 
+    // Both rules are proven on their own here, at a duration *inside* both
+    // category windows (900s clears the podcast floor and sits under the music
+    // heuristic's podcast threshold), so neither rejection can be explained by the
+    // bounds. A 60-second promo would have been rejected by the duration alone,
+    // which is exactly what the old assertion could not tell apart.
     expect(toResultTracks([shorts], "rome", 10, "podcast")).toHaveLength(0);
-    // A 60-second trailer is below the podcast floor and marked as a promo; either
-    // rule rejects it. The same title in music mode only meets the music bounds,
-    // and 60s clears the music floor — the promo rule is podcast-only.
     expect(toResultTracks([trailer], "rome", 10, "podcast")).toHaveLength(0);
+    // Music mode resolves the same 900s candidate as music, so the podcast-only
+    // promo rule does not reach it: the rule follows the *resolved* category, not
+    // the request's.
     expect(toResultTracks([trailer], "rome", 10, "music")).toHaveLength(1);
+    // And the resolved-category rule is visible in the other direction: a
+    // 45-minute promo asked in *music* mode is resolved as a podcast by the M3
+    // duration heuristic, so the podcast promo rule applies to it. Correct rather
+    // than a leak — the filter reads the resolved Track, not the request.
+    const longTrailer = makeCandidate({
+      videoId: "t2",
+      title: "Season trailer: the Fall of Rome",
+      durationSeconds: 2700,
+    });
+    expect(toResultTracks([longTrailer], "rome", 10, "music")).toHaveLength(0);
   });
 });
+
 describe("the mode reaches each tier it queries", () => {
   it("passes the category through to the provider call", async () => {
     const tier = fakeProvider("ytweb", [makeCandidate({ videoId: "x", durationSeconds: 1200 })]);

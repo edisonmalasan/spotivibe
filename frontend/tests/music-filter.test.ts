@@ -125,6 +125,11 @@ describe("filterTracks", () => {
     ["Interlude in A minor", true, true, 249, 2700],
     ["What a Great Song", true, true, 249, 2700],
     // A podcast-only promo marker: rejected for a podcast, untouched for music.
+    // The *in-window* row is the one that makes the promo rule real: at 1800s the
+    // duration bounds cannot explain the rejection, so only the title rule can.
+    ["Season trailer: the story so far", true, false, 249, 1800],
+    // The same marker below the podcast floor is rejected by both rules, which is
+    // why the row above exists.
     ["The Fall of Rome — Season trailer", true, false, 60, 60],
   ])(
     "%s → music %s / podcast %s",

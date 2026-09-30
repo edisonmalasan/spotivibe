@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderError } from "@/server/music/errors";
-import { parsePipedSearch, pipedProvider } from "@/server/music/providers/piped";
+import { parsePipedSearch, pipedProvider, pipedSearchFilter } from "@/server/music/providers/piped";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture: unknown = JSON.parse(
@@ -89,6 +89,35 @@ describe("pipedProvider.search (mocked fetch)", () => {
     expect(candidates.length).toBeGreaterThan(5);
     const calls = fetchMock.mock.calls as unknown as Array<[string]>;
     expect(calls[1]?.[0]).toContain("https://api.piped.private.coffee/search");
+  });
+
+  it("sends no music-scoped filter for a podcast request (M12)", async () => {
+    // `filter=music_songs` asks the instance for its *song* index. A podcast
+    // request that carried it would have asked the one tier that answers podcast
+    // queries to search songs — the mode's whole point is a different question on
+    // the same endpoint (spec: "A podcast request is not asked a music-scoped
+    // question").
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => fixture,
+    })) as unknown as ReturnType<typeof vi.fn>;
+    vi.stubGlobal("fetch", fetchMock);
+
+    await pipedProvider.search({ query: "true crime podcast", limit: 20, category: "podcast" });
+
+    const calls = fetchMock.mock.calls as unknown as Array<[string]>;
+    expect(calls[0]?.[0]).toBe("https://pipedapi.ducks.party/search?q=true%20crime%20podcast");
+    expect(calls[0]?.[0]).not.toContain("filter=");
+    // The host and path are the music request's: a parameter value changed, not a
+    // different endpoint or instance.
+    expect(calls[0]?.[0].split("?")[0]).toBe("https://pipedapi.ducks.party/search");
+  });
+
+  it("keeps the music filter for a music request, whatever the spelling of the category", () => {
+    expect(pipedSearchFilter()).toBe("&filter=music_songs");
+    expect(pipedSearchFilter("music")).toBe("&filter=music_songs");
+    expect(pipedSearchFilter("podcast")).toBe("");
   });
 
   it("fails with the last tier error when every instance fails", async () => {

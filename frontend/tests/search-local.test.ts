@@ -123,4 +123,39 @@ describe("searchLocalLibrary (task 7.1)", () => {
     const matches = searchLocalLibrary(library, "radiohead");
     expect(matches.map((track) => track.id)).toEqual(["youtube:aaa", "youtube:bbb"]);
   });
+
+  it("keeps a liked song out of a podcast search (M12)", async () => {
+    // The fallback is presented under an **Episodes** heading in podcast mode, so a
+    // music match there would be a mislabelled row. The mode narrows the matches,
+    // not the matching rule: the same needle, the same sources, podcast records only.
+    await seedLibrary();
+    await repositories.likedTracks.like(
+      makeTrack({
+        id: "youtube:eee",
+        providerId: "eee",
+        title: "Rome: A Podcast",
+        artists: [{ name: "History Hour" }],
+        category: "podcast",
+        durationSeconds: 3600,
+      }),
+    );
+    const library = await loadLocalLibrary();
+
+    // Music mode (the default, and what every pre-M12 caller gets) is unchanged.
+    expect(searchLocalLibrary(library, "rome").map((track) => track.id)).toEqual(["youtube:eee"]);
+    expect(searchLocalLibrary(library, "rome", "music").map((track) => track.id)).toEqual([
+      "youtube:eee",
+    ]);
+    // Podcast mode returns the episode and nothing else — including a *song* whose
+    // title contains the same word, which is what "Karma Police" would be.
+    await repositories.likedTracks.like(likedA);
+    const withSong = await loadLocalLibrary();
+    expect(searchLocalLibrary(withSong, "karma", "podcast").map((track) => track.id)).toEqual([]);
+    expect(searchLocalLibrary(withSong, "rome", "podcast").map((track) => track.id)).toEqual([
+      "youtube:eee",
+    ]);
+    // And a query with no podcast match yields nothing, so the surface shows the
+    // podcast empty state rather than a music row.
+    expect(searchLocalLibrary(withSong, "radiohead", "podcast")).toEqual([]);
+  });
 });

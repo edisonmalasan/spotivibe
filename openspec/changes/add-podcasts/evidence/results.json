@@ -1,6 +1,6 @@
 {
   "task": "9.2",
-  "generatedAt": "2026-09-30T05:30:43.103Z",
+  "generatedAt": "2026-09-30T06:06:05.871Z",
   "origin": "http://localhost:3210",
   "musicQuery": "bohemian rhapsody",
   "podcastQueryCandidates": [
@@ -16,7 +16,8 @@
   ],
   "copy": {
     "onboardingLabel": "Choose your languages",
-    "onboardingConfirm": "Save languages"
+    "onboardingConfirm": "Save languages",
+    "endCueTailSeconds": 2
   },
   "steps": [
     {
@@ -42,7 +43,7 @@
     {
       "name": "a podcast-mode request is answered without ever consulting YouTube Music",
       "ok": true,
-      "detail": "query=\"true crime podcast\", tiers tried=[{\"tier\":\"ytmusic\",\"outcome\":\"skipped\"},{\"tier\":\"ytweb\",\"outcome\":\"empty\"},{\"tier\":\"invidious\",\"outcome\":\"timeout\"},{\"tier\":\"piped\",\"outcome\":\"ok\"}]"
+      "detail": "query=\"true crime podcast\", tiers tried=[{\"tier\":\"ytmusic\",\"outcome\":\"skipped\"},{\"tier\":\"ytweb\",\"outcome\":\"empty\"},{\"tier\":\"invidious\",\"outcome\":\"ok\"}]"
     },
     {
       "name": "a music-mode request consults YouTube Music, so the two modes really differ",
@@ -50,19 +51,24 @@
       "detail": "query=\"bohemian rhapsody\", status=200, answering tier=ytmusic, results=16"
     },
     {
-      "name": "a podcast-mode search returns podcast-labelled results that music search does not",
+      "name": "the same words are answered by different tiers in the two modes",
       "ok": true,
-      "detail": "podcast results=20, all labelled podcast=true, none shared with the music result set (6 compared)"
+      "detail": "podcast mode answered by invidious (YouTube Music skipped), music mode by ytmusic"
+    },
+    {
+      "name": "a podcast-mode search returns podcast-labelled results",
+      "ok": true,
+      "detail": "podcast results=18, all labelled podcast=true, titles the music-mode answer for the same words also returned=[] (measured, not asserted - the provider may answer both questions with the same episode)"
     },
     {
       "name": "podcast-mode results respect the long-form floor the mode promises",
       "ok": true,
-      "detail": "durations=[3473,2737,4653,4967,4435,4835] (podcast floor 600s)"
+      "detail": "durations=[3147,3077,15614,4798,10123,6700] (podcast floor 600s)"
     },
     {
       "name": "switching to Podcasts keeps the typed query in the URL and the input",
       "ok": true,
-      "detail": "url=/search?q=true%20crime%20podcast&mode=podcast, input=\"true crime podcast\" (the same words in music mode returned 20 results, 200 from ytmusic)"
+      "detail": "url=/search?q=true%20crime%20podcast&mode=podcast, input=\"true crime podcast\" (the same words in music mode returned 16 results, 200 from ytmusic)"
     },
     {
       "name": "the mode switch issued a podcast request for that same query",
@@ -72,12 +78,12 @@
     {
       "name": "podcast results are presented as Episodes and Shows, with no Albums section",
       "ok": true,
-      "detail": "sections=[\"Episodes\",\"Shows\"], rows=20"
+      "detail": "sections=[\"Episodes\",\"Shows\"], rows=18"
     },
     {
       "name": "each episode row names its show/channel and shows a duration",
       "ok": true,
-      "detail": "first result upstream: \"Jeffrey Dahmer\" by \"True Crime Garage\"; first row=\"Jeffrey DahmerTrue Crime Garage57:53\""
+      "detail": "first result upstream: \"True Crime Fan Committed A Murder \"Out of Curiosity\"\" by \"Rotten Mango\"; first row=\"True Crime Fan Committed A Murder \"Out of Curiosity\"Rotten Mango52:27\""
     },
     {
       "name": "the podcast browse state offers curated categories, each a podcast-mode search URL",
@@ -87,7 +93,7 @@
     {
       "name": "activating a category starts a podcast-mode search for its own query",
       "ok": true,
-      "detail": "activation=trusted-click, url=/search?q=news%20podcasts&mode=podcast, rows=12"
+      "detail": "activation=trusted-click, url=/search?q=news%20podcasts&mode=podcast, rows=20"
     },
     {
       "name": "the category search asked the server the podcast question, on the existing route",
@@ -100,49 +106,49 @@
       "detail": "music mode said \"No results for \"zzq stubbed empty podcast search\"\", podcast mode said \"No podcasts found for \"zzq stubbed empty podcast s\" — \"No podcasts found for \"zzq stubbed empty podcast search\"Podcast search looks for episodes of at least 10 minutes. Try different keywords or \""
     },
     {
-      "name": "an episode plays in the persistent player, with no autoplay and one iframe",
+      "name": "an episode plays in the persistent player, through the one IFrame API script",
       "ok": true,
-      "detail": "control=Pause, iframes=0, api scripts=1, bar=\"Jeffrey DahmerTrue Crime Garage0:0057:53\""
+      "detail": "control=Pause, iframes=0, api scripts=1, bar=\"True Crime Fan Committed A Murder \"Out of Curiosity\"Rotten Mango0:0052\""
     },
     {
       "name": "an episode plays long enough that the local record counts it as a play, not a skip",
       "ok": true,
-      "detail": "position reached \"0:32\" of \"57:52\", recorded podcast events=[{\"trackId\":\"youtube:GHa4YKMUJjc\",\"title\":\"Jeffrey Dahmer\",\"category\":\"podcast\",\"secondsPlayed\":33,\"completed\":false,\"context\":\"search\"},{\"trackId\":\"youtube:rAteWEfnUCc\",\"title\":\"Burger Chef\",\"category\":\"podcast\",\"secondsPlayed\":0,\"completed\":false,\"context\":\"search\"}]"
+      "detail": "position reached \"0:32\" of \"52:26\", recorded podcast events=[{\"trackId\":\"youtube:afCAs2iWD70\",\"title\":\"True Crime Fan Committed A Murder \\\"Out of Curiosity\\\"\",\"category\":\"podcast\",\"secondsPlayed\":33,\"completed\":false,\"context\":\"search\"},{\"trackId\":\"youtube:k0UHPmr7sv0\",\"title\":\"Reddit’s Darkest True Crime Confessions\",\"category\":\"podcast\",\"secondsPlayed\":0,\"completed\":false,\"context\":\"search\"}]"
     },
     {
       "name": "the session stores the queue, the current episode, and its position",
       "ok": true,
-      "detail": "queue=20, current=\"Burger Chef\", stored position=20.953124s"
+      "detail": "queue=18, current=\"Reddit’s Darkest True Crime Confessions\", stored position=20.829843s"
     },
     {
       "name": "the episode's position survives a reload, cued rather than autoplayed",
       "ok": true,
-      "detail": "restored position=\"0:20\" of \"45:37\", control=Play, bar=\"Burger ChefTrue Crime Garage0:2045:37\""
+      "detail": "restored position=\"0:20\" of \"51:17\", control=Play, bar=\"Reddit’s Darkest True Crime ConfessionsCrimes Of Reddit0:205\""
     },
     {
       "name": "a stored position beyond the duration is clamped at load, not cued past the end",
       "ok": true,
-      "detail": "episode duration=2737s, stored position forced to 3637s → the player shows 45:35 of 45:37 (position 2735s, duration 2737s)"
+      "detail": "episode duration=3077s, stored position forced to 3977s → the player shows 51:15 of 51:17 (position 3075s, duration 3077s, expected 3075s)"
     },
     {
       "name": "the clamped episode plays out from its clamped cue and the queue moves on",
       "ok": true,
-      "detail": "cued at \"45:35\" of \"45:37\" → now \"0:00\" of \"1:17:33\""
+      "detail": "cued at \"51:15\" of \"51:17\" → now \"51:15\" of \"51:16\""
     },
     {
       "name": "the played episode is recorded in the existing local history dataset, as a podcast",
       "ok": true,
-      "detail": "events=3, podcast events=[{\"title\":\"Jeffrey Dahmer\",\"seconds\":33,\"context\":\"search\"},{\"title\":\"Burger Chef\",\"seconds\":0,\"context\":\"search\"},{\"title\":\"Alphabet Murders\",\"seconds\":0,\"context\":\"search\"}]"
+      "detail": "events=2, podcast events=[{\"title\":\"True Crime Fan Committed A Murder \\\"Out of Curiosity\\\"\",\"seconds\":33,\"context\":\"search\"},{\"title\":\"Reddit’s Darkest True Crime Confessions\",\"seconds\":0,\"context\":\"search\"}]"
     },
     {
-      "name": "the History surface lists the episode with a verdict and no podcast-only surface",
+      "name": "the History surface lists the episode with a verdict, a time, and its own surface",
       "ok": true,
-      "detail": "rows=3, verdicts=[\"Skipped\",\"Skipped\",\"Played through\"], every row shows a time=true, the played episode is listed=true"
+      "detail": "rows=2, verdicts=[\"Skipped\",\"Played through\"], every row shows a time=true, the played episode is listed=true"
     },
     {
-      "name": "the statistics count the podcast play, with no podcast-specific dataset or surface",
+      "name": "the statistics count the podcast play, and the insights surfaces carry no podcast-specific one",
       "ok": true,
-      "detail": "plays=1, time=\"33 sec\", top tracks block=Most played tracksJeffrey Dahmer1 playDerived from this device’s liste, podcast surface present=false"
+      "detail": "plays=1, time=\"33 sec\", top tracks block=Most played tracksTrue Crime Fan Committed A Murder \"Out of Curiosity\", podcast surface present=false"
     },
     {
       "name": "the statistics report podcasts as a category of the local record",
@@ -312,6 +318,7 @@
       {
         "query": "bohemian rhapsody",
         "category": "(absent)",
+        "attempt": 1,
         "status": 200,
         "count": 16,
         "tier": "ytmusic",
@@ -353,21 +360,22 @@
             "artist": "Angelina Jordan"
           },
           {
-            "title": "Bohemian Rhapsody",
+            "title": "Bohemian Rhapsody (feat. Jeff Scott Soto)",
             "category": "music",
-            "durationSeconds": 342,
-            "artist": "Ndlovu Youth Choir"
+            "durationSeconds": 356,
+            "artist": "Dewa 19"
           }
         ],
         "error": null,
-        "ms": 8
+        "ms": 4
       },
       {
         "query": "true crime podcast",
         "category": "podcast",
+        "attempt": 1,
         "status": 200,
-        "count": 20,
-        "tier": "piped",
+        "count": 18,
+        "tier": "invidious",
         "tiersTried": [
           {
             "tier": "ytmusic",
@@ -379,59 +387,56 @@
           },
           {
             "tier": "invidious",
-            "outcome": "timeout"
-          },
-          {
-            "tier": "piped",
             "outcome": "ok"
           }
         ],
         "titles": [
           {
-            "title": "Jeffrey Dahmer",
+            "title": "True Crime Fan Committed A Murder \"Out of Curiosity\"",
             "category": "podcast",
-            "durationSeconds": 3473,
-            "artist": "True Crime Garage"
+            "durationSeconds": 3147,
+            "artist": "Rotten Mango"
           },
           {
-            "title": "Burger Chef",
+            "title": "Reddit’s Darkest True Crime Confessions",
             "category": "podcast",
-            "durationSeconds": 2737,
-            "artist": "True Crime Garage"
+            "durationSeconds": 3077,
+            "artist": "Crimes Of Reddit"
           },
           {
-            "title": "Alphabet Murders",
+            "title": "The “American Idol Murder” Trial: The FULL Backstory & Bombshell First Week | Caleb Flynn",
             "category": "podcast",
-            "durationSeconds": 4653,
-            "artist": "True Crime Garage"
+            "durationSeconds": 15614,
+            "artist": "Hidden True Crime"
           },
           {
-            "title": "Oakland County Child Killer",
+            "title": "True Crime Vault: How'd You Rather Die?",
             "category": "podcast",
-            "durationSeconds": 4967,
-            "artist": "True Crime Garage"
+            "durationSeconds": 4798,
+            "artist": "ABC News"
           },
           {
-            "title": "Slender Man",
+            "title": "2025 True Crime Stories | “48 Hours\" Full Episodes",
             "category": "podcast",
-            "durationSeconds": 4435,
-            "artist": "True Crime Garage"
+            "durationSeconds": 10123,
+            "artist": "48 Hours"
           },
           {
-            "title": "Son of Sam",
+            "title": "5 Most Twisted True Crime Cases I've Ever Heard",
             "category": "podcast",
-            "durationSeconds": 4835,
-            "artist": "True Crime Garage"
+            "durationSeconds": 6700,
+            "artist": "Ty Notts"
           }
         ],
         "error": null,
-        "ms": 5980
+        "ms": 3
       },
       {
         "query": "true crime podcast",
         "category": "(absent)",
+        "attempt": 1,
         "status": 200,
-        "count": 20,
+        "count": 16,
         "tier": "ytmusic",
         "tiersTried": [
           {
@@ -447,10 +452,16 @@
             "artist": "Felix Thoma"
           },
           {
-            "title": "Lotta True Crime",
+            "title": "Podcast True Crime",
             "category": "music",
-            "durationSeconds": 203,
-            "artist": "Penelope Scott"
+            "durationSeconds": 151,
+            "artist": "MasloriSound"
+          },
+          {
+            "title": "True Crime Podcast",
+            "category": "music",
+            "durationSeconds": 161,
+            "artist": "Catbreath?"
           },
           {
             "title": "Jeffrey Dahmer",
@@ -465,27 +476,76 @@
             "artist": "True Crime Garage"
           },
           {
-            "title": "Alton Coleman & Debra Brown",
+            "title": "Slender Man",
             "category": "podcast",
-            "durationSeconds": 2605,
-            "artist": "True Crime Garage"
-          },
-          {
-            "title": "Alphabet Murders",
-            "category": "podcast",
-            "durationSeconds": 4653,
+            "durationSeconds": 4435,
             "artist": "True Crime Garage"
           }
         ],
         "error": null,
-        "ms": 255
+        "ms": 409
+      },
+      {
+        "query": "true crime podcast",
+        "category": "(absent)",
+        "attempt": 1,
+        "status": 200,
+        "count": 16,
+        "tier": "ytmusic",
+        "tiersTried": [
+          {
+            "tier": "ytmusic",
+            "outcome": "ok"
+          }
+        ],
+        "titles": [
+          {
+            "title": "Podcast Crime",
+            "category": "music",
+            "durationSeconds": 132,
+            "artist": "Felix Thoma"
+          },
+          {
+            "title": "Podcast True Crime",
+            "category": "music",
+            "durationSeconds": 151,
+            "artist": "MasloriSound"
+          },
+          {
+            "title": "True Crime Podcast",
+            "category": "music",
+            "durationSeconds": 161,
+            "artist": "Catbreath?"
+          },
+          {
+            "title": "Jeffrey Dahmer",
+            "category": "podcast",
+            "durationSeconds": 3473,
+            "artist": "True Crime Garage"
+          },
+          {
+            "title": "Burger Chef",
+            "category": "podcast",
+            "durationSeconds": 2737,
+            "artist": "True Crime Garage"
+          },
+          {
+            "title": "Slender Man",
+            "category": "podcast",
+            "durationSeconds": 4435,
+            "artist": "True Crime Garage"
+          }
+        ],
+        "error": null,
+        "ms": 4
       },
       {
         "query": "true crime podcast",
         "category": "podcast",
+        "attempt": 1,
         "status": 200,
-        "count": 20,
-        "tier": "piped",
+        "count": 18,
+        "tier": "invidious",
         "tiersTried": [
           {
             "tier": "ytmusic",
@@ -497,53 +557,49 @@
           },
           {
             "tier": "invidious",
-            "outcome": "timeout"
-          },
-          {
-            "tier": "piped",
             "outcome": "ok"
           }
         ],
         "titles": [
           {
-            "title": "Jeffrey Dahmer",
+            "title": "True Crime Fan Committed A Murder \"Out of Curiosity\"",
             "category": "podcast",
-            "durationSeconds": 3473,
-            "artist": "True Crime Garage"
+            "durationSeconds": 3147,
+            "artist": "Rotten Mango"
           },
           {
-            "title": "Burger Chef",
+            "title": "Reddit’s Darkest True Crime Confessions",
             "category": "podcast",
-            "durationSeconds": 2737,
-            "artist": "True Crime Garage"
+            "durationSeconds": 3077,
+            "artist": "Crimes Of Reddit"
           },
           {
-            "title": "Alphabet Murders",
+            "title": "The “American Idol Murder” Trial: The FULL Backstory & Bombshell First Week | Caleb Flynn",
             "category": "podcast",
-            "durationSeconds": 4653,
-            "artist": "True Crime Garage"
+            "durationSeconds": 15614,
+            "artist": "Hidden True Crime"
           },
           {
-            "title": "Oakland County Child Killer",
+            "title": "True Crime Vault: How'd You Rather Die?",
             "category": "podcast",
-            "durationSeconds": 4967,
-            "artist": "True Crime Garage"
+            "durationSeconds": 4798,
+            "artist": "ABC News"
           },
           {
-            "title": "Slender Man",
+            "title": "2025 True Crime Stories | “48 Hours\" Full Episodes",
             "category": "podcast",
-            "durationSeconds": 4435,
-            "artist": "True Crime Garage"
+            "durationSeconds": 10123,
+            "artist": "48 Hours"
           },
           {
-            "title": "Son of Sam",
+            "title": "5 Most Twisted True Crime Cases I've Ever Heard",
             "category": "podcast",
-            "durationSeconds": 4835,
-            "artist": "True Crime Garage"
+            "durationSeconds": 6700,
+            "artist": "Ty Notts"
           }
         ],
         "error": null,
-        "ms": 4
+        "ms": 3
       }
     ],
     "attachedTargets": [
@@ -572,6 +628,14 @@
         "url": ""
       }
     ],
+    "sameWordsComparison": {
+      "query": "true crime podcast",
+      "podcastCount": 18,
+      "musicCount": 16,
+      "podcastTier": "invidious",
+      "musicTier": "ytmusic",
+      "sharedTitles": []
+    },
     "activations": {
       "the mode switch to Podcasts": "trusted-click",
       "a category opening a podcast search": "trusted-click",
@@ -585,26 +649,68 @@
     "sessionBeforeReload": {
       "ok": true,
       "session": {
-        "positionSeconds": 20.953124,
+        "positionSeconds": 20.829843,
         "queueIndex": 1,
-        "queueLength": 20,
+        "queueLength": 18,
         "current": {
-          "id": "youtube:rAteWEfnUCc",
+          "id": "youtube:k0UHPmr7sv0",
           "source": "youtube",
-          "providerId": "rAteWEfnUCc",
-          "title": "Burger Chef",
+          "providerId": "k0UHPmr7sv0",
+          "title": "Reddit’s Darkest True Crime Confessions",
           "artists": [
             {
-              "name": "True Crime Garage",
-              "id": "UC8DXl3F5D7YFwx9UJGPPx9g"
+              "name": "Crimes Of Reddit",
+              "id": "UC5Ih2oPBZpOQTCu0CcT3U8A"
             }
           ],
           "artwork": [
             {
-              "url": "https://piped-proxy.ducks.party/hzkYof-CIhKw55ScskYISKPSZ2XL5WjY-yWcrdQshX93J5xGFycfoGZS50a9Qj6h-lKP8pdcc1PNCjZT=w120-h120-l90-rw?host=yt3.googleusercontent.com"
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/maxres.jpg",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/maxresdefault.jpg",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/sddefault.jpg",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/hqdefault.jpg",
+              "width": 480,
+              "height": 360
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/mqdefault.jpg",
+              "width": 320,
+              "height": 180
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/default.jpg",
+              "width": 120,
+              "height": 90
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/1.jpg",
+              "width": 120,
+              "height": 90
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/2.jpg",
+              "width": 120,
+              "height": 90
+            },
+            {
+              "url": "https://invidious.f5.si/vi/k0UHPmr7sv0/3.jpg",
+              "width": 120,
+              "height": 90
             }
           ],
-          "durationSeconds": 2737,
+          "durationSeconds": 3077,
           "category": "podcast",
           "capabilities": {
             "stream": true,
@@ -615,8 +721,8 @@
       }
     },
     "clamp": {
-      "storedDurationSeconds": 2737,
-      "forcedPositionSeconds": 3637
+      "storedDurationSeconds": 3077,
+      "forcedPositionSeconds": 3977
     },
     "screenshotFiles": [
       "podcast-category-search-1280.png",

@@ -9,7 +9,7 @@ DevTools Protocol.
 | File | What it is |
 | --- | --- |
 | `cdp-check.mjs` | The harness. Node built-ins only — no Playwright, no Puppeteer, no dependencies. |
-| `results.json` | The run record: 30 steps with their verdicts and details, the screenshots, the console-error buckets, every observed `/api/search` request, and the direct server probes. |
+| `results.json` | The run record: 32 steps with their verdicts and details, the screenshots, the console-error buckets, every observed `/api/search` request, and the direct server probes. |
 | `search-music-mode-1280.png` | Music mode: the unchanged result sections, and a request with no `category` parameter. |
 | `search-podcast-mode-1280.png` | Podcast mode: the same query re-asked, presented as **Episodes** and **Shows** with no Albums section. |
 | `podcast-category-search-1280.png` | A curated category running a podcast-mode search for its own query. |
@@ -60,9 +60,14 @@ in a live browser. That is what this run covers:
    podcast mode records `ytmusic → skipped`, music mode records `ytmusic → ok`.
    The skipped tier is never contacted, which is design decision 2, asserted
    against the server rather than inferred from the UI.
-2. **Podcast results are results music search would not return.** The same words
-   are asked in both modes and the two result sets are compared: podcast mode
-   returns podcast-labelled episodes with none of the music result set's titles.
+2. **The same words are answered by a different tier, and labelled for the question
+   asked.** The run probes `/api/search` for one query in both modes and compares:
+   podcast mode is answered by a tier that was *not* YouTube Music (which was
+   skipped), music mode by YouTube Music; podcast mode's results are all labelled
+   `podcast` and all clear the 600 s floor. The two result sets are **not** claimed to
+   be disjoint — the live provider may answer both questions with the same episode,
+   and the run *measures* the overlap into `notes.sameWordsComparison` instead of
+   asserting a difference it cannot promise.
 3. **Music mode is untouched.** The first and last steps of the run search the
    same music query and assert the same request URL (no `category` parameter at
    all) and the same Songs/Artists/Albums sections, before and after all the
@@ -98,14 +103,19 @@ These are the places where the run is *not* a clean-room reproduction, stated
 plainly rather than buried:
 
 - **What the live provider returned for a podcast query, on the day.** The run
-  probes `/api/search?q=true+crime+podcast&category=podcast` and records the
-  answer in `notes.upstreamProbes`. In the recorded run the tier chain went
-  `ytmusic → skipped`, `ytweb → empty`, `invidious → timeout`, `piped → ok`: the
-  fallback chain carried the request because the primary podcast-capable tier
-  timed out. An earlier run of the same harness got `invidious → ok` for the same
-  query. Both are live-provider facts, not application behavior, which is exactly
-  why the run asserts the *chain* (ytmusic skipped) and the *labels* rather than a
-  fixed tier.
+  probes `/api/search?q=<query>&category=podcast` and records the answer in
+  `notes.upstreamProbes`, including which tier answered and every attempt. In the
+  recorded run `true crime podcast` was answered by **invidious** after
+  `ytmusic → skipped` and `ytweb → empty`; earlier runs of the same harness saw
+  `invidious → timeout` with **piped** answering instead, and one run of the
+  pre-correction harness saw the same. Those are live-provider facts, not
+  application behavior — which is exactly why the run asserts the *chain*
+  (YouTube Music skipped) and the *labels*, never a fixed tier.
+- **The query-selection probe retries a 503, and every attempt is recorded.** The
+  probe's job is to *choose* a workable podcast query, so a transient upstream
+  failure during selection would otherwise be misread as "this query has no podcast
+  results" — a claim the probe cannot make. Up to three attempts, 3 s apart, and
+  `attempt` is recorded per probe in `results.json`. Assertion steps never retry.
 - **The podcast query is chosen by probing.** `PODCAST_QUERY_CANDIDATES` are
   tried in order and the first that returns results is used for the UI steps, so
   the run does not depend on one query always being answerable. The candidate list
@@ -120,6 +130,17 @@ plainly rather than buried:
   — the mode control sits high on the page, where a trusted click can land under
   the sticky header. `results.json` records the path taken per control in
   `notes.activations`; in the recorded run every activation was a trusted click.
+- **The clamp is asserted exactly, against the shipped constant.** The run forces
+  the stored position past the track's duration and requires the restored position
+  to equal `duration − END_CUE_TAIL_SECONDS`, reading that constant out of
+  `playerStore.ts` at run time. An inequality would have accepted a silent restart
+  from 0:00, which is the failure this check exists to catch.
+- **The mode switch is exercised on a query the mode can answer.** The switch step
+  types the *podcast* query first and then switches mode, rather than switching a
+  song title into podcast mode and hoping the live provider returns long-form
+  results for it. Whether a podcast query answers in *music* mode is recorded as an
+  observation (`notes.upstreamProbes`) and not asserted — it is a fact about the
+  provider, not about this change.
 - **Playback pacing is wall-clock.** The first episode plays ~33 s of real time
   before the real "Next track" control is clicked, because a step's measurements
   are written when the step *ends*. The recorded seconds vary per run (typically
@@ -169,7 +190,9 @@ plainly rather than buried:
   backup round trip is untouched by this change and is not re-evidenced here. The
   "no podcast dataset" property is asserted in the architecture suite and in
   `tests/podcast-playback-history.test.ts`.
-- **No podcast surface on Library/Home/Now Playing.** M12 deliberately adds none:
-  a played episode appears in the existing History and statistics surfaces, and
-  the Now Playing surface is unchanged. The run asserts their absence rather than
-  skipping it.
+- **No podcast surface on Library/Home/Now Playing.** M12 deliberately adds none: a
+  played episode appears in the existing History and statistics surfaces, and the
+  Now Playing surface is unchanged. The run probes for a podcast-specific surface on
+  the insights route only — not on every page — so that part of the claim rests on
+  the dataset-whitelist architecture rule and the unit tests rather than on this run,
+  which is stated here rather than implied.
