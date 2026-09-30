@@ -119,7 +119,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M10 | Radio, queue autofill, and local personalization | `DONE` | M2, M6, M8, M9 |
 | M11 | Listening history, stats, streaks, and Smart Mixes | `DONE` | M2, M7, M10 |
 | M12 | Podcasts | `DONE` | M3, M4, M5 |
-| M13 | PWA installation, offline shell, offline metadata experience | `IN PROGRESS` | M1, M2, M6 |
+| M13 | PWA installation, offline shell, offline metadata experience | `DONE` | M1, M2, M6 |
 | M14 | Hardening: performance, security, accessibility, resilience | `NOT STARTED` | M3–M13 |
 | M15 | Test matrix, release validation, Vercel deployment | `NOT STARTED` | M0–M14 |
 
@@ -1016,6 +1016,42 @@ Lyrix is MIT licensed. If substantial Lyrix code is copied or modified rather th
 - Attempting remote playback/search offline fails gracefully.
 - Service-worker updates do not destroy IndexedDB data.
 
+### Delivered by M13
+
+- A typed Web App Manifest route (`src/app/manifest.ts`) with a stable `id`, root
+  `start_url`/`scope`, `display: standalone` and DESIGN.md's own colors; PNG icons
+  at 192/512 plus a maskable 512, generated from `icon.svg`'s geometry by a
+  committed Node script (no image dependency, `--check` for drift).
+- A hand-written `public/sw.js` (no `serw`/`workbox`: both need a custom Node
+  server, which breaks the Vercel free-tier shape in section 7.1) whose strategy is
+  a per-request-class decision table: cache-first hashed assets, bounded artwork
+  with background revalidation, bounded keyless metadata with a 7-day freshness
+  bound, and an explicit deny list that keeps the YouTube player API, media,
+  non-GET, `Range`, search, radio, and playlist requests on the network. Every
+  cache has a named bound and FIFO eviction.
+- One ordered fallback chain for every same-origin navigation - network, then the
+  route's own cached document, then the cached shell document - so an offline visit
+  to an uncached route opens the application with its own honest state instead of
+  the browser's "no internet" page. Found and fixed by the browser evidence run.
+- The worker precaches exactly one entry (the shell document) at install, never
+  touches IndexedDB, and on activation deletes only its own versioned caches.
+- An install row in Settings that appears only where the platform offers
+  installation, withdraws once asked, remembers a dismissal in a namespaced
+  `localStorage` boot flag (not a dataset, not a backup field), and explains *Add
+  to Home Screen* where iOS exposes no programmatic prompt.
+- An update notice in the shell on every route: a waiting worker is announced,
+  `SKIP_WAITING` activates it over a live message port, and the page reloads into
+  the new build.
+- Honest offline copy: the connection banner names search and playback as needing a
+  connection and states that the library, playlists, and history still work, with a
+  negative test that scans every shipped source for offline-playback claims.
+- Verification: 2147 unit tests (new suites for the worker's shipped bytes, the
+  manifest and decoded PNGs, the client modules, and the offline-claim scan; an M13
+  architecture section for the worker, which no existing rule covered), plus a
+  browser evidence run (`evidence/results.json`, `pass: true`, 34/34 steps, 5
+  screenshots, 0 console errors) whose offline phase stops the production server so
+  "offline" means a genuinely unreachable origin.
+
 ---
 
 ## M14 — Hardening: Performance, Security, Accessibility, and Resilience
@@ -1246,12 +1282,12 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] Merge import.
 - [x] Replace import.
 - [x] Clear/reset controls.
-- [ ] Web App Manifest.
-- [ ] Service Worker.
-- [ ] Installable standalone app.
-- [ ] Offline app shell.
-- [ ] Offline library metadata.
-- [ ] PWA update flow.
+- [x] Web App Manifest.
+- [x] Service Worker.
+- [x] Installable standalone app.
+- [x] Offline app shell.
+- [x] Offline library metadata.
+- [x] PWA update flow.
 - [x] Online/offline indicators.
 
 ---
