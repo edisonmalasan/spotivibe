@@ -8,7 +8,7 @@ Lets users find and act on music: a responsive search surface over the provider 
 
 ### Requirement: Query input and URL synchronization
 
-The top-bar search input SHALL be functional: typing a query focuses the search experience, navigates to the Search route, and keeps the visible query in the URL (`/search?q=...`) without remounting the input or losing focus while typing. The Search route SHALL read the query from the URL so deep links and back/forward navigation reproduce the same query state, and the input's value SHALL always reflect the current query. Clearing the query returns the Search surface to its browse state.
+The top-bar search input SHALL be functional: typing a query focuses the search experience, navigates to the Search route, and keeps the visible query in the URL (`/search?q=...`) without remounting the input or losing focus while typing. The Search route SHALL read the query from the URL so deep links and back/forward navigation reproduce the same query state, and the input's value SHALL always reflect the current query. Clearing the query returns the Search surface to its browse state. The search mode SHALL be part of that URL state alongside the query, SHALL default to music mode when absent or unrecognized, and SHALL be changeable without retyping the query.
 
 #### Scenario: Typing in the top bar drives the search surface
 
@@ -24,6 +24,21 @@ The top-bar search input SHALL be functional: typing a query focuses the search 
 
 - **WHEN** the user empties the search input
 - **THEN** the search surface shows the browse state (recent searches when any exist) rather than stale results
+
+#### Scenario: The mode travels with the query in the URL
+
+- **WHEN** the listener switches to podcast mode
+- **THEN** the URL carries both the query and the podcast mode, and reloading or sharing that URL reproduces the same mode and query
+
+#### Scenario: An absent or unrecognized mode falls back to music
+
+- **WHEN** the URL carries no mode or an unrecognized mode value
+- **THEN** the search surface runs and renders in music mode rather than failing
+
+#### Scenario: The top-bar input stays focused across a mode switch
+
+- **WHEN** the listener switches mode from the search surface
+- **THEN** the top-bar input is not remounted and its value is preserved
 
 ### Requirement: Debounced stale-safe requests
 
@@ -50,7 +65,7 @@ While a search is in flight, the surface SHALL show skeleton placeholders shaped
 
 ### Requirement: Result sections from canonical metadata
 
-Search results SHALL render as a Top Result (when the result set contains a clear best match for the query), a Songs section in provider relevance order, and derived Artists and Albums sections computed client-side from the canonical Track metadata — an artist entry only where artist metadata resolves, an album entry only where album metadata resolves. Derived artist and album entries SHALL be deduplicated across the result set (one entry per artist/album identity), and the song list SHALL collapse duplicates so the same video never appears twice.
+Search results SHALL render as a Top Result (when the result set contains a clear best match for the query), a Songs section in provider relevance order, and derived Artists and Albums sections computed client-side from the canonical Track metadata — an artist entry only where artist metadata resolves, an album entry only where album metadata resolves. Derived artist and album entries SHALL be deduplicated across the result set (one entry per artist/album identity), and the song list SHALL collapse duplicates so the same video never appears twice. In podcast mode the same derivation runs over podcast metadata: the result section presents each episode with its show or channel, its canonical duration, and its artwork, and the Albums section is omitted because podcast metadata resolves no album identity, while artist entries resolve only where a show or channel is actually present.
 
 #### Scenario: Songs render canonical track information
 
@@ -71,6 +86,11 @@ Search results SHALL render as a Top Result (when the result set contains a clea
 
 - **WHEN** the response contains the same video twice or results that duplicate an already-listed song
 - **THEN** only one entry for that video remains in the rendered song list
+
+#### Scenario: Podcast results present show and duration, not albums
+
+- **WHEN** a podcast-mode search returns episodes
+- **THEN** each row shows the episode title, its show or channel, its canonical duration, and artwork, and no Albums section is rendered for that result set
 
 ### Requirement: Playback from search results
 
