@@ -37,11 +37,34 @@ forget; rejected deliberately in favour of one declaration). A custom server
 
 **Decision.** An explicit `default-src 'self'` policy whose `script-src`,
 `frame-src`, `img-src`, `media-src`, `connect-src` and `style-src` each name the
-minimum the application actually reaches: the YouTube IFrame player host and its
-nocookie variant for `frame-src` and `script-src`, `ytimg`/`googleusercontent` for
-artwork, and `googlevideo` for the media the player fetches itself. Development keeps
-`'unsafe-eval'` and `'unsafe-inline'` where Next's dev runtime needs them; production
-does not, and the difference is asserted rather than assumed.
+minimum the application actually reaches. As shipped, that is two third-party origins:
+the YouTube IFrame API script and the embed frame it creates, both from the player host,
+and the artwork host whose URLs the *server* builds and hands to the client as data.
+Development adds `'unsafe-eval'` because Next's dev runtime evaluates generated code;
+production does not, and the difference is asserted rather than assumed.
+
+**Amended after the verification pass, three times.** The first draft of this decision
+named four origins that never reached the policy - a `nocookie` player variant, a second
+artwork host, and a media host - on the reasoning that the player "might" reach them.
+They are not reachable: the player is constructed without a `host` player variable, so
+the frame is the default embed; the normalizer emits one artwork host; and the player's
+media is fetched inside its own frame under YouTube's own policy, so this document's
+`media-src` has nothing to permit. A policy derived from a guess about what *might* be
+contacted is exactly the permissive policy this decision exists to avoid.
+
+The draft also claimed production carries neither `'unsafe-eval'` nor `'unsafe-inline'`.
+It carries inline, deliberately and with a `DEBT` note: the App Router bootstraps
+hydration with inline payload scripts that are not enumerable at config time. The honest
+statement is that inline *script* is permitted - the protection against remote script
+comes from the host list, not from that entry - and the note now says so.
+
+The third amendment is the referrer policy, which this decision did not mention at all.
+It was implemented as `no-referrer`, which the verification pass found contradicts the
+`playback` spec of record: that capability requires the player "SHALL NOT suppress the
+page referrer", and a response-level `no-referrer` suppresses it for exactly the
+attribution navigations that requirement is about. It ships as
+`strict-origin-when-cross-origin` - the strongest value that leaves the requirement
+intact.
 
 **Why.** A CSP that is too tight breaks playback, and a CSP that is too loose is
 decoration. The only defensible way to write one is from the domains the code actually
@@ -83,6 +106,21 @@ honestly if the network is gone too.
 write. Serving a truncated document is a silent wrong answer, which is the failure mode
 M13's whole decision table exists to avoid. Deleting the entry is also self-healing:
 the next successful request repopulates it.
+
+**Amended after the verification pass.** The validation compared `content-length` - a
+**byte** count - against the length of a *decoded* string, which counts UTF-16 code
+units. Every prerendered page in this application contains non-ASCII punctuation, so the
+check deleted **intact** entries: four of the nine routes behaved as if never visited,
+and the artwork cache deleted and re-downloaded every image on every read. The check is
+now in bytes, via `ArrayBuffer.byteLength`.
+
+The finding is worth more than the fix, because of *why* nothing caught it. The unit
+tests built responses with no `content-length`, so the comparison never ran. The browser
+evidence seeded only a *truncated* entry, so the false-positive path was never
+exercised. A check that proves only the failure it was written for is half a check - so
+the evidence now also captures an **intact** entry and asserts it is served from its own
+route *and survives the read*, and the unit tests drive non-ASCII bodies and binary
+artwork through the helper.
 
 **Alternatives considered.** Validating by re-reading the body on every hit (rejected:
 it defeats the point of a cache). A cache version bump as the only repair (rejected: it

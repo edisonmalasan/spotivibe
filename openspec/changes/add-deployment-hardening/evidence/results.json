@@ -1,6 +1,15 @@
 {
-  "task": "3.1, 3.2, 4.1, 4.2",
-  "generatedAt": "2026-09-30T14:30:17.189Z",
+  "task": "1.2, 1.5, 2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 4.2, 5.2",
+  "phases": {
+    "1.2": "response security policy on a document, the manifest, the worker file and a static asset",
+    "1.5": "request loop refused at the ceiling, and a different route class unaffected",
+    "2.1, 2.2": "corrupt entries discarded and intact entries served and kept, with the origin stopped",
+    "2.3": "a database that cannot be opened is named and clears on recovery",
+    "3.1, 3.2": "Core Web Vitals at both viewports against the stated targets",
+    "4.1, 4.2": "contrast, accessible names and keyboard reachability, each proven against a degraded page",
+    "5.2": "this run, its conditions, its disclosures and its screenshots"
+  },
+  "generatedAt": "2026-09-30T15:19:23.582Z",
   "origin": "http://localhost:3212",
   "targets": {
     "lcpMs": 2500,
@@ -42,7 +51,7 @@
     {
       "name": "desktop /library: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 72ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "desktop /search: every text style meets its contrast minimum",
@@ -62,7 +71,7 @@
     {
       "name": "desktop /search: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 56ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 68ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "desktop /history: every text style meets its contrast minimum",
@@ -82,7 +91,7 @@
     {
       "name": "desktop /history: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 84ms (≤2500), CLS 0.0598 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 76ms (≤2500), CLS 0.0598 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "desktop /settings: every text style meets its contrast minimum",
@@ -122,7 +131,7 @@
     {
       "name": "desktop /now-playing: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 56ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /library: every text style meets its contrast minimum",
@@ -142,7 +151,7 @@
     {
       "name": "compact /library: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 84ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 96ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /search: every text style meets its contrast minimum",
@@ -162,7 +171,7 @@
     {
       "name": "compact /search: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 56ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /history: every text style meets its contrast minimum",
@@ -182,7 +191,7 @@
     {
       "name": "compact /history: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 56ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /settings: every text style meets its contrast minimum",
@@ -202,7 +211,7 @@
     {
       "name": "compact /settings: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 68ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "compact /now-playing: every text style meets its contrast minimum",
@@ -222,7 +231,7 @@
     {
       "name": "compact /now-playing: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
       "name": "a document carries the security policy and the hardening headers",
@@ -352,11 +361,11 @@
     },
     "desktoplibrary": {
       "vitals": {
-        "lcp": 72,
+        "lcp": 60,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 72,
+        "firstContentfulPaint": 60,
         "observedDuringLoad": true
       },
       "contrastChecked": 11,
@@ -368,11 +377,11 @@
     },
     "desktopsearch": {
       "vitals": {
-        "lcp": 56,
+        "lcp": 68,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 56,
+        "firstContentfulPaint": 68,
         "observedDuringLoad": true
       },
       "contrastChecked": 11,
@@ -384,11 +393,11 @@
     },
     "desktophistory": {
       "vitals": {
-        "lcp": 84,
+        "lcp": 76,
         "cls": 0.0598,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 56,
+        "firstContentfulPaint": 52,
         "observedDuringLoad": true
       },
       "contrastChecked": 13,
@@ -416,11 +425,11 @@
     },
     "desktopnow-playing": {
       "vitals": {
-        "lcp": 52,
+        "lcp": 56,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 52,
+        "firstContentfulPaint": 56,
         "observedDuringLoad": true
       },
       "contrastChecked": 8,
@@ -432,11 +441,11 @@
     },
     "compactlibrary": {
       "vitals": {
-        "lcp": 84,
+        "lcp": 96,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 64,
+        "firstContentfulPaint": 72,
         "observedDuringLoad": true
       },
       "contrastChecked": 9,
@@ -448,11 +457,11 @@
     },
     "compactsearch": {
       "vitals": {
-        "lcp": 60,
+        "lcp": 56,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 40,
+        "firstContentfulPaint": 56,
         "observedDuringLoad": true
       },
       "contrastChecked": 9,
@@ -464,11 +473,11 @@
     },
     "compacthistory": {
       "vitals": {
-        "lcp": 56,
+        "lcp": 52,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 56,
+        "firstContentfulPaint": 52,
         "observedDuringLoad": true
       },
       "contrastChecked": 10,
@@ -480,11 +489,11 @@
     },
     "compactsettings": {
       "vitals": {
-        "lcp": 68,
+        "lcp": 60,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 68,
+        "firstContentfulPaint": 60,
         "observedDuringLoad": true
       },
       "contrastChecked": 19,
@@ -496,11 +505,11 @@
     },
     "compactnow-playing": {
       "vitals": {
-        "lcp": 48,
+        "lcp": 60,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 48,
+        "firstContentfulPaint": 60,
         "observedDuringLoad": true
       },
       "contrastChecked": 7,
@@ -608,15 +617,15 @@
         "hasPolicy": true
       },
       {
-        "path": "/icon.svg",
-        "status": 200,
-        "headerCount": 15,
-        "hasPolicy": true
-      },
-      {
         "path": "/now-playing",
         "status": 200,
         "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/icon.svg",
+        "status": 200,
+        "headerCount": 15,
         "hasPolicy": true
       },
       {
@@ -652,23 +661,23 @@
       {
         "path": "/_next/static/chunks/1kgsd09e9q64c.js",
         "status": 200,
-        "headerCount": 15,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/now-playing",
+        "status": 200,
+        "headerCount": 18,
         "hasPolicy": true
       },
       {
         "path": "/_next/static/chunks/1h22qh4kr7ih4.js",
         "status": 200,
-        "headerCount": 15,
+        "headerCount": 18,
         "hasPolicy": true
       },
       {
         "path": "/_next/static/chunks/1qkc8_-3dl8t-.js",
-        "status": 200,
-        "headerCount": 15,
-        "hasPolicy": true
-      },
-      {
-        "path": "/now-playing",
         "status": 200,
         "headerCount": 18,
         "hasPolicy": true

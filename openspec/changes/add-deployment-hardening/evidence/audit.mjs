@@ -424,7 +424,23 @@ const INSTRUMENTED_AUDIT = String.raw`
 
 async function main() {
   const results = {
-    task: "3.1, 3.2, 4.1, 4.2",
+    // Every task this run's phases correspond to, named in full. It said four when the
+    // harness covered ten: the header, throttling, storage-failure and cache phases were
+    // added after the field was written, and a field that under-declares its scope is
+    // the same class of mistake as one that overstates it.
+    task: "1.2, 1.5, 2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 4.2, 5.2",
+    phases: {
+      1.2: "response security policy on a document, the manifest, the worker file and a static asset",
+      1.5: "request loop refused at the ceiling, and a different route class unaffected",
+      "2.1, 2.2":
+        "corrupt entries discarded and intact entries served and kept, with the origin stopped",
+      2.3: "a database that cannot be opened is named and clears on recovery",
+      "3.1, 3.2":
+        "Core Web Vitals at both viewports against the stated targets",
+      "4.1, 4.2":
+        "contrast, accessible names and keyboard reachability, each proven against a degraded page",
+      5.2: "this run, its conditions, its disclosures and its screenshots",
+    },
     generatedAt: new Date().toISOString(),
     origin: ORIGIN,
     targets: TARGETS,
