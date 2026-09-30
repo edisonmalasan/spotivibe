@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T18:37:22.517Z",
+  "generatedAt": "2026-09-30T18:54:03.143Z",
   "conditions": {
     "engine": "edge",
     "enginesInstalled": [
@@ -47,7 +47,7 @@
       "requirement": "first launch and language onboarding",
       "ok": true,
       "detail": "",
-      "ms": 2900,
+      "ms": 2977,
       "screenshot": "edge-first-launch-pass.png"
     },
     {
@@ -55,7 +55,7 @@
       "requirement": "search and play",
       "ok": true,
       "detail": "",
-      "ms": 1267,
+      "ms": 1303,
       "screenshot": "edge-search-and-play-pass.png"
     },
     {
@@ -63,7 +63,7 @@
       "requirement": "navigate while playing",
       "ok": true,
       "detail": "",
-      "ms": 2315,
+      "ms": 2158,
       "screenshot": "edge-navigate-while-playing-pass.png"
     },
     {
@@ -71,7 +71,7 @@
       "requirement": "add to queue",
       "ok": true,
       "detail": "",
-      "ms": 1556,
+      "ms": 1429,
       "screenshot": "edge-add-to-queue-pass.png"
     },
     {
@@ -79,7 +79,7 @@
       "requirement": "like a track",
       "ok": true,
       "detail": "",
-      "ms": 2164,
+      "ms": 2268,
       "screenshot": "edge-like-track-pass.png"
     },
     {
@@ -87,7 +87,7 @@
       "requirement": "create a playlist, add, reorder, and remove",
       "ok": true,
       "detail": "",
-      "ms": 7321,
+      "ms": 7447,
       "screenshot": "edge-playlist-crud-pass.png"
     },
     {
@@ -95,7 +95,7 @@
       "requirement": "reload and session restore",
       "ok": true,
       "detail": "",
-      "ms": 2001,
+      "ms": 2206,
       "screenshot": "edge-session-restore-pass.png"
     },
     {
@@ -103,7 +103,7 @@
       "requirement": "backup export and import",
       "ok": true,
       "detail": "",
-      "ms": 2364,
+      "ms": 2445,
       "screenshot": "edge-backup-roundtrip-pass.png"
     },
     {
@@ -111,7 +111,7 @@
       "requirement": "provider failure fallback",
       "ok": true,
       "detail": "",
-      "ms": 4648,
+      "ms": 4828,
       "screenshot": "edge-provider-failure-pass.png"
     },
     {
@@ -119,7 +119,7 @@
       "requirement": "mobile navigation",
       "ok": true,
       "detail": "",
-      "ms": 934,
+      "ms": 947,
       "screenshot": "edge-mobile-navigation-pass.png"
     },
     {
@@ -127,7 +127,7 @@
       "requirement": "the offline application shell and library flow",
       "ok": true,
       "detail": "",
-      "ms": 6866,
+      "ms": 6384,
       "screenshot": "edge-offline-pass.png"
     }
   ],
