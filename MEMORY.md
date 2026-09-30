@@ -21,23 +21,29 @@ branch + PR per stage; merge commits only) and keeping `ROADMAP.md` current.
 | **M10** | `2026-09-30-add-radio-and-local-personalization` | #41 propose `e99435a`, #42 apply `d6ce3d4`, #43 sync `636e642`, #44 archive `723b281` |
 | **M11** | `2026-09-30-add-listening-insights-and-smart-mixes` | #45 propose `b735476`, #46 apply `9d9312b`, #47 sync `c7485f0`, #48 archive `802e403` |
 
-| **M12** (propose merged) | `add-podcasts` (Apply in progress on `feat/podcast-search-mode`) | #49 propose `b914875`; apply/sync/archive pending |
+| **M12** | `2026-09-30-add-podcasts` | #49 propose `b914875`, #50 apply `ead69e5`, #51 sync `93a2e21`, #52 archive (this stage) |
 
 Baseline at the M11 merge (`fa3e262`): **125 test files / 1987 tests**; after M12:
 **130 test files / 2084 tests**, all six gates green in a clean clone. Main specs:
-`podcasts` (new), `music-provider`/`search`/`playback` updated. 12 archived changes.
-Next objective after M12: **M13 (PWA installation and offline metadata)**, then M14
-hardening, M15 release validation and deployment.
+`podcasts` (new), `music-provider`/`search`/`playback` updated — 15 capabilities,
+all validating. 13 archived changes, none active.
+**Next objective: M13 (PWA installation and offline metadata)**, then M14 hardening,
+M15 release validation and deployment.
 
-## M12 state (Apply)
-- Active change: `openspec/changes/add-podcasts` — `design.md` holds 9 decisions,
-  `tasks.md` all 10 sections ticked plus a §10 verification record and a deviations
-  list (7 entries: five test-home/split corrections, one pre-existing bug fixed, one
-  pre-existing characteristic documented rather than changed).
+## M12 state (archived)
+- Archived change: `openspec/changes/archive/2026-09-30-add-podcasts` — `design.md`
+  holds 9 decisions (2 and 4 amended by the verification pass), `tasks.md` all 10
+  sections ticked plus §8b (the 17 findings the verification pass raised and how each
+  was resolved) and §10 (the verification record and 10 recorded deviations).
 - Evidence: `evidence/{cdp-check.mjs,results.json,README.md}` — `pass: true`, 32 steps,
   0 console errors, 6 screenshots, production build in headless Edge, port 3210.
+- A verification subagent found 4 CRITICAL and 13 WARNING findings; none were waived.
+  Two artifacts were indicted in opposite directions (the music-provider delta's
+  promo-marker rule was wrong; design.md's "fallbacks search unchanged" was wrong),
+  which is the most transferable lesson here: decide per finding *which* artifact the
+  finding indicts, rather than reaching for the nearest one.
 - Baseline note: the M11 ledger said "129 test files"; the verified count at `fa3e262`
-  is 125 (vitest counts what it collects), so M12's delta is +5 files / +90 tests.
+  is 125 (vitest counts what it collects), so M12's delta is +5 files / +97 tests.
 
 ## M11 state
 - Archived change: `openspec/changes/archive/2026-09-30-add-listening-insights-and-smart-mixes`
