@@ -34,20 +34,24 @@ test in the suite was written to catch.
 
 | **M12** | `2026-09-30-add-podcasts` | #49 propose `b914875`, #50 apply `ead69e5`, #51 sync `93a2e21`, #52 archive `3cabc58` |
 | **M13** | `2026-09-30-add-pwa-install-and-offline-shell` | #53 propose `e8f0576`, #54 apply `6bdc296`, #55 sync `74307b8`, #56 archive `f8e0afb`, #57 record `fbad5cc` |
-| **M14** | `2026-09-30-add-deployment-hardening` (apply merged) | #58 propose `0d855f9`, #59 apply `d65abb4` |
+| **M14** | `2026-09-30-add-deployment-hardening` | #58 propose `0d855f9`, #59 apply `d65abb4`, #60 sync `a6cfb1c`, #61 archive `e2362f9` |
 
 Baseline at the M12 merge (`3cabc58`): **130 test files / 2084 tests**; after M13:
 **134 test files / 2152 tests**; after M14: **140 test files / 2231 tests**, all six
 gates green in a clean clone **and with zero lint warnings**. Main specs: `pwa` (new),
 `network` updated at M13; `security` and `performance` (new) plus `pwa`, `local-data`
-and `app-shell` modified at M14 — **18 capabilities, all validating**. 14 archived
-changes; M14's change is active (apply merged, sync and archive outstanding).
+and `app-shell` modified at M14 — **18 capabilities, all validating**. 15 archived
+changes, **none active** — M14 was archived as
+`openspec/changes/archive/2026-09-30-add-deployment-hardening/`.
 M14's browser evidence run (`pass: true`, 62/62 checks, 0 console errors, 11
 disclosures, 4 screenshots) drives the production build in headless Edge over CDP with
 **no dependencies**, measures **both viewports**, and **stops the server process** for
 its offline phase.
-**Next objective: M14 Sync, then M14 Archive, then M15 (test matrix, release
-validation, Vercel deployment).**
+**M14 is complete through Archive**, and `ROADMAP.md` reads `DONE` for it. The archive
+record lives in the archived change's `tasks.md`; its `evidence/README.md` carries the
+eleven disclosures, so the numbers cannot be read without them.
+**Next objective: M15 (test matrix, release validation, Vercel deployment).** Do not
+begin it without a proposal PR first.
 
 ## What M14's verification pass taught
 
