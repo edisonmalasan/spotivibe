@@ -120,7 +120,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M11 | Listening history, stats, streaks, and Smart Mixes | `DONE` | M2, M7, M10 |
 | M12 | Podcasts | `DONE` | M3, M4, M5 |
 | M13 | PWA installation, offline shell, offline metadata experience | `DONE` | M1, M2, M6 |
-| M14 | Hardening: performance, security, accessibility, resilience | `IN PROGRESS` | M3–M13 |
+| M14 | Hardening: performance, security, accessibility, resilience | `VERIFYING` | M3–M13 |
 | M15 | Test matrix, release validation, Vercel deployment | `NOT STARTED` | M0–M14 |
 
 ---
@@ -1135,6 +1135,117 @@ reuse - is:
 - No known infinite retry/refill loops.
 - No critical UI requires a mouse.
 - Provider outage does not crash the whole app.
+
+### Delivered by M14
+
+Most of this milestone's items were already implemented and are now *pinned* rather
+than re-implemented: provider timeouts and fallback, bounded outbound concurrency,
+in-flight deduplication, playback retry caps, graceful unplayable-track handling, zod
+query validation with length caps on every route, validated backup import before any
+transaction, and bounded local lists. Re-implementing working code to "harden" it is a
+change that can only lose. What was genuinely missing:
+
+**Security**
+
+- A response security policy declared once in `next.config.ts` (spec `security`): a
+  Content Security Policy written from the origins the browser actually contacts — the
+  YouTube IFrame API and its embed frame, and the artwork host whose URLs the *server*
+  builds — plus `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`,
+  `Permissions-Policy` and the cross-origin isolation pair, applied to every response
+  including the manifest, the worker file, and static assets. The provider origins are
+  deliberately absent: they are contacted in Node, so permitting them would grant the
+  page access it does not use. `tests/security-policy.test.ts` reads the origins out of
+  the sources and fails in **both** directions — an origin the browser needs that the
+  policy omits, and an origin the policy permits that nothing in the browser needs.
+  Inline script and style stay permitted with a recorded `DEBT` note, because the App
+  Router bootstraps hydration inline; `unsafe-eval` is development-only and the suite
+  asserts both halves.
+- Best-effort per-instance throttling on the public boundary (spec `security`): a
+  fixed-window limiter, 60 requests per minute per address and route class, a bounded
+  map of 5000 keys that evicts its own oldest, and `Retry-After` on a refusal. All seven
+  routes cross one shared `guardRequest`. It is per-process, per-instance and lost on
+  restart — not a quota, and not coordinated across instances — which the module, the
+  spec, and a test that reads the module's own text all say.
+- Boundary input validation as a rule for every route, enforced by the architecture
+  suite: every route validates and bounds its parameters, serves only `GET`, and reads
+  no request body.
+
+**Resilience**
+
+- Cache-corruption recovery (spec `pwa`): every worker cache read goes through one
+  helper that concludes whether a stored entry can be served — a body whose length
+  contradicts `content-length`, an empty document, a read that throws — and an unusable
+  entry is deleted and treated as absent, so a device with a corrupted store falls
+  through to the network exactly as a device with an empty one does. A cache that cannot
+  be *written* no longer breaks the response it was returning.
+- A listener-visible storage failure (spec `local-data`): a database that cannot be
+  opened or upgraded is reported as a named state that says what happened, that nothing
+  was deleted, and that the data is still on the device — never as an empty library,
+  which looks identical from inside and means something entirely different to the person
+  looking at it.
+- "A stored record is untrusted" as a shared rule (spec `local-data`):
+  `data/repositories/renderable.ts` judges a record against the fields a surface reads,
+  as type-narrowing predicates applied where repository reads land. It skips rather than
+  repairs, because a fabricated title in someone's library cannot be told apart from
+  real data.
+
+**Performance and accessibility measurement** (specs `performance`, `app-shell`)
+
+- One dependency-free CDP harness (`evidence/audit.mjs`) that measures Core Web Vitals in
+  a real browser and audits contrast, accessible names, focus visibility, and Tab
+  reachability — each audit proven against a deliberately degraded page before it is
+  trusted on the real one, and every surface measured at **both** a desktop and a compact
+  viewport, because a check that only runs where a defect is invisible is not a check of
+  the application.
+- No telemetry: the measurement reports to a file, and the suite scans the shipped
+  sources for analytics, beacon, and reporting calls.
+- Local lists bounded by named constants that the surfaces state, and no interval in the
+  application except the player's, which starts and stops with playback.
+
+### Project targets defined during M14
+
+The acceptance criteria above refer to "project targets defined during this milestone".
+They are these numbers, and each names what it protects — a threshold with no reason is a
+number someone relaxes the first time it is inconvenient.
+
+| Target | Value | What it protects |
+| --- | --- | --- |
+| Largest contentful paint | ≤ 2500 ms | when the interface's main content is actually on screen |
+| Cumulative layout shift | ≤ 0.1 | nothing moves after it has been painted |
+| Total blocking time | ≤ 400 ms | responsiveness on a load, standing in for INP, which cannot be observed without interaction |
+| Longest single task | ≤ 500 ms | past half a second a person waits rather than watches |
+| Text contrast | ≥ 4.5:1, ≥ 3:1 at 24px or 18.66px bold | WCAG AA, computed from the shipped tokens |
+| Request ceiling | 60/minute per address and route class | the shared provider instances the application depends on |
+| Tracked limiter keys | ≤ 5000 | the limiter's own memory, under an address spray |
+
+Each is a **regression bound measured on one machine against a local production build**,
+not a field lab score. `evidence/results.json` records the machine, the viewports, and the
+cold-or-warm load beside every number, and `evidence/README.md` states the limits.
+
+### How M14 was verified
+
+`evidence/results.json` reports `"pass": true`: **62 checks** across 5 surfaces at 2
+viewports plus the security, throttling, storage-failure, worker-uniqueness, and
+offline-recovery phases, with **0 console errors** and 4 screenshots. The offline phase
+**stops the server process** rather than emulating an offline mode, because M13 recorded
+that as the only definition worth trusting.
+
+Nine defects were found by the work itself, and three of the four the measurement found
+were defects in the *measurement*: a cache-write failure that rejected the whole request,
+two reads of one cache entry where one bypassed the usability check, a `PerformanceObserver`
+installed after load that reported a null LCP as `0ms`, an accessible-name check that
+hand-rolled a subset of label association and reported two correctly labelled radios as
+unnamed, a primary-control selector that never matched role-based controls, an audit that
+measured one viewport and so could not see the compact shell at all, that shell's
+inactive navigation label painted at 4.16:1, a `text-error` class matching no declared
+token so two `role="alert"` paragraphs rendered in the inherited colour, and a `//`
+comment in JSX children position that rendered as page text.
+
+Every milestone from M13 runs an independent read-only verification pass before its Apply
+PR is merged. For M14 it checked the implementation against the change's own five spec
+files, its eight design decisions, the evidence's falsifiability, and the correctness of
+the throttle, the worker, and the record predicates; its findings are recorded in the
+change's `tasks.md`.
 
 ---
 
