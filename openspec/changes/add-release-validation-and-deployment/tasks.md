@@ -21,8 +21,8 @@
       The render assertion refuses an error boundary, and `prove-can-fail` injects one to show the refusal fires.
 - [x] 2.5 Prove the suite can fail: run it against a deliberately broken condition per flow group and show each assertion firing (spec: `end-to-end` — "A detector is proven able to fail").
       Each probe breaks the application and then runs a **flow's own assertion** against the broken state. The first version probed three arbitrary expressions through `evaluate`, none of them a flow's assertion, so a harness whose `evaluate` always returned `undefined` would have reported every probe as failing.
-- [x] 2.6 Run the suite against a second browser that speaks the same protocol, so coverage is not limited to one engine, and record which engines it covers in the repository (spec: `end-to-end` — "Automated browser coverage extends to what the tooling can drive").
-      **Only one engine is installed on this machine, so no second-engine run happened.** The capability exists (`--browser=<engine>`, and the gate resolves the second engine from what is installed) and the absence is recorded rather than claimed: the gate reports a second-engine run as NOT RUN with the reason, and the results file records both `enginesInstalled` and `enginesRun`. The first version's gate command passed the literal `"second"`, which the harness rejects as unknown, so on a two-engine machine — the only machine where this could be satisfied — it would have failed every time.
+- [ ] 2.6 Run the suite against a second browser that speaks the same protocol, so coverage is not limited to one engine, and record which engines it covers in the repository (spec: `end-to-end` — "Automated browser coverage extends to what the tooling can drive").
+      **Untick deliberately, and this is the second pass's finding rather than mine.** The capability exists — `--browser=<engine>`, engine discovery at run time, and the gate reporting a second-engine run as NOT RUN with its reason *and* its steps — and the repository records which engines it covers. But **the run did not happen**: one engine is installed here. The spec requires that bookkeeping "SHALL NOT record an item as delivered on the basis of a check that was not run", so this stays unticked however much of the surrounding work is finished, and the capability half is recorded here rather than by a tick. A ticked box beside a note saying the verification did not occur is a claim the note contradicts, and a reader skimming boxes gets the wrong answer. The first version's gate command passed the literal `"second"`, which the harness rejects as unknown, so on a two-engine machine — the only one where this could be satisfied — it would have failed every time.
 
 ## 3. Release gate
 
@@ -52,10 +52,18 @@
 
 ## 6. Verification
 
-- [x] 6.1 Run the release gate, the end-to-end suite against both browsers, and the full quality gates (`npm ci`, `lint`, `format:check`, `typecheck`, `test`, `build`) — verify: every command exits `0` and the gate reports a per-item result for the whole checklist.
-      Gate: 17 passed, 0 failed, 8 not run, all 13 roadmap checklist items represented. Suite: **11 of 11** flows in Edge, with 4 of 4 prove-can-fail probes failing as required. Tests: **2295 across 143 files**. **A second-browser run did not happen** — one engine is installed — and the gate reports that as NOT RUN with the reason rather than as a pass.
+- [ ] 6.1 Run the release gate, the end-to-end suite against both browsers, and the full quality gates (`npm ci`, `lint`, `format:check`, `typecheck`, `test`, `build`) — verify: every command exits `0` and the gate reports a per-item result for the whole checklist.
+      **Untick deliberately, for the same reason as 2.6:** this task says "against both
+      browsers", and only one browser is installed here, so the check as written did not
+      fully run. The parts that did run are recorded below. What ran, and what it produced:
+      all six quality gates exit `0`; the gate reports **18 passed, 0 failed, 8 not run**,
+      with all 13 roadmap checklist items represented and **1 of them only partly**; the
+      end-to-end suite is **11 of 11** in Edge; `--prove-can-fail` is 4 of 4 and is itself a
+      gate item; and `npm test` is **2316 across 143 files**. What did not run is the
+      second-engine pass, and the gate reports it as NOT RUN with the reason and the steps to
+      make it happen.
 - [x] 6.2 Re-verify from a clean clone of the branch head — verify: all six gates plus the release gate and the end-to-end suite exit `0` in the fresh clone.
-      Done from a fresh `git clone` of the branch head: `npm ci` (445 packages), `lint` **0**, `format:check` **0**, `typecheck` **0**, `test` **2295 across 143 files**, `build` **0**, end-to-end **11 of 11**, release gate **17 passed / 0 failed / 8 not run** with all 13 roadmap checklist items represented. The run left M14's archived measurement record untouched, which is the point of restoring it — only this change's own evidence was regenerated.
+      Done from a fresh `git clone` of the branch head: `npm ci` (445 packages), `lint` **0**, `format:check` **0**, `typecheck` **0**, `test` **2316 across 143 files**, `build` **0**, end-to-end **11 of 11**, release gate **18 passed / 0 failed / 8 not run** with all 13 roadmap checklist items represented and one only partly. The run left M14's archived measurement record and its screenshots byte-identical, which is the point of restoring the whole directory — only this change's own evidence was regenerated.
 - [x] 6.3 Record the release evidence: the gate's per-item output, the suite's results with the browsers it ran against, screenshots, and a README disclosing every deviation and every item that was not run (spec: `release-validation` — "The roadmap reflects the release").
       `evidence/README.md` discloses 22 defects found in this work, every limit, and the fact that one browser engine is installed. Screenshots: **11 PNGs**, one per flow, from the single run in which every flow passed — the first set mixed passing and failing states, including a stale `first-launch-fail.png` from before that flow was corrected, and a screenshot set that contradicts its own results file is worse than none.
 - [ ] 6.4 Tick the M15 items in `ROADMAP.md`'s release checklist that this change delivers, and record the ones it does not with their reason, so the checklist is a record rather than an aspiration.
@@ -92,3 +100,51 @@ the point rather than the fixes:
    ad-blocker belongs in the service worker.
 8. **The archived record is a claim about a past run, and a later milestone must not be able
    to rewrite it.** Running M14's harness from here replaced its `results.json`.
+
+## Second verification pass record
+
+A second independent read-only pass, re-attacking the fixes, returned **NOT MERGEABLE** with
+5 critical findings, 10 warnings, and 9 nits. All are fixed except the one below, which is an
+environment limit rather than a defect. It confirmed nine of the first pass's ten criticals as
+genuinely fixed — six of them empirically, by running the code — and found the tenth
+(the detectors) improved but not fixed.
+
+Its five criticals, and what each was:
+
+1. **The archive guard covered one file of seven.** The evidence README claimed the gate
+   "never rewrites an archived record"; the guard snapshotted `results.json` only, and
+   M14's screenshots were overwritten on every run. A stated property the code only half
+   implemented — the same failure as the one the first pass found, committed a second time
+   and then claimed as fixed.
+2. **That guard failed open, and its `partial` sibling was dead code.** A missing archive
+   path skipped the protection silently, while the `partial` property no entry used — so
+   "automated *and manual* tests" was counted as fully covered by a mechanism that had never
+   run.
+3. **Seventeen of twenty-five fresh probes still passed the detectors.** The patterns were
+   keyword-shaped; the probes were behaviour-shaped.
+4. **A failed falsifiability proof exited 0**, its outcome was not recorded, and the gate
+   never ran it.
+5. **The backup document still cited the wrong file**, and the citation guard could not see
+   it because it only checked that a path resolves.
+
+Four of those five are the *same four failure modes* the first pass had already named, which
+is the most useful thing this record has to say. What the second pass adds is the sharper
+version of each lesson:
+
+1. **A fix that is half a fix is worse than no fix, because it is reported as a fix.** Three
+   claims in this change's own evidence were false or overstated when written — the archive
+   guard, the partial-coverage count, and the citation. Each was found by taking a written
+   claim and asking whether the code could support all of it.
+2. **A guard must be seen to distinguish the case it exists for.** The corrected archive
+   guard compared two `Buffer` objects with `!==` and so reported every file as changed; a
+   guard that cannot tell a change from a non-change will be switched off.
+3. **A probe set is only evidence if it was written by someone trying to break the thing.**
+   Forty-three probes from two passes, of which thirty-four found something. An author's own
+   fixtures proved much less than they appeared to.
+4. **Some limits are structural, and the answer is to say so rather than to keep trying.** A
+   static pattern cannot enforce "no accounts". What can be a *proof* is an allow-list — the
+   exact dependency list, no environment read outside the schema, no route at a forbidden
+   path — and those are what the README now distinguishes the patterns from.
+5. **A ticked box beside a note saying the verification did not occur is a claim the note
+   contradicts.** Tasks 2.6 and 6.1 are now unticked, because the spec forbids recording an
+   item as delivered on the basis of a check that did not run.
