@@ -31,9 +31,9 @@ search and play, navigate while playing, add to queue, like a track, create a pl
 add/reorder/remove, reload and session restore, the offline application shell, backup
 export and import, provider failure fallback, and mobile navigation.
 
-It also measures contrast, accessible names, keyboard reachability, and Core Web Vitals at
-**both** a desktop and a compact viewport (`evidence/audit.mjs`), and takes the origin down
-for real to prove the offline flow.
+It also drives a compact viewport as its own flow, and the release gate runs a separate
+accessibility and performance measurement against a production build — contrast, accessible
+names, keyboard reachability, and loading — before it runs the end-to-end suite.
 
 Two limits belong here rather than in a footnote: provider responses come from recorded
 fixtures, so the suite proves **the application's** behaviour and nothing about YouTube; and

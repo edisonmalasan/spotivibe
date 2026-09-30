@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T16:22:49.234Z",
+  "generatedAt": "2026-09-30T16:43:04.566Z",
   "conditions": {
     "engine": "edge",
     "enginesInstalled": [
@@ -19,7 +19,77 @@
       "requirement": "first launch and language onboarding",
       "ok": true,
       "detail": "",
-      "ms": 904
+      "ms": 885
+    },
+    {
+      "id": "search-and-play",
+      "requirement": "search and play",
+      "ok": true,
+      "detail": "",
+      "ms": 1202
+    },
+    {
+      "id": "navigate-while-playing",
+      "requirement": "navigate while playing",
+      "ok": true,
+      "detail": "",
+      "ms": 2102
+    },
+    {
+      "id": "add-to-queue",
+      "requirement": "add to queue",
+      "ok": true,
+      "detail": "",
+      "ms": 1504
+    },
+    {
+      "id": "like-track",
+      "requirement": "like a track",
+      "ok": true,
+      "detail": "",
+      "ms": 2122
+    },
+    {
+      "id": "playlist-crud",
+      "requirement": "create a playlist, add, reorder, and remove",
+      "ok": true,
+      "detail": "",
+      "ms": 4524
+    },
+    {
+      "id": "session-restore",
+      "requirement": "reload and session restore",
+      "ok": true,
+      "detail": "",
+      "ms": 2148
+    },
+    {
+      "id": "backup-roundtrip",
+      "requirement": "backup export and import",
+      "ok": true,
+      "detail": "",
+      "ms": 2344
+    },
+    {
+      "id": "provider-failure",
+      "requirement": "provider failure fallback",
+      "ok": true,
+      "detail": "",
+      "ms": 1071
+    },
+    {
+      "id": "mobile-navigation",
+      "requirement": "mobile navigation",
+      "ok": true,
+      "detail": "",
+      "ms": 843
+    },
+    {
+      "id": "offline",
+      "requirement": "the offline application shell and library flow",
+      "ok": true,
+      "detail": "",
+      "ms": 4835
     }
   ],
   "pass": true

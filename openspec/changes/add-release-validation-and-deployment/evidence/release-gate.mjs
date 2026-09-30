@@ -32,8 +32,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { availableEngines } from "./lib/harness.mjs";
-import { existsSync, writeFileSync } from "node:fs";
+import { availableEngines, defaultEngine } from "./lib/harness.mjs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -142,12 +142,34 @@ const ITEMS = [
     test: "tests/backup-import.test.ts",
   },
   {
+    id: "backup-format",
+    requirement:
+      "The backup format is documented, and the document matches the code it describes",
+    how: "test",
+    // The roadmap's checklist asks for the format to be *documented*. A document nothing
+    // checks is a document that can drift in either direction, so this asserts the
+    // documented envelope against the schema that writes it, rather than trusting the prose.
+    test: "tests/release-documentation.test.ts",
+  },
+  {
     id: "accessibility-performance",
     requirement:
       "Contrast, names, keyboard reachability, and loading are within the stated targets",
     how: "command",
     command: "node",
-    args: [join(CHANGE, "evidence", "audit.mjs")],
+    // The measurement is M14's and lives in that change's archive, not here. Pointing at
+    // this change's evidence directory found no file and reported a failure in 0.1s.
+    args: [
+      join(
+        REPO,
+        "openspec",
+        "changes",
+        "archive",
+        "2026-09-30-add-deployment-hardening",
+        "evidence",
+        "audit.mjs",
+      ),
+    ],
     needsBrowser: true,
   },
   {
@@ -164,12 +186,17 @@ const ITEMS = [
     requirement: "The flows also pass in a second browser engine",
     how: "command",
     command: "node",
-    args: [join(CHANGE, "evidence", "end-to-end.mjs"), "--browser=second"],
+    // The engine is filled in at run time from what is actually installed. The first
+    // version passed the literal "second", which `findBrowser` rejects as unknown - so on
+    // a machine with two engines, the only machine where this requirement could be met,
+    // the item failed every time, and the honest reporting was attached to a command that
+    // could never succeed.
+    args: [join(CHANGE, "evidence", "end-to-end.mjs"), "--browser=__SECOND_ENGINE__"],
     needsBrowser: true,
-    // Resolved at run time, because which engines exist is a property of the machine and
-    // not of the repository. When only one is installed this reports NOT RUN with the
-    // reason, which is the whole point of the gate: a second-engine run that did not
-    // happen must never read as one that did.
+    // Which engines exist is a property of the machine, not of the repository, so this is
+    // resolved at run time. With fewer than two installed it reports NOT RUN and the
+    // reason, because a second-engine run that did not happen must never read as one that
+    // did.
     resolve: () => {
       const installed = availableEngines().map((entry) => entry.engine);
       if (installed.length < 2) {
@@ -178,7 +205,9 @@ const ITEMS = [
           reason: `only one browser engine is installed here (${installed.join(", ") || "none"}); a second-engine run needs a second engine`,
         };
       }
-      return null;
+      // The second engine is the installed one that is not the default, so the command
+      // names an engine the harness can actually start.
+      return { substitute: installed.find((engine) => engine !== defaultEngine()) };
     },
   },
 
@@ -272,10 +301,11 @@ const ITEMS = [
 
 const results = [];
 
-function run(command, args, cwd) {
+function run(command, args, cwd, env = {}) {
   const started = Date.now();
   const outcome = spawnSync(command, args, {
     cwd,
+    env: { ...process.env, ...env },
     encoding: "utf8",
     shell: process.platform === "win32",
     maxBuffer: 32 * 1024 * 1024,
@@ -293,6 +323,12 @@ for (const item of ITEMS) {
       item,
       status: "SKIPPED",
       detail: "--skip-browser was passed",
+      // A skipped item is not a passed one, and the spec asks for the steps. So it carries
+      // them: what to run, and what running it would check.
+      steps: [
+        "Re-run the gate without --skip-browser to perform this check.",
+        `Or run it directly: node ${(item.args ?? []).join(" ")}`,
+      ],
     });
     continue;
   }
@@ -302,13 +338,18 @@ for (const item of ITEMS) {
   }
   // An item may discover at run time that it cannot be run here, which is reported the
   // same way a permanently manual item is: as not run, with the reason.
-  if (item.resolve) {
-    const verdict = item.resolve();
-    if (verdict?.manual) {
-      results.push({ item, status: "NOT RUN", detail: verdict.reason });
-      continue;
-    }
+  const verdict = item.resolve?.();
+  if (verdict?.manual) {
+    results.push({ item, status: "NOT RUN", detail: verdict.reason });
+    continue;
   }
+  // Any placeholder the item wanted filled in is filled in now, so the command names
+  // something real rather than a token.
+  const args = verdict?.substitute
+    ? item.args.map((value) =>
+        value === "__SECOND_ENGINE__" ? verdict.substitute : value,
+      )
+    : item.args;
   if (item.how === "test") {
     // One vitest file, so a checklist item's result is that item's result rather than a
     // whole suite's. A missing file is a failure, not a skip: the gate must not report a
@@ -321,7 +362,19 @@ for (const item of ITEMS) {
       });
       continue;
     }
-    const outcome = run("npx", ["vitest", "run", item.test], FRONTEND);
+    // The project's own binary rather than `npx`: `npx` resolved a cached vitest in this
+    // environment that could not find the workspace's `jsdom` and reported a missing
+    // dependency for a suite that passes.
+    const outcome = run(
+      join(
+        FRONTEND,
+        "node_modules",
+        ".bin",
+        process.platform === "win32" ? "vitest.cmd" : "vitest",
+      ),
+      ["run", item.test],
+      FRONTEND,
+    );
     const passed = outcome.code === 0;
     const tally = /Tests\s+(\d+) passed/.exec(stripAnsi(outcome.output))?.[1];
     results.push({
@@ -332,13 +385,46 @@ for (const item of ITEMS) {
     });
     continue;
   }
-  const outcome = run(item.command, item.args, FRONTEND);
+  // The measurement harness writes its results *next to itself*, and that is inside M14's
+  // archive. Running it from here therefore rewrote an archived record — a claim about a
+  // run that happened during M14 — the first time this gate ran. So the archived file is
+  // captured before, restored after, and this change keeps a copy of the fresh run as its
+  // own evidence.
+  const archived = archivedResultsPath();
+  const archivedBefore = existsSync(archived)
+    ? readFileSync(archived, "utf8")
+    : null;
+  // The repository root goes with it: the measurement harness finds the repository by
+  // walking up from its own directory, which is one level too shallow once archived.
+  const outcome = run(item.command, args, FRONTEND, {
+    SPOTIVIBE_REPO: REPO,
+  });
+  if (archivedBefore !== null && existsSync(archived)) {
+    const fresh = readFileSync(archived, "utf8");
+    if (fresh !== archivedBefore) {
+      writeFileSync(join(HERE, "measurement-results.json"), fresh);
+      writeFileSync(archived, archivedBefore);
+    }
+  }
   results.push({
     item,
     status: outcome.code === 0 ? "PASS" : "FAIL",
     detail: `${(outcome.ms / 1000).toFixed(1)}s`,
     output: outcome.output,
   });
+}
+
+/** M14's archived measurement results, which this gate must never leave modified. */
+function archivedResultsPath() {
+  return join(
+    REPO,
+    "openspec",
+    "changes",
+    "archive",
+    "2026-09-30-add-deployment-hardening",
+    "evidence",
+    "results.json",
+  );
 }
 
 function stripAnsi(text) {
@@ -364,7 +450,11 @@ for (const entry of results) {
   console.log(`${mark} ${entry.item.id.padEnd(width)}  ${entry.detail ?? ""}`);
   console.log(`       ${" ".repeat(width)}  ${entry.item.requirement}`);
   if (entry.status === "NOT RUN") {
-    for (const step of entry.item.steps) console.log(`         - ${step}`);
+    // Steps are optional: an item can resolve to NOT RUN at run time - a second browser
+    // engine that is not installed - without carrying hand-written steps. The first
+    // version assumed they were always present and crashed on exactly that item.
+    for (const step of entry.item.steps ?? [])
+      console.log(`         - ${step}`);
   }
 }
 console.log("=".repeat(width + 60));
@@ -376,13 +466,89 @@ console.log(
   "A NOT RUN item has not passed either. Each one above states what a person must do.",
 );
 
-// Every checklist item accounted for, exactly once. The gate asserting its own coverage
-// is what stops a future item being added to the list and quietly not checked.
+// Every checklist item accounted for, exactly once, **and** every item on the roadmap's
+// own release checklist represented by some line above.
+//
+// The first version of this only checked the gate's own list for duplicates, which is a
+// check the gate passes by construction: it cannot detect a checklist item that has no
+// line at all, and the roadmap's "Backup format/version documented" had none. So the
+// roadmap's checklist is read and each of its items must be covered here. A new checklist
+// item with no entry below fails the gate, which is the point — the list cannot grow
+// without someone deciding how it is checked.
 const ids = results.map((entry) => entry.item.id);
 if (new Set(ids).size !== ids.length) {
   console.error("FAIL: an item appears more than once in the output");
   process.exit(1);
 }
+
+const roadmapChecklist = readRoadmapChecklist();
+if (roadmapChecklist.length === 0) {
+  console.error("FAIL: the roadmap's release checklist could not be read");
+  process.exit(1);
+}
+
+const partialCoverage = [];
+const uncovered = [];
+for (const line of roadmapChecklist) {
+  const coverage = CHECKLIST_COVERAGE.find((entry) => entry.matches.test(line));
+  if (!coverage) {
+    uncovered.push(`${line} (no gate item covers it)`);
+  } else if (!ids.includes(coverage.item)) {
+    uncovered.push(`${line} (its gate item "${coverage.item}" is missing)`);
+  } else if (coverage.partial) {
+    partialCoverage.push(`${line} - ${coverage.partial}`);
+  }
+}
+if (uncovered.length > 0) {
+  console.error(
+    `FAIL: ${uncovered.length} roadmap checklist item(s) are not represented above:`,
+  );
+  for (const line of uncovered) console.error(`  - ${line}`);
+  process.exit(1);
+}
+for (const line of partialCoverage) console.log(`  partial: ${line}`);
+console.log(
+  `  all ${roadmapChecklist.length} roadmap release checklist items are represented above` +
+    (partialCoverage.length > 0
+      ? `, ${partialCoverage.length} of them only partly.`
+      : "."),
+);
+
+/** The roadmap's release checklist, read rather than restated here. */
+function readRoadmapChecklist() {
+  const roadmap = readFileSync(join(REPO, "ROADMAP.md"), "utf8");
+  const heading = "### Release Checklist";
+  const start = roadmap.indexOf(heading);
+  if (start === -1) return [];
+  return roadmap
+    .slice(start + heading.length)
+    .split("\n---")[0]
+    .split("\n")
+    .filter((line) => line.trimStart().startsWith("- "))
+    .map((line) => line.replace(/^\s*-\s*/, "").trim());
+}
+
+/** Which gate item covers each roadmap checklist item, and where coverage is partial. */
+const CHECKLIST_COVERAGE = [
+  { matches: /ROADMAP\.md.*reflects actual scope/i, item: "roadmap-truth" },
+  { matches: /DESIGN\.md.*visual audit/i, item: "design-visual-audit" },
+  {
+    matches: /account\/auth\/cloud-sync/i,
+    item: "exclusions",
+    partial:
+      "accounts are enforced; cloud sync has no dedicated detector, so the item is not fully covered",
+  },
+  { matches: /Supabase\/user database dependencies/i, item: "exclusions" },
+  { matches: /YouTube audio downloader/i, item: "exclusions" },
+  { matches: /forced background-play/i, item: "exclusions" },
+  { matches: /ad-blocking/i, item: "exclusions" },
+  { matches: /media is proxied through Vercel/i, item: "exclusions" },
+  { matches: /Backup format\/version documented/i, item: "backup-format" },
+  { matches: /Attribution notices/i, item: "attribution" },
+  { matches: /Vercel production build passes/i, item: "vercel-deploy" },
+  { matches: /manifest.*service worker.*validate/i, item: "pwa-manifest" },
+  { matches: /Critical flows pass automated and manual/i, item: "end-to-end" },
+];
 
 const report = {
   generatedAt: new Date().toISOString(),

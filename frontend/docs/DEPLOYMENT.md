@@ -67,9 +67,9 @@ After deploying, verify by hand:
 5. Load the deployed origin, then disconnect the network and reload: the application shell
    still renders.
 
-Items 1 to 5 are what `evidence/audit.mjs` asserts against a local production build, so a
-deployment that fails any of them has failed something the repository already knows how to
-check. The manual step is deploying, not verifying.
+Items 1 to 5 are what the local suites already assert against a production build, so a
+deployment that fails any of them has failed something this repository knows how to check.
+The manual step is deploying, not verifying.
 
 ## Rolling back
 
@@ -88,7 +88,7 @@ to migrate. A rollback cannot lose anyone's library, because the server never ha
 - No media proxying. The server mediates metadata only; media is fetched by the browser
   from the provider, inside the player's own frame.
 - No telemetry. The application reports nothing about the person using it. The
-  accessibility and performance measurement in `evidence/audit.mjs` runs locally and
+  accessibility and performance measurement runs locally against a production build and
   writes to a file.
 
 These are permanent product constraints rather than current limitations. They are enforced

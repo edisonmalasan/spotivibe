@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-09-30T16:26:36.795Z",
+  "generatedAt": "2026-09-30T16:43:05.084Z",
   "repo": "C:\\Users\\Edison\\Desktop\\Projects\\spotivibe",
-  "skipBrowser": true,
+  "skipBrowser": false,
   "totals": {
-    "passed": 13,
+    "passed": 15,
     "failed": 0,
-    "notRun": 7,
-    "skipped": 3
+    "notRun": 8,
+    "skipped": 0
   },
   "items": [
     {
       "id": "gates-install",
       "requirement": "`npm ci` installs from the lockfile",
       "status": "PASS",
-      "detail": "28.7s",
+      "detail": "24.2s",
       "reason": null,
       "steps": null
     },
@@ -21,7 +21,7 @@
       "id": "gates-lint",
       "requirement": "`npm run lint` reports no errors",
       "status": "PASS",
-      "detail": "49.8s",
+      "detail": "36.0s",
       "reason": null,
       "steps": null
     },
@@ -29,7 +29,7 @@
       "id": "gates-format",
       "requirement": "`npm run format:check` passes",
       "status": "PASS",
-      "detail": "9.7s",
+      "detail": "5.3s",
       "reason": null,
       "steps": null
     },
@@ -37,7 +37,7 @@
       "id": "gates-typecheck",
       "requirement": "`npm run typecheck` passes in strict mode",
       "status": "PASS",
-      "detail": "9.2s",
+      "detail": "8.3s",
       "reason": null,
       "steps": null
     },
@@ -45,7 +45,7 @@
       "id": "gates-tests",
       "requirement": "`npm test` passes",
       "status": "PASS",
-      "detail": "73.9s",
+      "detail": "66.3s",
       "reason": null,
       "steps": null
     },
@@ -53,7 +53,7 @@
       "id": "gates-build",
       "requirement": "`npm run build` produces a production build",
       "status": "PASS",
-      "detail": "16.2s",
+      "detail": "12.6s",
       "reason": null,
       "steps": null
     },
@@ -61,7 +61,7 @@
       "id": "icons-drift",
       "requirement": "PWA icons match the committed generator's output",
       "status": "PASS",
-      "detail": "2.4s",
+      "detail": "1.8s",
       "reason": null,
       "steps": null
     },
@@ -116,24 +116,24 @@
     {
       "id": "accessibility-performance",
       "requirement": "Contrast, names, keyboard reachability, and loading are within the stated targets",
-      "status": "SKIPPED",
-      "detail": "--skip-browser was passed",
+      "status": "PASS",
+      "detail": "35.6s",
       "reason": null,
       "steps": null
     },
     {
       "id": "end-to-end",
       "requirement": "The critical flows work in a real browser against a production build",
-      "status": "SKIPPED",
-      "detail": "--skip-browser was passed",
+      "status": "PASS",
+      "detail": "25.5s",
       "reason": null,
       "steps": null
     },
     {
       "id": "browser-second-engine",
       "requirement": "The flows also pass in a second browser engine",
-      "status": "SKIPPED",
-      "detail": "--skip-browser was passed",
+      "status": "NOT RUN",
+      "detail": "only one browser engine is installed here (edge); a second-engine run needs a second engine",
       "reason": null,
       "steps": null
     },

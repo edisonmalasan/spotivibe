@@ -38,44 +38,55 @@ function manifest(): { engines?: { node?: string }; scripts?: Record<string, str
 }
 
 describe("the application is one deployable unit (M15 task 4.1)", () => {
-  it("has no custom server, proven against the shape one would take", () => {
-    // The violating shape: a `server.ts` that Next would not use at all, so its presence
-    // would mean the deployment and the code had quietly diverged.
-    const customServer = `
-      import { createServer } from "node:http";
-      import next from "next";
-      const app = next({ dev: false });
-      const handle = app.getRequestHandler();
-      createServer((request, response) => handle(request, response)).listen(3000);
-    `;
-    expect(customServer).toMatch(/createServer/);
-    expect(existsSync(join(FRONTEND, "server.ts")), "no custom server file").toBe(false);
-    expect(existsSync(join(FRONTEND, "server.js"))).toBe(false);
-    expect(existsSync(join(FRONTEND, "server.mjs"))).toBe(false);
+  it("has no custom server, in every filename Next would ignore", () => {
+    // A custom server at the application root is a file Next would not load, so its
+    // presence means the deployment and the code had quietly diverged — the host runs
+    // `next start`, and the file does nothing.
+    for (const name of [
+      "server.ts",
+      "server.js",
+      "server.mjs",
+      "server.cjs",
+      "index.ts",
+      "index.js",
+    ]) {
+      expect(existsSync(join(FRONTEND, name)), `${name} would not be run by a host`).toBe(false);
+    }
     // And the production command is Next's own, which is what a host runs.
-    expect(manifest().scripts?.start).toBe("next start");
-    expect(manifest().scripts?.build).toBe("next build");
+    expect(manifest().scripts?.start, "a host runs the start script").toBe("next start");
+    expect(manifest().scripts?.build, "a host runs the build script").toBe("next build");
   });
 
-  it("has no request-interception hook, including the name Next 16 uses", () => {
-    // Proven on a violating shape first: a middleware file is a runtime hook that runs
-    // before the headers rule, so it is a second place the policy could differ.
-    const middleware = `
-      import { NextResponse } from "next/server";
-      export function middleware(request: NextRequest) {
-        const response = NextResponse.next();
-        response.headers.set("Content-Security-Policy", "default-src 'self'");
-        return response;
-      }
-    `;
-    expect(middleware).toMatch(/export function middleware/);
+  it("has no request-interception hook, in every directory Next reads one from", () => {
     // Next 16 renamed middleware to Proxy, so checking only the old filename would miss
     // the same hook under its new name - the gap M14's verification pass found in a
     // different guard.
-    for (const name of ["middleware.ts", "middleware.js", "proxy.ts", "proxy.js", "proxy.mjs"]) {
-      expect(existsSync(join(FRONTEND, name)), name).toBe(false);
+    //
+    // **In every directory Next looks in.** Next resolves the hook relative to the project
+    // root *or* to a `src/` directory beside it, and this application has a `src/`
+    // directory — so a hook placed inside it is live while a hook at the root, which Next
+    // ignores when `src/` exists, is not. The first version of this check looked only at
+    // the root, so a working `src/proxy.ts` passed every assertion while silently
+    // becoming a second place the security policy could differ.
+    //
+    // The reason is stated rather than asserted against Next's own source: its
+    // `constants.js` exports the location patterns with `null` values in this build, so a
+    // check that read them would be asserting on a private file's shape rather than on
+    // this application's, and would break for a reason that has nothing to do with a
+    // contract.
+
+    // Both roots, and both hook names, in every extension Next resolves.
+    for (const directory of [FRONTEND, SRC]) {
+      for (const stem of ["middleware", "proxy"]) {
+        for (const extension of [".ts", ".tsx", ".js", ".jsx", ".mjs"]) {
+          const path = join(directory, `${stem}${extension}`);
+          expect(
+            existsSync(path),
+            `${stem}${extension} in ${directory.replace(FRONTEND, "<frontend>")} would be a request-interception hook`,
+          ).toBe(false);
+        }
+      }
     }
-    expect(existsSync(join(SRC, "..", "..", "proxy.ts"))).toBe(false);
   });
 });
 
@@ -190,16 +201,27 @@ describe("the repository deploys what it documents (M15 task 4.3)", () => {
   });
 
   it("keeps the deployment document in step with the application, not aspirational", () => {
-    // Every claim the document makes about the application is one a check can confirm, so
-    // the document cannot quietly become wrong. This is the same rule the roadmap applies
-    // to the release checklist.
+    // The document's central claim is that a deployment needs no configuration, so that
+    // claim is compared against the code that decides it rather than against itself.
+    // The first version of this test computed a boolean from the document and asserted it
+    // equalled itself, which cannot fail for any input - the repository's own recorded
+    // lesson (M14's referrer guard, M13's three unfailable evidence steps) recurring
+    // inside the change written to prevent it.
     const text = readFileSync(join(FRONTEND, "docs", "DEPLOYMENT.md"), "utf8");
-    const claimsSetup = /environment variable/i.test(text);
-    expect(claimsSetup, "the document must state what configuration a deploy needs").toBe(
-      claimsSetup,
-    );
-    // The service worker and the manifest are the two files a deployment must serve
-    // correctly, and both exist.
+    const claimsNoConfiguration = /no environment variable/i.test(text);
+    expect(claimsNoConfiguration, "the document must state what a deploy needs").toBe(true);
+    // If the claim is that nothing is required, the code must agree: parsing the real
+    // schema with an empty environment is the check, and it is the same one the first test
+    // in this file makes. A document claiming more than the code supports fails here.
+    expect(
+      () => validateEnv({}),
+      "the document's claim must be the code's behaviour",
+    ).not.toThrow();
+
+    // The other two files a deployment must serve correctly, named by the document and
+    // present in the tree.
+    expect(text, "the document must name the worker it must serve").toContain("sw.js");
+    expect(text, "the document must name the manifest it must serve").toContain("manifest");
     for (const asset of ["public/sw.js", "src/app/manifest.ts"]) {
       expect(existsSync(join(FRONTEND, asset)), asset).toBe(true);
     }
