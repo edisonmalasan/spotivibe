@@ -235,7 +235,7 @@ function ReleaseCover({ artworkUrl }: { artworkUrl?: string }) {
       className="grid size-40 shrink-0 place-items-center overflow-hidden rounded-cards bg-graphite sm:size-48 lg:size-58"
     >
       {artworkUrl === undefined ? (
-        <Music2 className="size-12 text-fog" />
+        <Music2 className="size-12 text-fog" aria-hidden="true" />
       ) : (
         // Provider release artwork: dynamic remote URLs, no optimizer allowlist
         // yet (M9 owns asset handling).

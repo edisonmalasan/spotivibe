@@ -45,7 +45,10 @@ export function BottomNav() {
             }`}
           >
             <Icon className="size-6" aria-hidden="true" />
-            <span className="text-caption font-regular">{item.label}</span>
+            {/* M14: the inactive state keeps `fog` on the icon but paints the label
+                in `mist`. Inheriting `fog` painted this 12px label at 4.16:1 on the
+                nav's carbon background, under the 4.5:1 minimum for small text. */}
+            <span className="text-caption font-regular text-mist">{item.label}</span>
           </Link>
         );
       })}

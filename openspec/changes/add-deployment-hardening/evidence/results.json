@@ -1,6 +1,6 @@
 {
   "task": "3.1, 3.2, 4.1, 4.2",
-  "generatedAt": "2026-09-30T12:54:39.978Z",
+  "generatedAt": "2026-09-30T13:09:16.030Z",
   "origin": "http://localhost:3212",
   "targets": {
     "lcpMs": 2500,
@@ -25,102 +25,202 @@
       "detail": "contrast=true unnamed=true unreachable=true"
     },
     {
-      "name": "/library: every text style meets its contrast minimum",
+      "name": "desktop /library: every text style meets its contrast minimum",
       "ok": true,
       "detail": "11 pairs checked"
     },
     {
-      "name": "/library: every interactive element has an accessible name",
+      "name": "desktop /library: every interactive element has an accessible name",
       "ok": true,
       "detail": "28 controls"
     },
     {
-      "name": "/library: no primary control is reachable only by pointer",
+      "name": "desktop /library: no primary control is reachable only by pointer",
       "ok": true,
       "detail": "9/13 focusable"
     },
     {
-      "name": "/library: loading performance is within the stated targets",
+      "name": "desktop /library: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
-      "name": "/search: every text style meets its contrast minimum",
+      "name": "desktop /search: every text style meets its contrast minimum",
       "ok": true,
       "detail": "11 pairs checked"
     },
     {
-      "name": "/search: every interactive element has an accessible name",
+      "name": "desktop /search: every interactive element has an accessible name",
       "ok": true,
       "detail": "27 controls"
     },
     {
-      "name": "/search: no primary control is reachable only by pointer",
+      "name": "desktop /search: no primary control is reachable only by pointer",
       "ok": true,
       "detail": "9/13 focusable"
     },
     {
-      "name": "/search: loading performance is within the stated targets",
+      "name": "desktop /search: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
-      "name": "/history: every text style meets its contrast minimum",
+      "name": "desktop /history: every text style meets its contrast minimum",
       "ok": true,
       "detail": "13 pairs checked"
     },
     {
-      "name": "/history: every interactive element has an accessible name",
+      "name": "desktop /history: every interactive element has an accessible name",
       "ok": true,
       "detail": "27 controls"
     },
     {
-      "name": "/history: no primary control is reachable only by pointer",
+      "name": "desktop /history: no primary control is reachable only by pointer",
       "ok": true,
       "detail": "8/13 focusable"
     },
     {
-      "name": "/history: loading performance is within the stated targets",
+      "name": "desktop /history: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 88ms (≤2500), CLS 0.0598 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 60ms (≤2500), CLS 0.0598 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
-      "name": "/settings: every text style meets its contrast minimum",
+      "name": "desktop /settings: every text style meets its contrast minimum",
       "ok": true,
       "detail": "21 pairs checked"
     },
     {
-      "name": "/settings: every interactive element has an accessible name",
+      "name": "desktop /settings: every interactive element has an accessible name",
       "ok": true,
       "detail": "37 controls"
     },
     {
-      "name": "/settings: no primary control is reachable only by pointer",
+      "name": "desktop /settings: no primary control is reachable only by pointer",
       "ok": true,
       "detail": "15/19 focusable"
     },
     {
-      "name": "/settings: loading performance is within the stated targets",
+      "name": "desktop /settings: loading performance is within the stated targets",
       "ok": true,
-      "detail": "LCP 56ms (≤2500), CLS 0.0132 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+      "detail": "LCP 40ms (≤2500), CLS 0.0132 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
     {
-      "name": "/now-playing: every text style meets its contrast minimum",
+      "name": "desktop /now-playing: every text style meets its contrast minimum",
       "ok": true,
       "detail": "8 pairs checked"
     },
     {
-      "name": "/now-playing: every interactive element has an accessible name",
+      "name": "desktop /now-playing: every interactive element has an accessible name",
       "ok": true,
       "detail": "36 controls"
     },
     {
-      "name": "/now-playing: no primary control is reachable only by pointer",
+      "name": "desktop /now-playing: no primary control is reachable only by pointer",
       "ok": true,
       "detail": "12/20 focusable"
     },
     {
-      "name": "/now-playing: loading performance is within the stated targets",
+      "name": "desktop /now-playing: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 40ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /library: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "8 pairs checked"
+    },
+    {
+      "name": "compact /library: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "28 controls"
+    },
+    {
+      "name": "compact /library: no primary control is reachable only by pointer",
+      "ok": true,
+      "detail": "8/13 focusable"
+    },
+    {
+      "name": "compact /library: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 64ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /search: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "8 pairs checked"
+    },
+    {
+      "name": "compact /search: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "27 controls"
+    },
+    {
+      "name": "compact /search: no primary control is reachable only by pointer",
+      "ok": true,
+      "detail": "8/13 focusable"
+    },
+    {
+      "name": "compact /search: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 64ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /history: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "10 pairs checked"
+    },
+    {
+      "name": "compact /history: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "27 controls"
+    },
+    {
+      "name": "compact /history: no primary control is reachable only by pointer",
+      "ok": true,
+      "detail": "7/13 focusable"
+    },
+    {
+      "name": "compact /history: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 36ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /settings: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "19 pairs checked"
+    },
+    {
+      "name": "compact /settings: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "37 controls"
+    },
+    {
+      "name": "compact /settings: no primary control is reachable only by pointer",
+      "ok": true,
+      "detail": "14/19 focusable"
+    },
+    {
+      "name": "compact /settings: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /now-playing: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "7 pairs checked"
+    },
+    {
+      "name": "compact /now-playing: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "36 controls"
+    },
+    {
+      "name": "compact /now-playing: no primary control is reachable only by pointer",
+      "ok": true,
+      "detail": "11/20 focusable"
+    },
+    {
+      "name": "compact /now-playing: loading performance is within the stated targets",
       "ok": true,
       "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
     },
@@ -137,24 +237,25 @@
       "A single-machine run against a local production build is a regression signal, not a field lab score. The thresholds detect a change between two runs on the same machine; they are not a claim about a real listener's device, network, or field percentile.",
       "INP is not observed, because it requires a real interaction. Total blocking time from long tasks stands in for responsiveness on a load, which is why the two thresholds are separate.",
       "Contrast is computed for text whose background the browser can resolve to an opaque colour. Text painted over a third-party album image is not computable from the DOM and is excluded rather than guessed; the audit records how many pairs it checked so the exclusion is visible.",
-      "Keyboard reachability is checked through the elements' own semantics and tabindex, not by pressing Tab through the application; a control that is focusable but hidden behind a focus trap would not be caught."
+      "Keyboard reachability is checked through the elements' own semantics and tabindex, not by pressing Tab through the application; a control that is focusable but hidden behind a focus trap would not be caught.",
+      "Both the desktop and the compact viewport are measured, because the compact shell does not render at the desktop size. A surface that renders at neither size is not covered by this run."
     ],
     "conditions": {
       "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
       "platform": "win32 x64",
       "cpuCount": 12,
-      "viewport": "1280x900",
+      "viewports": "1280x900, 390x844",
       "load": "cold (fresh profile, first navigation)",
       "servedBy": "next start on localhost",
       "measurement": "PerformanceObserver inside the page; nothing is transmitted"
     },
-    "library": {
+    "desktoplibrary": {
       "vitals": {
-        "lcp": 52,
+        "lcp": 60,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 52,
+        "firstContentfulPaint": 60,
         "observedDuringLoad": true
       },
       "contrastChecked": 11,
@@ -164,13 +265,13 @@
       "primaryControls": 13,
       "unreachableByTab": 0
     },
-    "search": {
+    "desktopsearch": {
       "vitals": {
-        "lcp": 48,
+        "lcp": 60,
         "cls": 0,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 48,
+        "firstContentfulPaint": 60,
         "observedDuringLoad": true
       },
       "contrastChecked": 11,
@@ -180,13 +281,13 @@
       "primaryControls": 13,
       "unreachableByTab": 0
     },
-    "history": {
+    "desktophistory": {
       "vitals": {
-        "lcp": 88,
+        "lcp": 60,
         "cls": 0.0598,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 56,
+        "firstContentfulPaint": 40,
         "observedDuringLoad": true
       },
       "contrastChecked": 13,
@@ -196,13 +297,13 @@
       "primaryControls": 13,
       "unreachableByTab": 0
     },
-    "settings": {
+    "desktopsettings": {
       "vitals": {
-        "lcp": 56,
+        "lcp": 40,
         "cls": 0.0132,
         "longestTask": 0,
         "totalBlockingTime": 0,
-        "firstContentfulPaint": 56,
+        "firstContentfulPaint": 40,
         "observedDuringLoad": true
       },
       "contrastChecked": 21,
@@ -212,7 +313,71 @@
       "primaryControls": 19,
       "unreachableByTab": 0
     },
-    "now-playing": {
+    "desktopnow-playing": {
+      "vitals": {
+        "lcp": 40,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 40,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 8,
+      "contrastFailures": 0,
+      "interactiveElements": 36,
+      "unnamed": 0,
+      "primaryControls": 20,
+      "unreachableByTab": 0
+    },
+    "compactlibrary": {
+      "vitals": {
+        "lcp": 64,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 44,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 8,
+      "contrastFailures": 0,
+      "interactiveElements": 28,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "compactsearch": {
+      "vitals": {
+        "lcp": 64,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 48,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 8,
+      "contrastFailures": 0,
+      "interactiveElements": 27,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "compacthistory": {
+      "vitals": {
+        "lcp": 36,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 36,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 10,
+      "contrastFailures": 0,
+      "interactiveElements": 27,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "compactsettings": {
       "vitals": {
         "lcp": 48,
         "cls": 0,
@@ -221,7 +386,23 @@
         "firstContentfulPaint": 48,
         "observedDuringLoad": true
       },
-      "contrastChecked": 8,
+      "contrastChecked": 19,
+      "contrastFailures": 0,
+      "interactiveElements": 37,
+      "unnamed": 0,
+      "primaryControls": 19,
+      "unreachableByTab": 0
+    },
+    "compactnow-playing": {
+      "vitals": {
+        "lcp": 48,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 48,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 7,
       "contrastFailures": 0,
       "interactiveElements": 36,
       "unnamed": 0,
@@ -232,8 +413,8 @@
   "pass": true,
   "browser": "Edg/154.0.4258.37",
   "summary": {
-    "steps": 24,
-    "passed": 24,
+    "steps": 44,
+    "passed": 44,
     "failed": 0,
     "consoleErrors": 0
   }

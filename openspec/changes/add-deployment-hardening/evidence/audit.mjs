@@ -46,7 +46,13 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -92,6 +98,22 @@ export const TARGETS = {
   longestTaskMs: 500,
 };
 
+/**
+ * The viewports every surface is measured at.
+ *
+ * Both, because one viewport is a partial view: at 1280x900 the desktop sidebar
+ * replaces the compact bottom navigation, so the compact shell's surfaces - bottom
+ * navigation labels, the mini player - were never rendered. The first version of this
+ * harness measured one viewport and reported every surface clean while an inactive
+ * navigation label sat at 4.16:1. The token suite caught it statically; the fix
+ * belonged here too, because a check that only runs where the defect is invisible is
+ * not a check of the application.
+ */
+const VIEWPORTS = [
+  { name: "desktop", width: 1280, height: 900, mobile: false },
+  { name: "compact", width: 390, height: 844, mobile: true },
+];
+
 /** WCAG AA: 4.5:1 for body text, 3:1 for text at 18.66px bold or 24px and above. */
 const CONTRAST_MIN_NORMAL = 4.5;
 const CONTRAST_MIN_LARGE = 3;
@@ -100,7 +122,10 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function findBrowser() {
   const found = BROWSER_CANDIDATES.find((candidate) => existsSync(candidate));
-  if (!found) throw new Error("No Edge/Chrome executable found (set SPOTIVIBE_BROWSER_PATH).");
+  if (!found)
+    throw new Error(
+      "No Edge/Chrome executable found (set SPOTIVIBE_BROWSER_PATH).",
+    );
   return found;
 }
 
@@ -108,8 +133,17 @@ function startServer() {
   const log = join(EVIDENCE_DIR, "server.log");
   const child = spawn(
     process.execPath,
-    [join(FRONTEND, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)],
-    { cwd: FRONTEND, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" },
+    [
+      join(FRONTEND, "node_modules", "next", "dist", "bin", "next"),
+      "start",
+      "-p",
+      String(PORT),
+    ],
+    {
+      cwd: FRONTEND,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    },
   );
   const stream = createWriteStream(log, { flags: "a" });
   child.stdout.pipe(stream);
@@ -120,7 +154,9 @@ function startServer() {
 function stopServer(child) {
   if (!child?.pid) return;
   if (process.platform === "win32") {
-    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+    });
   } else {
     try {
       process.kill(-child.pid, "SIGKILL");
@@ -399,8 +435,14 @@ async function main() {
     pass: false,
   };
   const step = (name, ok, detail = "") => {
-    results.steps.push({ name, ok: !!ok, detail: String(detail).slice(0, 500) });
-    console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+    results.steps.push({
+      name,
+      ok: !!ok,
+      detail: String(detail).slice(0, 500),
+    });
+    console.log(
+      `${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`,
+    );
     return !!ok;
   };
 
@@ -414,10 +456,13 @@ async function main() {
 
   try {
     if (!existsSync(join(FRONTEND, ".next"))) {
-      throw new Error("No production build found — run `cd frontend && npm run build` first.");
+      throw new Error(
+        "No production build found — run `cd frontend && npm run build` first.",
+      );
     }
     server = startServer();
-    if (!(await waitForServer())) throw new Error(`Production server not reachable at ${ORIGIN}.`);
+    if (!(await waitForServer()))
+      throw new Error(`Production server not reachable at ${ORIGIN}.`);
 
     browser = spawn(
       findBrowser(),
@@ -434,17 +479,22 @@ async function main() {
       ],
       { stdio: "ignore" },
     );
-    const version = await waitForJson(`http://127.0.0.1:${CDP_PORT}/json/version`);
+    const version = await waitForJson(
+      `http://127.0.0.1:${CDP_PORT}/json/version`,
+    );
     results.browser = version.Browser ?? "unknown";
     // The conditions, recorded: a number without them is not comparable.
     results.notes.conditions = {
       userAgent: version["User-Agent"] ?? "unknown",
       platform: `${process.platform} ${process.arch}`,
       cpuCount: cpus().length,
-      viewport: "1280x900",
+      viewports: VIEWPORTS.map(
+        (entry) => `${entry.width}x${entry.height}`,
+      ).join(", "),
       load: "cold (fresh profile, first navigation)",
       servedBy: "next start on localhost",
-      measurement: "PerformanceObserver inside the page; nothing is transmitted",
+      measurement:
+        "PerformanceObserver inside the page; nothing is transmitted",
     };
 
     ws = new WebSocket(version.webSocketDebuggerUrl);
@@ -458,7 +508,10 @@ async function main() {
         const handler = pending.get(message.id);
         if (!handler) return;
         pending.delete(message.id);
-        if (message.error) handler.reject(new Error(`${message.method}: ${message.error.message}`));
+        if (message.error)
+          handler.reject(
+            new Error(`${message.method}: ${message.error.message}`),
+          );
         else handler.resolve(message.result);
         return;
       }
@@ -477,15 +530,25 @@ async function main() {
       new Promise((resolveSend, reject) => {
         const id = ++seq;
         pending.set(id, { resolve: resolveSend, reject });
-        ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+        ws.send(
+          JSON.stringify({
+            id,
+            method,
+            params,
+            ...(sessionId ? { sessionId } : {}),
+          }),
+        );
       });
     const send = (method, params = {}) => sendTo(pageSession(), method, params);
     const on = (method, handler) =>
       listeners.push(
-        (message) => message.method === method && handler(message.params, message.sessionId),
+        (message) =>
+          message.method === method &&
+          handler(message.params, message.sessionId),
       );
 
-    wantedTargetId = (await send("Target.createTarget", { url: "about:blank" })).targetId;
+    wantedTargetId = (await send("Target.createTarget", { url: "about:blank" }))
+      .targetId;
     on("Target.attachedToTarget", async (params) => {
       sessions.set(String(params.targetInfo?.targetId ?? ""), params.sessionId);
       try {
@@ -513,11 +576,16 @@ async function main() {
       mobile: false,
     });
     // Installed on every document, so the observers exist during each navigation.
-    await send("Page.addScriptToEvaluateOnNewDocument", { source: VITALS_BOOTSTRAP });
+    await send("Page.addScriptToEvaluateOnNewDocument", {
+      source: VITALS_BOOTSTRAP,
+    });
     on("Runtime.consoleAPICalled", (params, sessionId) => {
       if (params.type !== "error" || sessionId !== pageSession()) return;
       results.consoleErrors.push(
-        `console.error: ${params.args.map((a) => a.value ?? a.description ?? "").join(" ").slice(0, 240)}`,
+        `console.error: ${params.args
+          .map((a) => a.value ?? a.description ?? "")
+          .join(" ")
+          .slice(0, 240)}`,
       );
     });
     on("Runtime.exceptionThrown", (params, sessionId) => {
@@ -537,11 +605,18 @@ async function main() {
         returnByValue: true,
       });
       if (response.exceptionDetails) {
-        throw new Error(response.exceptionDetails.exception?.description ?? "evaluate failed");
+        throw new Error(
+          response.exceptionDetails.exception?.description ?? "evaluate failed",
+        );
       }
       return response.result.value;
     };
-    const waitFor = async (description, expression, predicate, timeoutMs = 30000) => {
+    const waitFor = async (
+      description,
+      expression,
+      predicate,
+      timeoutMs = 30000,
+    ) => {
       const started = Date.now();
       let last = null;
       while (Date.now() - started < timeoutMs) {
@@ -553,21 +628,33 @@ async function main() {
         }
         await delay(250);
       }
-      throw new Error(`Timed out waiting for ${description} (last: ${JSON.stringify(last)})`);
+      throw new Error(
+        `Timed out waiting for ${description} (last: ${JSON.stringify(last)})`,
+      );
     };
     const goto = async (path, ready = "document.readyState") => {
       await send("Page.navigate", { url: `${ORIGIN}${path}` });
-      await waitFor(`${path} ready`, ready, (value) => value === "complete" || value === true, 30000);
+      await waitFor(
+        `${path} ready`,
+        ready,
+        (value) => value === "complete" || value === true,
+        30000,
+      );
       // Let the load settle so LCP and layout shift have both been observed.
       await delay(1500);
     };
 
     // ---- 1. the audits can fire, before they are trusted -----------------
-    const probe = await goto("/library").then(() => evaluate(INSTRUMENTED_AUDIT));
-    const hasNumbers = (value) => typeof value === "number" && Number.isFinite(value);
+    const probe = await goto("/library").then(() =>
+      evaluate(INSTRUMENTED_AUDIT),
+    );
+    const hasNumbers = (value) =>
+      typeof value === "number" && Number.isFinite(value);
     step(
       "the measurement produces real numbers rather than nothing",
-      hasNumbers(probe.vitals.cls) && probe.contrast.checked > 0 && probe.accessibleNames.interactive > 0,
+      hasNumbers(probe.vitals.cls) &&
+        probe.contrast.checked > 0 &&
+        probe.accessibleNames.interactive > 0,
       `CLS ${probe.vitals.cls}, ${probe.contrast.checked} contrast pairs, ${probe.accessibleNames.interactive} interactive elements`,
     );
     // The detector proof: inject a page whose text is unreadable and whose control has
@@ -590,7 +677,9 @@ async function main() {
     })()`);
     step("the degraded probe page is in the document", canFail === true);
     const degraded = await evaluate(INSTRUMENTED_AUDIT);
-    const degradedContrast = degraded.contrast.failures.some((entry) => entry.sample.includes("unreadable"));
+    const degradedContrast = degraded.contrast.failures.some((entry) =>
+      entry.sample.includes("unreadable"),
+    );
     const degradedUnnamed = degraded.accessibleNames.unnamed.some(
       (entry) => entry.id === "m14-unnamed" || entry.testId === "m14-unnamed",
     );
@@ -605,54 +694,72 @@ async function main() {
     await evaluate(`document.getElementById("m14-degraded")?.remove(); true`);
 
     // ---- 2. the real surfaces -------------------------------------------
-    for (const path of ["/library", "/search", "/history", "/settings", "/now-playing"]) {
-      await goto(path);
-      const audit = await evaluate(INSTRUMENTED_AUDIT);
-      results.notes[path.replace("/", "") || "home"] = {
-        vitals: audit.vitals,
-        contrastChecked: audit.contrast.checked,
-        contrastFailures: audit.contrast.failures.length,
-        interactiveElements: audit.accessibleNames.interactive,
-        unnamed: audit.accessibleNames.unnamed.length,
-        primaryControls: audit.keyboard.primaryControls,
-        unreachableByTab: audit.keyboard.unreachableByTab.length,
-      };
+    for (const viewport of VIEWPORTS) {
+      for (const path of [
+        "/library",
+        "/search",
+        "/history",
+        "/settings",
+        "/now-playing",
+      ]) {
+        await send("Emulation.setDeviceMetricsOverride", {
+          width: viewport.width,
+          height: viewport.height,
+          deviceScaleFactor: 1,
+          mobile: viewport.mobile,
+        });
+        await goto(path);
+        const audit = await evaluate(INSTRUMENTED_AUDIT);
+        const label = `${viewport.name} ${path}`;
+        results.notes[`${viewport.name}${path.replace("/", "") || "home"}`] = {
+          vitals: audit.vitals,
+          contrastChecked: audit.contrast.checked,
+          contrastFailures: audit.contrast.failures.length,
+          interactiveElements: audit.accessibleNames.interactive,
+          unnamed: audit.accessibleNames.unnamed.length,
+          primaryControls: audit.keyboard.primaryControls,
+          unreachableByTab: audit.keyboard.unreachableByTab.length,
+        };
 
-      step(
-        `${path}: every text style meets its contrast minimum`,
-        audit.contrast.failures.length === 0,
-        audit.contrast.failures.length === 0
-          ? `${audit.contrast.checked} pairs checked`
-          : audit.contrast.failures
-              .slice(0, 3)
-              .map((entry) => `${entry.sample} ${entry.ratio}:1 (min ${entry.minimum})`)
-              .join("; "),
-      );
-      step(
-        `${path}: every interactive element has an accessible name`,
-        audit.accessibleNames.unnamed.length === 0,
-        audit.accessibleNames.unnamed.length === 0
-          ? `${audit.accessibleNames.interactive} controls`
-          : JSON.stringify(audit.accessibleNames.unnamed.slice(0, 3)),
-      );
-      step(
-        `${path}: no primary control is reachable only by pointer`,
-        audit.keyboard.unreachableByTab.length === 0,
-        `${audit.keyboard.focusable}/${audit.keyboard.primaryControls} focusable` +
-          (audit.keyboard.unreachableByTab.length
-            ? `; pointer-only: ${JSON.stringify(audit.keyboard.unreachableByTab.slice(0, 3))}`
-            : ""),
-      );
-      step(
-        `${path}: loading performance is within the stated targets`,
-        audit.vitals.observedDuringLoad === true &&
-          audit.vitals.lcp !== null &&
-          audit.vitals.lcp <= TARGETS.lcpMs &&
-          audit.vitals.cls <= TARGETS.cls &&
-          audit.vitals.totalBlockingTime <= TARGETS.tbtMs &&
-          audit.vitals.longestTask <= TARGETS.longestTaskMs,
-        `LCP ${Math.round(audit.vitals.lcp ?? 0)}ms (≤${TARGETS.lcpMs}), CLS ${audit.vitals.cls} (≤${TARGETS.cls}), TBT ${audit.vitals.totalBlockingTime}ms (≤${TARGETS.tbtMs}), longest task ${Math.round(audit.vitals.longestTask)}ms (≤${TARGETS.longestTaskMs})`,
-      );
+        step(
+          `${label}: every text style meets its contrast minimum`,
+          audit.contrast.failures.length === 0,
+          audit.contrast.failures.length === 0
+            ? `${audit.contrast.checked} pairs checked`
+            : audit.contrast.failures
+                .slice(0, 3)
+                .map(
+                  (entry) =>
+                    `${entry.sample} ${entry.ratio}:1 (min ${entry.minimum})`,
+                )
+                .join("; "),
+        );
+        step(
+          `${label}: every interactive element has an accessible name`,
+          audit.accessibleNames.unnamed.length === 0,
+          audit.accessibleNames.unnamed.length === 0
+            ? `${audit.accessibleNames.interactive} controls`
+            : JSON.stringify(audit.accessibleNames.unnamed.slice(0, 3)),
+        );
+        step(
+          `${label}: no primary control is reachable only by pointer`,
+          audit.keyboard.unreachableByTab.length === 0,
+          `${audit.keyboard.focusable}/${audit.keyboard.primaryControls} focusable` +
+            (audit.keyboard.unreachableByTab.length
+              ? `; pointer-only: ${JSON.stringify(audit.keyboard.unreachableByTab.slice(0, 3))}`
+              : ""),
+        );
+        step(
+          `${label}: loading performance is within the stated targets`,
+          audit.vitals.observedDuringLoad === true &&
+            audit.vitals.lcp !== null &&
+            audit.vitals.lcp <= TARGETS.lcpMs &&
+            audit.vitals.cls <= TARGETS.cls &&
+            audit.vitals.totalBlockingTime <= TARGETS.tbtMs &&
+            audit.vitals.longestTask <= TARGETS.longestTaskMs,
+          `LCP ${Math.round(audit.vitals.lcp ?? 0)}ms (≤${TARGETS.lcpMs}), CLS ${audit.vitals.cls} (≤${TARGETS.cls}), TBT ${audit.vitals.totalBlockingTime}ms (≤${TARGETS.tbtMs}), longest task ${Math.round(audit.vitals.longestTask)}ms (≤${TARGETS.longestTaskMs})`,
+        );
+      }
     }
 
     step(
@@ -666,10 +773,15 @@ async function main() {
       "INP is not observed, because it requires a real interaction. Total blocking time from long tasks stands in for responsiveness on a load, which is why the two thresholds are separate.",
       "Contrast is computed for text whose background the browser can resolve to an opaque colour. Text painted over a third-party album image is not computable from the DOM and is excluded rather than guessed; the audit records how many pairs it checked so the exclusion is visible.",
       "Keyboard reachability is checked through the elements' own semantics and tabindex, not by pressing Tab through the application; a control that is focusable but hidden behind a focus trap would not be caught.",
+      "Both the desktop and the compact viewport are measured, because the compact shell does not render at the desktop size. A surface that renders at neither size is not covered by this run.",
     );
     results.pass = results.steps.every((entry) => entry.ok);
   } catch (error) {
-    step("the audit ran to completion", false, String(error?.stack ?? error).slice(0, 500));
+    step(
+      "the audit ran to completion",
+      false,
+      String(error?.stack ?? error).slice(0, 500),
+    );
   } finally {
     try {
       ws?.close();
@@ -698,7 +810,10 @@ async function main() {
     failed: failed.length,
     consoleErrors: results.consoleErrors.length,
   };
-  writeFileSync(join(EVIDENCE_DIR, "results.json"), JSON.stringify(results, null, 2));
+  writeFileSync(
+    join(EVIDENCE_DIR, "results.json"),
+    JSON.stringify(results, null, 2),
+  );
   console.log(
     `\n${results.pass ? "PASS" : "FAIL"} — ${results.summary.passed}/${results.summary.steps} checks, ${results.summary.consoleErrors} console errors.`,
   );
