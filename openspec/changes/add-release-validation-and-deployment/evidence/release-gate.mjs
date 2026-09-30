@@ -142,6 +142,20 @@ const ITEMS = [
     test: "tests/backup-import.test.ts",
   },
   {
+    id: "evidence-parses",
+    requirement: "Every evidence script parses",
+    how: "command",
+    command: "node",
+    // The evidence scripts live outside `frontend/`, so `npm run lint`, `format:check`, and
+    // `tsc` never see them — which is why a backtick inside a comment inside a template
+    // literal was able to end a string three times here without any gate noticing. This
+    // item is the substitute, and it is cheap: `node --check` parses without executing.
+    args: [
+      join(CHANGE, "evidence", "check-parses.mjs"),
+    ],
+    needsBrowser: false,
+  },
+  {
     id: "backup-format",
     requirement:
       "The backup format is documented, and the document matches the code it describes",

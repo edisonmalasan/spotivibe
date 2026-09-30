@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { validateEnv } from "@/server/env";
@@ -35,6 +35,16 @@ function readConfig(): string {
 
 function manifest(): { engines?: { node?: string }; scripts?: Record<string, string> } {
   return JSON.parse(readFileSync(join(FRONTEND, "package.json"), "utf8"));
+}
+
+function sourceFiles(directory: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const full = join(directory, entry.name);
+    if (entry.isDirectory()) found.push(...sourceFiles(full));
+    else if ([".ts", ".tsx"].includes(extname(entry.name))) found.push(full);
+  }
+  return found;
 }
 
 describe("the application is one deployable unit (M15 task 4.1)", () => {
@@ -105,15 +115,48 @@ describe("a deployment needs no configuration (M15 task 4.1)", () => {
     expect(parsed.server.SPOTIVIBE_PIPED_INSTANCES).toBeUndefined();
   });
 
-  it("declares every environment variable it reads as optional", () => {
+  it("declares every environment variable the application names as optional", () => {
+    // Read across the declaration rather than within one line. The first version looked for
+    // `.optional()` on the same line as the declaration, so it was asserting a formatting
+    // choice: a schema written with the call on the next line would have been reported as
+    // a *required* variable, which is a false positive about the code and a churny one to
+    // fix.
     const source = readFileSync(join(SRC, "server", "env.ts"), "utf8");
-    const declared = [...source.matchAll(/(SPOTIVIBE_[A-Z_]+):\s*z\./g)].map((m) => m[1]);
-    expect(declared.length, "the schema must declare the variables it reads").toBeGreaterThan(0);
-    for (const name of declared) {
-      // Each declaration is followed by `.optional()` on the same line.
-      const line = source.split("\n").find((entry) => entry.includes(`${name}: z.`)) ?? "";
-      expect(line, `${name} must be optional`).toContain(".optional()");
+    const declarations = [...source.matchAll(/(SPOTIVIBE_[A-Z_]+):\s*z\.[^;]*;/g)];
+    expect(declarations.length, "the schema must declare the variables it reads").toBeGreaterThan(
+      0,
+    );
+    for (const declaration of declarations) {
+      expect(declaration[0], `${declaration[1]} must be optional`).toContain(".optional()");
     }
+  });
+
+  it("reads no environment variable outside the schema", () => {
+    // The gap the line-based check left: a `process.env.SOMETHING` read anywhere in the
+    // server tree is invisible to a check that only reads `env.ts`, and an undeclared
+    // required read is exactly the deployment failure this suite exists to catch. The
+    // schema's own names are the allow-list.
+    const declared = new Set(
+      [...readFileSync(join(SRC, "server", "env.ts"), "utf8").matchAll(/(SPOTIVIBE_[A-Z_]+)/g)].map(
+        (m) => m[1],
+      ),
+    );
+    expect(declared.size, "the schema must declare something").toBeGreaterThan(0);
+
+    const serverFiles = sourceFiles(join(SRC, "server"));
+    expect(serverFiles.length, "the walker must reach the server tree").toBeGreaterThan(10);
+    const undeclared = serverFiles.flatMap((file) => {
+      const raw = readFileSync(file, "utf8");
+      const name = file.replace(/\\/g, "/");
+      return [...raw.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)]
+        .map((match) => match[1])
+        .filter((variable) => !declared.has(variable))
+        .map((variable) => `${name}: ${variable}`);
+    });
+    expect(
+      undeclared,
+      "an environment variable is read outside the schema, so nothing declares whether it is required",
+    ).toEqual([]);
   });
 });
 

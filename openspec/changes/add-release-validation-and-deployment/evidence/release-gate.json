@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-09-30T17:22:39.058Z",
+  "generatedAt": "2026-09-30T17:31:32.668Z",
   "repo": "C:\\Users\\Edison\\Desktop\\Projects\\spotivibe",
   "skipBrowser": false,
   "totals": {
-    "passed": 16,
+    "passed": 17,
     "failed": 0,
     "notRun": 8,
     "skipped": 0
@@ -13,7 +13,7 @@
       "id": "gates-install",
       "requirement": "`npm ci` installs from the lockfile",
       "status": "PASS",
-      "detail": "26.3s",
+      "detail": "29.1s",
       "reason": null,
       "steps": null
     },
@@ -21,7 +21,7 @@
       "id": "gates-lint",
       "requirement": "`npm run lint` reports no errors",
       "status": "PASS",
-      "detail": "49.6s",
+      "detail": "40.5s",
       "reason": null,
       "steps": null
     },
@@ -29,7 +29,7 @@
       "id": "gates-format",
       "requirement": "`npm run format:check` passes",
       "status": "PASS",
-      "detail": "8.8s",
+      "detail": "6.3s",
       "reason": null,
       "steps": null
     },
@@ -37,7 +37,7 @@
       "id": "gates-typecheck",
       "requirement": "`npm run typecheck` passes in strict mode",
       "status": "PASS",
-      "detail": "10.5s",
+      "detail": "9.1s",
       "reason": null,
       "steps": null
     },
@@ -45,7 +45,7 @@
       "id": "gates-tests",
       "requirement": "`npm test` passes",
       "status": "PASS",
-      "detail": "73.3s",
+      "detail": "71.7s",
       "reason": null,
       "steps": null
     },
@@ -53,7 +53,7 @@
       "id": "gates-build",
       "requirement": "`npm run build` produces a production build",
       "status": "PASS",
-      "detail": "13.7s",
+      "detail": "15.0s",
       "reason": null,
       "steps": null
     },
@@ -61,7 +61,7 @@
       "id": "icons-drift",
       "requirement": "PWA icons match the committed generator's output",
       "status": "PASS",
-      "detail": "1.8s",
+      "detail": "1.7s",
       "reason": null,
       "steps": null
     },
@@ -101,7 +101,7 @@
       "id": "deployment-contract",
       "requirement": "The deployable shape is what a free-tier single application needs",
       "status": "PASS",
-      "detail": "13 assertions",
+      "detail": "14 assertions",
       "reason": null,
       "steps": null
     },
@@ -110,6 +110,14 @@
       "requirement": "Export, reset, and import round-trip the listener's data",
       "status": "PASS",
       "detail": "18 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "evidence-parses",
+      "requirement": "Every evidence script parses",
+      "status": "PASS",
+      "detail": "0.3s",
       "reason": null,
       "steps": null
     },
@@ -125,7 +133,7 @@
       "id": "accessibility-performance",
       "requirement": "Contrast, names, keyboard reachability, and loading are within the stated targets",
       "status": "PASS",
-      "detail": "34.5s",
+      "detail": "34.9s",
       "reason": null,
       "steps": null
     },
@@ -133,7 +141,7 @@
       "id": "end-to-end",
       "requirement": "The critical flows work in a real browser against a production build",
       "status": "PASS",
-      "detail": "35.8s",
+      "detail": "36.6s",
       "reason": null,
       "steps": null
     },

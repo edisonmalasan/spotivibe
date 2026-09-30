@@ -607,12 +607,18 @@ describe("every download the application initiates is a backup, not media (M15 t
           /\.(mp3|m4a|aac|opus|ogg|flac|wav|webm|mp4|mkv)\b/i,
         );
       }
-      // And the blob it offers is JSON, never an audio or video type.
+      // The blob it offers is JSON, and the check says so positively rather than only
+      // ruling out media. The first version rejected `audio/*` and `video/*` and nothing
+      // else, which meant a download named `track` with `application/octet-stream` —
+      // carrying audio — satisfied it. A check that only excludes what it thought of is
+      // not a positive check.
       const types = [...entry.code.matchAll(/type:\s*"([^"]+)"/g)].map((m) => m[1]);
+      expect(types.length, `${entry.file} must state what it offers`).toBeGreaterThan(0);
       for (const type of types) {
-        expect(type, `${entry.file} must not offer a media download`).not.toMatch(
-          /^(audio|video)\//,
-        );
+        expect(
+          type,
+          `${entry.file} offers "${type}"; only a textual backup may be downloaded`,
+        ).toMatch(/^application\/(json|.*\+json)$|^text\//);
       }
       // No `<a download>` in markup points at a remote origin, which would be a
       // download the application did not produce.
