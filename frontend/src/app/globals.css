@@ -15,14 +15,17 @@
     /*
      * M13, standalone mode: the installed app owns the whole window, so the
      * window's own insets (a notch, a home indicator) are the page's problem.
-     * Without this, `viewport-fit=cover` would let the top bar and the bottom
-     * player slide under them on a notched device.
+     * All four, not just the sides: without the top inset the 64px top bar slides
+     * under a notch or a status bar, and without the bottom inset the player region
+     * sits under the home indicator.
      *
      * `env()` falls back to 0px wherever the platform has no inset, so this is a
      * no-op on desktop and in a browser tab.
      */
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   /* Keyboard focus is always visible (design-system accessibility contract). */

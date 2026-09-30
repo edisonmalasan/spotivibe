@@ -259,3 +259,61 @@ describe("library bulk play (task 6.2)", () => {
     expect(usePlayerStore.getState().status).toBe("idle");
   });
 });
+
+/**
+ * M13 regression: a stored row that cannot fill every field must not take the
+ * surface down with it.
+ *
+ * The browser evidence run wrote a liked row straight into IndexedDB - a route the
+ * repository layer does not expose - whose track had no `artists`, and `/library/liked`
+ * crashed into the route error boundary while offline. Two things came out of it: the
+ * surface now skips what it cannot render (the same "stored records are untrusted"
+ * rule the repositories already apply), and the harness now seeds through the
+ * repository so its evidence run is not measuring an impossible state.
+ *
+ * This test keeps the impossible state deliberately: a row can also arrive from a
+ * backup written by an older build, an external tool, or a future migration, and the
+ * surface's job is to show the rows it can rather than to white-screen.
+ */
+describe("LikedSongsView with an incomplete stored record", () => {
+  it("skips a row it cannot render and still shows the rest", async () => {
+    const good = makeTrack({
+      id: "youtube:good",
+      providerId: "good",
+      title: "Roads",
+      artists: [{ name: "Portishead" }],
+    });
+    await repositories.likedTracks.like(good);
+    // Written the way the evidence run wrote it: raw IndexedDB, bypassing the
+    // repository's own validation, which is exactly how a row from an external tool
+    // or an older backup would arrive.
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("spotivibe");
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction("likedTracks", "readwrite");
+        tx.objectStore("likedTracks").put({
+          trackId: "youtube:broken",
+          likedAt: 2,
+          track: { providerId: "broken", title: "Roads (broken)", duration: 1 },
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error);
+        };
+      };
+      request.onerror = () => reject(request.error);
+    });
+    resetLibraryStore();
+
+    render(<LikedSongsView />);
+    // The complete row renders...
+    expect(await screen.findByText("Roads")).toBeInTheDocument();
+    // ...and the incomplete one is skipped rather than rendered or crashed on.
+    expect(screen.queryByText("Roads (broken)")).not.toBeInTheDocument();
+  });
+});

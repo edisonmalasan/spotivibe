@@ -1,6 +1,6 @@
 # M13 task 6.2 — browser evidence for the PWA install and offline shell
 
-**Result: `pass: true` — 34/34 steps, 5 screenshots, 0 console errors**, with 83
+**Result: `pass: true` — 34/34 steps, 5 screenshots, 0 console errors**, with 93
 network errors during the deliberate offline window disclosed rather than counted.
 
 Reproduce from the repository root:
@@ -8,6 +8,7 @@ Reproduce from the repository root:
 ```bash
 cd frontend
 npm ci
+npm run icons:check    # the committed PNGs still match the generator
 npm run build          # the harness runs the build's output; it must exist first
 cd ..
 node openspec/changes/add-pwa-install-and-offline-shell/evidence/cdp-check.mjs
@@ -52,9 +53,12 @@ the worker's cache contents at each phase, the console log, and every disclosure
 - **Caches are bounded and namespaced.** Cache contents are read from the page
   after the run, compared against the bounds read out of `sw.js` at runtime.
 - **An uncached route opens the application.** `/artist/…` (never visited) and
-  `/search` (never visited) are navigated offline; each is asserted to be served by
-  the worker, to have the app's own chrome rather than Chrome's error page, and to
-  say why it cannot load. See *The shell's content* below for what that costs.
+  `/search` (never visited) are navigated offline. Each is asserted to land on the
+  shell **with the shell's own URL** — so the address bar and the content agree — to
+  carry the app's chrome rather than Chrome's error page, and to be served by the
+  worker (the shell document it lands on is checked for `fromServiceWorker`, because
+  the 302 itself is not attributed to a request in CDP's response records). See *The
+  shell's content* below for what that costs.
 - **Metadata falls back; search does not.** `/api/artist` is fetched once while the
   origin is up (with `cache: "no-store"`, so the browser's own HTTP cache cannot
   satisfy it) and again with the origin down. The offline response carries the
@@ -65,14 +69,19 @@ the worker's cache contents at each phase, the console log, and every disclosure
   against fragments extracted from `ConnectionBanner.tsx` at runtime, not against a
   copy in this harness.
 - **Data controls stay usable offline**, and an export control is found by its
-  accessible name on the settings surface.
+  accessible name on the settings surface. Every offline page assertion is scoped to
+  the route's own `<main>` subtree and fails on an application error boundary, because
+  a crash page still has the shell's landmarks — the earlier document-wide check
+  scored `/library/liked`'s error boundary as a pass.
 - **The update handshake really answers.** `SKIP_WAITING` is posted to the live
   controller and the worker's `ACTIVATED` reply is observed over the real message
   port. A liked-track row is written to IndexedDB before the activation and read
   back afterwards.
 - **The install affordance appears and then withdraws**, driven by a *trusted*
   CDP mouse click (an in-page `click()` fails with `NotAllowedError`, because
-  `BeforeInstallPromptEvent.prompt()` requires a user gesture).
+  `BeforeInstallPromptEvent.prompt()` requires a user gesture). The step is named for
+  what the run observes: the row withdraws because the offer has been spent, not
+  because `appinstalled` fired — it never fired in this browser, and the run says so.
 
 ## Disclosures — what this run did *not* prove
 
@@ -93,16 +102,18 @@ the worker's cache contents at each phase, the console log, and every disclosure
    real image traffic.
 4. **The 7-day metadata freshness bound.** Exercised in the unit suite by aging a
    stored copy's stamp, not by waiting seven days.
-5. **The shell's content.** An uncached route is served the cached shell document,
-   which was rendered for the site root, so the application boots and shows the
-   Home route's content at the requested URL (observed: `/search` rendered the Home
-   shell). The connection banner states that search and playback need a connection.
-   The listener gets a working application and an honest message instead of a
-   browser error page, but not the exact route they asked for. A per-route offline
+5. **The shell's content.** An uncached route is answered with a **redirect to the
+   cached shell**, so the listener lands on the Home route at the Home route's own
+   URL, with the connection banner stating that search and playback need a
+   connection. They get a working application and an honest message instead of a
+   browser error page — but not the route they asked for, because a single offline
+   shell cannot render a route it has never been sent. (An earlier version served the
+   shell's *document* under the requested URL; the run caught that the Home route then
+   rendered at `/search`, and the worker now redirects instead.) A per-route offline
    document would need a build-time asset manifest, which this application has no
    honest way to produce for its dynamic routes. Recorded in
    `results.json → notes.disclosures.shellContent`.
-6. **83 network errors during the offline window** (connection refused, failed
+6. **93 network errors during the offline window** (connection refused, failed
    subresource loads) are disclosed in `notes.disclosures.offlineWindow` rather
    than counted as defects. They are what an offline application looks like. The
    console-error assertion covers only the online phase and the boundaries.
@@ -136,27 +147,57 @@ that value. So the page gets the browser's offline signal while the worker gets 
 genuinely unreachable origin. `results.json → notes.offlineMechanism` states both
 halves.
 
-## Three defects this run found in the application
+## Defects this run found in the application
 
-Recorded here because the evidence is the argument for them:
+Recorded here because the evidence is the argument for them. The first three are from
+the initial run; the rest are from an independent verification pass that read the
+implementation against the specification and drove the worker's shipped bytes.
 
 1. **An uncached navigation failed outright.** The first worker refused to answer a
    per-entity navigation at all, so an offline first visit to an artist handed the
    listener Chrome's own "no internet" page — no navigation, no player, no way back.
-   The fix is an ordered fallback chain: network → this route's own cached document
-   → the cached shell document. The spec and `design.md` were amended to state it,
-   and the chain was then *unified* for every navigation after the same run showed
-   that a prerendered route that had never been visited (`/search`) still failed.
+   Fixed with an ordered fallback chain, unified for every navigation after the same
+   run showed a never-visited prerendered route still failing, and finally changed from
+   *serving* the shell's document to *redirecting* to it when the run showed the Home
+   route rendering under `/search`'s URL.
 2. **`new Request("/")` throws inside a service worker.** The install-time shell
    precache swallowed it in its own `catch`, so the cache silently stayed empty and
    the fallback chain had nothing to fall back to. The Cache API accepts a relative
-   string key; that is what is used now.
+   string key; that is what is stored now.
 3. **`install()` awaited `userChoice`, which can never resolve.** Headless Edge
    accepts `prompt()` and never reports a choice, which left the row stuck on
    "installing" with no way out. `install()` now resolves once the platform's prompt
    is up, the affordance withdraws (the app does not re-ask on its own), and a
    reported dismissal is recorded if and when it arrives. Completion is the
    `appinstalled` event's job.
+4. **`skipWaiting()` on install made the whole update flow unreachable.** A worker
+   that skips waiting never enters `waiting`, so the page is never told an update
+   exists: the notice was unreachable and the version swap silent — the one guarantee
+   design decision 6 exists to provide. Install no longer activates on its own; the
+   listener's action is the only path.
+5. **A search URL requested as a navigation was cached as a page.** Classification
+   checked `request.mode` before the `/api/` rule, so a listener who searched, lost
+   the network and pressed Back had that result set written into the page cache — a
+   stale answer set served as if live. A path is now classified as a path, whatever
+   requested it, in both the worker and its test.
+6. **`/api/discover` was cached on a false justification.** It is keyless but not
+   profile-free: the client sends `seeds` derived from liked tracks and listening
+   events. It is now served live and left uncached, and the requirement's wording no
+   longer claims a host list it did not have.
+7. **The precached shell was evicted after about nineteen document navigations**, as
+   an entry in the FIFO-bounded page cache — quietly restoring the browser error page
+   the fallback exists to prevent, about nineteen navigations later. The shell now has
+   a cache of its own with a bound of one.
+8. **The activation filter deleted any `spotivibe-` cache**, including one this worker
+   never created. It now matches this worker's own cache *shapes* and versions, and
+   the test creates previous-version, current-version and foreign caches to prove which
+   survive.
+9. **`/library/liked` crashed into the route error boundary** on a liked row whose
+   track had no `artists` — a record the repository cannot write, but which a backup
+   from an older build or an external tool could. The surface now skips what it cannot
+   render, which is the same "stored records are untrusted" rule the repositories
+   already apply, and the evidence run's assertion was scoped to the route's own
+   subtree so a crash page can no longer pass as a rendered page.
 
 ## Screenshots
 
@@ -164,6 +205,10 @@ Recorded here because the evidence is the argument for them:
 | --- | --- |
 | `offline-settings.png` | Settings rendered with the origin down, offline banner visible. |
 | `offline-library.png` | The library rendered from the worker's cache. |
-| `offline-entity-route.png` | An uncached artist route while offline: the application, with its own state. |
-| `offline-search.png` | The unvisited `/search` route while offline: the application plus the offline message. |
+| `offline-unvisited-route.png` | An unvisited route while offline: redirected to the shell, inside the application. |
+| `offline-search-fails.png` | A search request while offline: rejected, never answered from cache. |
 | `settings-install-row.png` | Settings after the install affordance resolved. |
+
+Both unvisited routes land on the same shell by design, so there is one screenshot of
+that destination rather than two byte-identical ones presented as two pieces of
+evidence.

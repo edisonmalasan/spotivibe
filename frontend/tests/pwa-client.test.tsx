@@ -197,8 +197,12 @@ describe("the update notice (task 5.3)", () => {
     expect(notice).toHaveAttribute("role", "status");
     // The notice is a top bar overlay, never a sheet over the player surface
     // (the same constraint the connection banner honors).
-    expect(notice.className).toContain("top-18");
     expect(notice.className).not.toContain("bottom-0");
+    // And on a compact viewport it sits below the connection banner's band rather
+    // than in it: both are fixed overlays at the same stacking level, and three of
+    // them in one 72px strip is how an honest status message ends up unreadable.
+    expect(notice.className).toContain("top-32");
+    expect(notice.className).toContain("lg:top-18");
     expect(container.textContent).toContain("Reload");
   });
 
@@ -385,7 +389,35 @@ describe("the install affordance (tasks 5.1, 5.2)", () => {
     expect(ios.container.querySelector('[data-testid="install-confirm"]')).toBeNull();
   });
 
-  it("offers the install button once the platform has offered, and hides it after", async () => {
+  it("records a dismissal from the row itself, and does not offer again", async () => {
+    // The app suppresses the browser's own prompt, so the platform dialog is not a
+    // route to a recorded dismissal: the row's own control is. Without one, the
+    // "a dismissed affordance does not come back on its own" requirement could only
+    // be satisfied by a listener who first installed and then declined the browser's
+    // dialog - which this app has deliberately hidden.
+    const event = new Event("beforeinstallprompt") as Event & { prompt: () => Promise<void> };
+    Object.defineProperty(event, "prompt", { value: vi.fn(async () => undefined) });
+    event.preventDefault = vi.fn();
+
+    const { container } = render(<InstallRow userAgent="Chrome/120" />);
+    window.dispatchEvent(event);
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="install-confirm"]')).not.toBeNull(),
+    );
+    fireEvent.click(container.querySelector('[data-testid="install-dismiss"]')!);
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="install-confirm"]')).toBeNull(),
+    );
+    expect(isInstallDismissed()).toBe(true);
+
+    // A later visit must not resurrect it, even if the platform offers again.
+    const revisit = render(<InstallRow userAgent="Chrome/120" />);
+    window.dispatchEvent(event);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(revisit.container.querySelector('[data-testid="install-confirm"]')).toBeNull();
+  });
+
+  it("offers the install button once the platform has offered, and withdraws it after asking", async () => {
     const prompt = vi.fn(async () => undefined);
     const event = new Event("beforeinstallprompt") as Event & { prompt: typeof prompt };
     Object.defineProperty(event, "prompt", { value: prompt });

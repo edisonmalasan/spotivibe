@@ -43,7 +43,7 @@
 All twenty tasks are implemented and verified. What each kind of evidence actually
 established, recorded here rather than left to inference:
 
-- **Unit and static (59 new tests; 2147 total, from a clean clone as well as the
+- **Unit and static (69 new tests; 2152 total, from a clean clone as well as the
   working tree).** `tests/pwa-service-worker.test.ts` evaluates the *shipped bytes*
   of `public/sw.js` in a sandbox with a fake `self`/`caches`/`fetch` and drives the
   `fetch` handler the worker registered, so the classification table and the handler
@@ -72,6 +72,45 @@ established, recorded here rather than left to inference:
 - 5.4 — a row was written to `likedTracks`, `SKIP_WAITING` was posted to the live
   controller, the worker answered `ACTIVATED`, and the row was still present after
   the reload.
+
+### What the verification pass changed, after the implementation was complete
+
+An independent read-only pass compared the implementation against this change's own
+specification and drove the worker's shipped bytes in a sandbox. It found defects that
+no unit test and no earlier evidence run had caught. All of them are fixed, and each
+one is recorded in `evidence/README.md` under *Defects this run found in the
+application* with the reason it was invisible before:
+
+- `skipWaiting()` on install made the entire update flow unreachable (a worker that
+  skips waiting never enters `waiting`, so the page is never told an update exists).
+- A search URL requested as a *navigation* was classified as a page and cached, so a
+  stale search result could be served as if it were live.
+- `/api/discover` was cached on a justification ("keyless and profile-free") that is
+  false: the client sends `seeds` derived from the listener's own liked tracks and
+  listening events. It is no longer cached.
+- The precached shell document was an entry in the FIFO-bounded page cache, so it was
+  evicted after about nineteen document navigations — silently restoring the browser
+  error page the fallback exists to prevent.
+- The activation filter deleted any cache whose name began with `spotivibe-`,
+  including one this worker never created.
+- The offline-fallback redirect rendered the Home route under `/search`'s URL. The
+  worker now redirects to the shell, so URL and content agree; the spec, `design.md`
+  and the evidence claims were corrected, because the previous version claimed the
+  route rendered its own error state, which a single offline shell cannot do.
+- `/library/liked` crashed into the route error boundary on a liked row whose track
+  could not fill `artists`. The surface now skips what it cannot render.
+- The install row had no way to be dismissed, so a recorded dismissal was reachable
+  only through the platform dialog the app deliberately suppresses. It now has a
+  "Not now" control.
+- Three evidence steps could not fail: the offline document-response check scanned
+  both phases (so an all-fail offline phase still found online entries), the page
+  checks scanned the whole document (so a crash page passed), and the redirect
+  assertions read a response CDP does not attribute. Each is now phase-marked,
+  subtree-scoped, or asserted on the landing.
+- Two spec statements contradicted the implementation after the first amendment (the
+  absolute "never another route's cached response" against the shell fallback, and
+  "no deletion of browser storage" against retiring this worker's own previous
+  caches). Both requirement bodies were rewritten to say what the code does.
 
 ### Where this milestone deviates from the tasks as written, and why
 

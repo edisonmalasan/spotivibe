@@ -12,10 +12,10 @@
  *     googlevideo are never cached, whatever the request looks like;
  *   - an *uncached shell* makes the whole milestone pointless, so hashed build
  *     assets are cache-first (their URLs cannot go stale).
- *   - a *browser error page* is a dead end, so a per-entity navigation that cannot
- *     reach the network falls back to the cached shell document: the application
- *     still loads and the route shows its own "could not load" state. It never
- *     falls back to another entity's response.
+ *   - a *browser error page* is a dead end, so a navigation that cannot reach the
+ *     network falls back to this route's own cached document, and failing that to a
+ *     redirect to the cached shell. It never falls back to another route's document,
+ *     and never to another entity's response.
  *
  * Rules, in the order they are applied:
  *
@@ -24,11 +24,12 @@
  *   3. content-hashed `/_next/static/*`, same-origin icons  -> cache first
  *   4. any same-origin navigation                         -> network, then this
  *                                                          route's own cached
- *                                                          document, then the shell
- *   6. `GET /api/{artist,album,similar,discover}`          -> network, then cache
- *   7. other `/api/*`                                     -> network only
- *   8. image requests (artwork)                            -> cache first
- *   9. anything else                                       -> network only
+ *                                                          document, then a
+ *                                                          redirect to the shell
+ *   5. `GET /api/{artist,album,similar}`                  -> network, then cache
+ *   6. any other `/api/*`, whatever its request mode      -> network only
+ *   7. image requests (artwork)                            -> cache first
+ *   8. anything else                                       -> network only
  *
  * Storage discipline (spec `pwa` — "Service worker update flow"): this worker
  * never touches IndexedDB and never deletes a cache it did not create. Its
@@ -56,6 +57,8 @@ const MAX_ENTRIES = {
   assets: 200,
   /** Rendered HTML for the app's own prerendered routes. */
   pages: 20,
+  /** The shell document alone, in its own cache so nothing can evict it. */
+  shell: 1,
   /** Keyless provider metadata responses. */
   metadata: 100,
   /** Artwork images. */
@@ -70,12 +73,22 @@ const CACHES = {
   pages: `spotivibe-pages-${VERSION}`,
   metadata: `spotivibe-metadata-${VERSION}`,
   artwork: `spotivibe-artwork-${VERSION}`,
+  // The shell document lives alone. It is the one entry the offline fallback
+  // depends on, and a FIFO bound on the pages cache used to evict it after about
+  // nineteen document navigations - which quietly reintroduced the browser error
+  // page that the fallback exists to prevent. One entry, one cache, evicted by
+  // nothing else.
+  shell: `spotivibe-shell-${VERSION}`,
 };
 
 /**
- * The app's own prerendered routes. A navigation to one of these can fall back to
- * cache; a navigation to anything else (`/artist/…`, `/album/…`, `/playlist/…`)
- * must not, because a cached response for a *different* entity is a lie.
+ * The app's own prerendered routes: the nine routes `next build` emits as static,
+ * plus the dynamic ones (`/artist/…`, `/album/…`, `/playlist/…`) that are not.
+ *
+ * The list decides which cached *own* document a navigation may find. It does not
+ * decide whether a navigation may fall back: every same-origin navigation ends at the
+ * shell if its own document is missing, and no route is ever answered with another
+ * route's content (spec `pwa` - "Service worker caching strategy").
  */
 const PRERENDERED_PATHS = [
   "/",
@@ -110,13 +123,20 @@ const NEVER_CACHE_HOSTS = [
 ];
 
 /**
- * The metadata endpoints that are safe to keep: every one of them is keyless and
- * profile-free by its own spec, so a stale copy is a convenience rather than a
- * leak. `/api/search`, `/api/radio` and `/api/playlist` are deliberately absent —
- * a search is a live question, a radio request is a rotation, and a playlist
- * resolution is an import path.
+ * The metadata endpoints that are safe to keep.
+ *
+ * `/api/artist`, `/api/album` and `/api/similar` are keyless and profile-free by
+ * their own specs, so a stale copy is a convenience rather than a leak.
+ *
+ * The absences are the interesting part:
+ * - `/api/search` is a live question, `/api/radio` a rotation, `/api/playlist` an
+ *   import path: none of them is ever answered from cache.
+ * - `/api/discover` is keyless but *not* profile-free: the client sends `seeds`
+ *   derived from the listener's liked tracks and listening events, and `languages`
+ *   from their preferences. Caching it would write listener-derived data into a
+ *   cache, which this worker does not do. It is served live and left uncached.
  */
-const CACHEABLE_API_PATHS = ["/api/artist", "/api/album", "/api/similar", "/api/discover"];
+const CACHEABLE_API_PATHS = ["/api/artist", "/api/album", "/api/similar"];
 
 /* ------------------------------------------------------------------ *
  * Classification (pure, and unit-tested directly)
@@ -141,15 +161,20 @@ function classifyRequest(request, url, origin) {
   if (isNeverCacheHost(url.hostname)) return "player";
   if (url.origin !== origin) return request.destination === "image" ? "artwork" : "passthrough";
 
-  if (request.mode === "navigate") {
-    return PRERENDERED_PATHS.includes(url.pathname) ? "page" : "entity-page";
+  // The `/api/` rule comes *before* the navigation rule on purpose. A listener who
+  // searches, loses the network, and presses Back re-requests the search URL as a
+  // top-level *navigation*; classifying by mode first wrote that result set into the
+  // page cache, so a stale answer was served as if it were live - precisely what the
+  // deny rules exist to prevent. A path is a path however it was requested.
+  if (url.pathname.startsWith("/api/")) {
+    return CACHEABLE_API_PATHS.includes(url.pathname) ? "metadata" : "live-api";
   }
   if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
     return "hashed-asset";
   }
   if (url.pathname === "/icon.svg") return "hashed-asset";
-  if (url.pathname.startsWith("/api/")) {
-    return CACHEABLE_API_PATHS.includes(url.pathname) ? "metadata" : "live-api";
+  if (request.mode === "navigate") {
+    return PRERENDERED_PATHS.includes(url.pathname) ? "page" : "entity-page";
   }
   if (request.destination === "image") return "artwork";
   return "passthrough";
@@ -236,11 +261,21 @@ async function cacheFirst(request, cacheName, max) {
  *   1. the network answers - the response is returned and cached for next time;
  *   2. the network cannot answer and this exact route was cached before - that
  *      route's own document, which is the right content for the right URL;
- *   3. the network cannot answer and this route was never visited - the cached
- *      *shell document*, so the application still loads and the route renders its
- *      own state (a search page that cannot search, an error surface for an artist
- *      that cannot load). Failing the navigation instead hands the listener the
- *      browser's own error page: no navigation, no player, no way back.
+ *   3. the network cannot answer and this route was never visited - a *redirect to
+ *      the shell*, not the shell's document.
+ *
+ * The redirect matters. Serving one route's document under another route's URL was
+ * tried first, and it renders the wrong content at the wrong address: `/search`
+ * offline showed the Home route while the address bar still said `/search`, and no
+ * route ever rendered a state of its own. Redirecting to the shell makes the URL and
+ * the content agree - the listener lands in a working application, at the shell,
+ * with the connection banner stating that search and playback need a connection -
+ * rather than on the browser's own error page, which takes away the navigation, the
+ * player region, and any way back.
+ *
+ * A per-entity route uses these same three outcomes, so no entity's cached response
+ * can answer another entity's URL (spec `pwa` - "A per-entity route falls back to
+ * the shell, never to another entity").
  */
 async function navigationFirst(request) {
   const cache = await caches.open(CACHES.pages);
@@ -250,22 +285,17 @@ async function navigationFirst(request) {
   } catch (error) {
     const own = await cache.match(request);
     if (own) return own;
-    const shell = await cache.match(SHELL_URL);
-    if (shell) return shell;
+    const shell = await (await caches.open(CACHES.shell)).match(SHELL_URL);
+    if (shell) {
+      const target = new URL(SHELL_URL, self.location.origin).href;
+      // Already at the shell: serve it, or this would redirect to itself forever.
+      if (request.url === target) return shell;
+      return Response.redirect(target, 302);
+    }
     // Nothing cached at all: the failure is the honest answer, and the browser says so.
     throw error;
   }
 }
-
-/*
- * A per-entity navigation uses the same three outcomes as any other navigation
- * (`navigationFirst`): never another entity's response, and never a browser error
- * page. Offline, `/artist/someone` has no cached document of its own, so the shell
- * document boots the application and the route's own client-side data request is
- * what then fails, leaving the route's own "could not load" state on screen
- * (spec `pwa` - "A per-entity route falls back to the shell, never to another
- * entity").
- */
 
 /** Metadata: live when reachable, cached within its freshness bound otherwise. */
 async function metadataFirst(request) {
@@ -314,21 +344,23 @@ async function artworkFirst(request) {
  * ------------------------------------------------------------------ */
 
 self.addEventListener("install", (event) => {
-  // Take over as soon as the new worker is installed: a waiting worker is
-  // announced to the page, which decides when to activate it (design decision 6).
-  event.waitUntil(self.skipWaiting());
-  // One entry, fetched at install time: the shell document. Every per-entity
-  // navigation falls back to it (see `navigationFirst`), so without it the very
-  // first offline visit to an artist would hand the listener a browser error page
-  // if they had never landed on the site root. A single HTML document is the
-  // cheapest possible guarantee that "the app opens offline" is true from the
-  // first visit rather than from the second.
+  // Deliberately no `skipWaiting()` here. A worker that skips waiting never enters
+  // the `waiting` state, so the page is never told an update exists: the shell's
+  // notice would be unreachable, the version swap would be silent, and a listener
+  // mid-track would have the shell replaced under them (design decision 6, which
+  // also lists `skipWaiting`-on-install as the rejected alternative). A *first*
+  // install is unaffected: with no controller to replace, it activates on its own.
+  // One entry, fetched at install time: the shell document, in a cache of its own so
+  // the pages cache's FIFO bound can never evict the one entry every offline
+  // navigation falls back to. Without it the very first offline visit to an artist
+  // would hand the listener a browser error page if they had never landed on the
+  // site root.
   event.waitUntil(
     (async () => {
       try {
         const response = await fetch(SHELL_URL, { credentials: "same-origin" });
         if (response.ok) {
-          await store(CACHES.pages, SHELL_URL, response, MAX_ENTRIES.pages);
+          await store(CACHES.shell, SHELL_URL, response, MAX_ENTRIES.shell);
         }
       } catch {
         // An install that cannot reach the network still installs: the precache is
@@ -342,14 +374,19 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      // Retire this worker's *own* previous caches and nothing else. A cache this
-      // worker did not create is never deleted, and no storage API beyond Cache
-      // Storage is touched at all.
+      // Retire this worker's *own* previous caches and nothing else.
+      //
+      // The test is shape, not prefix: a name is this worker's only if it is
+      // `spotivibe-<a known cache name>-v<digits>`. A prefix match alone would let
+      // this worker delete a cache it never created that merely happened to start
+      // with `spotivibe-` - and no storage API beyond Cache Storage is touched at all,
+      // so this filter is the only code in the file that can delete anything.
       const owned = new Set(Object.values(CACHES));
+      const pattern = new RegExp(`^spotivibe-(?:${Object.keys(CACHES).join("|")})-v[0-9]+$`);
       const names = await caches.keys();
       await Promise.all(
         names
-          .filter((name) => name.startsWith("spotivibe-") && !owned.has(name))
+          .filter((name) => pattern.test(name) && !owned.has(name))
           .map((name) => caches.delete(name)),
       );
       await self.clients.claim();

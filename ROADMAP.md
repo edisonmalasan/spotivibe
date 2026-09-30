@@ -1030,27 +1030,37 @@ Lyrix is MIT licensed. If substantial Lyrix code is copied or modified rather th
   non-GET, `Range`, search, radio, and playlist requests on the network. Every
   cache has a named bound and FIFO eviction.
 - One ordered fallback chain for every same-origin navigation - network, then the
-  route's own cached document, then the cached shell document - so an offline visit
-  to an uncached route opens the application with its own honest state instead of
-  the browser's "no internet" page. Found and fixed by the browser evidence run.
-- The worker precaches exactly one entry (the shell document) at install, never
-  touches IndexedDB, and on activation deletes only its own versioned caches.
+  route's own cached document, then a *redirect* to the cached shell - so an offline
+  visit to an uncached route lands the listener in the application, at a URL that
+  matches what is shown, instead of on the browser's "no internet" page. It cannot
+  render the route they asked for, because a single offline shell has never been sent
+  that route; the connection banner says what needs a connection. Found and fixed by
+  the browser evidence run.
+- The worker precaches exactly one entry (the shell document) at install into a cache
+  of its own - so the page cache's FIFO bound cannot evict the one entry the offline
+  fallback depends on - never touches IndexedDB, and on activation deletes only caches
+  matching its own names and previous versions.
 - An install row in Settings that appears only where the platform offers
   installation, withdraws once asked, remembers a dismissal in a namespaced
   `localStorage` boot flag (not a dataset, not a backup field), and explains *Add
   to Home Screen* where iOS exposes no programmatic prompt.
-- An update notice in the shell on every route: a waiting worker is announced,
-  `SKIP_WAITING` activates it over a live message port, and the page reloads into
-  the new build.
+- An update notice in the shell on every route: a new worker installs into `waiting`
+  (install never calls `skipWaiting`, so a version swap is never silent), the notice
+  announces it with Later/Reload, `SKIP_WAITING` activates it over a live message
+  port, and the page reloads into the new build.
 - Honest offline copy: the connection banner names search and playback as needing a
   connection and states that the library, playlists, and history still work, with a
   negative test that scans every shipped source for offline-playback claims.
-- Verification: 2147 unit tests (new suites for the worker's shipped bytes, the
+- Verification: 2152 unit tests (new suites for the worker's shipped bytes, the
   manifest and decoded PNGs, the client modules, and the offline-claim scan; an M13
   architecture section for the worker, which no existing rule covered), plus a
   browser evidence run (`evidence/results.json`, `pass: true`, 34/34 steps, 5
   screenshots, 0 console errors) whose offline phase stops the production server so
-  "offline" means a genuinely unreachable origin.
+  "offline" means a genuinely unreachable origin. An independent verification pass then
+  compared the implementation against the change's own specification and found nine
+  further defects, all fixed - including a silent update swap, a stale search result
+  cached through a navigation, listener-derived seeds written to the metadata cache,
+  and an offline shell that was silently evicted after nineteen navigations.
 
 ---
 

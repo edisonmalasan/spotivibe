@@ -82,6 +82,15 @@ interface StubbedClients {
   matchAll: ReturnType<typeof vi.fn>;
 }
 
+/** The path a fetch argument names, however the caller expressed it. */
+function pathOf(input: unknown): string {
+  const url =
+    typeof input === "string"
+      ? new URL(input, ORIGIN)
+      : new URL(String((input as Request)?.url ?? input));
+  return url.pathname;
+}
+
 type WorkerHarness = {
   caches: ReturnType<typeof createCacheStorage>;
   fetchMock: ReturnType<typeof vi.fn>;
@@ -222,16 +231,44 @@ describe("the worker's request classification (task 2.1)", () => {
     expect(icon?.status).toBe(200);
   });
 
-  it("never answers a live question from cache", async () => {
+  it("never answers a live question from cache, even as a top-level navigation", async () => {
     // Search, radio and playlist are deliberate absences from the cacheable set.
     // `undefined` here is the worker's way of saying "not mine to handle": it does
     // not call `respondWith` at all, so the browser performs the request itself.
-    for (const path of ["/api/search?q=x", "/api/radio?kind=track", "/api/playlist?id=PL1"]) {
-      const response = await worker.respond(get(`${ORIGIN}${path}`, { mode: "cors" }));
-      expect(response, path).toBeUndefined();
-      expect(worker.caches.sizeOf("spotivibe-metadata-v1"), path).toBe(0);
-      expect(worker.caches.sizeOf("spotivibe-pages-v1"), path).toBe(0);
+    //
+    // The navigation mode is asserted as well, and it is the half that was wrong
+    // first: a listener who searched, lost the network, and pressed Back re-requests
+    // the search URL as a top-level *navigation*, and the classification table used
+    // to check `request.mode` before the `/api/` rule - so that result set was written
+    // into the *page* cache and served back as if it were live.
+    for (const mode of ["cors", "navigate"]) {
+      for (const path of ["/api/search?q=x", "/api/radio?kind=track", "/api/playlist?id=PL1"]) {
+        const response = await worker.respond(get(`${ORIGIN}${path}`, { mode }));
+        expect(response, `${mode} ${path}`).toBeUndefined();
+        expect(worker.caches.sizeOf("spotivibe-metadata-v1"), `${mode} ${path}`).toBe(0);
+        expect(worker.caches.sizeOf("spotivibe-pages-v1"), `${mode} ${path}`).toBe(0);
+      }
     }
+    // And the rule is "a path is a path", not "navigations are pages": a cacheable
+    // metadata endpoint is still classified by path when requested as a navigation.
+    const meta = await worker.respond(get(`${ORIGIN}/api/artist?name=x`, { mode: "navigate" }));
+    expect(meta).toBeDefined();
+    expect(worker.caches.sizeOf("spotivibe-metadata-v1")).toBe(1);
+  });
+
+  it("never caches /api/discover, whose seeds come from the listener's own data", async () => {
+    // `/api/discover` is keyless but not profile-free: the client sends `seeds`
+    // derived from liked tracks and listening events, and `languages` from
+    // preferences. The worker's justification for caching a metadata endpoint is
+    // that it carries no listener data, which is false for this one - so it is
+    // served live and left uncached rather than justified.
+    const response = await worker.respond(
+      get(`${ORIGIN}/api/discover?kind=trending&seeds=bjork,portishead&languages=en`, {
+        mode: "cors",
+      }),
+    );
+    expect(response).toBeUndefined();
+    expect(worker.caches.sizeOf("spotivibe-metadata-v1")).toBe(0);
   });
 
   it("passes a cross-origin non-image request straight through", async () => {
@@ -263,67 +300,90 @@ describe("the worker's request classification (task 2.1)", () => {
     // navigation, and the listener got the browser's own "no internet" page.
     // Path-tagged bodies so "this route's own document", "the shell" and "some
     // other route's document" are three distinguishable outcomes.
-    worker.fetchMock.mockImplementation(
-      async (request) => new Response(`body:${new URL(String(request.url)).pathname}`),
-    );
-    await worker.respond(get(`${ORIGIN}/`, { mode: "navigate" }));
+    worker.fetchMock.mockImplementation(async (input) => new Response(`body:${pathOf(input)}`));
+    // Install first, exactly as the browser does: that is when the shell document is
+    // precached, and the fallback has nothing to redirect to without it.
+    await worker.fire("install");
     await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
-    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(2);
+    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(1);
+    expect(worker.caches.sizeOf("spotivibe-shell-v1")).toBe(1);
 
     // The network is gone from here on.
     worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    // A route that was visited: its own document.
     const own = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
     expect(await own?.text()).toBe("body:/library");
-    const entity = await worker.respond(get(`${ORIGIN}/artist/Portishead`, { mode: "navigate" }));
-    expect(await entity?.text()).toBe("body:/");
-    const unvisited = await worker.respond(get(`${ORIGIN}/search`, { mode: "navigate" }));
-    expect(await unvisited?.text()).toBe("body:/");
+    // An unvisited route - per-entity or prerendered alike - is *redirected* to the
+    // shell rather than answered with the shell's document: serving one route's
+    // document under another route's URL renders the wrong content at the wrong
+    // address, which the evidence run observed (/search offline showed the Home route
+    // while the address bar still said /search).
+    for (const path of ["/artist/Portishead", "/search"]) {
+      const response = await worker.respond(get(`${ORIGIN}${path}`, { mode: "navigate" }));
+      expect(response?.status, path).toBe(302);
+      expect(response?.headers.get("location"), path).toBe(`${ORIGIN}/`);
+    }
     // Nothing was written for a response that never arrived.
-    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(2);
+    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(1);
   });
 
   it("never answers one route with another route's cached document", async () => {
     // The half of the chain that matters: the shell is a fallback, not a wildcard.
-    worker.fetchMock.mockImplementation(
-      async (request) => new Response(`body:${new URL(String(request.url)).pathname}`),
-    );
-    await worker.respond(get(`${ORIGIN}/`, { mode: "navigate" }));
+    worker.fetchMock.mockImplementation(async (input) => new Response(`body:${pathOf(input)}`));
+    await worker.fire("install");
     await worker.respond(get(`${ORIGIN}/history`, { mode: "navigate" }));
 
     worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     const neverVisited = await worker.respond(
       get(`${ORIGIN}/queue-insights`, { mode: "navigate" }),
     );
-    // The shell (`/`), never `/history`.
-    expect(await neverVisited?.text()).toBe("body:/");
+    // A redirect to the shell (`/`), never `/history`'s own document.
+    expect(neverVisited?.headers.get("location")).toBe(`${ORIGIN}/`);
+    expect(neverVisited?.status).toBe(302);
   });
 
-  it("precaches the shell document on install, so the fallback exists from visit one", async () => {
+  it("precaches the shell document on install, in a cache of its own", async () => {
     // Without this, the first offline visit to an artist by a listener who landed
     // straight on /library has no shell to serve and hands them a browser error
     // page instead of the application.
     await worker.fire("install");
-    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(1);
-    const cached = await worker.caches.open("spotivibe-pages-v1");
-    expect((await cached.keys()).map((key) => key.url)).toEqual([`${ORIGIN}/`]);
+    expect(worker.caches.sizeOf("spotivibe-shell-v1")).toBe(1);
+    const shell = await worker.caches.open("spotivibe-shell-v1");
+    expect((await shell.keys()).map((key) => key.url)).toEqual([`${ORIGIN}/`]);
+    // Not in the pages cache, which is bounded and FIFO: a shell entry stored there
+    // was evicted after about nineteen document navigations, quietly restoring the
+    // browser-error-page failure this precache exists to prevent.
+    expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(0);
 
     // And a network that is already gone at install time does not fail the install:
     // the worker's failure mode is "go to the network", never "deny the request".
     const offlineWorker = loadWorker();
     offlineWorker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     await offlineWorker.fire("install");
-    expect(offlineWorker.caches.sizeOf("spotivibe-pages-v1")).toBe(0);
-    expect(offlineWorker.scope.skipWaiting).toHaveBeenCalled();
+    expect(offlineWorker.caches.sizeOf("spotivibe-shell-v1")).toBe(0);
+  });
+
+  it("does not skip waiting on install, so an update can be announced", async () => {
+    // The first version called `skipWaiting()` here. That means a new worker never
+    // enters `waiting`, so the page is never told an update exists: the shell's
+    // notice was unreachable and the version swap was silent - which is the one thing
+    // design decision 6 exists to prevent, and the alternative decision 6 rejects.
+    await worker.fire("install");
+    expect(worker.scope.skipWaiting).not.toHaveBeenCalled();
+    // The listener's action is the only path to activation.
+    await worker.fire("message", { data: { type: "SKIP_WAITING" } });
+    expect(worker.scope.skipWaiting).toHaveBeenCalledTimes(1);
   });
 
   it("fails a per-entity navigation honestly when no shell is cached yet", async () => {
-    // Before the shell has ever been visited there is nothing to boot the
+    // Before the shell has ever been fetched there is nothing to open the
     // application with, and pretending otherwise would render a broken page.
     worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     await expect(
       worker.respond(get(`${ORIGIN}/artist/Bjork`, { mode: "navigate" })),
     ).rejects.toThrow();
     expect(worker.caches.sizeOf("spotivibe-pages-v1")).toBe(0);
+    expect(worker.caches.sizeOf("spotivibe-shell-v1")).toBe(0);
   });
 });
 
@@ -337,6 +397,28 @@ describe("bounded metadata and artwork (task 3.3)", () => {
     worker.fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
     const offline = await worker.respond(get(url, { mode: "cors" }));
     expect(await offline?.text()).toBe("live");
+  });
+
+  it("prefers the live metadata response over the cached one, and refreshes it", async () => {
+    // The original version of this assertion could not fail: both sides used the same
+    // literal body and the network was never reachable while a copy was cached, so a
+    // cache-first implementation passed it. Here the two bodies differ and the
+    // network is up, so "live wins" is a claim with a falsifier.
+    const url = `${ORIGIN}/api/album?artist=x&title=y`;
+    worker.fetchMock.mockImplementation(async (input) => new Response(`v1:${pathOf(input)}`));
+    await worker.respond(get(url, { mode: "cors" }));
+
+    worker.fetchMock.mockImplementation(async (input) => new Response(`v2:${pathOf(input)}`));
+    worker.fetchMock.mockClear();
+    const live = await worker.respond(get(url, { mode: "cors" }));
+    // The caller gets the live body, and the network really was used.
+    expect(await live?.text()).toBe("v2:/api/album");
+    expect(worker.fetchMock).toHaveBeenCalled();
+
+    // And the cache now holds the newer copy, not the older one.
+    const cache = await worker.caches.open("spotivibe-metadata-v1");
+    const [key] = await cache.keys();
+    expect(await (await cache.match(key!))?.text()).toBe("v2:/api/album");
   });
 
   it("stops using a metadata copy once it is past its freshness bound", async () => {
@@ -408,24 +490,59 @@ describe("the worker's storage discipline (task 2.2)", () => {
   });
 
   it("deletes only its own previous caches on activation", async () => {
+    // The previous version of this test fired `activate` against an empty Cache
+    // Storage and then matched two regexes in the source, so the deletion filter -
+    // the only code in the worker that can delete anything - was never exercised.
+    // Here the four cases are created and checked: a previous version of each of the
+    // worker's own caches (retired), a current-version one (kept), and a cache the
+    // worker does not own (kept, even though it shares the prefix).
     worker.caches.deleted.length = 0;
     await worker.fire("activate");
-    // Nothing to retire on a first activation, and nothing outside the namespace.
     expect(worker.caches.deleted).toEqual([]);
-    // A cache this worker does not own is left alone even when it is named
-    // similarly: the filter is the versioned namespace, not a prefix match.
-    expect(workerSource).toMatch(/name\.startsWith\("spotivibe-"\)/);
-    expect(workerSource).toMatch(/!owned\.has\(name\)/);
+
+    for (const name of [
+      "spotivibe-assets-v0",
+      "spotivibe-pages-v0",
+      "spotivibe-metadata-v0",
+      "spotivibe-shell-v0",
+      "spotivibe-assets-v1",
+      "spotivibe-not-ours",
+      "spotivibe-assets-v1-extra",
+      "some-other-app-cache",
+    ]) {
+      const cache = await worker.caches.open(name);
+      await cache.put(`${ORIGIN}/${name}`, new Response("x"));
+    }
+    await worker.fire("activate");
+
+    // Exactly the previous versions of this worker's own caches.
+    expect([...worker.caches.deleted].sort()).toEqual([
+      "spotivibe-assets-v0",
+      "spotivibe-metadata-v0",
+      "spotivibe-pages-v0",
+      "spotivibe-shell-v0",
+    ]);
+    // The current version survives, and so does everything the worker does not own -
+    // including a cache that merely shares the `spotivibe-` prefix, which is why the
+    // filter checks membership and not a prefix match.
+    for (const name of [
+      "spotivibe-assets-v1",
+      "spotivibe-not-ours",
+      "spotivibe-assets-v1-extra",
+      "some-other-app-cache",
+    ]) {
+      expect(worker.caches.deleted, name).not.toContain(name);
+      expect(await worker.caches.open(name).then((c) => c.keys()), name).toHaveLength(1);
+    }
   });
 
-  it("takes over on install and honours the page's activation message", async () => {
-    await worker.fire("install");
-    expect(worker.skipWaiting).toHaveBeenCalled();
-
+  it("honours the page's activation message", async () => {
     const postMessage = vi.fn();
     worker.clients.matchAll = vi.fn(async () => [{ postMessage }]);
     await worker.fire("message", { data: { type: "SKIP_WAITING" } });
-    expect(worker.skipWaiting).toHaveBeenCalledTimes(2);
+    // Once: install no longer activates on its own (that has its own test), so the
+    // message is the only path to activation.
+    expect(worker.skipWaiting).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenCalledWith({ type: "ACTIVATED" });
   });
 

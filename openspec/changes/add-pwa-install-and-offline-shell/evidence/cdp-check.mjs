@@ -93,7 +93,10 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function findBrowser() {
   const found = BROWSER_CANDIDATES.find((candidate) => existsSync(candidate));
-  if (!found) throw new Error("No Edge/Chrome executable found (set SPOTIVIBE_BROWSER_PATH).");
+  if (!found)
+    throw new Error(
+      "No Edge/Chrome executable found (set SPOTIVIBE_BROWSER_PATH).",
+    );
   return found;
 }
 
@@ -126,13 +129,26 @@ function extractConstants() {
       banner,
       "offline banner's remaining clause",
     ),
-    databaseName: pick(/DATABASE_NAME = "([^"]+)"/, schema, "IndexedDB database name"),
-    workerVersion: pick(/const VERSION = "([^"]+)"/, worker, "worker cache version"),
+    databaseName: pick(
+      /DATABASE_NAME = "([^"]+)"/,
+      schema,
+      "IndexedDB database name",
+    ),
+    workerVersion: pick(
+      /const VERSION = "([^"]+)"/,
+      worker,
+      "worker cache version",
+    ),
+    // Every bound the worker declares, read from the file. The offline phase asserts
+    // each observed cache against the bound for its own name and fails on a name it
+    // does not recognize, which is how the shell cache (added later) was caught
+    // missing from this list rather than silently exempted.
     cacheBounds: {
       assets: Number(pick(/assets:\s*(\d+)/, worker, "assets bound")),
       pages: Number(pick(/pages:\s*(\d+)/, worker, "pages bound")),
       metadata: Number(pick(/metadata:\s*(\d+)/, worker, "metadata bound")),
       artwork: Number(pick(/artwork:\s*(\d+)/, worker, "artwork bound")),
+      shell: Number(pick(/shell:\s*(\d+)/, worker, "shell bound")),
     },
   };
 }
@@ -182,8 +198,17 @@ function startServer() {
   // the run reported a cache miss as a network success.
   const child = spawn(
     process.execPath,
-    [join(FRONTEND, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)],
-    { cwd: FRONTEND, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" },
+    [
+      join(FRONTEND, "node_modules", "next", "dist", "bin", "next"),
+      "start",
+      "-p",
+      String(PORT),
+    ],
+    {
+      cwd: FRONTEND,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    },
   );
   const stream = createWriteStream(log, { flags: "a" });
   child.stdout.pipe(stream);
@@ -195,7 +220,9 @@ function startServer() {
 function stopServer(child) {
   if (!child?.pid) return;
   if (process.platform === "win32") {
-    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+    });
   } else {
     try {
       process.kill(-child.pid, "SIGKILL");
@@ -246,8 +273,14 @@ async function main() {
     pass: false,
   };
   const step = (name, ok, detail = "") => {
-    results.steps.push({ name, ok: !!ok, detail: String(detail).slice(0, 600) });
-    console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+    results.steps.push({
+      name,
+      ok: !!ok,
+      detail: String(detail).slice(0, 600),
+    });
+    console.log(
+      `${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`,
+    );
     return !!ok;
   };
 
@@ -269,7 +302,14 @@ async function main() {
     new Promise((resolveSend, reject) => {
       const id = ++seq;
       pending.set(id, { resolve: resolveSend, reject });
-      ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+      ws.send(
+        JSON.stringify({
+          id,
+          method,
+          params,
+          ...(sessionId ? { sessionId } : {}),
+        }),
+      );
     });
   const applyNetworkState = async (sessionId) => {
     // Emulation supplies the *page's* offline signal, because the app derives its
@@ -286,7 +326,8 @@ async function main() {
   /** Take the origin away (or give it back) for the page, the worker, and all iframes. */
   const setOffline = async (offline) => {
     originDown = offline;
-    for (const sessionId of sessions) await applyNetworkState(sessionId).catch(() => {});
+    for (const sessionId of sessions)
+      await applyNetworkState(sessionId).catch(() => {});
     if (EXTERNAL) return;
     if (offline) {
       stopServer(server?.child);
@@ -328,14 +369,18 @@ async function main() {
         "SPOTIVIBE_EXTERNAL=1: the origin stayed up and 'offline' is CDP network emulation, which does not reach a service worker's own fetches. The metadata-fallback step is therefore weaker in this mode.";
     } else {
       if (!existsSync(join(FRONTEND, ".next"))) {
-        throw new Error("No production build found — run `cd frontend && npm run build` first.");
+        throw new Error(
+          "No production build found — run `cd frontend && npm run build` first.",
+        );
       }
       server = startServer();
       results.notes.offlineMechanism =
         "The harness started the production server and stopped it (process tree) for the offline phase, so the origin refuses connections for the service worker as well as the page. CDP network emulation is additionally applied to the page, because the app derives its connection state from navigator.onLine and a stopped origin does not change that; results.notes.originRefusedConnections records that the port really was refusing.";
     }
     if (!(await waitForServer())) {
-      throw new Error(`Production server not reachable at ${ORIGIN}. See evidence/server.log.`);
+      throw new Error(
+        `Production server not reachable at ${ORIGIN}. See evidence/server.log.`,
+      );
     }
 
     // ---- 1. the manifest and its icons, fetched by the harness itself --------
@@ -343,7 +388,10 @@ async function main() {
     const manifestText = await manifestResponse.text();
     step(
       "the manifest is served with a manifest content type",
-      manifestResponse.ok && /json|manifest/.test(manifestResponse.headers.get("content-type") ?? ""),
+      manifestResponse.ok &&
+        /json|manifest/.test(
+          manifestResponse.headers.get("content-type") ?? "",
+        ),
       `${manifestResponse.status} ${manifestResponse.headers.get("content-type")}`,
     );
     let manifest = null;
@@ -368,8 +416,8 @@ async function main() {
           theme: manifest.theme_color,
         }),
       );
-      const installable = (manifest.icons ?? []).filter((icon) =>
-        Number.parseInt(String(icon.sizes), 10) >= 144,
+      const installable = (manifest.icons ?? []).filter(
+        (icon) => Number.parseInt(String(icon.sizes), 10) >= 144,
       );
       const hasMaskable = (manifest.icons ?? []).some((icon) =>
         String(icon.purpose ?? "").includes("maskable"),
@@ -395,16 +443,25 @@ async function main() {
         );
       }
       const lowered = JSON.stringify(manifest).toLowerCase();
-      const brands = ["spotify", "soundcloud", "bandcamp", "deezer", "tidal"].filter((brand) =>
-        lowered.includes(brand),
+      const brands = [
+        "spotify",
+        "soundcloud",
+        "bandcamp",
+        "deezer",
+        "tidal",
+      ].filter((brand) => lowered.includes(brand));
+      step(
+        "the served manifest carries no third-party brand",
+        brands.length === 0,
+        brands.join(","),
       );
-      step("the served manifest carries no third-party brand", brands.length === 0, brands.join(","));
     }
     const workerResponse = await fetch(`${ORIGIN}/sw.js`);
     const workerText = await workerResponse.text();
     step(
       "the worker is served with a JavaScript content type and a body",
-      workerResponse.ok && /javascript/.test(workerResponse.headers.get("content-type") ?? ""),
+      workerResponse.ok &&
+        /javascript/.test(workerResponse.headers.get("content-type") ?? ""),
       `${workerResponse.status} ${workerResponse.headers.get("content-type")} ${workerText.length}B`,
     );
 
@@ -424,7 +481,9 @@ async function main() {
       { stdio: "ignore" },
     );
 
-    const version = await waitForJson(`http://127.0.0.1:${CDP_PORT}/json/version`);
+    const version = await waitForJson(
+      `http://127.0.0.1:${CDP_PORT}/json/version`,
+    );
     results.browser = version.Browser ?? "unknown";
     // Browser-level connection, so the service-worker target is attachable.
     ws = new WebSocket(version.webSocketDebuggerUrl);
@@ -438,7 +497,10 @@ async function main() {
         const handler = pending.get(message.id);
         if (!handler) return;
         pending.delete(message.id);
-        if (message.error) handler.reject(new Error(`${message.method}: ${message.error.message}`));
+        if (message.error)
+          handler.reject(
+            new Error(`${message.method}: ${message.error.message}`),
+          );
         else handler.resolve(message.result);
       } else {
         for (const listener of listeners) listener(message);
@@ -448,7 +510,9 @@ async function main() {
     const send = (method, params = {}) => sendTo("", method, params);
     const on = (method, handler) =>
       listeners.push(
-        (message) => message.method === method && handler(message.params, message.sessionId),
+        (message) =>
+          message.method === method &&
+          handler(message.params, message.sessionId),
       );
 
     // The page session is chosen by *target id*, never by "the first page that
@@ -472,7 +536,8 @@ async function main() {
         url: String(info.url ?? "").slice(0, 120),
       });
       try {
-        if (info.type === "page") pageSessions.set(String(info.targetId ?? ""), sessionId);
+        if (info.type === "page")
+          pageSessions.set(String(info.targetId ?? ""), sessionId);
         await sendTo(sessionId, "Network.enable");
         await applyNetworkState(sessionId);
         if (info.type === "page") {
@@ -487,7 +552,8 @@ async function main() {
           flatten: true,
         });
       } catch (error) {
-        results.notes.networkEmulationErrors = results.notes.networkEmulationErrors ?? [];
+        results.notes.networkEmulationErrors =
+          results.notes.networkEmulationErrors ?? [];
         results.notes.networkEmulationErrors.push({
           session: sessionId,
           error: String(error?.message ?? error).slice(0, 160),
@@ -506,23 +572,35 @@ async function main() {
         returnByValue: true,
       });
       if (response.exceptionDetails) {
-        throw new Error(response.exceptionDetails.exception?.description ?? "evaluate failed");
+        throw new Error(
+          response.exceptionDetails.exception?.description ?? "evaluate failed",
+        );
       }
       return response.result.value;
     };
-    const waitFor = async (description, expression, predicate, timeoutMs = 20000) => {
+    const waitFor = async (
+      description,
+      expression,
+      predicate,
+      timeoutMs = 20000,
+    ) => {
       const started = Date.now();
       let last = null;
       while (Date.now() - started < timeoutMs) {
         try {
-          last = typeof expression === "function" ? await expression() : await evaluate(expression);
+          last =
+            typeof expression === "function"
+              ? await expression()
+              : await evaluate(expression);
           if (predicate(last)) return last;
         } catch {
           /* navigation in flight — retry */
         }
         await delay(250);
       }
-      throw new Error(`Timed out waiting for ${description} (last: ${JSON.stringify(last)})`);
+      throw new Error(
+        `Timed out waiting for ${description} (last: ${JSON.stringify(last)})`,
+      );
     };
     const shoot = async (file, note) => {
       await delay(600);
@@ -552,7 +630,9 @@ async function main() {
         })()`,
       );
       if (!point || point.w === 0 || point.h === 0) {
-        throw new Error(`Element not clickable: ${selector} → ${JSON.stringify(point)}`);
+        throw new Error(
+          `Element not clickable: ${selector} → ${JSON.stringify(point)}`,
+        );
       }
       for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
         await page("Input.dispatchMouseEvent", {
@@ -586,10 +666,17 @@ async function main() {
     });
     on("Log.entryAdded", (params) => {
       if (params.entry.level !== "error") return;
-      const text = `log: ${params.entry.text} [${String(params.entry.url ?? "")}]`.slice(0, 300);
-      const netCut = /net::ERR_|Failed to load resource/.test(params.entry.text);
+      const text =
+        `log: ${params.entry.text} [${String(params.entry.url ?? "")}]`.slice(
+          0,
+          300,
+        );
+      const netCut = /net::ERR_|Failed to load resource/.test(
+        params.entry.text,
+      );
       const statusErr = /status of [45]\d\d/.test(params.entry.text);
-      if (originDown && (netCut || statusErr)) results.notes.disclosures.offlineWindow.push(text);
+      if (originDown && (netCut || statusErr))
+        results.notes.disclosures.offlineWindow.push(text);
       else results.consoleErrors.push(text);
     });
     // Document responses are recorded with `fromServiceWorker`, because "the page
@@ -602,7 +689,8 @@ async function main() {
       };
     });
     on("Network.responseReceived", (params, sessionId) => {
-      const pendingDocument = results.notes.pendingDocuments?.[params.requestId];
+      const pendingDocument =
+        results.notes.pendingDocuments?.[params.requestId];
       if (!pendingDocument || !sessionId) return;
       results.notes.documentResponses.push({
         path: pendingDocument.url.split("?")[0],
@@ -617,13 +705,17 @@ async function main() {
       waitForDebuggerOnStart: false,
       flatten: true,
     });
-    const created = await send("Target.createTarget", { url: `${ORIGIN}/library` });
+    const created = await send("Target.createTarget", {
+      url: `${ORIGIN}/library`,
+    });
     pageTargetId = created.targetId;
     // The browser's own blank tab is closed so nothing else can be mistaken for
     // the application page, and so the run leaves no stray window behind.
     for (const target of results.notes.attachedTargets) {
       if (target.type === "page" && target.targetId !== pageTargetId) {
-        await send("Target.closeTarget", { targetId: target.targetId }).catch(() => {});
+        await send("Target.closeTarget", { targetId: target.targetId }).catch(
+          () => {},
+        );
       }
     }
     await waitFor(
@@ -654,9 +746,10 @@ async function main() {
       deviceScaleFactor: 1,
       mobile: false,
     });
-    await page("Page.setDownloadBehavior", { behavior: "allow", downloadPath: downloadDir }).catch(
-      () => {},
-    );
+    await page("Page.setDownloadBehavior", {
+      behavior: "allow",
+      downloadPath: downloadDir,
+    }).catch(() => {});
 
     // ---- 2. the worker registers, activates, and controls exactly one page ---
     const controller = await waitFor(
@@ -687,13 +780,17 @@ async function main() {
         };
       })()`,
     );
+    const controlCount = await evaluate(
+      `(async () => (await navigator.serviceWorker.getRegistrations()).length)()`,
+    );
     step(
-      "exactly one worker controls the page and it is the app's own sw.js",
+      "exactly one registration controls the page, and it is the app's own sw.js",
       control.controlled === true &&
         String(control.controllerScript ?? "").endsWith("/sw.js") &&
         control.waiting === false &&
-        control.installing === false,
-      JSON.stringify(control),
+        control.installing === false &&
+        controlCount === 1,
+      `registrations=${controlCount} ${JSON.stringify(control)}`,
     );
     const workerTargets = results.notes.attachedTargets.filter(
       (target) => target.type === "service_worker",
@@ -702,7 +799,10 @@ async function main() {
       "the worker target is attached to this run, so 'offline' includes it",
       workerTargets.length >= 1,
       `types: ${[...new Set(results.notes.attachedTargets.map((t) => t.type))].join(",")} | ` +
-        workerTargets.map((t) => t.url.replace(ORIGIN, "")).join(",").slice(0, 120),
+        workerTargets
+          .map((t) => t.url.replace(ORIGIN, ""))
+          .join(",")
+          .slice(0, 120),
     );
 
     // ---- 3. the local pages are visited online, then rendered with the origin down ---------------------
@@ -729,15 +829,26 @@ async function main() {
         return out;
       })()`,
     );
-    results.notes.cacheReport.push({ phase: "after visiting every local page", entries: filledAfterVisits });
+    results.notes.cacheReport.push({
+      phase: "after visiting every local page",
+      entries: filledAfterVisits,
+    });
     const cacheNames = Object.keys(filledAfterVisits);
     step(
       "the worker's caches are its versioned ones, and each stayed within its bound",
       cacheNames.length > 0 &&
-        cacheNames.every((name) => name.startsWith(`spotivibe-`) && name.endsWith(`-${COPY.workerVersion}`)) &&
-        Object.entries(filledAfterVisits).every(
-          ([name, count]) => count <= (COPY.cacheBounds[basisOf(name)] ?? Number.POSITIVE_INFINITY),
-        ),
+        cacheNames.every(
+          (name) =>
+            name.startsWith(`spotivibe-`) &&
+            name.endsWith(`-${COPY.workerVersion}`),
+        ) &&
+        // An unrecognized cache name fails the check rather than being exempt: the
+        // first version used `?? Infinity`, so a cache the reader did not expect
+        // passed as "within its bound" without ever being compared to one.
+        Object.entries(filledAfterVisits).every(([name, count]) => {
+          const bound = COPY.cacheBounds[basisOf(name)];
+          return typeof bound === "number" && count <= bound;
+        }),
       JSON.stringify(filledAfterVisits),
     );
 
@@ -757,7 +868,24 @@ async function main() {
             tx.objectStore("likedTracks").put({
               trackId: "m13-evidence-track",
               likedAt: Date.now(),
-              track: { providerId: "m13-evidence-track", title: "Evidence", artists: [], duration: 1 },
+              // The shape the repository writes. The previous version of this seed had
+              // no artists and no id - not a record the application can produce -
+              // which crashed /library/liked into the route error boundary while
+              // offline, and the run scored that a pass. The surface now tolerates such
+              // a row (with its own regression test in tests/liked-songs.test.tsx), but
+              // the harness should not be manufacturing one.
+              track: {
+                id: "youtube:m13-evidence-track",
+                providerId: "m13-evidence-track",
+                title: "Evidence track",
+                artists: [{ id: "m13-artist", providerId: "m13-artist", name: "M13 Evidence" }],
+                album: null,
+                duration: 1,
+                artwork: [],
+                category: "music",
+                available: true,
+                explicit: false,
+              },
             });
             tx.oncomplete = () => { db.close(); resolve(true); };
             tx.onerror = () => { db.close(); resolve(false); };
@@ -811,17 +939,23 @@ async function main() {
       })()`,
     );
     step(
-      "IndexedDB data survives the worker's activation",
+      "IndexedDB data survives the worker's activation handshake and the reload into it",
       survived.hasEvidenceRow === true,
       JSON.stringify(survived),
     );
-    const cachesAfter = await evaluate(`(async () => (await caches.keys()).sort())()`);
+    const cachesAfter = await evaluate(
+      `(async () => (await caches.keys()).sort())()`,
+    );
     step(
       "the worker deleted nothing outside its own versioned caches",
-      (cachesAfter ?? []).length > 0 && (cachesAfter ?? []).every((name) => name.startsWith("spotivibe-")),
+      (cachesAfter ?? []).length > 0 &&
+        (cachesAfter ?? []).every((name) => name.startsWith("spotivibe-")),
       (cachesAfter ?? []).join(", ") || "(none)",
     );
-    results.notes.cacheReport.push({ phase: "after activation", entries: cachesAfter });
+    results.notes.cacheReport.push({
+      phase: "after activation",
+      entries: cachesAfter,
+    });
 
     // ---- 5. the install affordance, driven by a trusted click -------------
     // The platform's own `beforeinstallprompt` is not something a harness can
@@ -861,7 +995,11 @@ async function main() {
     );
     const before = results.steps.length;
     await trustedClick('[data-testid="install-row"] button').catch((error) => {
-      step("the install row offers a clickable control", false, String(error).slice(0, 200));
+      step(
+        "the install row offers a clickable control",
+        false,
+        String(error).slice(0, 200),
+      );
     });
     await delay(1200);
     const rowAfter = await evaluate(
@@ -871,11 +1009,14 @@ async function main() {
       }))()`,
     );
     step(
-      "the install row appears where installation is offered and stops offering once installed",
+      "the install row appears where installation is offered, and withdraws once asked",
       rowPresent === true && rowAfter.row === false,
       `rowBefore=${rowPresent} rowAfter=${rowAfter.row} prompted=${rowAfter.prompted} (steps since: ${results.steps.length - before})`,
     );
-    await shoot("settings-install-row.png", "Settings after the install affordance resolved");
+    await shoot(
+      "settings-install-row.png",
+      "Settings after the install affordance resolved",
+    );
 
     // The online half of the metadata probe (step 8 runs its assertion later).
     // It happens here because the worker's cache can only get a copy from a
@@ -888,8 +1029,14 @@ async function main() {
         return { status: res.status, length: body.length, cachedAt: res.headers.get("x-spotivibe-cached-at") };
       })()`,
     );
+    // Both halves are recorded; the assertion in the offline phase reads the online
+    // half from here.
     results.notes.metadataProbe = { online: onlineMeta };
 
+    // The document-response list spans both phases, so the offline phase needs its
+    // own marker: without it, an offline phase where *every* navigation failed would
+    // still find the online entries (all fromServiceWorker) and pass.
+    results.notes.offlinePhaseStart = results.notes.documentResponses.length;
     await setOffline(true);
     step(
       "the origin really is refusing connections, so 'offline' is not an emulation",
@@ -898,30 +1045,52 @@ async function main() {
     );
     for (const pagePath of offlinePages) {
       await goto(pagePath.path);
+      // `main` is the route's own subtree, so an application error boundary inside it
+      // fails this check. The previous version scanned the whole document for shell
+      // landmarks, which a crash page still has - `/library/liked` rendered the
+      // route error boundary ("Something went wrong") and was scored a pass.
       const rendered = await evaluate(
         `(() => {
-          const body = document.body;
-          if (!body) return { ok: false, reason: "no body" };
-          const text = (body.innerText || "").replace(/\\s+/g, " ").trim();
-          const shell = !!document.querySelector('[data-testid="connection-banner"], main, nav');
-          return { ok: text.length > 20 && shell, chars: text.length, sample: text.slice(0, 80) };
+          const main = document.querySelector("main");
+          if (!main) return { ok: false, reason: "no main" };
+          const text = (main.innerText || "").replace(/\\s+/g, " ").trim();
+          const crashed = /something went wrong|went wrong|an error occurred/i.test(text);
+          return {
+            ok: text.length > 20 && !crashed,
+            crashed,
+            chars: text.length,
+            sample: text.slice(0, 90),
+          };
         })()`,
       );
       results.notes.offlinePages = results.notes.offlinePages ?? [];
       results.notes.offlinePages.push({ path: pagePath.path, ...rendered });
-      step(`${pagePath.path} renders offline`, rendered.ok === true, `${rendered.chars ?? 0} chars`);
+      step(
+        `${pagePath.path} renders offline, from its own stored data`,
+        rendered.ok === true,
+        `${rendered.chars ?? 0} chars in the route's own subtree${rendered.crashed ? " (CRASHED: error boundary)" : ""}: ${rendered.sample ?? rendered.reason ?? ""}`.slice(
+          0,
+          220,
+        ),
+      );
     }
-    const documentFromWorker = results.notes.documentResponses
-      .filter((entry) => offlinePages.some((p) => p.path === entry.path))
-      .every((entry) => entry.fromServiceWorker);
+    const offlineResponses = results.notes.documentResponses.slice(
+      results.notes.offlinePhaseStart ?? 0,
+    );
+    const documentFromWorker =
+      offlineResponses.length >= offlinePages.length &&
+      offlineResponses
+        .filter((entry) => offlinePages.some((p) => p.path === entry.path))
+        .every((entry) => entry.fromServiceWorker);
     step(
       "every offline document response was served by the service worker",
       documentFromWorker,
-      JSON.stringify(
-        results.notes.documentResponses.filter((entry) =>
-          offlinePages.some((p) => p.path === entry.path),
-        ),
-      ).slice(0, 400),
+      `offline responses: ${offlineResponses.length} of ${results.notes.documentResponses.length} total; ` +
+        JSON.stringify(
+          offlineResponses.filter((entry) =>
+            offlinePages.some((p) => p.path === entry.path),
+          ),
+        ).slice(0, 320),
     );
     const offlineBanner = await evaluate(
       `(() => {
@@ -935,13 +1104,23 @@ async function main() {
     step(
       "the offline banner names the capabilities that need a connection",
       typeof offlineBanner.text === "string" &&
-        offlineBanner.text.toLowerCase().includes(COPY.offlineUnavailable.toLowerCase()) &&
-        offlineBanner.text.toLowerCase().includes(COPY.offlineRemains.toLowerCase()),
+        offlineBanner.text
+          .toLowerCase()
+          .includes(COPY.offlineUnavailable.toLowerCase()) &&
+        offlineBanner.text
+          .toLowerCase()
+          .includes(COPY.offlineRemains.toLowerCase()),
       `navigator.onLine=${offlineBanner.onLine} text=${String(offlineBanner.text).slice(0, 180)}`,
     );
-    await shoot("offline-settings.png", "Settings rendered with the network cut, banner visible");
+    await shoot(
+      "offline-settings.png",
+      "Settings rendered with the network cut, banner visible",
+    );
     await goto("/library");
-    await shoot("offline-library.png", "Library rendered from the worker's cache while offline");
+    await shoot(
+      "offline-library.png",
+      "Library rendered from the worker's cache while offline",
+    );
 
     // ---- 7. a per-entity route falls back to the shell, never to another entity ----
     // Amended behavior: the shell document is the fallback, so the application
@@ -953,10 +1132,17 @@ async function main() {
     const entityDocument = results.notes.documentResponses
       .slice(beforeEntity)
       .find((entry) => entry.path === "/artist/m13-never-visited-entity");
+    // The route's own subtree again: the banner is shell-global, so scanning the whole
+    // document let the banner satisfy a claim about the route. With the redirect, the
+    // expectation is now simply that the listener landed on the shell at the shell's
+    // own URL - which is what "URL and content agree" means.
     const entityUi = await evaluate(
       `(() => {
-        const text = (document.body.innerText || "").replace(/\\s+/g, " ");
+        const main = document.querySelector("main");
+        const text = (main?.innerText || "").replace(/\\s+/g, " ");
         return {
+          landedOnShell: location.pathname === "/",
+          url: location.pathname,
           chars: text.length,
           hasAppChrome: !!document.querySelector('[data-testid="desktop-shell"], nav, [data-testid="bottom-nav"], [role="search"]'),
           namesTheProblem: /could not|unable|error|try again|unavailable|went wrong|failed|offline|connection/i.test(text),
@@ -965,19 +1151,35 @@ async function main() {
         };
       })()`,
     );
+    // The 302 itself is not attributed to the original request in
+    // `documentResponses` (no `responseReceived` carries that request id), so the
+    // evidence is the *landing*: the shell document, served by the worker, at the
+    // shell's own URL. Asserting the redirect's own response would be asserting a CDP
+    // bookkeeping detail rather than a behavior.
+    const shellLanding = results.notes.documentResponses
+      .slice(beforeEntity)
+      .find((entry) => entry.path === "/");
     step(
-      "a per-entity route offline is served the shell, from the worker, not a browser error page",
-      entityDocument?.fromServiceWorker === true &&
+      "an uncached entity route offline is redirected to the shell, not to a browser error page",
+      shellLanding?.fromServiceWorker === true &&
         entityUi.hasAppChrome === true &&
         entityUi.browserErrorPage === false,
-      `fromServiceWorker=${entityDocument?.fromServiceWorker ?? "no document response"} ${JSON.stringify(entityUi).slice(0, 200)}`,
+      `shellLanding fromServiceWorker=${shellLanding?.fromServiceWorker ?? "no document response"} ${JSON.stringify(entityUi).slice(0, 200)}`,
     );
     step(
-      "the offline per-entity route says why, inside the application",
-      entityUi.chars > 20 && entityUi.namesTheProblem === true,
-      `${entityUi.chars} chars, title is the app's: ${entityUi.mentionsSpotivibe}`,
+      "the redirect lands on the shell at the shell's own URL, so URL and content agree",
+      entityUi.landedOnShell === true &&
+        entityUi.chars > 20 &&
+        entityUi.mentionsSpotivibe,
+      `landed at ${entityUi.url} with ${entityUi.chars} chars of the app's own content`,
     );
-    await shoot("offline-entity-route.png", "An uncached artist route while offline: the app, with its own error state");
+    // One screenshot for the shared destination: both unvisited routes land on the
+    // same shell by design, and two byte-identical images presented as two pieces of
+    // evidence is how a reader is misled.
+    await shoot(
+      "offline-unvisited-route.png",
+      "An unvisited route while offline: redirected to the shell, inside the application",
+    );
     await delay(500);
     await goto("/library");
     await delay(500);
@@ -999,6 +1201,7 @@ async function main() {
         return { status: res.status, length: body.length, cachedAt: res.headers.get("x-spotivibe-cached-at") };
       })()`,
     );
+    results.notes.metadataProbe.offline = offlineMeta;
     step(
       "a previously fetched metadata response is served while offline, from the cache",
       onlineMeta.status === 200 &&
@@ -1027,10 +1230,10 @@ async function main() {
     await goto("/search");
     await delay(1500);
     // `/search` was deliberately never visited while the origin was up, so this
-    // navigation is the "unvisited route" case: the worker serves the shell, the
-    // application loads, and the page says it cannot search. Before the fallback
-    // chain was unified this navigation failed outright and Chrome's own error
-    // page took over - which is the bug the evidence run found.
+    // navigation is the "unvisited route" case: the worker redirects to the shell,
+    // and the listener lands on a working application that says what is unavailable.
+    // Before the fallback chain existed this navigation failed outright and Chrome's
+    // own error page took over - the bug the evidence run found.
     const searchDocument = results.notes.documentResponses
       .slice(beforeSearch)
       .find((entry) => entry.path === "/search");
@@ -1042,30 +1245,42 @@ async function main() {
           sample: text.slice(0, 140),
           mentionsConnection: /connection|offline|reconnect/i.test(text),
           ownErrorState: !!document.querySelector('[data-testid="search-error"], [role="alert"]') || /went wrong|try again|could not|unable to load|offline|no connection/i.test(text),
-          // What the shell document actually rendered: this is the known cost of a
-          // single offline shell (see notes.disclosures.shellContent), recorded
-          // rather than glossed over.
-          heading: (document.querySelector("main h1, main h2, h1, h2")?.innerText ?? "").trim().slice(0, 60),
+          // What actually rendered, recorded rather than glossed over (see
+          // notes.disclosures.shellContent). Scoped to the main region: a document-wide heading
+          // selector picked the sidebar and recorded "Your Library" for a page whose
+          // own content read "Home Trending Now ...", so the recorded field
+          // contradicted the recorded sample.
+          heading: (document.querySelector("main h1, main h2")?.innerText ?? "").trim().slice(0, 60),
           hasAppChrome: !!document.querySelector('nav, [data-testid="connection-banner"], [role="search"]'),
+          landedOnShell: location.pathname === "/",
+          url: location.pathname,
           browserErrorPage: /no internet|err_|chrome-error/i.test(location.href),
         };
       })()`,
     );
+    const searchLanding = results.notes.documentResponses
+      .slice(beforeSearch)
+      .find((entry) => entry.path === "/");
     step(
-      "an unvisited route offline opens the application, not the browser's error page",
-      searchDocument?.fromServiceWorker === true &&
+      "an unvisited route offline is redirected to the shell, not to the browser's error page",
+      searchLanding?.fromServiceWorker === true &&
         searchOffline.browserErrorPage === false &&
-        searchOffline.hasAppChrome === true,
-      `fromServiceWorker=${searchDocument?.fromServiceWorker ?? "no document response"} ${JSON.stringify(searchOffline).slice(0, 220)}`,
+        searchOffline.hasAppChrome === true &&
+        searchOffline.landedOnShell === true,
+      `shellLanding fromServiceWorker=${searchLanding?.fromServiceWorker ?? "no document response"} landed=${searchOffline.url}`,
     );
     step(
       "the unvisited route opens a working application that states what is unavailable",
       searchOffline.chars > 20 &&
         searchOffline.mentionsConnection === true &&
-        (searchOffline.ownErrorState === true || searchOffline.honestShell === true),
+        (searchOffline.ownErrorState === true ||
+          searchOffline.honestShell === true),
       JSON.stringify(searchOffline).slice(0, 260),
     );
-    await shoot("offline-search.png", "Search while offline: an honest failure, not a hang");
+    await shoot(
+      "offline-search-fails.png",
+      "A search request while offline: rejected by the worker, never answered from cache",
+    );
 
     // ---- 9. the data controls remain usable with the network cut -----------
     await delay(600);
@@ -1104,9 +1319,9 @@ async function main() {
     );
 
     results.notes.disclosures.shellContent =
-      "An uncached route offline is served the cached shell document, which was rendered for the site root. The application therefore boots and shows the Home route's content at the requested URL (observed: /search rendered the Home shell), and the connection banner states that search and playback need a connection. This is the known cost of a single offline shell: the listener gets a working application and an honest message instead of a browser error page, but not the exact route they asked for. Serving a per-route offline document would require a build-time asset manifest, which this application has no honest way to produce for its dynamic routes.";
+      "An uncached route offline is *redirected* to the cached shell, so the listener lands on the Home route at the Home route's own URL with the connection banner stating that search and playback need a connection. The earlier design served the shell's document under the requested URL, which rendered the Home content at, say, /search; the browser evidence run caught that mismatch and the worker now redirects instead, so URL and content agree. The cost is unchanged in substance: a listener who opens an unvisited route offline gets the application at its shell, not the route they asked for, because a per-route offline document would need a build-time asset manifest this application has no honest way to produce for its dynamic routes.";
     results.notes.disclosures.notVerifiableHere.push(
-      "A waiting worker needs a second, different build installed behind the current one, which a single static build cannot produce. The activation handshake is exercised for real (SKIP_WAITING → ACTIVATED over a live message port) and the waiting-worker state machine is covered by frontend/tests/pwa-client.test.tsx.",
+      "A waiting worker needs a second, different build installed behind the current one, which a single static build cannot produce, so no real `activate` event fires during this run: SKIP_WAITING on an already-active worker is a no-op and the cache-retirement filter is therefore exercised by frontend/tests/pwa-service-worker.test.ts against the shipped bytes, not here. The handshake itself is exercised for real (SKIP_WAITING → ACTIVATED over a live message port) and the waiting-worker state machine is covered by frontend/tests/pwa-client.test.tsx.",
       "Installability as Chrome's install UI presents it, and real iOS/Android home-screen behavior: the manifest, the icon set and the iOS document metadata are verified as served, but a headless desktop browser cannot install to a home screen.",
       "Offline artwork: no artwork is displayed on the pages this run visits, so the artwork cache is exercised by frontend/tests/pwa-service-worker.test.ts (serving, background revalidation and eviction) rather than by real image traffic.",
       "A metadata response older than the 7-day freshness bound is exercised in the unit suite by aging the stored copy, not by waiting seven days here.",
@@ -1114,7 +1329,11 @@ async function main() {
 
     results.pass = results.steps.every((s) => s.ok);
   } catch (error) {
-    step("the harness ran to completion", false, String(error?.stack ?? error).slice(0, 600));
+    step(
+      "the harness ran to completion",
+      false,
+      String(error?.stack ?? error).slice(0, 600),
+    );
   } finally {
     closeAll();
   }
@@ -1128,7 +1347,10 @@ async function main() {
     consoleErrors: results.consoleErrors.length,
     offlineWindowEntries: results.notes.disclosures.offlineWindow.length,
   };
-  writeFileSync(join(EVIDENCE_DIR, "results.json"), JSON.stringify(results, null, 2));
+  writeFileSync(
+    join(EVIDENCE_DIR, "results.json"),
+    JSON.stringify(results, null, 2),
+  );
   console.log(
     `\n${results.pass ? "PASS" : "FAIL"} — ${results.summary.passed}/${results.summary.steps} steps, ` +
       `${results.summary.screenshots} screenshots, ${results.summary.consoleErrors} console errors, ` +

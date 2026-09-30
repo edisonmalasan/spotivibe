@@ -33,7 +33,7 @@ export function UpdateNotice() {
     <div
       role="status"
       data-testid="update-notice"
-      className="fixed left-1/2 top-18 z-40 flex w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-cards bg-graphite px-4 py-3 shadow-lg"
+      className="fixed left-1/2 top-32 z-40 flex w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-cards bg-graphite px-4 py-3 shadow-lg lg:top-18"
     >
       <span className="text-body font-regular text-pure-white">
         A new version of Spotivibe is ready.
@@ -115,18 +115,35 @@ export function InstallRow({ userAgent }: { userAgent?: string }) {
           Open it like an app. Playback and search still need a connection.
         </span>
       </span>
-      <Button
-        className="shrink-0 px-4 py-2 text-body"
-        disabled={busy}
-        data-testid="install-confirm"
-        onClick={async () => {
-          setBusy(true);
-          await observer.install();
-          setBusy(false);
-        }}
-      >
-        Install
-      </Button>
+      <span className="flex shrink-0 items-center gap-2">
+        {/* A way to say no. The platform's own dialog can record a dismissal, but
+            the app suppresses that dialog so its affordance is the only prompt -
+            which means it also has to offer the choice itself. Without this, the
+            "a dismissed affordance does not come back" requirement is unreachable
+            from the application. */}
+        <Button
+          variant="ghost"
+          className="px-3 py-2 text-body"
+          data-testid="install-dismiss"
+          onClick={() => {
+            observer.dismiss();
+          }}
+        >
+          Not now
+        </Button>
+        <Button
+          className="shrink-0 px-4 py-2 text-body"
+          disabled={busy}
+          data-testid="install-confirm"
+          onClick={async () => {
+            setBusy(true);
+            await observer.install();
+            setBusy(false);
+          }}
+        >
+          Install
+        </Button>
+      </span>
     </div>
   );
 }

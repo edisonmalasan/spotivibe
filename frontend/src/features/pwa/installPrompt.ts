@@ -123,6 +123,15 @@ export interface InstallObserver {
    * cascading-render smell this codebase's lint rule exists to prevent.
    */
   subscribe(listener: () => void): () => void;
+  /**
+   * Withdraw the affordance because the listener declined it.
+   *
+   * The app suppresses the browser's own install dialog, so the platform's
+   * "dismissed" outcome is not a route a listener can reach on purpose - the row's
+   * own control is. This records the dismissal, forgets the single-use prompt, and
+   * notifies, so the row leaves through the same state the event would have used.
+   */
+  dismiss(): void;
   /** Forget the captured prompt (after an install, or when a test resets). */
   release(): void;
 }
@@ -205,6 +214,13 @@ export function observeInstallability(
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    dismiss() {
+      dismissed = true;
+      dismissInstall();
+      prompt = null;
+      offered = false;
+      notify();
     },
     release() {
       prompt = null;
