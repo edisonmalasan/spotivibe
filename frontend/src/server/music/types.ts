@@ -99,7 +99,13 @@ export type SearchResult = SearchFailure | SearchSuccess;
 export interface SearchRequest {
   query: string;
   limit: number;
-  /** Incoming request's abort signal — cancellation propagates upstream. */
+  /**
+   * M12: which question this request is asking. `"music"` is the default and
+   * keeps every pre-M12 behavior; `"podcast"` selects the tier order and filter
+   * rules that can actually answer it (design decision 1).
+   */
+  category?: SearchCategory;
+  /** Incoming request's abort signal - cancellation propagates upstream. */
   signal?: AbortSignal;
   /**
    * Per-attempt upstream timeout. Set by the chain from its configured
@@ -107,6 +113,9 @@ export interface SearchRequest {
    */
   timeoutMs?: number;
 }
+
+/** The two content questions search can ask. Absent means `"music"`. */
+export type SearchCategory = "music" | "podcast";
 
 /**
  * One discovery tier. Implementations live in `src/server/music/providers/`

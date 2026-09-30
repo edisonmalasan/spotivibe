@@ -55,6 +55,29 @@ export type FailureOutcome = "advanced" | "settled";
 /** Previous restarts the current track once playback is past this point. */
 export const RESTART_THRESHOLD_SECONDS = 3;
 
+/**
+ * How far inside the end a cue may land (M12 design decision 7).
+ *
+ * A cue exactly at the duration is the end, so the clamp stops short of it: the
+ * listener hears the last moments rather than being dropped straight into the
+ * "ended" state they were trying to resume from.
+ */
+export const END_CUE_TAIL_SECONDS = 2;
+
+/**
+ * Clamp a requested start position into `[0, duration]`.
+ *
+ * A track with no known duration (`0`) is never clamped — there is nothing to
+ * compare against, and the player is the authority once it reports one. An
+ * unknown position is treated as the start, because a cue that cannot be read is
+ * a cue that cannot be resumed from.
+ */
+export function clampCuePosition(positionSeconds: number, durationSeconds: number): number {
+  const position = Number.isFinite(positionSeconds) ? Math.max(0, positionSeconds) : 0;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return position;
+  return Math.min(position, Math.max(0, durationSeconds - END_CUE_TAIL_SECONDS));
+}
+
 /** Offline parking copy (design §9) — replaces a failure message while offline. */
 export const OFFLINE_PARKED_MESSAGE = "You're offline — playback will resume when you reconnect.";
 
@@ -163,16 +186,24 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
     const track = useQueueStore.getState().queue[index];
     if (!track) return;
     useQueueStore.getState().setQueueIndex(index);
+    const durationSeconds = track.durationSeconds ?? 0;
+    // M12: a stored position can disagree with the track's current duration — an
+    // episode re-cut shorter, or a snapshot from a different metadata revision.
+    // Cueing past the end is what the IFrame player treats as the end (or an
+    // error), so the *load* is clamped while the stored snapshot keeps its
+    // original position: a later restore against a known duration resumes where
+    // the listener left off (design decision 7).
+    const cueSeconds = clampCuePosition(startSeconds, durationSeconds);
     set({
       currentTrack: track,
-      positionSeconds: startSeconds,
-      durationSeconds: track.durationSeconds ?? 0,
+      positionSeconds: cueSeconds,
+      durationSeconds,
       status: mode === "load" ? "loading" : "paused",
       errorMessage: clearError ? null : get().errorMessage,
       loadRequest: {
         token: ++loadToken,
         videoId: track.providerId,
-        startSeconds,
+        startSeconds: cueSeconds,
         mode,
       },
     });
@@ -314,17 +345,22 @@ export const usePlayerStore = create<PlayerState>()((set, get) => {
       if (queue.length === 0 || queueIndex < 0 || queueIndex >= queue.length) return;
       useQueueStore.getState().restoreQueue(snapshot);
       const track = queue[queueIndex];
+      const durationSeconds = track.durationSeconds ?? 0;
+      // M12: clamp the cue to the duration when the two disagree (an episode
+      // re-cut shorter than the stored position). The snapshot keeps the original
+      // position - the clamp is a property of this load, not a rewrite.
+      const cueSeconds = clampCuePosition(snapshot.positionSeconds, durationSeconds);
       set({
         currentTrack: track,
         status: "paused", // cued, play affordance — never autoplay (spec)
-        positionSeconds: Math.max(0, snapshot.positionSeconds),
-        durationSeconds: track.durationSeconds ?? 0,
+        positionSeconds: cueSeconds,
+        durationSeconds,
         errorMessage: null,
         failedTrackIds: [],
         loadRequest: {
           token: ++loadToken,
           videoId: track.providerId,
-          startSeconds: Math.max(0, snapshot.positionSeconds),
+          startSeconds: cueSeconds,
           mode: "cue",
         },
       });

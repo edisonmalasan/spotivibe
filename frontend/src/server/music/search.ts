@@ -1,6 +1,6 @@
 import { createInflightDedup, createTtlCache, type InflightDedup, type TtlCache } from "./cache";
 import { runChain, type ChainOptions } from "./chain";
-import type { SearchRequest, SearchResult, SearchSuccess } from "./types";
+import type { SearchCategory, SearchRequest, SearchResult, SearchSuccess } from "./types";
 
 /**
  * The search service the route layer calls (design decisions 6–8).
@@ -23,11 +23,21 @@ export const SEARCH_CACHE_TTL_MS = 60_000;
 export const SEARCH_CACHE_MAX_ENTRIES = 100;
 
 /**
- * Cache/dedup key: the normalized query (trimmed, lowercased) plus the
- * requested limit — identical normalized queries collapse together.
+ * Cache/dedup key: the normalized query (trimmed, lowercased) plus the requested
+ * limit and the **category** the question was asked in.
+ *
+ * M12: the category is part of the key because a podcast result must never be
+ * served for a music query or the reverse — that is a correctness property a
+ * post-filter cannot have, because the two answers are different upstream
+ * questions (design decision 1). An absent category means `"music"`, so a
+ * pre-M12 key and a `music` key are the same key.
  */
-export function searchCacheKey(query: string, limit: number): string {
-  return `${query.trim().toLowerCase()}|${limit}`;
+export function searchCacheKey(
+  query: string,
+  limit: number,
+  category: SearchCategory = "music",
+): string {
+  return `${query.trim().toLowerCase()}|${category}|${limit}`;
 }
 
 export interface SearchDeps {
@@ -53,7 +63,7 @@ export async function runSearch(
   request: SearchRequest,
   deps: SearchDeps = defaultSearchDeps,
 ): Promise<SearchResult> {
-  const key = searchCacheKey(request.query, request.limit);
+  const key = searchCacheKey(request.query, request.limit, request.category);
 
   const cached = deps.cache.get(key);
   if (cached) {

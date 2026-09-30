@@ -9,6 +9,7 @@ import {
   type PlaylistResolution,
   type PlaylistResolver,
   type ProviderCandidate,
+  type SearchCategory,
 } from "../types";
 import {
   ATTEMPT_TIMEOUT_MS,
@@ -38,6 +39,13 @@ const WEB_SEARCH_URL = "https://www.youtube.com/youtubei/v1/search";
 const WEB_CONTEXT = {
   client: { clientName: "WEB", clientVersion: "2.20241202.00.00", hl: "en", gl: "US" },
 };
+
+/**
+ * YouTube's search-filter parameter for podcasts (M12). Documented as an upstream
+ * hint the app does not control: it narrows the result set, and the filter stage
+ * plus the request's own category still apply if it is ignored.
+ */
+const PODCAST_TYPE_PARAMS = "EgIQAw%3D%3D";
 
 interface TextRun {
   text?: string;
@@ -120,6 +128,26 @@ export function parseYtwebSearch(body: unknown): ProviderCandidate[] {
   return candidates;
 }
 
+/**
+ * M12: the query text and type hint this tier sends, per category.
+ *
+ * Music mode is byte-identical to the pre-M12 request — same `" song"` suffix,
+ * same body — so no existing music result can change. Podcast mode drops the
+ * music suffix and adds YouTube's podcast type filter, which is the one upstream
+ * signal that distinguishes episodes from songs; if a provider ignores it, the
+ * result degrades to unfiltered results labelled by the mode (a disclosed
+ * limitation, not a silent one).
+ */
+export function ytwebSearchBody(
+  query: string,
+  category: SearchCategory = "music",
+): { context: unknown; query: string; params?: string } {
+  if (category === "podcast") {
+    return { context: WEB_CONTEXT, query, params: PODCAST_TYPE_PARAMS };
+  }
+  return { context: WEB_CONTEXT, query: `${query} song` };
+}
+
 /** Tier implementation — see {@link parseYtwebSearch} for parse behavior. */
 export const ytwebProvider: MusicProvider = {
   id: "ytweb",
@@ -128,10 +156,7 @@ export const ytwebProvider: MusicProvider = {
       const body = await fetchJson<unknown>(WEB_SEARCH_URL, {
         method: "POST",
         headers: JSON_HEADERS,
-        body: JSON.stringify({
-          context: WEB_CONTEXT,
-          query: `${request.query} song`,
-        }),
+        body: JSON.stringify(ytwebSearchBody(request.query, request.category)),
         signal: request.signal,
         timeoutMs: request.timeoutMs ?? ATTEMPT_TIMEOUT_MS,
       });

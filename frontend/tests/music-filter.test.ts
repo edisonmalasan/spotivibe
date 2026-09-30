@@ -45,18 +45,34 @@ describe("filterTracks", () => {
 
   it("applies the documented duration bounds only when a duration is present", () => {
     expect(MUSIC_DURATION_BOUNDS_S).toEqual({ min: 60, max: 14400 });
-    expect(PODCAST_DURATION_BOUNDS_S).toEqual({ min: 120, max: 14400 });
+    // M12: the podcast window is sized for long-form (design decision 5). The
+    // pre-M12 120–14400s window was a song window with a lower floor: it admitted
+    // 2-minute clips and rejected the multi-hour episodes the mode exists for.
+    expect(PODCAST_DURATION_BOUNDS_S).toEqual({ min: 600, max: 21600 });
 
     expect(filterTracks([makeTrack({ durationSeconds: 45 })])).toHaveLength(0); // under music min
     expect(filterTracks([makeTrack({ durationSeconds: 60 })])).toHaveLength(1); // at music min
     expect(filterTracks([makeTrack({ durationSeconds: 14400 })])).toHaveLength(1);
     expect(filterTracks([makeTrack({ durationSeconds: 14401 })])).toHaveLength(0);
-    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 119 })])).toHaveLength(
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 599 })])).toHaveLength(
       0,
     );
-    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 120 })])).toHaveLength(
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 600 })])).toHaveLength(
       1,
     );
+  });
+
+  it("keeps a podcast longer than a song's maximum and drops one over six hours", () => {
+    // The requirement the long-form window exists for: an episode longer than any
+    // song must survive, and a compilation must not.
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 18000 })])).toHaveLength(
+      1,
+    );
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 21601 })])).toHaveLength(
+      0,
+    );
+    // The same duration is a music track's problem, not a podcast's.
+    expect(filterTracks([makeTrack({ durationSeconds: 18000 })])).toHaveLength(0);
   });
 
   it("rejects present-but-invalid durations (0, negative, NaN)", () => {

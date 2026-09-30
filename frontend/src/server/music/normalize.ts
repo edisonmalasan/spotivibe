@@ -1,5 +1,5 @@
 import type { AlbumSummary, Artwork, ArtistSummary, Track } from "@/data/repositories";
-import type { ArtworkCandidate, PlaylistEntry, ProviderCandidate } from "./types";
+import type { ArtworkCandidate, PlaylistEntry, ProviderCandidate, SearchCategory } from "./types";
 
 /**
  * Shared normalization stage (design decision 1): every tier's candidates go
@@ -91,12 +91,41 @@ export function resolveCategory(
 }
 
 /**
+ * M12: resolve the category **for a request that asked a question**.
+ *
+ * Precedence, and why (design decision 3):
+ *
+ * 1. An explicit provider hint always wins — the provider knows more than we do.
+ * 2. In **podcast mode** the request's own category wins. The duration heuristic
+ *    is a proxy for content type and is wrong in both directions: a 6-minute
+ *    spoken-word item reads as music, while a 25-minute DJ set reads as a
+ *    podcast. The request knows what the listener asked for; the guess does not.
+ * 3. Otherwise the pre-M12 heuristic applies unchanged, so no music-mode
+ *    classification moves.
+ */
+export function resolveCategoryForRequest(
+  requestCategory: SearchCategory,
+  candidate: Pick<ProviderCandidate, "categoryHint" | "durationSeconds">,
+): Track["category"] {
+  if (candidate.categoryHint !== undefined) return candidate.categoryHint;
+  if (requestCategory === "podcast") return "podcast";
+  return resolveCategory(undefined, candidate.durationSeconds);
+}
+
+/**
  * Convert one candidate into the canonical `Track` shape (ROADMAP §8.1).
  *
  * `qualityScore` is intentionally left unset — it is assigned by the scoring
  * stage, which sees the whole result set plus the query.
+ *
+ * M12: `requestCategory` is the search mode this candidate arrived through and
+ * defaults to `"music"`, which keeps every other call site (playlist
+ * canonicalization, catalog resolution) byte-identical.
  */
-export function candidateToTrack(candidate: ProviderCandidate): Track {
+export function candidateToTrack(
+  candidate: ProviderCandidate,
+  requestCategory: SearchCategory = "music",
+): Track {
   const album: AlbumSummary | undefined = candidate.albumTitle
     ? {
         ...(candidate.albumId !== undefined ? { id: candidate.albumId } : {}),
@@ -113,7 +142,7 @@ export function candidateToTrack(candidate: ProviderCandidate): Track {
     ...(album !== undefined ? { album } : {}),
     artwork: pickArtwork(candidate.artwork, candidate.videoId),
     durationSeconds: candidate.durationSeconds,
-    category: resolveCategory(candidate.categoryHint, candidate.durationSeconds),
+    category: resolveCategoryForRequest(requestCategory, candidate),
     capabilities: { stream: true, offlineDownload: false },
   };
 }

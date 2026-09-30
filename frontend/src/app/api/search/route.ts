@@ -4,12 +4,17 @@ import type { SearchDiagnostics, SearchResult } from "@/server/music/types";
 
 /**
  * The only transport boundary of the provider layer (design decision 8):
- * `GET /api/search?q=<string>&limit=<1..50, default 20>`.
+ * `GET /api/search?q=<string>&limit=<1..50, default 20>&category=<music|podcast>`.
  *
  * Thin shell — zod validation, pass-through of `request.signal` for
  * cancellation, structured serialization. It never proxies media, never
  * accepts local user data, and diagnostics are projected onto a safe subset
  * (tier ids/outcomes/cache state only) before they leave the server.
+ *
+ * M12 adds exactly one parameter: `category`, the question being asked. It is
+ * enumerated, so an unknown value is rejected before any provider is contacted,
+ * and it is not a filter applied after the fact — it selects the tier order, the
+ * upstream parameters, the filter rules, and the cache key (design decision 1).
  */
 
 /** Bounded query length (spec: non-empty after trimming, bounded length). */
@@ -29,6 +34,12 @@ const searchParamsSchema = z.object({
     .min(1, "limit must be at least 1")
     .max(MAX_LIMIT, `limit must be at most ${MAX_LIMIT}`)
     .default(DEFAULT_LIMIT),
+  /**
+   * M12: the question being asked. Enumerated rather than a free string, so an
+   * unknown value is rejected by the same 400 path as an empty query — a
+   * permissive string here would let a caller label results arbitrarily.
+   */
+  category: z.enum(["music", "podcast"]).default("music"),
 });
 
 /** Shared with the in-module TTL cache so header and store cannot drift. */
@@ -65,6 +76,7 @@ export async function GET(request: Request): Promise<Response> {
   const parsed = searchParamsSchema.safeParse({
     q: params.get("q") ?? undefined,
     limit: params.get("limit") ?? undefined,
+    category: params.get("category") ?? undefined,
   });
 
   // Invalid input never reaches the provider chain.
@@ -78,6 +90,7 @@ export async function GET(request: Request): Promise<Response> {
     result = await runSearch({
       query: parsed.data.q,
       limit: parsed.data.limit,
+      category: parsed.data.category,
       signal: request.signal,
     });
   } catch (error) {

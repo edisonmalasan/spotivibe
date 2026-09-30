@@ -2,7 +2,11 @@
 
 import type { Track } from "@/data/repositories";
 import { getLocalData } from "@/data/localData";
-import { fetchSearchResults } from "@/features/search/searchApi";
+import {
+  fetchSearchResults,
+  DEFAULT_SEARCH_MODE,
+  type SearchMode,
+} from "@/features/search/searchApi";
 import { loadLocalLibrary, searchLocalLibrary } from "@/features/search/localSearch";
 import { useEffect, useRef, useState } from "react";
 
@@ -41,9 +45,15 @@ export interface SearchController {
 const BROWSE_SURFACE: SearchSurface = { status: "browse" };
 const LOADING_SURFACE: SearchSurface = { status: "loading" };
 
-/** The settled outcome of the most recent request for a given query. */
+/**
+ * The settled outcome of the most recent request for a given query **and mode**
+ * (M12). The mode is part of the identity, not just the request: switching modes
+ * re-runs the search instead of showing the other mode's results, which is the
+ * difference between a mode and a filter.
+ */
 interface SettledOutcome {
   trimmed: string;
+  mode: SearchMode;
   surface: Exclude<SearchSurface, { status: "browse" } | { status: "loading" }>;
 }
 
@@ -60,7 +70,10 @@ interface SettledOutcome {
  * `navigator.onLine` is read at request time, and `online`/`offline` listeners
  * re-run the current query while the route is mounted.
  */
-export function useSearchController(query: string): SearchController {
+export function useSearchController(
+  query: string,
+  mode: SearchMode = DEFAULT_SEARCH_MODE,
+): SearchController {
   const [outcome, setOutcome] = useState<SettledOutcome | null>(null);
   const seqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -70,7 +83,9 @@ export function useSearchController(query: string): SearchController {
   const trimmed = query.trim();
 
   const settled =
-    outcome !== null && outcome.trimmed === trimmed ? outcome.surface : LOADING_SURFACE;
+    outcome !== null && outcome.trimmed === trimmed && outcome.mode === mode
+      ? outcome.surface
+      : LOADING_SURFACE;
   const surface: SearchSurface = trimmed === "" ? BROWSE_SURFACE : settled;
 
   useEffect(() => {
@@ -135,7 +150,7 @@ export function useSearchController(query: string): SearchController {
       /** Settle the surface only for the request that is still current. */
       function settle(surface: SettledOutcome["surface"]): void {
         if (seq !== seqRef.current || controller.signal.aborted) return;
-        setOutcome({ trimmed, surface });
+        setOutcome({ trimmed, mode, surface });
         scheduleRecord(trimmed, surface);
       }
       try {
@@ -150,7 +165,7 @@ export function useSearchController(query: string): SearchController {
           );
           return;
         }
-        const tracks = await fetchSearchResults(trimmed, controller.signal);
+        const tracks = await fetchSearchResults(trimmed, controller.signal, mode);
         settle(
           tracks.length > 0 ? { status: "results", tracks } : { status: "empty", origin: "remote" },
         );
@@ -183,7 +198,7 @@ export function useSearchController(query: string): SearchController {
     }, SEARCH_DEBOUNCE_MS);
 
     return cancel;
-  }, [trimmed]);
+  }, [trimmed, mode]);
 
   // Connectivity listeners live as long as the route: a change drops the
   // current outcome (loading instead of stale content) and re-runs the query
