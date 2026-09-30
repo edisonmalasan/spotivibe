@@ -32,7 +32,7 @@ Every search result SHALL be converted to the canonical Spotivibe `Track` shape 
 
 ### Requirement: Multi-tier provider fallback chain
 
-Discovery SHALL query tiers in fixed order — YouTube Music Innertube (primary), YouTube Web Innertube, Invidious, Piped — and fall through to the next tier whenever a tier fails (network error, timeout, non-2xx response, unparsable body) or produces no usable results. When every tier fails, the search endpoint SHALL return a structured error response instead of crashing.
+Discovery SHALL query tiers in fixed order — YouTube Music Innertube (primary), YouTube Web Innertube, Invidious, Piped — and fall through to the next tier whenever a tier fails (network error, timeout, non-2xx response, unparsable body) or produces no usable results. When every tier fails, the search endpoint SHALL return a structured error response instead of crashing. A podcast-category request SHALL query only tiers that can answer it: YouTube Music Innertube SHALL be skipped because it is a music-only surface, and the remaining tiers SHALL be queried with podcast-appropriate query parameters. A tier skipped for category reasons SHALL be recorded in the request's diagnostics rather than silently omitted.
 
 #### Scenario: Primary tier success stops the chain
 
@@ -54,9 +54,19 @@ Discovery SHALL query tiers in fixed order — YouTube Music Innertube (primary)
 - **WHEN** every tier fails for a valid query
 - **THEN** the endpoint responds with a structured, human-readable error and a non-success status, not an unhandled exception
 
+#### Scenario: Podcast mode queries only tiers that can answer it
+
+- **WHEN** a request carries the podcast category
+- **THEN** YouTube Music Innertube is not contacted, the remaining tiers are queried in order, and the skipped tier appears in the diagnostics as skipped
+
+#### Scenario: A podcast request is not asked a music-scoped question
+
+- **WHEN** a podcast-category request reaches a tier that exposes a music-scoped upstream search parameter
+- **THEN** that parameter is omitted for the podcast request and kept for the music request, on the same endpoint
+
 ### Requirement: Search API contract
 
-The search API SHALL expose a query endpoint that validates input (non-empty after trimming, bounded length) and returns JSON containing the normalized `tracks` plus optional diagnostics metadata describing which tiers were attempted and whether the result came from cache. Diagnostics MUST NOT contain credentials, secrets, or configuration values, and UI consumers MUST NOT depend on diagnostics fields to function.
+The search API SHALL expose a query endpoint that validates input (non-empty after trimming, bounded length) and returns JSON containing the normalized `tracks` plus optional diagnostics metadata describing which tiers were attempted and whether the result came from cache. Diagnostics MUST NOT contain credentials, secrets, or configuration values, and UI consumers MUST NOT depend on diagnostics fields to function. The endpoint SHALL accept an optional bounded `category` parameter of `music` or `podcast` that defaults to `music`, SHALL validate it like every other input by rejecting an unknown value, and SHALL include it in the request's cache key so a result cached for one category is never served for the other. Returned tracks SHALL carry the category the request resolved.
 
 #### Scenario: Valid query returns normalized tracks
 
@@ -72,6 +82,16 @@ The search API SHALL expose a query endpoint that validates input (non-empty aft
 
 - **WHEN** diagnostics metadata is included in a response
 - **THEN** it contains only tier identifiers, outcomes, and cache status — no API keys, tokens, instance credentials, or internal configuration
+
+#### Scenario: An unknown category is rejected
+
+- **WHEN** the `category` parameter carries a value that is neither `music` nor `podcast`
+- **THEN** the endpoint responds with a structured 400-class error and no provider is contacted
+
+#### Scenario: A podcast request resolves podcast tracks
+
+- **WHEN** a query is submitted with the podcast category and results are returned
+- **THEN** every returned track carries the podcast category regardless of its duration
 
 ### Requirement: Baseline search requires no provider key
 
@@ -130,7 +150,7 @@ Repeated identical searches within a short time-to-live SHALL be served from a b
 
 ### Requirement: Centralized filtering and quality scoring
 
-All tier results SHALL pass through one shared filtering and scoring stage before returning: reject reaction/vlog/interview content, Shorts, unwanted remix/mashup/slowed+reverb/bass-boost/DJ-mix variants, and invalid durations; collapse exact duplicates by video ID and near-duplicates by normalized title plus artist; assign `qualityScore` values and order results by them. The same rules apply regardless of which tier produced a track.
+All tier results SHALL pass through one shared filtering and scoring stage before returning: reject Shorts in every category and promotional fragments in podcast results; in music results reject reaction/vlog/unboxing/interview content and unwanted remix/mashup/slowed+reverb/bass-boost/DJ-mix variants; reject invalid durations; collapse exact duplicates by video ID and near-duplicates by normalized title plus artist; assign `qualityScore` values and order results by them. The same rules apply regardless of which tier produced a track. Duration bounds SHALL be per-category, with music keeping a song-shaped window and podcasts a long-form window, so an episode longer than a song is never rejected for being long and a clip shorter than an episode is not presented as one. Podcast results SHALL NOT be rejected for words that legitimately occur in spoken-word titles, and the filtering a category applies SHALL NOT change which results the other category accepts or rejects.
 
 #### Scenario: Non-music and Shorts results are rejected
 
@@ -156,6 +176,26 @@ All tier results SHALL pass through one shared filtering and scoring stage befor
 
 - **WHEN** the same junk content arrives from a fallback tier as from the primary tier
 - **THEN** it is filtered by the same rules
+
+#### Scenario: Podcast results keep words that music results reject
+
+- **WHEN** podcast results include titles containing words such as interview, reaction, vlog, or remix
+- **THEN** those tracks are present in the response, because those words are legitimate in spoken-word titles
+
+#### Scenario: Podcast results still reject Shorts and promotional fragments
+
+- **WHEN** podcast results include Shorts, trailers, teasers, or previews
+- **THEN** those tracks are absent from the response
+
+#### Scenario: Duration bounds are per-category
+
+- **WHEN** a podcast result is longer than a song's maximum and a music result is shorter than a podcast's minimum
+- **THEN** the podcast is kept and the music result is kept, each against its own category's window
+
+#### Scenario: The category split does not change the other category's verdicts
+
+- **WHEN** a title is evaluated under the music rules and again under the podcast rules
+- **THEN** every result the music rules reject is still rejected as music, and no result the music rules accept is newly rejected as music
 
 ### Requirement: Local data never reaches the provider layer
 

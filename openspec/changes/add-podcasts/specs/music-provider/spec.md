@@ -35,6 +35,10 @@ Discovery SHALL query tiers in fixed order — YouTube Music Innertube (primary)
 - **WHEN** a podcast-category request runs
 - **THEN** YouTube Music Innertube is not queried, the remaining tiers are queried with podcast-appropriate parameters, and the skipped tier is recorded in diagnostics
 
+#### Scenario: A podcast request is not asked a music-scoped question
+
+- **WHEN** a podcast-category request reaches a tier that exposes a music-scoped upstream search parameter
+- **THEN** that parameter is omitted for the podcast request and kept for the music request, on the same endpoint
 ### Requirement: Search API contract
 
 The search API SHALL expose a query endpoint that validates input (non-empty after trimming, bounded length) and returns JSON containing the normalized `tracks` plus optional diagnostics metadata describing which tiers were attempted and whether the result came from cache. Diagnostics MUST NOT contain credentials, secrets, or configuration values, and UI consumers MUST NOT depend on diagnostics fields to function. The endpoint SHALL accept an optional bounded `category` parameter of `music` or `podcast` that defaults to `music`, SHALL validate it like every other input by rejecting an unknown value, and SHALL include it in the request's cache key so a result cached for one category is never served for the other. Returned tracks SHALL carry the category the request resolved.
@@ -112,3 +116,8 @@ All tier results SHALL pass through one shared filtering and scoring stage befor
 
 - **WHEN** a podcast result is longer than a song's maximum and a music result is shorter than a podcast's minimum
 - **THEN** the podcast is kept and the music result is kept, each against its own category's window
+
+#### Scenario: The category split does not change the other category's verdicts
+
+- **WHEN** a title is evaluated under the music rules and again under the podcast rules
+- **THEN** every result the music rules reject is still rejected as music, and no result the music rules accept is newly rejected as music
