@@ -12,6 +12,17 @@ Finish the remaining roadmap milestones autonomously, following the `AGENTS.md`
 OpenSpec lifecycle per milestone (Propose → Apply → Sync → Archive; one remote
 branch + PR per stage; merge commits only) and keeping `ROADMAP.md` current.
 
+**Every milestone now runs an independent read-only verification pass before its
+Apply PR is merged.** The agent gets the specification and the implementation and
+nothing else; it reports CRITICAL / WARNING / NIT findings with `file:line`, and it
+drives the shipped bytes where that is the only way to check a rule. For M13 it found
+nine defects that 2152 tests and a passing evidence run had all missed — including a
+service worker that skipped waiting on install (making the entire update flow
+unreachable), a search URL cached as a page when requested as a navigation, and an
+offline shell that was silently FIFO-evicted after nineteen navigations. Treat this
+pass as part of Apply, not as an optional extra: the bugs it finds are the ones no
+test in the suite was written to catch.
+
 ## Completed
 
 | Milestone | Change (archived) | PRs / merges |
@@ -21,14 +32,18 @@ branch + PR per stage; merge commits only) and keeping `ROADMAP.md` current.
 | **M10** | `2026-09-30-add-radio-and-local-personalization` | #41 propose `e99435a`, #42 apply `d6ce3d4`, #43 sync `636e642`, #44 archive `723b281` |
 | **M11** | `2026-09-30-add-listening-insights-and-smart-mixes` | #45 propose `b735476`, #46 apply `9d9312b`, #47 sync `c7485f0`, #48 archive `802e403` |
 
-| **M12** | `2026-09-30-add-podcasts` | #49 propose `b914875`, #50 apply `ead69e5`, #51 sync `93a2e21`, #52 archive (this stage) |
+| **M12** | `2026-09-30-add-podcasts` | #49 propose `b914875`, #50 apply `ead69e5`, #51 sync `93a2e21`, #52 archive `3cabc58` |
+| **M13** | `2026-09-30-add-pwa-install-and-offline-shell` | #53 propose `e8f0576`, #54 apply `6bdc296`, #55 sync `74307b8`, #56 archive `f8e0afb` |
 
-Baseline at the M11 merge (`fa3e262`): **125 test files / 1987 tests**; after M12:
-**130 test files / 2084 tests**, all six gates green in a clean clone. Main specs:
-`podcasts` (new), `music-provider`/`search`/`playback` updated — 15 capabilities,
-all validating. 13 archived changes, none active.
-**Next objective: M13 (PWA installation and offline metadata)**, then M14 hardening,
-M15 release validation and deployment.
+Baseline at the M12 merge (`3cabc58`): **130 test files / 2084 tests**; after M13:
+**134 test files / 2152 tests**, all six gates green in a clean clone. Main specs:
+`pwa` (new, 6 requirements / 27 scenarios), `network` updated — **16 capabilities,
+all validating**. 14 archived changes, none active. M13's browser evidence run
+(`pass: true`, 34/34 steps, 0 console errors) drives the production build in headless
+Edge over CDP with **no dependencies** and stops the server itself for the offline
+phase.
+**Next objective: M14 (performance, security, accessibility, resilience)**, then M15
+release validation and deployment.
 
 ## M12 state (archived)
 - Archived change: `openspec/changes/archive/2026-09-30-add-podcasts` — `design.md`
@@ -114,6 +129,55 @@ M15 release validation and deployment.
 - **A local-library fallback in podcast mode renders under an "Episodes" heading**, so a
   liked song matching a podcast query became a mislabelled row. `searchLocalLibrary` now
   takes the mode and keeps podcast records only in podcast mode.
+
+## M13 highlights worth remembering
+
+- **"Offline" must be a genuinely unreachable origin, not an emulation.** A service
+  worker is a browser-scoped target, so page-level `Network.emulateNetworkConditions`
+  never reaches it: the page went offline while the worker's own `fetch()` kept
+  succeeding, and a "served from cache" assertion was measuring the network. The
+  harness now connects to the **browser** endpoint, auto-attaches at browser level so
+  the worker target is observable, and *stops the production server* for the offline
+  phase — asserting `originRefusedConnections` as a step, because everything else
+  depends on it.
+- **`child.kill()` does not free the port on Windows.** Next's own server process
+  survived, so the "offline" phase was quietly online and an API probe reported
+  network responses as cache behaviour. Kill the process **tree**
+  (`taskkill /T /F`, or a process-group kill elsewhere).
+- **A redirect beats serving one route's document under another route's URL.** Doing
+  it the obvious way rendered the Home route at `/search`: wrong content, wrong
+  address, and a step that passed because the shell-global offline banner matched its
+  "the route explained itself" regex. Redirect to the shell so URL and content agree,
+  and scope route assertions to the route's own `<main>` subtree.
+- **`skipWaiting()` on install silently deletes an update flow.** A worker that skips
+  waiting never enters `waiting`, so the page is never told an update exists: the
+  notice is unreachable and the swap is silent. The test that "proved" it was
+  asserting the very behavior the requirement forbids.
+- **A FIFO bound can evict the one entry a guarantee depends on.** The precached shell
+  lived in the page cache, so after ~19 document navigations the offline fallback was
+  gone and the browser error page was back. A single entry with a bound of one belongs
+  in its own cache.
+- **Classify by path, not by request mode.** Checking `request.mode === "navigate"`
+  before the `/api/` rule wrote a search result set into the *page* cache when a
+  listener pressed Back while offline — the exact stale answer the deny rules exist to
+  prevent.
+- **"Keyless" is not "profile-free."** `/api/discover` was cached on a stated
+  justification that was false: the client sends `seeds` derived from liked tracks and
+  listening events. Check what the client actually sends, not what the endpoint's name
+  suggests.
+- **A test that has never been shown to fail is not evidence.** Three M13 steps could
+  not fail: one scanned both phases so an all-fail offline phase still found online
+  entries; one scanned the whole document so a crash page passed; one exempted cache
+  names it did not recognize. Scope the assertion to what the step name claims, and
+  prove each detector against a violating snippet.
+- **Stored records are untrusted, on the surfaces too.** A liked row whose track could
+  not fill `artists` crashed `/library/liked` into the error boundary — the same rule
+  the repositories already apply per field at read time. Skip what a surface cannot
+  render.
+- **A backtick inside a comment inside a template literal ends the string.** Twice, in
+  the same harness, a comment that mentioned `main` produced a parse error pointing
+  at unrelated code. `node --check` the harness after every scripted edit; the symptom
+  is a syntax error several lines away from the cause.
 
 ## Hard-won lessons
 1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
