@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-09-30T16:22:49.234Z",
+  "conditions": {
+    "engine": "edge",
+    "enginesInstalled": [
+      "edge"
+    ],
+    "enginesRun": [
+      "edge"
+    ],
+    "browser": "Edg/154.0.4258.37",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+    "origin": "http://localhost:3213",
+    "providerResponses": "recorded fixtures; the suite proves the application's behaviour, not the providers'"
+  },
+  "flows": [
+    {
+      "id": "first-launch",
+      "requirement": "first launch and language onboarding",
+      "ok": true,
+      "detail": "",
+      "ms": 904
+    }
+  ],
+  "pass": true
+}
