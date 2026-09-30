@@ -118,7 +118,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M9 | Artist pages, album pages, Now Playing, related content | `DONE` | M4, M5, M8 |
 | M10 | Radio, queue autofill, and local personalization | `DONE` | M2, M6, M8, M9 |
 | M11 | Listening history, stats, streaks, and Smart Mixes | `DONE` | M2, M7, M10 |
-| M12 | Podcasts | `IN PROGRESS` | M3, M4, M5 |
+| M12 | Podcasts | `DONE` | M3, M4, M5 |
 | M13 | PWA installation, offline shell, offline metadata experience | `NOT STARTED` | M1, M2, M6 |
 | M14 | Hardening: performance, security, accessibility, resilience | `NOT STARTED` | M3–M13 |
 | M15 | Test matrix, release validation, Vercel deployment | `NOT STARTED` | M0–M14 |
@@ -963,8 +963,21 @@ Lyrix is MIT licensed. If substantial Lyrix code is copied or modified rather th
 
 ### Acceptance Criteria
 
-- Music and podcast queries use category-appropriate filters.
-- Long durations do not break seek/progress/session restoration.
+- [x] Music and podcast queries use category-appropriate filters.
+- [x] Long durations do not break seek/progress/session restoration.
+
+**Delivered by M12** (spec: `podcasts`, change `add-podcasts`):
+
+- Podcast search mode: a bounded `category` parameter threaded route -> service ->
+  chain -> providers -> filter -> cache key, with the mode in the URL
+  (`/search?q=...&mode=podcast`) and a mode control on the search surface.
+- Curated podcast categories: eight per-language query-seed entries that open a
+  podcast-mode search, with the M8 neutral-fallback language convention and no new
+  feed kind or route.
+- Podcast playback: the same persistent player, with a restore clamp for a stored
+  position beyond the current duration and podcast-sized duration bounds.
+- Podcast history: the existing listening-history dataset, unmodified, with a
+  podcast play listed on History and counted by the local statistics.
 
 ---
 
@@ -1154,7 +1167,7 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [x] Search history.
 - [x] Artist navigation.
 - [x] Album navigation where metadata supports it.
-- [ ] Podcast search/category.
+- [x] Podcast search/category.
 
 ## Player
 
@@ -1207,7 +1220,7 @@ This section prevents roadmap phases from accidentally shipping without importan
 - [ ] Library/Liked Songs.
 - [x] Now Playing.
 - [x] History/Stats.
-- [ ] Podcasts.
+- [x] Podcasts.
 - [ ] Settings/Data.
 
 ## Personalization

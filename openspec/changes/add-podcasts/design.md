@@ -82,6 +82,14 @@ Current state, verified in the code:
 
 **Alternatives considered.** A separate podcast history list (rejected: duplicate state, and the History surface would need a second clear action). Tagging events with a `podcast` boolean (rejected: redundant with `track.category`, and redundant stored state can disagree with the track it points at).
 
+### 9. A blank channel id is no id (pre-existing bug the mode exposed)
+
+**Decision.** In `features/search/ArtistTile`, a derived artist's provider id is used only when it is non-blank; a blank id falls back to the artist's name. `features/search/ResultMenu` and `features/history/HistoryView` already did this (`nonBlank`, `isProviderEntityId`); the tile did not.
+
+**Why.** `providerIdFor(artist) ?? artist.name` treats `""` as an id, so `artistHref("")` produced `/artist/` — a link to the artist route with *no key*. That renders the not-found state and prefetches an RSC request that 404s, which the evidence run recorded as a console error. Nothing about it is podcast-specific, but the mode makes it common: the Invidious tier routinely returns a podcast show whose `ownerText` yields a name and **an empty channel id**, so the id is present-and-blank rather than absent. The M9 contract is explicit that an id-less entry stays activatable by name (`catalog` — "Catalog entity keys and resolution requests", covered by `tests/search-entry-points.test.tsx`); a blank id is the same situation wearing a costume. Fixing it here rather than suppressing the 404 in the harness keeps the evidence honest: the run reports zero console errors because the product does not produce that 404.
+
+**Alternatives considered.** Suppressing the error in the harness (rejected: it hides a real dead link and would leave the M9 contract broken for blank ids). Making `artistHref` reject an empty key (rejected: it returns `string`, so "reject" would mean a second magic string at every call site — the decision belongs to the caller that knows whether it has an entity).
+
 ## Risks / Trade-offs
 
 - **Podcast results depend on an upstream type hint the app does not control.** If YouTube ignores the hint, podcast mode degrades to "unfiltered results labelled by the mode". The filter stage and the category pinning still apply, so the failure is wrong-content-rather-than-missing-content. The evidence run records what the live provider actually returned for a podcast query, and the README discloses it.

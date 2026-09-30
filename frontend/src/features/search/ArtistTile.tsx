@@ -17,9 +17,20 @@ interface ArtistTileProps {
  * lookup, not a second guess. No id is not an error: it is the text-key half of
  * the artist route (see `artistKeys`), which is what keeps an id-less entry
  * activatable.
+ *
+ * A **blank** id counts as no id (M12). `??` alone would treat `""` as an id and
+ * produce `/artist/` — a link to the route with no key, which renders not-found
+ * and prefetches a 404. Podcast channels make this common: the Invidious tier
+ * routinely returns a show whose name resolves and whose channel id is present
+ * but empty, so the id is *there and blank* rather than absent. The name is the
+ * usable key there, and the entry must stay activatable — the M9 contract, not a
+ * nicety.
  */
 function providerIdFor(artist: DerivedArtist): string | undefined {
-  return artist.track.artists.find((credit) => credit.name.trim().toLowerCase() === artist.key)?.id;
+  const id = artist.track.artists.find(
+    (credit) => credit.name.trim().toLowerCase() === artist.key,
+  )?.id;
+  return id !== undefined && id.trim() !== "" ? id : undefined;
 }
 
 /**
