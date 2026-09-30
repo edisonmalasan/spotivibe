@@ -1016,6 +1016,22 @@ Lyrix is MIT licensed. If substantial Lyrix code is copied or modified rather th
 - Attempting remote playback/search offline fails gracefully.
 - Service-worker updates do not destroy IndexedDB data.
 
+### How M13 was verified
+
+Every milestone from M13 runs an independent read-only verification pass before its
+Apply PR is merged: it is given the change's specification and the implementation and
+nothing else, and it reports findings against the requirements with file and line
+references. For M13 it found nine defects that the test suite and a passing browser
+evidence run had all missed. The pattern that worked - and that M14 and M15 should
+reuse - is:
+
+- drive the **shipped bytes** where a rule can only be checked by execution, rather
+  than testing a copy of the logic;
+- make every evidence assertion **falsifiable**, by scoping it to exactly what its
+  name claims and by proving each detector against a violating snippet;
+- treat "the spec says X and the code does Y" as a finding in either direction: amend
+  the requirement when the code is right, move the code when the requirement is.
+
 ### Delivered by M13
 
 - A typed Web App Manifest route (`src/app/manifest.ts`) with a stable `id`, root
