@@ -45,18 +45,34 @@ describe("filterTracks", () => {
 
   it("applies the documented duration bounds only when a duration is present", () => {
     expect(MUSIC_DURATION_BOUNDS_S).toEqual({ min: 60, max: 14400 });
-    expect(PODCAST_DURATION_BOUNDS_S).toEqual({ min: 120, max: 14400 });
+    // M12: the podcast window is sized for long-form (design decision 5). The
+    // pre-M12 120–14400s window was a song window with a lower floor: it admitted
+    // 2-minute clips and rejected the multi-hour episodes the mode exists for.
+    expect(PODCAST_DURATION_BOUNDS_S).toEqual({ min: 600, max: 21600 });
 
     expect(filterTracks([makeTrack({ durationSeconds: 45 })])).toHaveLength(0); // under music min
     expect(filterTracks([makeTrack({ durationSeconds: 60 })])).toHaveLength(1); // at music min
     expect(filterTracks([makeTrack({ durationSeconds: 14400 })])).toHaveLength(1);
     expect(filterTracks([makeTrack({ durationSeconds: 14401 })])).toHaveLength(0);
-    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 119 })])).toHaveLength(
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 599 })])).toHaveLength(
       0,
     );
-    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 120 })])).toHaveLength(
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 600 })])).toHaveLength(
       1,
     );
+  });
+
+  it("keeps a podcast longer than a song's maximum and drops one over six hours", () => {
+    // The requirement the long-form window exists for: an episode longer than any
+    // song must survive, and a compilation must not.
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 18000 })])).toHaveLength(
+      1,
+    );
+    expect(filterTracks([makeTrack({ category: "podcast", durationSeconds: 21601 })])).toHaveLength(
+      0,
+    );
+    // The same duration is a music track's problem, not a podcast's.
+    expect(filterTracks([makeTrack({ durationSeconds: 18000 })])).toHaveLength(0);
   });
 
   it("rejects present-but-invalid durations (0, negative, NaN)", () => {
@@ -64,6 +80,68 @@ describe("filterTracks", () => {
     expect(filterTracks([makeTrack({ durationSeconds: -1 })])).toHaveLength(0);
     expect(filterTracks([makeTrack({ durationSeconds: Number.NaN })])).toHaveLength(0);
   });
+
+  /**
+   * Task 2.3 — the music-behavior regression table.
+   *
+   * M12 split the rules by category, which is exactly the kind of refactor that
+   * silently widens or narrows a result set nobody re-checks. This table is the
+   * guard: the `music` column is the pre-M12 verdict for each representative title
+   * (reproduced by hand from the shipped single-pattern rules), and the
+   * `podcast` column is what the split now decides. A future edit that changes a
+   * `music` verdict breaks this test rather than the search results.
+   *
+   * Durations are chosen per row so the *title* rule is what is under test: songs
+   * sit inside the music window, episodes inside the podcast one.
+   */
+  it.each([
+    // [title, kept as music?, kept as podcast?, music seconds, podcast seconds]
+    ["Get Lucky", true, true, 249, 2700],
+    ["Heartbeat", true, true, 210, 1800],
+    // Shorts are rejected in both categories.
+    ["Groovy Track #shorts", false, false, 249, 1800],
+    ["Shorts Compilation", false, false, 249, 1800],
+    // The music-only non-song markers: ordinary English in a spoken-word title.
+    ["Song (Reaction Video)", false, true, 249, 2700],
+    ["Daily Vlog 12", false, true, 249, 2700],
+    ["Artist Interview 2024", false, true, 249, 2700],
+    ["Unboxing the Vinyl", false, true, 249, 2700],
+    // The music-only variant markers.
+    ["Get Lucky (Remix)", false, true, 249, 2700],
+    ["Pop Mashup 2024", false, true, 249, 2700],
+    ["Blinding Lights Slowed + Reverb", false, true, 249, 2700],
+    ["Starboy 8d Audio", false, true, 249, 2700],
+    ["Titanium Bass Boosted", false, true, 249, 2700],
+    ["Nonstop Party Mix", false, true, 249, 2700],
+    ["Non-Stop Hits", false, true, 249, 2700],
+    ["Summer DJ Mix", false, true, 249, 2700],
+    ["Hits Megamix", false, true, 249, 2700],
+    // Titles music accepts and podcast mode must keep accepting, including the two
+    // that carry a marker as a substring: "react" inside "The Reactor" and inside
+    // "React Native in Production". Both are music verdicts reproduced from the
+    // shipped rules - substring matching, not word matching.
+    ["The Reactor", false, true, 249, 2700],
+    ["React Native in Production", false, true, 249, 2700],
+    ["Interlude in A minor", true, true, 249, 2700],
+    ["What a Great Song", true, true, 249, 2700],
+    // A podcast-only promo marker: rejected for a podcast, untouched for music.
+    // The *in-window* row is the one that makes the promo rule real: at 1800s the
+    // duration bounds cannot explain the rejection, so only the title rule can.
+    ["Season trailer: the story so far", true, false, 249, 1800],
+    // The same marker below the podcast floor is rejected by both rules, which is
+    // why the row above exists.
+    ["The Fall of Rome — Season trailer", true, false, 60, 60],
+  ])(
+    "%s → music %s / podcast %s",
+    (title, musicKeeps, podcastKeeps, musicSeconds, podcastSeconds) => {
+      expect(filterTracks([makeTrack({ title, durationSeconds: musicSeconds })])).toHaveLength(
+        musicKeeps ? 1 : 0,
+      );
+      expect(
+        filterTracks([makeTrack({ title, durationSeconds: podcastSeconds, category: "podcast" })]),
+      ).toHaveLength(podcastKeeps ? 1 : 0);
+    },
+  );
 
   it("keeps tracks with an absent duration (design decision 9 — no hard-coded values)", () => {
     expect(filterTracks([makeTrack({ durationSeconds: undefined })])).toHaveLength(1);

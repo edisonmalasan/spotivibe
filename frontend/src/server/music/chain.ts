@@ -12,6 +12,7 @@ import { dedupeTracks, scoreTracks, sortTracks } from "./score";
 import type {
   MusicProvider,
   ProviderCandidate,
+  SearchCategory,
   SearchDiagnostics,
   SearchFailure,
   SearchRequest,
@@ -56,13 +57,18 @@ export interface ChainOptions {
  * Normalize, filter, score, order, collapse duplicates, and limit — the one
  * shared post-parse pipeline every tier's candidates flow through, so a
  * fallback tier's results are treated exactly like the primary's.
+ *
+ * M12: the request's category reaches the pipeline so the filter stage applies
+ * that category's rules and category resolution knows what the request asked
+ * for. The default keeps the pre-M12 call shape intact.
  */
 export function toResultTracks(
   candidates: ProviderCandidate[],
   query: string,
   limit: number,
+  category: SearchCategory = "music",
 ): Track[] {
-  const normalized = candidates.map(candidateToTrack);
+  const normalized = candidates.map((candidate) => candidateToTrack(candidate, category));
   const kept = filterTracks(normalized);
   const scored = scoreTracks(kept, query);
   const sorted = sortTracks(scored);
@@ -70,11 +76,31 @@ export function toResultTracks(
   return deduped.slice(0, limit);
 }
 
+/**
+ * M12: tiers that can answer the question, by category.
+ *
+ * YouTube Music is a music-only surface, so a podcast query is never sent to it
+ * (design decision 2). A skipped tier is recorded in diagnostics as `skipped`
+ * rather than omitted, so a request record shows *why* a tier is missing.
+ */
+export function tiersForCategory(
+  category: SearchCategory,
+  providers: readonly MusicProvider[] = DEFAULT_PROVIDERS,
+): readonly MusicProvider[] {
+  if (category !== "podcast") return providers;
+  return providers.filter((provider) => provider.id !== "ytmusic");
+}
+
 export async function runChain(
   request: SearchRequest,
   options: ChainOptions = {},
 ): Promise<SearchResult> {
-  const providers = options.providers ?? DEFAULT_PROVIDERS;
+  const category = request.category ?? "music";
+  const allProviders = options.providers ?? DEFAULT_PROVIDERS;
+  // M12: a category the configured tiers cannot answer is skipped *before* the
+  // budget clock starts — it is not an attempt that could have succeeded.
+  const usable = new Set(tiersForCategory(category, allProviders));
+  const providers = allProviders.filter((provider) => usable.has(provider));
   const budgetMs = options.budgetMs ?? REQUEST_BUDGET_MS;
   const attemptTimeoutMs = options.attemptTimeoutMs ?? ATTEMPT_TIMEOUT_MS;
   const limiter = options.limiter ?? outboundLimiter;
@@ -83,6 +109,9 @@ export async function runChain(
   const signal = request.signal ? AbortSignal.any([request.signal, budgetSignal]) : budgetSignal;
 
   const tiersTried: TierOutcome[] = [];
+  for (const skipped of allProviders) {
+    if (!usable.has(skipped)) tiersTried.push({ tier: skipped.id, outcome: "skipped" });
+  }
 
   const skipRemaining = (startIndex: number): SearchFailure => {
     for (let index = startIndex; index < providers.length; index += 1) {
@@ -103,6 +132,7 @@ export async function runChain(
       try {
         candidates = await provider.search({
           ...request,
+          category,
           signal,
           timeoutMs: attemptTimeoutMs,
         });
@@ -125,7 +155,7 @@ export async function runChain(
       continue;
     }
 
-    const tracks = toResultTracks(candidates, request.query, request.limit);
+    const tracks = toResultTracks(candidates, request.query, request.limit, category);
     if (tracks.length > 0) {
       tiersTried.push({ tier: provider.id, outcome: "ok" });
       const diagnostics: SearchDiagnostics = {

@@ -267,3 +267,69 @@ describe("HistoryView", () => {
     await waitFor(() => expect(screen.getByTestId("history-clear")).toBeDisabled());
   });
 });
+
+describe("podcast episodes on the local record (M12)", () => {
+  const episode = {
+    id: "youtube:ep1",
+    source: "youtube" as const,
+    providerId: "ep1",
+    title: "Interview: The Fall of Rome",
+    artists: [{ name: "History Hour" }],
+    artwork: [],
+    durationSeconds: 3600,
+    category: "podcast" as const,
+    capabilities: { stream: true, offlineDownload: false },
+  };
+
+  it("lists a played episode beside music plays, with its verdict", async () => {
+    await seed([
+      event(),
+      event({
+        id: "ep-event",
+        trackId: episode.id,
+        track: episode,
+        secondsPlayed: 1200,
+        completed: true,
+      }),
+    ]);
+    render(<HistoryView />);
+
+    await waitFor(() => expect(screen.getAllByTestId("history-row")).toHaveLength(2));
+    const row = screen
+      .getAllByTestId("history-row")
+      .find((node) => node.textContent?.includes("Interview: The Fall of Rome"));
+    expect(row).toBeDefined();
+    expect(within(row!).getByTestId("history-verdict")).toHaveTextContent("Played through");
+    // The show/channel is the entity the listener recognizes, and it links.
+    expect(within(row!).getByRole("link", { name: "History Hour" })).toHaveAttribute(
+      "href",
+      "/artist/History%20Hour",
+    );
+  });
+
+  it("counts a podcast play in the statistics, and clearing history clears it too", async () => {
+    await seed([
+      event({
+        id: "ep-event",
+        trackId: episode.id,
+        track: episode,
+        secondsPlayed: 1200,
+        completed: true,
+      }),
+    ]);
+    const { StatsView } = await import("@/features/insights/StatsView");
+    const view = render(<StatsView />);
+
+    await waitFor(() => expect(screen.getByTestId("stats-play-count")).toHaveTextContent("1"));
+    expect(screen.getByTestId("stats-total-time")).toHaveTextContent("20 min");
+    expect(screen.getByTestId("stats-top-tracks")).toHaveTextContent("Interview: The Fall of Rome");
+    view.unmount();
+
+    // Clearing the one surface clears the other: there is no podcast-specific store
+    // and no second clear action (M12 design decision 8).
+    render(<HistoryView />);
+    await waitFor(() => expect(screen.getAllByTestId("history-row")).toHaveLength(1));
+    fireEvent.click(screen.getByTestId("history-clear"));
+    await waitFor(() => expect(screen.queryAllByTestId("history-row")).toHaveLength(0));
+  });
+});

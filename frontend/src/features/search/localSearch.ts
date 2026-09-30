@@ -1,5 +1,6 @@
 import type { Track } from "@/data/repositories";
 import { getLocalData } from "@/data/localData";
+import type { SearchMode } from "@/features/search/searchApi";
 
 /**
  * Local-library fallback for search (design §6): the remote is unreachable
@@ -51,11 +52,23 @@ export async function loadLocalLibrary(): Promise<LocalLibrary> {
  * Case-insensitive substring match over title and artist names — pure so the
  * matching rule is testable without storage. A blank query matches nothing
  * (there is no remote request to fall back *from*).
+ *
+ * M12: the mode narrows the *matches*, not the matching rule. In podcast mode a
+ * liked song is not an answer to "find me podcasts" — and the surface would
+ * present it under an **Episodes** heading, which is a claim the record does not
+ * support. Podcast mode therefore keeps podcast records only, and a listener with
+ * no matching episode gets the podcast empty state rather than a mislabelled row.
  */
-export function searchLocalLibrary(library: LocalLibrary, query: string): Track[] {
+export function searchLocalLibrary(
+  library: LocalLibrary,
+  query: string,
+  mode: SearchMode = "music",
+): Track[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") return [];
-  return library.tracks.filter((track) => matches(track, needle));
+  return library.tracks.filter(
+    (track) => matches(track, needle) && (mode !== "podcast" || track.category === "podcast"),
+  );
 }
 
 /** True when the title or any artist name contains the lowercased needle. */

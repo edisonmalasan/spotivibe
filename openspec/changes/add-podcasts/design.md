@@ -25,11 +25,13 @@ Current state, verified in the code:
 
 ### 2. Podcast mode skips YouTube Music, because that tier is music-only
 
-**Decision.** In podcast mode the chain is `ytweb → invidious → piped`. `ytweb` sends the query unmodified plus YouTube's podcast type hint; `invidious` and `piped` search their own indices unchanged. In music mode nothing changes.
+**Decision.** In podcast mode the chain is `ytweb → invidious → piped`. `ytweb` sends the query unmodified plus YouTube's podcast type hint; `piped` sends **no** `filter=music_songs` parameter (its unfiltered default) because that parameter asks its instance for the *song* index; `invidious` has no category-scoped search parameter, so it sends the same `type=video` in both modes. In music mode nothing changes.
 
 **Why.** The primary tier is YouTube *Music*'s Innertube surface and `ytweb` appends `" song"`. Both are music-biased by construction, so a podcast-mode request through them returns music — the exact failure M12 exists to remove. Skipping a tier that cannot answer the question is cheaper and more honest than fetching results and filtering them. The fallbacks are still there, so the tier-bypass is not a single point of failure.
 
-**Alternatives considered.** Keeping the full chain and relying on category pinning (rejected: it would label music results as podcasts — a fabricated claim, worse than a missing tier). Using only `ytweb` (rejected: it makes one tier a single point of failure for the whole mode).
+**Amended by the M12 verification pass.** This decision originally said `invidious` and `piped` "search their own indices unchanged". That was true for `invidious` and wrong for `piped`: its `filter=music_songs` is an explicitly music-scoped upstream parameter, so a podcast request was asking the one tier that answered it to search songs. The `music-provider` spec requires the remaining tiers to be "queried with podcast-appropriate query parameters", and the spec outranks this document — so the **code** moved, not the sentence. The change is a parameter value on the same host and path, which is what keeps it inside "no new provider capability"; the architecture rule that guards that (`providerCapabilityBranchViolations`) is satisfied because no category conditional in a provider module reaches a URL. A scenario now pins it, and `pipedSearchFilter` is the one place the value is decided.
+
+**Alternatives considered.** Keeping the full chain and relying on category pinning (rejected: it would label music results as podcasts — a fabricated claim, worse than a missing tier). Using only `ytweb` (rejected: it makes one tier a single point of failure for the whole mode). Narrowing the spec sentence to "tiers that expose a category parameter receive it" (rejected: it would have legalized a tier asking its upstream a music question on behalf of a podcast listener, which is the failure the spec was written to prevent).
 
 ### 3. The category comes from the request in podcast mode, and from the heuristic in music mode
 
@@ -81,6 +83,14 @@ Current state, verified in the code:
 **Why.** Adding a `podcastHistory` dataset would duplicate the history store and create two sources of truth for "what was played". The roadmap's "store podcast listening history locally" is satisfied by the existing dataset; the risk is a regression, not a missing feature.
 
 **Alternatives considered.** A separate podcast history list (rejected: duplicate state, and the History surface would need a second clear action). Tagging events with a `podcast` boolean (rejected: redundant with `track.category`, and redundant stored state can disagree with the track it points at).
+
+### 9. A blank channel id is no id (pre-existing bug the mode exposed)
+
+**Decision.** In `features/search/ArtistTile`, a derived artist's provider id is used only when it is non-blank; a blank id falls back to the artist's name. `features/search/ResultMenu` and `features/history/HistoryView` already did this (`nonBlank`, `isProviderEntityId`); the tile did not.
+
+**Why.** `providerIdFor(artist) ?? artist.name` treats `""` as an id, so `artistHref("")` produced `/artist/` — a link to the artist route with *no key*. That renders the not-found state and prefetches an RSC request that 404s, which the evidence run recorded as a console error. Nothing about it is podcast-specific, but the mode makes it common: the Invidious tier routinely returns a podcast show whose `ownerText` yields a name and **an empty channel id**, so the id is present-and-blank rather than absent. The M9 contract is explicit that an id-less entry stays activatable by name (`catalog` — "Catalog entity keys and resolution requests", covered by `tests/search-entry-points.test.tsx`); a blank id is the same situation wearing a costume. Fixing it here rather than suppressing the 404 in the harness keeps the evidence honest: the run reports zero console errors because the product does not produce that 404.
+
+**Alternatives considered.** Suppressing the error in the harness (rejected: it hides a real dead link and would leave the M9 contract broken for blank ids). Making `artistHref` reject an empty key (rejected: it returns `string`, so "reject" would mean a second magic string at every call site — the decision belongs to the caller that knows whether it has an entity).
 
 ## Risks / Trade-offs
 

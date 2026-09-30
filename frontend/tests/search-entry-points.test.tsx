@@ -131,6 +131,27 @@ describe("search artist tiles (M9 task 6.1)", () => {
     expect(artistRequestKey(key)).toEqual({ name: "Björk" });
   });
 
+  it("treats a blank provider id as no id, and links by name (M12)", () => {
+    // The Invidious tier returns podcast shows whose channel id is present and
+    // empty. `??` alone would take that empty string as the id and produce
+    // `/artist/` — a link to the route with no key, which renders not-found and
+    // prefetches a 404. The name is the usable key there, so the tile must use it.
+    const artist = artistFor(
+      makeTrack({
+        title: "Best Friend Buried Alive",
+        artists: [{ id: "", name: "SRF Dokus" }],
+        category: "podcast",
+      }),
+    );
+
+    render(<ArtistTile artist={artist} />);
+
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", "/artist/SRF%20Dokus");
+    expect(link.getAttribute("href")).not.toBe("/artist/");
+    expect(artistRequestKey("SRF Dokus")).toEqual({ name: "SRF Dokus" });
+  });
+
   it("uses the credited artist's id, not another credit on the same track", () => {
     // The derived entry is keyed by name, so the id has to come from the credit
     // the entry was built from — a feat. track must not borrow a co-artist's id.

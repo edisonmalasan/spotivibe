@@ -3,6 +3,7 @@ import type { Track } from "@/data/repositories";
 import { AlbumTile } from "@/features/search/AlbumTile";
 import { ArtistTile } from "@/features/search/ArtistTile";
 import { deriveResults } from "@/features/search/derive";
+import type { SearchMode } from "@/features/search/searchApi";
 import { ResultMenu } from "@/features/search/ResultMenu";
 import { SongRow } from "@/components/track/SongRow";
 import { TopResultCard } from "@/features/search/TopResultCard";
@@ -12,6 +13,13 @@ interface SearchResultsProps {
   tracks: Track[];
   /** The query the sections are derived against (Top Result matching). */
   query: string;
+  /**
+   * M12: which question produced these results. Podcast results present an
+   * episode with its show/channel and its long-form duration, and resolve no
+   * Albums section — a podcast's metadata carries no album identity, and an
+   * empty section would be a section the product cannot fill.
+   */
+  mode?: SearchMode;
   /**
    * Refine action for the Top Result's artist/album card (query := entity
    * name). The derived artist/album tiles and the context menu open the real
@@ -34,10 +42,17 @@ interface SearchResultsProps {
  * refines, because it presents "the best match for this query" rather than an
  * entity to browse.
  */
-export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResultsProps) {
+export function SearchResults({
+  tracks,
+  query,
+  mode = "music",
+  onRefine,
+  onPlay,
+}: SearchResultsProps) {
   const { songs, artists, albums, topResult } = deriveResults(tracks, query);
   const { likedIds, toggleLike } = useLikedTracks();
   const topTrack = topResult?.kind === "track" ? topResult.track : null;
+  const isPodcast = mode === "podcast";
 
   function menuFor(track: Track, context: Track[]) {
     return (
@@ -65,7 +80,7 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
           </section>
         )}
         <section>
-          <SectionHeader title="Songs" />
+          <SectionHeader title={isPodcast ? "Episodes" : "Songs"} />
           <ul data-testid="search-results" className="flex flex-col gap-2">
             {songs.map((track) => (
               <SongRow
@@ -82,7 +97,7 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
       <div className="flex min-w-0 flex-1 flex-col gap-8">
         {artists.length > 0 && (
           <section>
-            <SectionHeader title="Artists" />
+            <SectionHeader title={isPodcast ? "Shows" : "Artists"} />
             <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-2">
               {artists.map((artist) => (
                 <li key={artist.key}>
@@ -92,7 +107,9 @@ export function SearchResults({ tracks, query, onRefine, onPlay }: SearchResults
             </ul>
           </section>
         )}
-        {albums.length > 0 && (
+        {/* M12: no Albums section for podcast results — episode metadata resolves
+            no album identity, so the section could only ever be empty. */}
+        {!isPodcast && albums.length > 0 && (
           <section>
             <SectionHeader title="Albums" />
             <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-2">
