@@ -33,17 +33,61 @@ test in the suite was written to catch.
 | **M11** | `2026-09-30-add-listening-insights-and-smart-mixes` | #45 propose `b735476`, #46 apply `9d9312b`, #47 sync `c7485f0`, #48 archive `802e403` |
 
 | **M12** | `2026-09-30-add-podcasts` | #49 propose `b914875`, #50 apply `ead69e5`, #51 sync `93a2e21`, #52 archive `3cabc58` |
-| **M13** | `2026-09-30-add-pwa-install-and-offline-shell` | #53 propose `e8f0576`, #54 apply `6bdc296`, #55 sync `74307b8`, #56 archive `f8e0afb` |
+| **M13** | `2026-09-30-add-pwa-install-and-offline-shell` | #53 propose `e8f0576`, #54 apply `6bdc296`, #55 sync `74307b8`, #56 archive `f8e0afb`, #57 record `fbad5cc` |
+| **M14** | `2026-09-30-add-deployment-hardening` (apply merged) | #58 propose `0d855f9`, #59 apply `d65abb4` |
 
 Baseline at the M12 merge (`3cabc58`): **130 test files / 2084 tests**; after M13:
-**134 test files / 2152 tests**, all six gates green in a clean clone. Main specs:
-`pwa` (new, 6 requirements / 27 scenarios), `network` updated — **16 capabilities,
-all validating**. 14 archived changes, none active. M13's browser evidence run
-(`pass: true`, 34/34 steps, 0 console errors) drives the production build in headless
-Edge over CDP with **no dependencies** and stops the server itself for the offline
-phase.
-**Next objective: M14 (performance, security, accessibility, resilience)**, then M15
-release validation and deployment.
+**134 test files / 2152 tests**; after M14: **140 test files / 2231 tests**, all six
+gates green in a clean clone **and with zero lint warnings**. Main specs: `pwa` (new),
+`network` updated at M13; `security` and `performance` (new) plus `pwa`, `local-data`
+and `app-shell` modified at M14 — **18 capabilities, all validating**. 14 archived
+changes; M14's change is active (apply merged, sync and archive outstanding).
+M14's browser evidence run (`pass: true`, 62/62 checks, 0 console errors, 11
+disclosures, 4 screenshots) drives the production build in headless Edge over CDP with
+**no dependencies**, measures **both viewports**, and **stops the server process** for
+its offline phase.
+**Next objective: M14 Sync, then M14 Archive, then M15 (test matrix, release
+validation, Vercel deployment).**
+
+## What M14's verification pass taught
+
+It returned **NOT MERGEABLE** with two CRITICALs, both in the change's own work, and both
+found by *executing* things rather than reading them. The transferable lessons:
+
+1. **A byte count is not a character count.** The cache-integrity check compared
+   `content-length` against a decoded string's length. Every prerendered page contains
+   non-ASCII punctuation, so it deleted *intact* entries — four of nine routes behaved as
+   if never visited and the artwork cache could never hit. The unit tests missed it
+   because they built responses with **no** `content-length`, so the comparison never
+   ran; the evidence missed it because it seeded only a *truncated* entry, so the
+   false-positive path was never exercised. **A check that only proves the failure it was
+   written for is half a check** — assert both halves of every pair you introduce.
+2. **A rule can be green and wrong because its detector never saw the real shape.** The
+   M11 guard for "outbound links never suppress the referrer" matched only an inline
+   `"Referrer-Policy": "no-referrer"` pair, and the header was declared as a
+   `{ key, value }` array entry — so a `no-referrer` header passed a rule written to
+   catch one. Its self-test asserted the inline form and passed. **Prove each detector
+   against the shape the code actually has**, and make the detector comment-aware, or it
+   will flag the file that *explains* the decision.
+3. **`npm run lint` exiting 0 does not mean no warnings.** Eight accumulated under a
+   green build, including a dead import that made a task's description untrue. Check the
+   warning count explicitly at the end of a milestone.
+4. **A MODIFIED spec block can quietly get weaker.** Rewriting a requirement dropped its
+   landmark clause; no scenario was lost, so nothing complained. Diff the normative text,
+   not just the scenario names.
+5. **Check the identifier a rule is about.** The limiter keys on `x-forwarded-for`, which
+   a client sets. The honest fix was to document the assumption where the limitation
+   lives, not to imply the loop is unconditionally closed.
+6. **Measure both viewports.** The compact shell does not render at 1280×900, so a
+   single-viewport audit reported every surface clean while an inactive navigation label
+   sat at 4.16:1.
+7. **A backtick in a comment inside a template literal ends the string** — hit this
+   again in M14, in the evidence harness, *after* writing the rule down. Writing a rule
+   down is not the same as obeying it; the check has to be mechanical.
+8. **Edit a long generated file by line range, not by text anchor.** Two M14 repairs
+   destroyed adjacent blocks that way (a whole evidence phase, a `)` past a `;`) and both
+   were caught only by `node --check`. Run it after *every* scripted edit to a `.mjs`
+   file, not just at the end.
 
 ## M12 state (archived)
 - Archived change: `openspec/changes/archive/2026-09-30-add-podcasts` — `design.md`
