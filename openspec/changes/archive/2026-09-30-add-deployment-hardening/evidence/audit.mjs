@@ -63,7 +63,17 @@ mkdirSync(EVIDENCE_DIR, { recursive: true });
 const PORT = Number(process.env.SPOTIVIBE_PORT ?? 3212);
 const ORIGIN = `http://localhost:${PORT}`;
 const CDP_PORT = Number(process.env.SPOTIVIBE_CDP_PORT ?? 9465);
-const REPO = resolve(EVIDENCE_DIR, "../../../..");
+// M15 portability fix, and the only change ever made to an archived harness. The relative
+// walk was written when this change was *active*, where `evidence/../../../..` is the
+// repository root; archiving moved the directory one level deeper, so the same walk
+// resolved to `openspec/` and the harness reported "no production build found" instead of
+// running. An explicit override is used when given, and the walk is retained as the
+// fallback so the harness still works in an active change directory. The archived
+// `results.json` is untouched: no recorded claim was rewritten, only the script's ability
+// to find the repository.
+const REPO = process.env.SPOTIVIBE_REPO
+  ? resolve(process.env.SPOTIVIBE_REPO)
+  : resolve(EVIDENCE_DIR, "../../../..");
 const FRONTEND = join(REPO, "frontend");
 
 const BROWSER_CANDIDATES = [

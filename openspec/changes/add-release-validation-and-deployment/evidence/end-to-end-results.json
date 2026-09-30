@@ -1,0 +1,136 @@
+{
+  "generatedAt": "2026-09-30T18:54:03.143Z",
+  "conditions": {
+    "engine": "edge",
+    "enginesInstalled": [
+      "edge"
+    ],
+    "enginesRun": [
+      "edge"
+    ],
+    "browser": "Edg/154.0.4258.37",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+    "origin": "http://localhost:3215",
+    "providerResponses": "recorded fixtures; the suite proves the application's behaviour, not the providers'",
+    "partial": false,
+    "flowsNotRun": []
+  },
+  "flowsExpected": [
+    "first-launch",
+    "search-and-play",
+    "navigate-while-playing",
+    "add-to-queue",
+    "like-track",
+    "playlist-crud",
+    "session-restore",
+    "backup-roundtrip",
+    "provider-failure",
+    "mobile-navigation",
+    "offline"
+  ],
+  "flowsRun": [
+    "first-launch",
+    "search-and-play",
+    "navigate-while-playing",
+    "add-to-queue",
+    "like-track",
+    "playlist-crud",
+    "session-restore",
+    "backup-roundtrip",
+    "provider-failure",
+    "mobile-navigation",
+    "offline"
+  ],
+  "flows": [
+    {
+      "id": "first-launch",
+      "requirement": "first launch and language onboarding",
+      "ok": true,
+      "detail": "",
+      "ms": 2977,
+      "screenshot": "edge-first-launch-pass.png"
+    },
+    {
+      "id": "search-and-play",
+      "requirement": "search and play",
+      "ok": true,
+      "detail": "",
+      "ms": 1303,
+      "screenshot": "edge-search-and-play-pass.png"
+    },
+    {
+      "id": "navigate-while-playing",
+      "requirement": "navigate while playing",
+      "ok": true,
+      "detail": "",
+      "ms": 2158,
+      "screenshot": "edge-navigate-while-playing-pass.png"
+    },
+    {
+      "id": "add-to-queue",
+      "requirement": "add to queue",
+      "ok": true,
+      "detail": "",
+      "ms": 1429,
+      "screenshot": "edge-add-to-queue-pass.png"
+    },
+    {
+      "id": "like-track",
+      "requirement": "like a track",
+      "ok": true,
+      "detail": "",
+      "ms": 2268,
+      "screenshot": "edge-like-track-pass.png"
+    },
+    {
+      "id": "playlist-crud",
+      "requirement": "create a playlist, add, reorder, and remove",
+      "ok": true,
+      "detail": "",
+      "ms": 7447,
+      "screenshot": "edge-playlist-crud-pass.png"
+    },
+    {
+      "id": "session-restore",
+      "requirement": "reload and session restore",
+      "ok": true,
+      "detail": "",
+      "ms": 2206,
+      "screenshot": "edge-session-restore-pass.png"
+    },
+    {
+      "id": "backup-roundtrip",
+      "requirement": "backup export and import",
+      "ok": true,
+      "detail": "",
+      "ms": 2445,
+      "screenshot": "edge-backup-roundtrip-pass.png"
+    },
+    {
+      "id": "provider-failure",
+      "requirement": "provider failure fallback",
+      "ok": true,
+      "detail": "",
+      "ms": 4828,
+      "screenshot": "edge-provider-failure-pass.png"
+    },
+    {
+      "id": "mobile-navigation",
+      "requirement": "mobile navigation",
+      "ok": true,
+      "detail": "",
+      "ms": 947,
+      "screenshot": "edge-mobile-navigation-pass.png"
+    },
+    {
+      "id": "offline",
+      "requirement": "the offline application shell and library flow",
+      "ok": true,
+      "detail": "",
+      "ms": 6384,
+      "screenshot": "edge-offline-pass.png"
+    }
+  ],
+  "proveCanFail": true,
+  "pass": true
+}

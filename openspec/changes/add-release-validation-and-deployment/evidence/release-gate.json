@@ -1,0 +1,257 @@
+{
+  "generatedAt": "2026-09-30T18:54:03.886Z",
+  "repo": "C:\\Users\\Edison\\Desktop\\Projects\\spotivibe",
+  "skipBrowser": false,
+  "totals": {
+    "passed": 18,
+    "failed": 0,
+    "notRun": 8,
+    "skipped": 0
+  },
+  "items": [
+    {
+      "id": "gates-install",
+      "requirement": "`npm ci` installs from the lockfile",
+      "status": "PASS",
+      "detail": "29.2s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "gates-lint",
+      "requirement": "`npm run lint` reports no errors",
+      "status": "PASS",
+      "detail": "31.6s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "gates-format",
+      "requirement": "`npm run format:check` passes",
+      "status": "PASS",
+      "detail": "5.8s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "gates-typecheck",
+      "requirement": "`npm run typecheck` passes in strict mode",
+      "status": "PASS",
+      "detail": "9.7s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "gates-tests",
+      "requirement": "`npm test` passes",
+      "status": "PASS",
+      "detail": "70.6s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "gates-build",
+      "requirement": "`npm run build` produces a production build",
+      "status": "PASS",
+      "detail": "14.2s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "icons-drift",
+      "requirement": "PWA icons match the committed generator's output",
+      "status": "PASS",
+      "detail": "1.8s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "pwa-manifest",
+      "requirement": "The manifest and the worker validate",
+      "status": "PASS",
+      "detail": "10 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "pwa-offline-claims",
+      "requirement": "The offline copy claims only what the offline experience does",
+      "status": "PASS",
+      "detail": "8 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "security-policy",
+      "requirement": "Every response is governed by one declared security policy",
+      "status": "PASS",
+      "detail": "9 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "exclusions",
+      "requirement": "No permanent product exclusion is present in the shipped sources",
+      "status": "PASS",
+      "detail": "57 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "deployment-contract",
+      "requirement": "The deployable shape is what a free-tier single application needs",
+      "status": "PASS",
+      "detail": "14 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "backup-roundtrip",
+      "requirement": "Export, reset, and import round-trip the listener's data",
+      "status": "PASS",
+      "detail": "18 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "evidence-parses",
+      "requirement": "Every evidence script parses",
+      "status": "PASS",
+      "detail": "0.3s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "backup-format",
+      "requirement": "The backup format is documented, and the document matches the code it describes",
+      "status": "PASS",
+      "detail": "14 assertions",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "accessibility-performance",
+      "requirement": "Contrast, names, keyboard reachability, and loading are within the stated targets",
+      "status": "PASS",
+      "detail": "35.2s - restored 1 archived file(s) the harness overwrote",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "end-to-end",
+      "requirement": "The critical flows work in a real browser against a production build",
+      "status": "PASS",
+      "detail": "36.3s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "falsifiability",
+      "requirement": "The suite's own assertions are proven capable of failing",
+      "status": "PASS",
+      "detail": "46.5s",
+      "reason": null,
+      "steps": null
+    },
+    {
+      "id": "browser-second-engine",
+      "requirement": "The flows also pass in a second browser engine",
+      "status": "NOT RUN",
+      "detail": "only one browser engine is installed here (edge); a second-engine run needs a second engine",
+      "reason": "only one browser engine is installed here (edge); a second-engine run needs a second engine",
+      "steps": [
+        "Install a second Chromium-family browser: Edge is preinstalled on Windows, Chrome on macOS and Linux.",
+        "Re-run the gate — it discovers installed engines at run time and names the second one.",
+        "Or run it directly: node openspec/changes/add-release-validation-and-deployment/evidence/end-to-end.mjs --browser=<engine>"
+      ]
+    },
+    {
+      "id": "vercel-deploy",
+      "requirement": "Vercel production build passes",
+      "status": "NOT RUN",
+      "detail": "needs Vercel account credentials, which this project does not have or want",
+      "reason": "needs Vercel account credentials, which this project does not have or want",
+      "steps": [
+        "Import the repository into Vercel with `frontend/` as the project root.",
+        "Accept the auto-detected Next.js preset; add no environment variables.",
+        "Confirm the build log reports Node 26, matching `package.json` `engines.node`.",
+        "Follow the five verification steps in `frontend/docs/DEPLOYMENT.md`."
+      ]
+    },
+    {
+      "id": "design-visual-audit",
+      "requirement": "`frontend/docs/DESIGN.md` visual audit passed",
+      "status": "NOT RUN",
+      "detail": "proportion and visual hierarchy are judgements no check in this repository makes",
+      "reason": "proportion and visual hierarchy are judgements no check in this repository makes",
+      "steps": [
+        "Open each surface named in DESIGN.md at 1280x900 and at 390x844.",
+        "Compare against the layout, spacing, typography, and colour the document specifies.",
+        "The automated contrast, naming, and keyboard audits cover what can be computed;",
+        "proportion, hierarchy, and visual rhythm are a human judgement and are not asserted."
+      ]
+    },
+    {
+      "id": "browser-firefox",
+      "requirement": "Firefox desktop, standard web mode",
+      "status": "NOT RUN",
+      "detail": "the automation protocol this project uses is a Chromium protocol",
+      "reason": "the automation protocol this project uses is a Chromium protocol",
+      "steps": [
+        "Open the production build in Firefox desktop.",
+        "Walk the critical flows: first launch, search and play, navigate while playing,",
+        "like, queue, playlist edit, reload and session restore, offline shell.",
+        "Watch for layout differences at 1280x900 and 390x844, and for focus visibility."
+      ]
+    },
+    {
+      "id": "browser-android",
+      "requirement": "Android Chromium/PWA where available",
+      "status": "NOT RUN",
+      "detail": "no Android device or emulator is available in this environment",
+      "reason": "no Android device or emulator is available in this environment",
+      "steps": [
+        "Open the deployed origin in Chrome for Android and install it from the menu.",
+        "Confirm the installed copy launches standalone and registers a service worker.",
+        "Repeat the critical flows offline with the network disabled."
+      ]
+    },
+    {
+      "id": "browser-ios",
+      "requirement": "iOS Safari/Home Screen PWA where available",
+      "status": "NOT RUN",
+      "detail": "no iOS device or simulator is available in this environment",
+      "reason": "no iOS device or simulator is available in this environment",
+      "steps": [
+        "Open the deployed origin in Safari on iOS and add it to the Home Screen.",
+        "Confirm it launches standalone, plays, and survives a background/foreground cycle.",
+        "Note: iOS is the platform where a waiting service worker is least likely to activate",
+        "promptly, so the update notice in M13's flow is the thing to watch."
+      ]
+    },
+    {
+      "id": "roadmap-truth",
+      "requirement": "`ROADMAP.md` reflects actual scope and status",
+      "status": "NOT RUN",
+      "detail": "checked by hand at each lifecycle stage; the orchestrator owns this file",
+      "reason": "checked by hand at each lifecycle stage; the orchestrator owns this file",
+      "steps": [
+        "Compare the status table against `openspec/changes/archive` and the merge history.",
+        "Confirm every DONE milestone has its change archived and its specs synced."
+      ]
+    },
+    {
+      "id": "attribution",
+      "requirement": "Attribution notices are included for substantial Lyrix-derived code",
+      "status": "NOT RUN",
+      "detail": "a provenance judgement about authorship, not something a check can decide",
+      "reason": "a provenance judgement about authorship, not something a check can decide",
+      "steps": [
+        "Read `ATTRIBUTION.md` and confirm its claim matches the repository's history:",
+        "concepts were studied and reimplemented, and no Lyrix source was copied.",
+        "If code is ever copied or modified rather than reimplemented, add its MIT notice."
+      ]
+    }
+  ],
+  "pass": true
+}
