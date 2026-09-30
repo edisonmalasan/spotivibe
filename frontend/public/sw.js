@@ -212,6 +212,63 @@ async function enforceBound(cacheName, max) {
 }
 
 /**
+ * Read a cache entry that can actually be served.
+ *
+ * A cache is the one component that can hold bytes the application did not just write,
+ * so every read answers a question the old code skipped: *is this usable as an
+ * answer?* A truncated entry, a response with no status, a body that cannot be read -
+ * each is a silent wrong answer, which is the failure mode this worker's whole
+ * decision table exists to prevent.
+ *
+ * Anything unusable is deleted and reported as absent, and the requester's normal
+ * fallback applies. Deleting it is self-healing: the next successful response
+ * repopulates it. A read that throws is treated the same way, because a cache that
+ * cannot be read must not take the page's request down with it.
+ *
+ * @param {string} cacheName
+ * @param {RequestInfo} key
+ * @param {{ validate?: (response: Response) => Promise<boolean> }} [options]
+ * @returns {Promise<Response | undefined>}
+ */
+async function readUsable(cacheName, key, options = {}) {
+  const cache = await caches.open(cacheName);
+  let entry;
+  try {
+    entry = await cache.match(key);
+  } catch {
+    // A cache that cannot be opened or read is an empty cache, not a failure.
+    return undefined;
+  }
+  if (!entry) return undefined;
+  if (options.validate && !(await options.validate(entry))) {
+    await cache.delete(key).catch(() => undefined);
+    return undefined;
+  }
+  return entry;
+}
+
+/**
+ * Whether a stored response is intact enough to serve.
+ *
+ * The body is read and replaced, so the check consumes nothing: a `clone()` is
+ * validated and the original is what gets served. `Content-Length` is compared when
+ * the header survived, which is the cheapest way to catch a truncated write, and the
+ * body is additionally required to be non-empty for the document and metadata classes
+ * where an empty body is never a valid answer.
+ */
+async function isIntactResponse(response, { requireBody = false } = {}) {
+  try {
+    const declaredLength = response.headers.get("content-length");
+    const body = await response.clone().text();
+    if (declaredLength !== null && Number(declaredLength) !== body.length) return false;
+    if (requireBody && body.length === 0) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Store a response and keep the cache within its bound.
  *
  * The key is a `Request` or a URL string. The string form matters: the Cache API
@@ -221,9 +278,18 @@ async function enforceBound(cacheName, max) {
  */
 async function store(cacheName, request, response, max) {
   if (!response || !response.ok) return response;
-  const cache = await caches.open(cacheName);
-  await cache.put(request, response.clone());
-  await enforceBound(cacheName, max);
+  // A cache that cannot be *written* must not break the response it was about to
+  // return: the listener asked for content and has it, and a full disk or a corrupted
+  // store is not their problem to solve before they can have it. The write is a
+  // performance concern; failing it silently is not a data-loss event because the
+  // cache is disposable by design and the listener's datasets are never in here.
+  try {
+    const cache = await caches.open(cacheName);
+    await cache.put(request, response.clone());
+    await enforceBound(cacheName, max);
+  } catch {
+    /* the cache is unavailable or full; the response still goes to its caller */
+  }
   return response;
 }
 
@@ -238,6 +304,12 @@ async function freshMetadata(request) {
     await cache.delete(request);
     return null;
   }
+  // Past its freshness bound an entry is deleted, and so is an entry that cannot be
+  // served: both are "not an answer", and only one of them is about age.
+  const intact = await readUsable(CACHES.metadata, request, {
+    validate: (response) => isIntactResponse(response, { requireBody: true }),
+  });
+  if (!intact) return null;
   return cached;
 }
 
@@ -247,8 +319,7 @@ async function freshMetadata(request) {
 
 /** Hashed assets and icons: a cache hit is correct by construction. */
 async function cacheFirst(request, cacheName, max) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
+  const cached = await readUsable(cacheName, request, { validate: isIntactResponse });
   if (cached) return cached;
   const response = await fetch(request);
   return store(cacheName, request, response, max);
@@ -278,14 +349,19 @@ async function cacheFirst(request, cacheName, max) {
  * the shell, never to another entity").
  */
 async function navigationFirst(request) {
-  const cache = await caches.open(CACHES.pages);
   try {
     const response = await fetch(request);
     return await store(CACHES.pages, request, response, MAX_ENTRIES.pages);
   } catch (error) {
-    const own = await cache.match(request);
+    // A cached document is the listener's way back into the application, so it gets
+    // the same "is this usable?" check as every other read.
+    const own = await readUsable(CACHES.pages, request, {
+      validate: (response) => isIntactResponse(response, { requireBody: true }),
+    });
     if (own) return own;
-    const shell = await (await caches.open(CACHES.shell)).match(SHELL_URL);
+    const shell = await readUsable(CACHES.shell, SHELL_URL, {
+      validate: (response) => isIntactResponse(response, { requireBody: true }),
+    });
     if (shell) {
       const target = new URL(SHELL_URL, self.location.origin).href;
       // Already at the shell: serve it, or this would redirect to itself forever.
@@ -299,7 +375,6 @@ async function navigationFirst(request) {
 
 /** Metadata: live when reachable, cached within its freshness bound otherwise. */
 async function metadataFirst(request) {
-  const cache = await caches.open(CACHES.metadata);
   try {
     const response = await fetch(request);
     if (response.ok) {
@@ -328,8 +403,7 @@ async function metadataFirst(request) {
 
 /** Artwork: display-only, third-party, and safe to serve slightly stale. */
 async function artworkFirst(request) {
-  const cache = await caches.open(CACHES.artwork);
-  const cached = await cache.match(request);
+  const cached = await readUsable(CACHES.artwork, request, { validate: isIntactResponse });
   const network = fetch(request)
     .then((response) => store(CACHES.artwork, request, response, MAX_ENTRIES.artwork))
     .catch(() => undefined);

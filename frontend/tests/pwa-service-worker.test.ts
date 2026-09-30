@@ -24,6 +24,45 @@ const workerSource = readFileSync(WORKER_PATH, "utf8");
 const ORIGIN = "https://app.test";
 
 /** The absolute URL a request or relative string key names, as a real cache sees it. */
+/**
+ * A cache that fails to read, standing in for the corrupted or half-deleted store a
+ * real device eventually has.
+ *
+ * `match` and `delete` throw, and `open` still succeeds: the failure mode the worker
+ * must survive is "the cache cannot be read", not "the cache is absent".
+ */
+function withUnreadableCaches(harness: WorkerHarness, names: string[]): void {
+  for (const name of names) {
+    const original = harness.caches.open;
+    harness.caches.open = async (requested: string) => {
+      const cache = await original(requested);
+      if (!names.includes(requested)) return cache;
+      return {
+        async keys() {
+          return cache.keys();
+        },
+        async match() {
+          throw new DOMException("cache is corrupted", "InvalidStateError");
+        },
+        async put() {
+          throw new DOMException("cache is corrupted", "InvalidStateError");
+        },
+        async delete() {
+          throw new DOMException("cache is corrupted", "InvalidStateError");
+        },
+      };
+    };
+  }
+}
+
+/** A response whose declared length does not match its body: a truncated write. */
+function truncatedResponse(declaredLength: number, body = "half a doc"): Response {
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/html", "content-length": String(declaredLength) },
+  });
+}
+
 function absoluteKey(request: Request | string): string {
   return typeof request === "string" ? new URL(request, ORIGIN).href : request.url;
 }
@@ -467,6 +506,83 @@ describe("bounded metadata and artwork (task 3.3)", () => {
     // And the revalidation does not wait for the response: the artwork was served
     // from cache, not from the network.
     expect(await worker.caches.sizeOf("spotivibe-artwork-v1")).toBe(1);
+  });
+});
+
+describe("a corrupt cache entry is a miss, not an answer (M14 task 2.1)", () => {
+  it("discards a truncated document and serves it from the network instead", async () => {
+    // A cache is the one component that can hold bytes the application did not just
+    // write, so serving one that cannot be served is a silent wrong answer.
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    const key = `${ORIGIN}/library`;
+    await cache.put(key, truncatedResponse(9999));
+    expect(await worker.caches.sizeOf("spotivibe-pages-v1")).toBe(1);
+
+    const response = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    // The live response, not the truncated one...
+    expect(await response?.text()).toBe("live");
+    // ...and the entry is gone, so the next visit cannot be fooled by it either.
+    const keys = (await cache.keys()).map((entry) => entry.url);
+    expect(keys.filter((url) => url === key)).toHaveLength(1);
+    expect(await (await cache.match(key))?.text()).toBe("live");
+  });
+
+  it("discards a truncated metadata response rather than serving stale metadata", async () => {
+    const url = `${ORIGIN}/api/artist?name=x`;
+    const cache = await worker.caches.open("spotivibe-metadata-v1");
+    await worker.respond(get(url, { mode: "cors" }));
+    const [key] = await cache.keys();
+    // Replace the good copy with a truncated one that still carries the freshness
+    // stamp: a corrupt entry must not be served merely because it looks recent.
+    const headers = new Headers({
+      "content-length": "99999",
+      "x-spotivibe-cached-at": String(Date.now()),
+    });
+    await cache.put(
+      key!,
+      new Response(JSON.stringify({ truncated: true }), { status: 200, headers }),
+    );
+
+    worker.fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
+    await expect(worker.respond(get(url, { mode: "cors" }))).rejects.toThrow();
+    expect(await worker.caches.sizeOf("spotivibe-metadata-v1")).toBe(0);
+  });
+
+  it("treats an unreadable cache as empty rather than failing the request", async () => {
+    // A cache that throws on read must not take the page's request down with it: the
+    // worker falls through to the network and the listener's page still loads.
+    withUnreadableCaches(worker, ["spotivibe-pages-v1", "spotivibe-shell-v1"]);
+    const page = await worker.respond(get(`${ORIGIN}/library`, { mode: "navigate" }));
+    expect(await page?.text()).toBe("live");
+
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    // And with the network gone too, the unvisited-route fallback still cannot read
+    // the shell - so the failure is the honest one rather than a thrown cache error.
+    await expect(
+      worker.respond(get(`${ORIGIN}/artist/Nobody`, { mode: "navigate" })),
+    ).rejects.toThrow();
+  });
+
+  it("does not serve a document with an empty body as if it were a page", async () => {
+    // Install first, so the shell the fallback redirects to actually exists - without
+    // it the honest answer is the network failure, which the previous test covers.
+    await worker.fire("install");
+    const cache = await worker.caches.open("spotivibe-pages-v1");
+    await cache.put(`${ORIGIN}/queue`, new Response("", { status: 200 }));
+    worker.fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    // An empty document is not a page; the shell redirect is the honest answer.
+    const response = await worker.respond(get(`${ORIGIN}/queue`, { mode: "navigate" }));
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get("location")).toBe(`${ORIGIN}/`);
+  });
+
+  it("still returns a live response when the cache cannot be written", async () => {
+    // Found by the unreadable-cache test above: a `put` that throws used to reject the
+    // whole request, so a device with a full or corrupted store could lose the network
+    // response it had already been given.
+    withUnreadableCaches(worker, ["spotivibe-pages-v1", "spotivibe-shell-v1"]);
+    const response = await worker.respond(get(`${ORIGIN}/history`, { mode: "navigate" }));
+    expect(await response?.text()).toBe("live");
   });
 });
 
