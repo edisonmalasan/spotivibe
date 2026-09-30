@@ -148,3 +148,65 @@ version of each lesson:
 5. **A ticked box beside a note saying the verification did not occur is a claim the note
    contradicts.** Tasks 2.6 and 6.1 are now unticked, because the spec forbids recording an
    item as delivered on the basis of a check that did not run.
+
+## Archive record
+
+Archived 2026-10-01, after Apply merged as #64 and Sync as #65.
+
+| Stage | PR | Merge commit | Outcome |
+| --- | --- | --- | --- |
+| Propose | #63 | `f83f3f6` | merged |
+| Apply | #64 | `0cbd1dc` | merged after two verification passes, both NOT MERGEABLE, all findings fixed |
+| Sync | #65 | `9b8bab7` | merged; two capabilities added, 20 in total |
+| Archive | #66 | — | this change |
+
+## What was delivered
+
+- **The permanent product exclusions are enforced.** Eight detectors over the shipped
+  sources, 39 violating-shape fixtures, plus a route-path rule, sweeping `src/`, `public/`,
+  `scripts/`, and `next.config.ts`. `no cloud sync` is a ninth capability of the roadmap made
+  checkable, and it had no detector until this change's coverage check surfaced the gap.
+- **One maintained end-to-end suite.** Eleven flows in a real browser against a production
+  build, driven by accessible name and role, with the CDP plumbing written once. The thirteen
+  archived per-milestone harnesses are untouched — they are the record of thirteen specific
+  runs, not code to maintain.
+- **A runnable release gate** that prints a per-item result or a not-run reason *with steps*,
+  and refuses to pass if any roadmap checklist item is unrepresented.
+- **A deployment contract**, asserted rather than assumed, and a pinned runtime.
+- **Three documents the release checklist demanded** and nobody had written, each held to the
+  code it describes by a test.
+
+## Gate results at archive
+
+| | |
+| --- | --- |
+| Release gate | 18 passed, 0 failed, 8 not run; 13 of 13 checklist items represented, 1 only partly |
+| End-to-end | 11 of 11 flows in Edge |
+| Prove-can-fail | 4 of 4, and it is a gate item |
+| Tests | 2316 across 143 files |
+| Clean clone | all six gates exit 0 |
+
+## Out of scope by design
+
+Nothing in this change altered the application's behaviour. No dataset, no API route, no
+runtime dependency — the only edit to an existing runtime file is `engines.node` in
+`package.json`, and reverting it cannot break a build on a host that ignores it. No
+consolidation of the archived harnesses, because rewriting thirteen evidence records to
+remove a duplication would change claims about what was true at a point in time.
+
+## Limits that remain, permanently unverified here
+
+- **A second browser engine.** One is installed on this machine. The capability exists and
+  the gate reports a second-engine run as NOT RUN with the reason and the steps, so a
+  one-engine run is never read as a two-engine one.
+- **A real Vercel deployment.** It needs credentials this project does not have and does not
+  want, and whether Vercel honours `engines.node` is host behaviour. `frontend/docs/DEPLOYMENT.md`
+  is the procedure and names the five things to verify afterwards.
+- **Firefox, Android, and iOS.** The automation is a Chromium protocol. Three manual entries
+  with instructions and what evidence to produce.
+- **The DESIGN.md visual audit.** Contrast, accessible names, and keyboard reachability are
+  computed and asserted; proportion, hierarchy, and visual rhythm are human judgements.
+- **Whether the pattern-based exclusion detectors catch every phrasing.** A static pattern
+  cannot enforce a semantic property. The three genuine proofs are the allow-lists: the exact
+  runtime dependency list, no environment read outside the schema, and the route path rule.
+- **The falsifiability proof covers 4 of 11 flows**, against a spec that says *each*.
