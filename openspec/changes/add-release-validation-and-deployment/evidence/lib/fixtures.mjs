@@ -200,12 +200,27 @@ export const WORKING_ROUTES = [
 /**
  * Routes for a provider that is failing.
  *
- * A 503 with a JSON body is what the application's own routes return when every tier
- * fails, so this is the shape the client already handles. The fallback notice is
- * `fallback-notice` in the shell, and the point of the scenario is that a listener sees
- * an explanation rather than an empty page.
+ * Two failure modes, because a listener meets both and the first version could only serve
+ * one of them.
+ *
+ * **`FAILING_BODY_ROUTES` — the application answered, and the answer was a failure.** A
+ * 503 with an `ok: false` body is what the application's own routes return when every tier
+ * fails, so this is the shape the client already handles and parses. The first version of
+ * the harness turned *any* status of 400 or more into a connection-level failure, so these
+ * bodies were dead data: the client never saw the failure shape, only a dead socket.
+ *
+ * **`FAILING_TRANSPORT_ROUTES` — the server never answered at all.** A dropped connection
+ * is a different thing to encounter and the client handles it differently, so it is
+ * expressed separately rather than standing in for both.
+ *
+ * The listener's outcome is what the scenario asserts, and it is the same for both: an
+ * explanation rather than an empty page or a crash. The limit is stated in the suite's
+ * documentation: the *server-side* tier fallback (ytmusic → ytweb → invidious → piped)
+ * cannot be reached from here, because the router replaces the whole same-origin request
+ * and the route handler therefore never runs. What this proves is the client's handling of
+ * each failure shape, and the tier chain is covered by the provider layer's own tests.
  */
-export const FAILING_ROUTES = [
+export const FAILING_BODY_ROUTES = [
   {
     path: "/api/search",
     match: /^\/api\/search/,
@@ -255,3 +270,20 @@ export const FAILING_ROUTES = [
     body: { ok: false },
   },
 ];
+
+/** The server never answered: a connection-level failure, not an HTTP status. */
+export const FAILING_TRANSPORT_ROUTES = [
+  { path: "/api/search", match: /^\/api\/search/, transport: "failed" },
+  { path: "/api/artist", match: /^\/api\/artist/, transport: "failed" },
+  { path: "/api/album", match: /^\/api\/album/, transport: "failed" },
+  { path: "/api/similar", match: /^\/api\/similar/, transport: "failed" },
+  { path: "/api/playlist", match: /^\/api\/playlist/, transport: "failed" },
+  { path: "/api/radio", match: /^\/api\/radio/, transport: "failed" },
+  { path: "/api/discover", match: /^\/api\/discover/, transport: "failed" },
+];
+
+/**
+ * The transport-failure set, kept under the old name for the suite's own imports so a
+ * reader is not left looking for a route set that was renamed out from under them.
+ */
+export const FAILING_ROUTES = FAILING_BODY_ROUTES;

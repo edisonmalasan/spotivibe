@@ -35,8 +35,8 @@
  *   node end-to-end.mjs --prove-can-fail    # assert the suite fails on a broken build
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   availableEngines,
@@ -44,7 +44,11 @@ import {
   openSession,
   repoRoot,
 } from "./lib/harness.mjs";
-import { FAILING_ROUTES, WORKING_ROUTES } from "./lib/fixtures.mjs";
+import {
+  FAILING_BODY_ROUTES,
+  FAILING_TRANSPORT_ROUTES,
+  WORKING_ROUTES,
+} from "./lib/fixtures.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = repoRoot(HERE);
@@ -58,7 +62,25 @@ const ONLY = /--flow=(\S+)/.exec(process.argv.join(" "))?.[1] ?? null;
 const PROVE_CAN_FAIL = process.argv.includes("--prove-can-fail");
 const PORT = Number(process.env.SPOTIVIBE_E2E_PORT ?? 3213);
 const CDP_PORT = Number(process.env.SPOTIVIBE_E2E_CDP_PORT ?? 9466);
-mkdirSync(HERE, { recursive: true });
+/** Where flow screenshots are written, so they are files in the evidence directory. */
+const SHOTS = join(HERE, "screenshots");
+mkdirSync(SHOTS, { recursive: true });
+
+/** Every flow the suite covers, in the order a run performs them. */
+const ALL_FLOWS = [
+  "first-launch",
+  "search-and-play",
+  "navigate-while-playing",
+  "add-to-queue",
+  "like-track",
+  "playlist-crud",
+  "session-restore",
+  "backup-roundtrip",
+  "provider-failure",
+  "mobile-navigation",
+  // Last, because it stops the origin.
+  "offline",
+];
 
 /**
  * Text an error boundary renders.
@@ -92,7 +114,27 @@ async function flow(id, requirement, body) {
   } catch (error) {
     detail = String(error?.message ?? error).slice(0, 300);
   }
-  results.push({ id, requirement, ok, detail, ms: Date.now() - started });
+  // A screenshot of the state the flow ended in, whether it passed or failed. A failing
+  // flow's screenshot is the more useful of the two, and task 6.3 asks for screenshots
+  // while the evidence directory contained none: the capability existed on the session and
+  // nothing ever called it.
+  let screenshot = null;
+  try {
+    screenshot = await session.screenshot(
+      `${ENGINE}-${id}-${ok ? "pass" : "fail"}`,
+      SHOTS,
+    );
+  } catch {
+    screenshot = null;
+  }
+  results.push({
+    id,
+    requirement,
+    ok,
+    detail,
+    ms: Date.now() - started,
+    screenshot: screenshot ? screenshot.split(/[\\/]/).pop() : null,
+  });
   console.log(
     `${ok ? "PASS" : "FAIL"}  ${id.padEnd(22)} ${requirement}` +
       (ok
@@ -137,28 +179,153 @@ async function assertRenders(heading, description) {
   }
 }
 
+/**
+ * The queue's own assertion: the track is in it, in the interface *and* in the session
+ * record the queue is restored from.
+ *
+ * Used by `add-to-queue` and by `prove-can-fail`. The interface check is what a listener
+ * sees; the session check is what survives a reload. A flow that asserted only the heading
+ * would pass if the enqueue did nothing, because the queue view renders its heading
+ * whatever it contains.
+ *
+ * There is no `queue` object store: the queue is a Zustand store, and M6 persists it inside
+ * the single `session` record. The first version of this helper looked for a `queue` store,
+ * found none, and would have reported "stored 0" for a correct application — a check that
+ * fails on the code being right is a check that gets deleted.
+ */
+async function assertQueueContains(fragment) {
+  // Give the view a moment to render the store it just read.
+  const deadline = Date.now() + 8000;
+  let seen = { rows: 0, text: "", stored: 0 };
+  while (Date.now() < deadline) {
+    seen = await session.evaluate(`(() => {
+      const rows = [...document.querySelectorAll('[data-testid="queue-row"]')]
+        .map((row) => row.textContent ?? "");
+      const stored = new Promise((done) => {
+        const request = indexedDB.open("spotivibe");
+        request.onsuccess = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains("session")) return done(-1);
+          const store = db.transaction("session", "readonly").objectStore("session");
+          const all = store.getAll();
+          all.onsuccess = () => {
+            const records = all.result ?? [];
+            // The queue lives inside the session record; the record is what a reload
+            // restores from, so matching here is what "the queue holds it" means.
+            const text = records.map((record) => JSON.stringify(record)).join(" ");
+            done(new RegExp(${JSON.stringify(fragment)}, "i").test(text) ? 1 : 0);
+          };
+          all.onerror = () => done(-1);
+        };
+        request.onerror = () => done(-1);
+      });
+      return stored.then((count) => ({ rows: rows.length, text: rows.join(" | "), stored: count }));
+    })()`);
+    if (new RegExp(fragment, "i").test(seen.text) && seen.stored === 1)
+      return seen;
+    await delay(200);
+  }
+  throw new Error(
+    `the queue does not hold "${fragment}": ${seen.rows} row(s), in the session record: ${seen.stored}, rows "${seen.text.slice(0, 120)}"`,
+  );
+}
+
 const FLOWS = {
-  /** 1. First launch and language onboarding. */
+  /**
+   * 1. First launch and language onboarding.
+   *
+   * The requirement names language onboarding, and the first version of this flow did not
+   * touch it: it asserted that a shell rendered and that the browser supports service
+   * workers, which is true of any Chromium regardless of the application. A fresh profile
+   * has no stored language, so the onboarding dialog is the first thing a person meets.
+   * This flow chooses a language, confirms, and asserts the choice was kept — the
+   * observable difference between a dialog that was *dismissed* and one that was
+   * *completed*.
+   */
   async "first-launch"() {
     await session.goto("/");
     await session.waitFor(
-      "the first-launch surface",
-      `document.body?.textContent ?? ""`,
-      (text) => /Spotivibe/.test(text) && text.length > 40,
+      "the language onboarding dialog",
+      `document.querySelector('[role="dialog"][aria-label="Choose your languages"]') !== null`,
+      (value) => value === true,
+      20000,
     );
-    // A fresh profile has no stored language, so onboarding is the first thing a person
-    // meets. The assertion is that the shell and a route rendered — not that a particular
-    // copy appeared, which would make the test a change-detector.
+    // Choose an **unchecked** option, with a trusted click.
+    //
+    // Two things were wrong before, and both were only visible by looking at the live
+    // dialog rather than at the source. The picker seeds its draft from the store, so the
+    // *first* option is already checked — clicking it therefore **un**checked it, leaving
+    // nothing selected and the confirm control disabled, which the flow reported as the
+    // dialog offering no usable confirm. And the option is a React-controlled checkbox, so
+    // a synthetic `element.click()` fires a DOM event that React's value tracker discards.
+    // The checkbox is marked so the harness's real mouse click lands on the right one.
+    const marked = await session.evaluate(`(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-label="Choose your languages"]');
+      if (!dialog) return "no-dialog";
+      const boxes = [...dialog.querySelectorAll('input[type="checkbox"]')];
+      const target = boxes.find((box) => !box.checked) ?? boxes[0];
+      if (!target) return "no-option";
+      target.setAttribute("data-e2e-language", "true");
+      return target.checked ? "already-selected" : "marked-unchecked";
+    })()`);
+    if (marked === "no-dialog" || marked === "no-option") {
+      throw new Error(
+        `the onboarding dialog offered no language to choose (${marked})`,
+      );
+    }
+    await session.click("[data-e2e-language]");
+    await session.waitFor(
+      "the confirm control to become available",
+      `(() => {
+        const dialog = document.querySelector('[role="dialog"][aria-label="Choose your languages"]');
+        const done = dialog && [...dialog.querySelectorAll("button")]
+          .find((entry) => /save languages/i.test((entry.textContent ?? "").trim()));
+        return Boolean(done) && done.disabled === false;
+      })()`,
+      (value) => value === true,
+      10000,
+    );
+    const confirmed = await session.evaluate(`(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-label="Choose your languages"]');
+      const done = dialog && [...dialog.querySelectorAll("button")]
+        .find((entry) => /save languages/i.test((entry.textContent ?? "").trim()));
+      if (!done) return "no-confirm";
+      done.click();
+      return "confirmed";
+    })()`);
+    if (confirmed !== "confirmed") {
+      throw new Error(
+        `the onboarding dialog offered no usable confirm (${String(confirmed)})`,
+      );
+    }
+    await session.waitFor(
+      "the onboarding dialog to close",
+      `document.querySelector('[role="dialog"][aria-label="Choose your languages"]') === null`,
+      (value) => value === true,
+      15000,
+    );
     await assertRenders(
-      /Spotivibe|Home|Good (evening|afternoon)/i,
-      "first launch",
+      /spotivibe|home|good (evening|afternoon)/i,
+      "after onboarding",
     );
-    const state = await session.evaluate(`({
-      hasWorker: Boolean(navigator.serviceWorker),
-      online: navigator.onLine,
-    })`);
-    if (!state.hasWorker)
+
+    // A second visit must not ask again: if it does, the choice was not kept.
+    await session.goto("/");
+    await delay(800);
+    const reappeared = await session.evaluate(
+      `document.querySelector('[role="dialog"][aria-label="Choose your languages"]') !== null`,
+    );
+    if (reappeared) {
+      throw new Error(
+        "the language onboarding reappeared after being completed, so the choice was not kept",
+      );
+    }
+    const capabilities = await session.evaluate(
+      `Boolean(navigator.serviceWorker)`,
+    );
+    if (!capabilities) {
       throw new Error("the browser does not support service workers");
+    }
   },
 
   /** 2. Search and play. */
@@ -286,6 +453,12 @@ const FLOWS = {
       10000,
     );
     await assertRenders(/queue/i, "the queue after adding");
+    // The heading is not the addition. `QueueView` renders `<h1>Queue</h1>`
+    // unconditionally and the empty state is a sibling, so the first version of this flow
+    // passed identically if "Add to queue" did nothing at all — it asserted that a page
+    // mounted, which is precisely what the spec forbids. The track itself is asserted,
+    // both in the queue's own rows and in the store the queue is restored from.
+    await assertQueueContains("Fixture");
   },
 
   /** 5. Like a track, and see it persist. */
@@ -419,68 +592,202 @@ const FLOWS = {
     await delay(500);
 
     // Observable outcome: the track is in the playlist, on the device.
-    const playlistHasTrack = await session.evaluate(`(async () => {
-      const open = await import("/_next/static/chunks/dummy.js").catch(() => null);
-      void open;
-      const response = await new Promise((done) => {
-        const request = indexedDB.open("spotivibe");
-        request.onsuccess = () => done(request.result);
-        request.onerror = () => done(null);
-      });
-      if (!response) return "no-index";
-      return new Promise((done) => {
-        const store = response.transaction("playlists", "readonly").objectStore("playlists");
-        const all = store.getAll();
-        all.onsuccess = () => {
-          const records = all.result ?? [];
-          done(records.some((record) => /Fixture/.test(JSON.stringify(record))));
-        };
-        all.onerror = () => done("read-failed");
-      });
-    })()`);
-    if (playlistHasTrack !== true) {
+    const playlistTracks = async () =>
+      session.evaluate(`(async () => {
+        const db = await new Promise((done) => {
+          const request = indexedDB.open("spotivibe");
+          request.onsuccess = () => done(request.result);
+          request.onerror = () => done(null);
+        });
+        if (!db) return null;
+        return new Promise((done) => {
+          const store = db.transaction("playlists", "readonly").objectStore("playlists");
+          const all = store.getAll();
+          all.onsuccess = () => {
+            const record = (all.result ?? []).find(
+              (entry) => entry.name === "End To End Playlist",
+            );
+            done(record ? (record.tracks ?? []).length : 0);
+          };
+          all.onerror = () => done(-1);
+        });
+      })()`);
+
+    if ((await playlistTracks()) !== 1) {
       throw new Error(
-        `the playlist does not hold the track (${String(playlistHasTrack)})`,
+        "the playlist does not hold exactly the one track that was added",
       );
     }
 
-    // Remove the track from the playlist, and assert it is gone from storage.
-    const removed = await session.evaluate(`(async () => {
-      const db = await new Promise((done) => {
-        const request = indexedDB.open("spotivibe");
-        request.onsuccess = () => done(request.result);
-        request.onerror = () => done(null);
-      });
-      if (!db) return false;
-      return new Promise((done) => {
-        const store = db.transaction("playlists", "readwrite").objectStore("playlists");
-        const all = store.getAll();
-        all.onsuccess = () => {
-          for (const record of all.result ?? []) {
-            // The entry list is named tracks. The first version wrote trackIds,
-            // a field that does not exist, so the removal emptied nothing while
-            // reporting that it had - a check that confirmed its own assumption.
-            record.tracks = [];
-            store.put(record);
-          }
-          done(true);
-        };
-        all.onerror = () => done(false);
-      });
+    // A second track, so there is an order to change.
+    await session
+      .click('[aria-label^="More options for"]:not(:first-of-type)')
+      .catch(() => undefined);
+    const addedSecond = await session.evaluate(`(() => {
+      const triggers = [...document.querySelectorAll('[aria-label^="More options for"]')];
+      const trigger = triggers.find((entry) => /Fixture Beta/.test(entry.getAttribute("aria-label") ?? ""));
+      if (!trigger) return false;
+      trigger.click();
+      return true;
     })()`);
-    if (!removed) throw new Error("could not empty the playlist");
-
-    // Rename it, and assert the rename is what the interface now shows.
-    await session.goto("/library");
-    await assertRenders(/your library/i, "the library after the playlist edit");
-    const stillNamed = await session.evaluate(
-      `/End To End Playlist/.test(document.body?.textContent ?? "")`,
+    if (!addedSecond)
+      throw new Error("could not open the menu for the second track");
+    await session.waitFor(
+      "the menu to open",
+      `document.querySelector('[role="menu"]') !== null`,
+      (value) => value === true,
     );
-    if (!stillNamed)
-      throw new Error("the playlist is gone from the library after editing it");
+    const choseSecond = await session.evaluate(`(() => {
+      const item = [...document.querySelectorAll('[role="menuitem"]')]
+        .find((entry) => /add to playlist/i.test(entry.textContent ?? ""));
+      if (!item) return false;
+      item.click();
+      return true;
+    })()`);
+    if (!choseSecond)
+      throw new Error('no "Add to playlist" item for the second track');
+    await delay(400);
+    await session.evaluate(`(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-label="Add to playlist"]');
+      const target = [...(dialog?.querySelectorAll("button") ?? [])]
+        .find((entry) => /End To End Playlist/.test(entry.textContent ?? ""));
+      if (!target) return false;
+      target.click();
+      return true;
+    })()`);
+    await delay(600);
+    if ((await playlistTracks()) !== 2) {
+      throw new Error("the playlist did not take the second track");
+    }
+
+    // Reorder and remove **through the interface**, not by writing to the store.
+    //
+    // The first version performed "remove" by opening a readwrite transaction and setting
+    // `tracks = []` itself, then asserted its own `done(true)` — it was testing that
+    // IndexedDB works, and it never reordered at all, while the flow's name and the
+    // requirement both said "add, reorder, and remove". A check that confirms its own
+    // assumption is worse than no check, because it looks like coverage.
+    await session.goto("/library");
+    await assertRenders(
+      /your library/i,
+      "the library before the playlist edit",
+    );
+    const opened = await session.evaluate(`(() => {
+      const link = [...document.querySelectorAll('a[href^="/playlist/"]')]
+        .find((entry) => /End To End Playlist/.test(entry.textContent ?? ""));
+      if (!link) return false;
+      link.click();
+      return true;
+    })()`);
+    if (!opened)
+      throw new Error("the library does not link to the new playlist");
+    // Wait for the route, then for the rows. The detail view reads the playlist
+    // asynchronously and shows a "Loading playlist." line meanwhile, so asserting straight
+    // after the click counted zero rows on a correct application — a check that fails on
+    // the code being right is a check that gets deleted.
+    await session.waitFor(
+      "the playlist route",
+      "location.pathname",
+      (value) => value.startsWith("/playlist/"),
+      10000,
+    );
+    const rowsAppeared = await session
+      .waitFor(
+        "the playlist rows",
+        `document.querySelectorAll('[data-testid="playlist-track-row"]').length`,
+        (value) => value === 2,
+        10000,
+      )
+      .then(() => true)
+      .catch(() => false);
+    if (!rowsAppeared) {
+      const seen = await session.evaluate(`({
+        path: location.pathname,
+        rows: document.querySelectorAll('[data-testid="playlist-track-row"]').length,
+        body: (document.body?.textContent ?? "").slice(0, 200),
+      })`);
+      throw new Error(
+        `the playlist detail page did not show its rows (${seen.rows} at ${seen.path}): ${seen.body}`,
+      );
+    }
+
+    // The order the rows are in before the change, from the interface.
+    const orderBefore = await session.evaluate(
+      `[...document.querySelectorAll('[data-testid="playlist-track-row"]')].map((row) => row.textContent ?? "")`,
+    );
+    if (orderBefore.length !== 2) {
+      throw new Error(
+        `the playlist shows ${orderBefore.length} rows, expected 2`,
+      );
+    }
+    // The first row cannot move up and the last cannot move down — the component disables
+    // both, correctly — so the reorder is driven from whichever control is actually
+    // enabled. The first version clicked the first "Move up" it found, which belongs to row
+    // zero and is disabled, and then reported that the reorder did not work: a check that
+    // fails on the code being right.
+    const moved = await session.evaluate(`(() => {
+      const control = [...document.querySelectorAll("button")].find(
+        (entry) =>
+          (entry.getAttribute("aria-label") === "Move up" ||
+            entry.getAttribute("aria-label") === "Move down") &&
+          entry.disabled === false,
+      );
+      if (!control) return false;
+      control.click();
+      return true;
+    })()`);
+    if (!moved)
+      throw new Error("the playlist rows offer no enabled reorder control");
+    await delay(800);
+    const orderAfter = await session.evaluate(
+      `[...document.querySelectorAll('[data-testid="playlist-track-row"]')].map((row) => row.textContent ?? "")`,
+    );
+    if (orderAfter.length !== 2)
+      throw new Error("the reorder changed the row count");
+    if (orderAfter[0] === orderBefore[0] && orderAfter[1] === orderBefore[1]) {
+      throw new Error(
+        "the reorder control was clicked and the order did not change",
+      );
+    }
+
+    // Remove one track through the interface, and assert it leaves both the rows and the
+    // store.
+    const removed = await session.evaluate(`(() => {
+      const control = [...document.querySelectorAll('button')]
+        .find((entry) => /from playlist$/i.test(entry.getAttribute("aria-label") ?? ""));
+      if (!control) return false;
+      control.click();
+      return true;
+    })()`);
+    if (!removed) throw new Error("the playlist rows offer no remove control");
+    await delay(700);
+    const rowsLeft = await session.count('[data-testid="playlist-track-row"]');
+    if (rowsLeft !== 1) {
+      throw new Error(
+        `after removing one track the playlist shows ${rowsLeft} rows`,
+      );
+    }
+    if ((await playlistTracks()) !== 1) {
+      throw new Error(
+        "the removal did not reach the listener's stored playlist",
+      );
+    }
   },
 
-  /** 7. Reload and session restore. */
+  /**
+   * 7. Reload and session restore.
+   *
+   * The assertion is what the *interface* shows after a reload, not that a record exists.
+   * The first version counted records in the session store before and after — and
+   * IndexedDB survives a reload whether or not the application restores anything, so a
+   * completely broken restore passed. What proves restoration is the player bar showing
+   * the same track after the page has been reloaded from nothing.
+   *
+   * The limit is stated rather than hidden: this harness cannot observe the YouTube IFrame
+   * player's own state, so "restored" here means the application resolved the session and
+   * put the track back in its player, not that audio is moving. A restore that showed an
+   * empty player would fail.
+   */
   async "session-restore"() {
     await session.goto("/search");
     await session.type(
@@ -500,42 +807,49 @@ const FLOWS = {
       (text) => /Fixture/.test(text),
       15000,
     );
-    const before = await session.evaluate(`(async () => {
-      const names = await new Promise((done) => {
-        const request = indexedDB.open("spotivibe");
-        request.onsuccess = () => {
-          const db = request.result;
-          if (!db.objectStoreNames.contains("session")) return done([]);
-          const store = db.transaction("session", "readonly").objectStore("session");
-          const all = store.getAll();
-          all.onsuccess = () => done(all.result ?? []);
-          all.onerror = () => done([]);
-        };
-        request.onerror = () => done([]);
-      });
-      return names.length;
-    })()`);
 
-    // A reload is the whole point: whatever the session owes must come back.
+    // A reload is the whole point: the page goes away entirely and the session must come
+    // back on its own. Navigating to a different route would not be a reload.
     await session.goto("/");
-    const after = await session.evaluate(`(async () => {
-      const names = await new Promise((done) => {
+    const restored = await session
+      .waitFor(
+        "the player bar to come back after the reload",
+        `(() => {
+          const bar = document.querySelector('[data-testid="player-bar"]');
+          return bar ? (bar.textContent ?? "") : null;
+        })()`,
+        (text) => typeof text === "string" && /Fixture/.test(text),
+        20000,
+      )
+      .then(() => true)
+      .catch(() => false);
+    if (!restored) {
+      const shown = await session.evaluate(
+        `document.querySelector('[data-testid="player-bar"]')?.textContent ?? "(no player bar)"`,
+      );
+      throw new Error(
+        `the session was not restored after the reload; the player bar shows "${String(shown).slice(0, 120)}"`,
+      );
+    }
+    // And the record it restored from is on the device, which is what makes the restore
+    // possible at all — asserted so a future change cannot pass by restoring from nothing.
+    const stored = await session.evaluate(`(async () => {
+      return new Promise((done) => {
         const request = indexedDB.open("spotivibe");
         request.onsuccess = () => {
           const db = request.result;
-          if (!db.objectStoreNames.contains("session")) return done([]);
+          if (!db.objectStoreNames.contains("session")) return done(0);
           const store = db.transaction("session", "readonly").objectStore("session");
           const all = store.getAll();
-          all.onsuccess = () => done(all.result ?? []);
-          all.onerror = () => done([]);
+          all.onsuccess = () => done((all.result ?? []).length);
+          all.onerror = () => done(0);
         };
-        request.onerror = () => done([]);
+        request.onerror = () => done(0);
       });
-      return names.length;
     })()`);
-    if (after < 1) {
+    if (stored < 1) {
       throw new Error(
-        `no session was stored before the reload (${String(before)})`,
+        "the player bar came back but nothing is stored to restore it from",
       );
     }
   },
@@ -598,6 +912,13 @@ const FLOWS = {
         "navigator.onLine is false, so this is not an origin-only outage",
       );
     }
+
+    // Bring the origin back and confirm the same route still loads from the network. A
+    // reload that rendered from cache would also render from cache here, so the pair is
+    // what distinguishes "the shell works offline" from "the page never really navigated".
+    await session.startOrigin();
+    await session.goto("/library");
+    await assertRenders(/your library/i, "after the origin came back");
   },
 
   /** 9. Backup export and import round-trip. */
@@ -659,72 +980,99 @@ const FLOWS = {
     }
   },
 
-  /** 10. Provider failure fallback. */
+  /**
+   * 10. Provider failure fallback.
+   *
+   * Both failure shapes, because a listener meets both and the client handles them
+   * differently: a route that *answers* with `ok: false` (the shape the application's own
+   * routes produce when every tier fails) and a route that never answers at all.
+   *
+   * The limit is stated rather than glossed: the **server-side** tier fallback
+   * (ytmusic → ytweb → invidious → piped) cannot be reached from here, because the router
+   * replaces the whole same-origin request and the route handler therefore never runs.
+   * What this flow proves is the client's handling of each failure shape. The tier chain
+   * itself is covered by the provider layer's own tests, and saying so is better than a
+   * flow whose name implies more than it exercises.
+   */
   async "provider-failure"() {
-    session.clearRoutes();
-    for (const route of FAILING_ROUTES) session.route(route);
-    await session.goto("/search");
-    await session.type(
-      'input[type="search"], input[placeholder]',
-      "deterministic",
-    );
-    await session.press("Enter");
-    // The listener must see an explanation, not an empty page and not a crash.
-    const state = await session.evaluate(`(() => {
-      const body = document.body?.textContent ?? "";
-      return {
-        hasMain: Boolean(document.querySelector("main")),
-        errorBoundary: ${ERROR_BOUNDARY}.test(body),
-        mentionsFailure: /couldn.t|unable|failed|no results|try again|offline|unavailable/i.test(body),
-        length: body.length,
-      };
-    })()`);
-    if (state.errorBoundary)
-      throw new Error("a provider failure produced an error boundary");
-    if (!state.hasMain)
-      throw new Error("a provider failure left the page without a main region");
-    if (state.length < 40)
-      throw new Error("a provider failure left the page blank");
-    if (!state.mentionsFailure) {
-      throw new Error(
-        "a provider failure produced no explanation the listener can read",
+    for (const [label, routes] of [
+      ["an answered failure", FAILING_BODY_ROUTES],
+      ["a dropped connection", FAILING_TRANSPORT_ROUTES],
+    ]) {
+      session.clearRoutes();
+      for (const route of routes) session.route(route);
+      await session.goto("/search");
+      await session.type(
+        'input[type="search"], input[placeholder]',
+        "deterministic",
       );
+      await session.press("Enter");
+      // Give the failed request time to be made and handled.
+      await delay(1500);
+      // The listener must see an explanation, not an empty page and not a crash.
+      const state = await session.evaluate(`(() => {
+        const body = document.body?.textContent ?? "";
+        return {
+          hasMain: Boolean(document.querySelector("main")),
+          errorBoundary: ${ERROR_BOUNDARY}.test(body),
+          mentionsFailure: /couldn.t|unable|failed|no results|try again|offline|unavailable|not working/i.test(body),
+          length: body.length,
+        };
+      })()`);
+      if (state.errorBoundary) {
+        throw new Error(`${label} produced an error boundary`);
+      }
+      if (!state.hasMain) {
+        throw new Error(`${label} left the page without a main region`);
+      }
+      if (state.length < 40) throw new Error(`${label} left the page blank`);
+      if (!state.mentionsFailure) {
+        throw new Error(
+          `${label} produced no explanation the listener can read`,
+        );
+      }
     }
   },
 
   /** 11. Mobile navigation. */
   async "mobile-navigation"() {
-    await session.setViewport({ width: 390, height: 844, mobile: true });
-    await session.goto("/library");
-    const compact = await session
-      .waitFor(
-        "the compact shell",
-        `document.querySelector('[data-testid="compact-shell"]') !== null ||
-       document.querySelector('nav[aria-label*="ottom" i], nav[aria-label*="obile" i]') !== null`,
-        (value) => value === true,
-        15000,
-      )
-      .then(() => true)
-      .catch(() => false);
-    if (!compact)
-      throw new Error("the compact shell did not render at 390x844");
-    // The compact bottom navigation must carry the destinations, and the active one must
-    // say so - which is the flow a phone user performs most.
-    const nav = await session.evaluate(`(() => {
-      const links = [...document.querySelectorAll('nav a')].map((a) => ({
-        href: new URL(a.href).pathname,
-        current: a.getAttribute("aria-current"),
-      }));
-      return { count: links.length, links, oneCurrent: links.filter((l) => l.current === "page").length };
-    })()`);
-    if (nav.count < 3)
-      throw new Error(`the compact navigation has ${nav.count} destinations`);
-    if (nav.oneCurrent !== 1) {
-      throw new Error(
-        `${nav.oneCurrent} destinations claim to be current, expected exactly 1`,
-      );
+    // The viewport is restored in a `finally`, not at the end of the body: the offline flow
+    // runs after this one, and if this flow throws the restore never happened, so the next
+    // flow would have run at 390x844 and passed or failed for the wrong reason.
+    try {
+      await session.setViewport({ width: 390, height: 844, mobile: true });
+      await session.goto("/library");
+      const compact = await session
+        .waitFor(
+          "the compact shell",
+          `document.querySelector('[data-testid="compact-shell"]') !== null ||
+           document.querySelector('nav[aria-label*="ottom" i], nav[aria-label*="obile" i]') !== null`,
+          (value) => value === true,
+          15000,
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!compact)
+        throw new Error("the compact shell did not render at 390x844");
+      // The compact bottom navigation must carry the destinations, and the active one must
+      // say so - which is the flow a phone user performs most.
+      const nav = await session.evaluate(`(() => {
+        const links = [...document.querySelectorAll('nav a')].map((a) => ({
+          href: new URL(a.href).pathname,
+          current: a.getAttribute("aria-current"),
+        }));
+        return { count: links.length, links, oneCurrent: links.filter((l) => l.current === "page").length };
+      })()`);
+      if (nav.count < 3)
+        throw new Error(`the compact navigation has ${nav.count} destinations`);
+      if (nav.oneCurrent !== 1) {
+        throw new Error(
+          `${nav.oneCurrent} destinations claim to be current, expected exactly 1`,
+        );
+      }
+    } finally {
+      await session.setViewport({ width: 1280, height: 900, mobile: false });
     }
-    await session.setViewport({ width: 1280, height: 900, mobile: false });
   },
 };
 
@@ -737,43 +1085,115 @@ const FLOWS = {
  * evidence steps in this repository that could not fail, and the lesson has been written
  * down twice since.
  */
+/**
+ * Prove the suite can fail (M15 task 2.5).
+ *
+ * Each probe runs a **real flow against a deliberately broken expectation** and requires
+ * it to fail. A suite whose assertions have never been observed failing is a report, not a
+ * check — M13's verification pass found three evidence steps in this repository that could
+ * not fail, and the lesson has been written down twice since.
+ *
+ * The first version of this probed three arbitrary expressions through `session.evaluate`
+ * and called that a proof. It was not one: none of them ran a flow's assertion, so a
+ * harness whose `evaluate` was broken and always returned `undefined` would have reported
+ * every probe as "fails as required". The probes below break the *application's* view and
+ * run the flow's *own* assertion machinery, so a passing probe means the assertion really
+ * did notice.
+ */
 async function proveCanFail() {
   const attempts = [];
-  const before = results.length;
-
-  // Each of these asserts something the flow does not do, and each must fail.
-  for (const [label, expression] of [
-    [
-      "a missing view root",
-      `(() => Boolean(document.querySelector('[data-testid="no-such-root"]')).valueOf())()`,
-    ],
-    [
-      "an absent control",
-      `(async () => { const found = await fetch("/definitely-not-a-route"); return found.ok; })()`,
-    ],
-    [
-      "a track that was never played",
-      `(async () => /Never Played At All/.test(await (async () => (document.body?.textContent ?? ""))()))()`,
-    ],
-  ]) {
-    let failed = false;
+  const check = async (label, run) => {
     try {
-      const value = await session.evaluate(expression);
-      if (value === true) failed = false;
-      else failed = true;
-    } catch {
-      failed = true;
+      await run();
+      attempts.push({ label, failed: false });
+    } catch (error) {
+      attempts.push({
+        label,
+        failed: true,
+        because: String(error?.message ?? error).slice(0, 160),
+      });
     }
-    attempts.push({ label, failed });
-  }
-  results.length = before;
-  const allFailed = attempts.every((attempt) => attempt.failed);
-  console.log("\nprove-can-fail:");
+  };
+
+  // 1. The render assertion, against a route whose heading is not the one asked for.
+  //    `assertRenders` is the assertion every flow makes first, so it is the one most
+  //    worth proving can fail.
+  await session.goto("/library");
+  await check("the render assertion on a wrong heading", async () => {
+    await assertRenders(
+      /a heading this application never shows/i,
+      "deliberately wrong",
+    );
+  });
+
+  // 2. The render assertion, against an error boundary. A crashed page that renders
+  //    *something* is the failure a naive "did the route render" check passes.
+  await check("the render assertion on a crashed page", async () => {
+    await session.evaluate(`(() => {
+      const main = document.querySelector("main");
+      if (!main) return true;
+      const boundary = document.createElement("div");
+      boundary.textContent = "Something went wrong while loading this page.";
+      main.replaceChildren(boundary);
+      return true;
+    })()`);
+    await assertRenders(/your library/i, "after injecting a crash");
+  });
+
+  // 3. The queue assertion, when nothing has been queued. The flow navigates and requires
+  //    the queue heading; the strengthened version also requires the track, so this proves
+  //    the *content* check and not only the heading.
+  await check("the queue assertion with an empty queue", async () => {
+    await session.goto("/search");
+    await session.type(
+      'input[type="search"], input[placeholder]',
+      "deterministic",
+    );
+    await session.press("Enter");
+    await session.waitFor(
+      "the results",
+      `document.querySelector('[data-testid="search-results"]') !== null`,
+      (value) => value === true,
+    );
+    // Deliberately *not* adding to the queue, then requiring the track to be there.
+    await assertQueueContains("Fixture");
+  });
+
+  // 4. The player assertion, demanding a track that was never played. Written the way the
+  //    flow writes it — as a *requirement*, not as an "if this then throw" — so that
+  //    *failing* is the expected outcome. The first attempt had the polarity inverted and
+  //    reported "DID NOT FAIL" for a probe that was in fact correct, which is the worse of
+  //    the two mistakes: it would have had someone weaken a real assertion to make the
+  //    proof look right.
+  //
+  //    An earlier draft also looked for a menu item with no menu open and reported the
+  //    result backwards, which said something about the page rather than about
+  //    falsifiability. A probe has to fail for a reason that is about the assertion.
+  await check(
+    "the player assertion for a track that was never played",
+    async () => {
+      const shown = await session.evaluate(
+        `document.querySelector('[data-testid="player-bar"]')?.textContent ?? ""`,
+      );
+      if (!/Never Played At All/.test(shown)) {
+        throw new Error(
+          `the player bar does not show the track the assertion demanded (showed "${String(shown).slice(0, 80)}")`,
+        );
+      }
+    },
+  );
+
+  console.log(
+    "\nprove-can-fail — each probe breaks the application, then runs the flow's own assertion:",
+  );
   for (const attempt of attempts) {
     console.log(
-      `  ${attempt.failed ? "fails as required" : "DID NOT FAIL"}  ${attempt.label}`,
+      `  ${attempt.failed ? "fails as required" : "DID NOT FAIL"}  ${attempt.label}` +
+        (attempt.because ? `\n      ${attempt.because}` : ""),
     );
   }
+  const allFailed =
+    attempts.length > 0 && attempts.every((attempt) => attempt.failed);
   console.log(
     allFailed
       ? "  every deliberate assertion failed, so the suite's checks can fail."
@@ -818,38 +1238,77 @@ async function main() {
     }
 
     if (PROVE_CAN_FAIL) {
-      const ok = await proveCanFail();
-      if (!ok) process.exitCode = 1;
-    } else {
-      const failed = results.filter((entry) => !entry.ok);
-      process.exitCode = results.length > 0 && failed.length === 0 ? 0 : 1;
+      const proven = await proveCanFail();
+      if (!proven) process.exitCode = 1;
     }
-  } catch (error) {
-    console.error(
-      `\nThe suite could not run to completion: ${error?.message ?? error}`,
-    );
-    process.exitCode = 1;
-  } finally {
+
+    // A `pass` requires the whole suite, and a filtered run says so.
+    //
+    // The first version computed `pass` from whatever had run, so `--flow=offline` — the
+    // diagnostic invocation the evidence README itself recommends — overwrote the release
+    // record with a one-flow record marked `"pass": true`, while the prose described
+    // eleven. A record that understates its own coverage is the same class of error as one
+    // that overstates it, and both are the reason this milestone exists.
+    const ranIds = results.map((entry) => entry.id);
+    const missing = ALL_FLOWS.filter((id) => !ranIds.includes(id));
+    const allRan = missing.length === 0;
+    const allOk = results.length > 0 && results.every((entry) => entry.ok);
+
+    // The exit code covers the flows even on a prove-can-fail run, which the first version
+    // excluded: that run could exit 0 with failing flows recorded in the results file.
+    process.exitCode = allRan && allOk ? 0 : 1;
+
     writeFileSync(
       join(HERE, "end-to-end-results.json"),
       `${JSON.stringify(
         {
           generatedAt: new Date().toISOString(),
-          conditions,
+          conditions: { ...conditions, partial: !allRan, flowsNotRun: missing },
+          flowsExpected: ALL_FLOWS,
+          flowsRun: ranIds,
           flows: results,
-          pass: results.length > 0 && results.every((entry) => entry.ok),
+          pass: allRan && allOk,
         },
         null,
         2,
       )}\n`,
     );
+  } catch (error) {
+    console.error(
+      `\nThe suite could not run to completion: ${error?.message ?? error}`,
+    );
+    process.exitCode = 1;
+    writeFileSync(
+      join(HERE, "end-to-end-results.json"),
+      `${JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          aborted: String(error?.message ?? error),
+          flowsExpected: ALL_FLOWS,
+          flowsRun: results.map((entry) => entry.id),
+          flows: results,
+          pass: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  } finally {
     await session.close();
   }
 
   const passed = results.filter((entry) => entry.ok).length;
+  const missing = ALL_FLOWS.filter(
+    (id) => !results.some((entry) => entry.id === id),
+  );
   console.log(
     `\n${passed}/${results.length} flows passed in ${ENGINE} (${session.browser}).`,
   );
+  if (missing.length > 0) {
+    console.log(
+      `PARTIAL RUN: ${missing.length} flow(s) did not run (${missing.join(", ")}), so this is not a release result.`,
+    );
+  }
   console.log(
     "Recorded fixtures stand in for the providers, so this proves the application's " +
       "behaviour and nothing about YouTube. Firefox, Android, and iOS are not driven here.",

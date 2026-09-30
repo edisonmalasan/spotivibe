@@ -21,7 +21,13 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -211,10 +217,10 @@ export async function openSession({
       );
     }
 
-    // The browser is launched *before* its version endpoint is read. The first version
-    // of this harness read it first, so it waited thirty seconds for a browser that had
-    // not been started yet and reported a timeout that looked like a CDP problem.
-
+    // The browser is launched *before* its version endpoint is read. The first version of
+    // this harness read it first, so it waited thirty seconds for a browser that had not
+    // been started yet, and reported a timeout that looked like a CDP problem rather than
+    // an ordering mistake.
     browser = spawn(
       findBrowser(engine),
       [
@@ -230,9 +236,6 @@ export async function openSession({
       ],
       { stdio: "ignore" },
     );
-    // The browser is launched *before* its version endpoint is read. The first version of
-    // this harness read it first, so it waited thirty seconds for a browser that had not
-    // been started yet, and reported a timeout that looked like a CDP problem.
     const version = await waitForJson(
       `http://127.0.0.1:${cdpPort}/json/version`,
     );
@@ -339,10 +342,21 @@ export async function openSession({
           await sendTo(sessionId, "Fetch.continueRequest", { requestId });
           return;
         }
-        if (route.status && route.status >= 400) {
+        // A route can fail in two genuinely different ways, and the first version could
+        // only express one of them.
+        //
+        // `transport: "failed"` is a connection-level failure — the server never answered.
+        // A bare `status >= 400` used to mean this, which meant the `ok: false` bodies the
+        // failing fixtures carry were dead data: every failure arrived as a transport
+        // error and the application never saw the failure *shape* its own routes produce.
+        // The fixtures exist to model that shape, so a route that declares a `status` is
+        // served that status, and only a route that declares `transport: "failed"` fails at
+        // the connection level. The two are now expressible separately, and the
+        // provider-failure scenario uses both.
+        if (route.transport === "failed") {
           await sendTo(sessionId, "Fetch.failRequest", {
             requestId,
-            errorReason: "Failed",
+            errorReason: route.errorReason ?? "Failed",
           });
           return;
         }
@@ -401,11 +415,15 @@ export async function openSession({
         server = undefined;
         await delay(600);
         // Proof rather than assumption: the origin must actually refuse a connection.
-        const outcome = await fetch(`${origin}/manifest.webmanifest`, { cache: "no-store" })
+        const outcome = await fetch(`${origin}/manifest.webmanifest`, {
+          cache: "no-store",
+        })
           .then(() => "answered")
           .catch(() => "refused");
         if (outcome !== "refused") {
-          throw new Error(`the origin still answered after being stopped (${outcome})`);
+          throw new Error(
+            `the origin still answered after being stopped (${outcome})`,
+          );
         }
         return outcome;
       },
@@ -413,7 +431,9 @@ export async function openSession({
       async startOrigin() {
         server = startServer(frontend, port, serverLog);
         if (!(await waitFor(origin))) {
-          throw new Error(`the origin did not come back up at ${origin}. See ${serverLog}.`);
+          throw new Error(
+            `the origin did not come back up at ${origin}. See ${serverLog}.`,
+          );
         }
         return true;
       },
@@ -534,27 +554,26 @@ export async function openSession({
         await send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key });
       },
 
-      async text(selector) {
-        return session.evaluate(
-          `document.querySelector(${JSON.stringify(selector)})?.textContent?.trim() ?? null`,
-        );
+      /**
+       * Capture a PNG and write it into the evidence directory.
+       *
+       * Written rather than returned, because a screenshot nobody opens is not evidence:
+       * handing base64 to a caller that never saved it is how task 6.3 came to ask for
+       * screenshots while the directory contained none.
+       */
+      async screenshot(name, directory) {
+        const { data } = await send("Page.captureScreenshot", {
+          format: "png",
+        });
+        const file = join(directory, `${name}.png`);
+        writeFileSync(file, Buffer.from(data, "base64"));
+        return file;
       },
 
       async count(selector) {
         return session.evaluate(
           `document.querySelectorAll(${JSON.stringify(selector)}).length`,
         );
-      },
-
-      async exists(selector) {
-        return (await session.count(selector)) > 0;
-      },
-
-      async screenshot(name) {
-        const { data } = await send("Page.captureScreenshot", {
-          format: "png",
-        });
-        return { data, name };
       },
 
       async close() {

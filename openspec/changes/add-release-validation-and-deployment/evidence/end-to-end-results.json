@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T16:43:04.566Z",
+  "generatedAt": "2026-09-30T17:22:38.311Z",
   "conditions": {
     "engine": "edge",
     "enginesInstalled": [
@@ -11,85 +11,124 @@
     "browser": "Edg/154.0.4258.37",
     "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
     "origin": "http://localhost:3213",
-    "providerResponses": "recorded fixtures; the suite proves the application's behaviour, not the providers'"
+    "providerResponses": "recorded fixtures; the suite proves the application's behaviour, not the providers'",
+    "partial": false,
+    "flowsNotRun": []
   },
+  "flowsExpected": [
+    "first-launch",
+    "search-and-play",
+    "navigate-while-playing",
+    "add-to-queue",
+    "like-track",
+    "playlist-crud",
+    "session-restore",
+    "backup-roundtrip",
+    "provider-failure",
+    "mobile-navigation",
+    "offline"
+  ],
+  "flowsRun": [
+    "first-launch",
+    "search-and-play",
+    "navigate-while-playing",
+    "add-to-queue",
+    "like-track",
+    "playlist-crud",
+    "session-restore",
+    "backup-roundtrip",
+    "provider-failure",
+    "mobile-navigation",
+    "offline"
+  ],
   "flows": [
     {
       "id": "first-launch",
       "requirement": "first launch and language onboarding",
       "ok": true,
       "detail": "",
-      "ms": 885
+      "ms": 2692,
+      "screenshot": "edge-first-launch-pass.png"
     },
     {
       "id": "search-and-play",
       "requirement": "search and play",
       "ok": true,
       "detail": "",
-      "ms": 1202
+      "ms": 1237,
+      "screenshot": "edge-search-and-play-pass.png"
     },
     {
       "id": "navigate-while-playing",
       "requirement": "navigate while playing",
       "ok": true,
       "detail": "",
-      "ms": 2102
+      "ms": 2151,
+      "screenshot": "edge-navigate-while-playing-pass.png"
     },
     {
       "id": "add-to-queue",
       "requirement": "add to queue",
       "ok": true,
       "detail": "",
-      "ms": 1504
+      "ms": 1317,
+      "screenshot": "edge-add-to-queue-pass.png"
     },
     {
       "id": "like-track",
       "requirement": "like a track",
       "ok": true,
       "detail": "",
-      "ms": 2122
+      "ms": 2188,
+      "screenshot": "edge-like-track-pass.png"
     },
     {
       "id": "playlist-crud",
       "requirement": "create a playlist, add, reorder, and remove",
       "ok": true,
       "detail": "",
-      "ms": 4524
+      "ms": 7330,
+      "screenshot": "edge-playlist-crud-pass.png"
     },
     {
       "id": "session-restore",
       "requirement": "reload and session restore",
       "ok": true,
       "detail": "",
-      "ms": 2148
+      "ms": 2187,
+      "screenshot": "edge-session-restore-pass.png"
     },
     {
       "id": "backup-roundtrip",
       "requirement": "backup export and import",
       "ok": true,
       "detail": "",
-      "ms": 2344
+      "ms": 2462,
+      "screenshot": "edge-backup-roundtrip-pass.png"
     },
     {
       "id": "provider-failure",
       "requirement": "provider failure fallback",
       "ok": true,
       "detail": "",
-      "ms": 1071
+      "ms": 4798,
+      "screenshot": "edge-provider-failure-pass.png"
     },
     {
       "id": "mobile-navigation",
       "requirement": "mobile navigation",
       "ok": true,
       "detail": "",
-      "ms": 843
+      "ms": 913,
+      "screenshot": "edge-mobile-navigation-pass.png"
     },
     {
       "id": "offline",
       "requirement": "the offline application shell and library flow",
       "ok": true,
       "detail": "",
-      "ms": 4835
+      "ms": 6339,
+      "screenshot": "edge-offline-pass.png"
     }
   ],
   "pass": true

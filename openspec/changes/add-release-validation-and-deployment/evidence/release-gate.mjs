@@ -191,7 +191,10 @@ const ITEMS = [
     // a machine with two engines, the only machine where this requirement could be met,
     // the item failed every time, and the honest reporting was attached to a command that
     // could never succeed.
-    args: [join(CHANGE, "evidence", "end-to-end.mjs"), "--browser=__SECOND_ENGINE__"],
+    args: [
+      join(CHANGE, "evidence", "end-to-end.mjs"),
+      "--browser=__SECOND_ENGINE__",
+    ],
     needsBrowser: true,
     // Which engines exist is a property of the machine, not of the repository, so this is
     // resolved at run time. With fewer than two installed it reports NOT RUN and the
@@ -207,7 +210,9 @@ const ITEMS = [
       }
       // The second engine is the installed one that is not the default, so the command
       // names an engine the harness can actually start.
-      return { substitute: installed.find((engine) => engine !== defaultEngine()) };
+      return {
+        substitute: installed.find((engine) => engine !== defaultEngine()),
+      };
     },
   },
 
@@ -475,6 +480,31 @@ console.log(
 // roadmap's checklist is read and each of its items must be covered here. A new checklist
 // item with no entry below fails the gate, which is the point — the list cannot grow
 // without someone deciding how it is checked.
+
+/** Which gate item covers each roadmap checklist item, and where coverage is partial. */
+const CHECKLIST_COVERAGE = [
+  { matches: /ROADMAP\.md.*reflects actual scope/i, item: "roadmap-truth" },
+  { matches: /DESIGN\.md.*visual audit/i, item: "design-visual-audit" },
+  {
+    // One line covers this because `tests/release-exclusions.test.ts` now enforces all
+    // three halves of it: accounts, cloud sync, and a cloud user database. The first
+    // version mapped only the first two and cloud sync had no detector at all, which the
+    // coverage check is what surfaced.
+    matches: /account\/auth\/cloud-sync/i,
+    item: "exclusions",
+  },
+  { matches: /Supabase\/user database dependencies/i, item: "exclusions" },
+  { matches: /YouTube audio downloader/i, item: "exclusions" },
+  { matches: /forced background-play/i, item: "exclusions" },
+  { matches: /ad-blocking/i, item: "exclusions" },
+  { matches: /media is proxied through Vercel/i, item: "exclusions" },
+  { matches: /Backup format\/version documented/i, item: "backup-format" },
+  { matches: /Attribution notices/i, item: "attribution" },
+  { matches: /Vercel production build passes/i, item: "vercel-deploy" },
+  { matches: /manifest.*service worker.*validate/i, item: "pwa-manifest" },
+  { matches: /Critical flows pass automated and manual/i, item: "end-to-end" },
+];
+
 const ids = results.map((entry) => entry.item.id);
 if (new Set(ids).size !== ids.length) {
   console.error("FAIL: an item appears more than once in the output");
@@ -527,28 +557,6 @@ function readRoadmapChecklist() {
     .filter((line) => line.trimStart().startsWith("- "))
     .map((line) => line.replace(/^\s*-\s*/, "").trim());
 }
-
-/** Which gate item covers each roadmap checklist item, and where coverage is partial. */
-const CHECKLIST_COVERAGE = [
-  { matches: /ROADMAP\.md.*reflects actual scope/i, item: "roadmap-truth" },
-  { matches: /DESIGN\.md.*visual audit/i, item: "design-visual-audit" },
-  {
-    matches: /account\/auth\/cloud-sync/i,
-    item: "exclusions",
-    partial:
-      "accounts are enforced; cloud sync has no dedicated detector, so the item is not fully covered",
-  },
-  { matches: /Supabase\/user database dependencies/i, item: "exclusions" },
-  { matches: /YouTube audio downloader/i, item: "exclusions" },
-  { matches: /forced background-play/i, item: "exclusions" },
-  { matches: /ad-blocking/i, item: "exclusions" },
-  { matches: /media is proxied through Vercel/i, item: "exclusions" },
-  { matches: /Backup format\/version documented/i, item: "backup-format" },
-  { matches: /Attribution notices/i, item: "attribution" },
-  { matches: /Vercel production build passes/i, item: "vercel-deploy" },
-  { matches: /manifest.*service worker.*validate/i, item: "pwa-manifest" },
-  { matches: /Critical flows pass automated and manual/i, item: "end-to-end" },
-];
 
 const report = {
   generatedAt: new Date().toISOString(),
