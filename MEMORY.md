@@ -23,6 +23,24 @@ offline shell that was silently FIFO-evicted after nineteen navigations. Treat t
 pass as part of Apply, not as an optional extra: the bugs it finds are the ones no
 test in the suite was written to catch.
 
+**For M15 it ran twice, and both passes returned NOT MERGEABLE.** The second pass
+re-attacked the first's fixes and found five more criticals, four of them the same failure
+modes the first had already named — committed a second time and then reported as fixed.
+Expect that: a verification pass that finds nothing the previous one missed is the
+suspicious outcome, not the reassuring one.
+
+**Status: the roadmap is complete.** M0 through M15 are all `DONE`, every change is
+archived, and all 20 capabilities are in the specs of record. There is no next objective, and
+no new milestone should be started without its own proposal PR.
+
+What remains is not development but *verification that needs something this environment does
+not have*: a real Vercel deployment, a second browser engine, and Firefox, Android, and iOS.
+Each is written down as a manual entry with the steps to perform it — in
+`frontend/docs/DEPLOYMENT.md`, and in the release gate's own NOT RUN output. The most useful
+thing M15 left behind is the verification record in
+`openspec/changes/archive/2026-09-30-add-release-validation-and-deployment/`, including the
+thirty-four defects two independent passes found in it and the eight transferable lessons.
+
 ## Completed
 
 | Milestone | Change (archived) | PRs / merges |
@@ -35,23 +53,18 @@ test in the suite was written to catch.
 | **M12** | `2026-09-30-add-podcasts` | #49 propose `b914875`, #50 apply `ead69e5`, #51 sync `93a2e21`, #52 archive `3cabc58` |
 | **M13** | `2026-09-30-add-pwa-install-and-offline-shell` | #53 propose `e8f0576`, #54 apply `6bdc296`, #55 sync `74307b8`, #56 archive `f8e0afb`, #57 record `fbad5cc` |
 | **M14** | `2026-09-30-add-deployment-hardening` | #58 propose `0d855f9`, #59 apply `d65abb4`, #60 sync `a6cfb1c`, #61 archive `e2362f9` |
+| **M15** | `2026-09-30-add-release-validation-and-deployment` | #63 propose `f83f3f6`, #64 apply `0cbd1dc`, #65 sync `9b8bab7`, #66 archive `78baa67` |
 
 Baseline at the M12 merge (`3cabc58`): **130 test files / 2084 tests**; after M13:
 **134 test files / 2152 tests**; after M14: **140 test files / 2231 tests**, all six
-gates green in a clean clone **and with zero lint warnings**. Main specs: `pwa` (new),
-`network` updated at M13; `security` and `performance` (new) plus `pwa`, `local-data`
-and `app-shell` modified at M14 — **18 capabilities, all validating**. 15 archived
-changes, **none active** — M14 was archived as
-`openspec/changes/archive/2026-09-30-add-deployment-hardening/`.
-M14's browser evidence run (`pass: true`, 62/62 checks, 0 console errors, 11
-disclosures, 4 screenshots) drives the production build in headless Edge over CDP with
-**no dependencies**, measures **both viewports**, and **stops the server process** for
-its offline phase.
-**M14 is complete through Archive**, and `ROADMAP.md` reads `DONE` for it. The archive
-record lives in the archived change's `tasks.md`; its `evidence/README.md` carries the
-eleven disclosures, so the numbers cannot be read without them.
-**Next objective: M15 (test matrix, release validation, Vercel deployment).** Do not
-begin it without a proposal PR first.
+after M15: **143 test files / 2316 tests**, all six gates green from a clean clone,
+**and zero lint warnings** for the fourth milestone running. Specs of record: 20
+capabilities, `release-validation` and `end-to-end` added. Archived changes: 16.
+
+M15 is the last milestone in this roadmap. The release gate reports 18 passed, 0
+failed, 8 not run, with 13 of 13 release-checklist items represented and one of them
+only partly. Browser evidence: 11 of 11 end-to-end flows in Edge, 4 of 4
+prove-can-fail probes, 11 screenshots.
 
 ## What M14's verification pass taught
 

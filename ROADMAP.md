@@ -121,7 +121,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M12 | Podcasts | `DONE` | M3, M4, M5 |
 | M13 | PWA installation, offline shell, offline metadata experience | `DONE` | M1, M2, M6 |
 | M14 | Hardening: performance, security, accessibility, resilience | `DONE` | M3–M13 |
-| M15 | Test matrix, release validation, Vercel deployment | `IN PROGRESS` | M0–M14 |
+| M15 | Test matrix, release validation, Vercel deployment | `DONE` | M0–M14 |
 
 ---
 
@@ -1340,6 +1340,74 @@ At minimum:
 # 11. Feature-Level Acceptance Checklist
 
 This section prevents roadmap phases from accidentally shipping without important user-facing pieces.
+
+
+
+### Delivered by M15
+
+- **The permanent product exclusions are enforced.** Eight detectors over the shipped
+  sources with 39 violating-shape fixtures each, plus a route-path rule, sweeping `src/`,
+  `public/`, `scripts/`, and `next.config.ts` together. ROADMAP §2 called these "deliberate
+  product decisions, not temporary MVP shortcuts" and nothing asserted them; they were held
+  by review, which is the mechanism that erodes. `no cloud sync` became a ninth checkable
+  exclusion as a result, and had none before.
+- **One maintained end-to-end suite.** The eleven named flows, in a real browser against a
+  production build, driven by accessible name and role. The thirteen per-milestone browser
+  harnesses in the archive were the finding: thirteen copies of the same plumbing, none of
+  which ran.
+- **A runnable release gate.** It prints a per-item result or a not-run reason *with the
+  steps to perform it*, and fails if any item on this roadmap's release checklist is
+  unrepresented — including partial coverage, which it reports rather than counts as whole.
+- **A deployment contract, asserted.** One application, no custom server, no request hook in
+  either directory Next reads one from, no required environment variable, the security policy
+  declared where a CDN cannot drop it, and the worker served without a cache header that would
+  make the application unupdatable.
+- **A real deployment defect fixed.** `package.json` declared no `engines` field, so a Vercel
+  build would use the host's default Node rather than the Node 26 this repository is
+  verified on — and would still have *succeeded*, because the application has no required
+  variables, no custom server, and no native dependencies, before differing at runtime from
+  anything tested.
+- **The backup format, the browser matrix, and the deployment procedure documented**, each
+  held to the code it describes by a test rather than trusted to prose.
+
+### What M15 established about verification
+
+Two independent read-only verification passes ran against this change and **both returned
+NOT MERGEABLE**. That is the most transferable thing M15 produced, and it is recorded here
+because the lesson generalises past this milestone:
+
+**A rule can be green and wrong because its detector never matched the code's real shape.**
+Each of the first pass's critical findings was a check that passed and would have missed the
+thing it names. The check on a detector is not that it passes — it is that it has been *seen
+to fail*. The first pass probed the exclusion detectors with eighteen realistic violating
+snippets and seventeen passed; the second probed the repaired patterns with twenty-five more
+and seventeen of those passed too. All forty-three are now fixtures, and thirty-four of them
+found something.
+
+The second pass's five criticals were four of the same failure modes the first had already
+named, committed a second time and then reported as fixed — including one this change
+introduced and then claimed to have fixed. A fix that is half a fix is worse than no fix,
+because it is reported as a fix.
+
+### What M15 did not verify
+
+- **A second browser engine.** One is installed on the machine that ran it. The gate reports
+  a second-engine run as NOT RUN with the reason and the steps.
+- **A real Vercel deployment.** It needs credentials this project does not have and does not
+  want. `frontend/docs/DEPLOYMENT.md` is the procedure.
+- **Firefox, Android, and iOS.** The automation is a Chromium protocol; all three are manual
+  entries with instructions and the evidence each should produce.
+- **The DESIGN.md visual audit.** Contrast, accessible names, and keyboard reachability are
+  computed; proportion, hierarchy, and visual rhythm are human judgements.
+- **The completeness of the pattern-based detectors.** A static pattern cannot enforce a
+  semantic property. The three genuine proofs are the allow-lists: the exact runtime
+  dependency list, no environment read outside the schema, and the route path rule.
+- **A falsifiability proof over every flow.** It covers four of eleven, against a requirement
+  that says each.
+
+An evidence record that understates its coverage is the same class of error as one that
+overstates it, and the unchecked items above are recorded for that reason rather than ticked
+with a note contradicting them.
 
 ## Navigation / Shell
 
