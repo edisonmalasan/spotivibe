@@ -21,10 +21,23 @@ branch + PR per stage; merge commits only) and keeping `ROADMAP.md` current.
 | **M10** | `2026-09-30-add-radio-and-local-personalization` | #41 propose `e99435a`, #42 apply `d6ce3d4`, #43 sync `636e642`, #44 archive `723b281` |
 | **M11** | `2026-09-30-add-listening-insights-and-smart-mixes` | #45 propose `b735476`, #46 apply `9d9312b`, #47 sync `c7485f0`, #48 archive `802e403` |
 
-Baseline after M11: **129 test files / 1987 tests**; all six gates green in a clean clone.
-Main specs: `insights` and `mixes` (new), `discovery`/`local-data` updated. 12 archived
-changes. `openspec validate --specs --strict`: 14 passed, 0 failed. Next objective:
-**M12 (podcasts)** — see ROADMAP rows 121-124; M13 PWA, M14 hardening, M15 release.
+| **M12** (propose merged) | `add-podcasts` (Apply in progress on `feat/podcast-search-mode`) | #49 propose `b914875`; apply/sync/archive pending |
+
+Baseline at the M11 merge (`fa3e262`): **125 test files / 1987 tests**; after M12:
+**130 test files / 2077 tests**, all six gates green in a clean clone. Main specs:
+`podcasts` (new), `music-provider`/`search`/`playback` updated. 12 archived changes.
+Next objective after M12: **M13 (PWA installation and offline metadata)**, then M14
+hardening, M15 release validation and deployment.
+
+## M12 state (Apply)
+- Active change: `openspec/changes/add-podcasts` — `design.md` holds 9 decisions,
+  `tasks.md` all 10 sections ticked plus a §10 verification record and a deviations
+  list (7 entries: five test-home/split corrections, one pre-existing bug fixed, one
+  pre-existing characteristic documented rather than changed).
+- Evidence: `evidence/{cdp-check.mjs,results.json,README.md}` — `pass: true`, 30 steps,
+  0 console errors, 6 screenshots, production build in headless Edge, port 3210.
+- Baseline note: the M11 ledger said "129 test files"; the verified count at `fa3e262`
+  is 125 (vitest counts what it collects), so M12's delta is +5 files / +90 tests.
 
 ## M11 state
 - Archived change: `openspec/changes/archive/2026-09-30-add-listening-insights-and-smart-mixes`
@@ -54,6 +67,37 @@ changes. `openspec validate --specs --strict`: 14 passed, 0 failed. Next objecti
 - `HISTORY_LIMIT`-style honesty: the History surface says "the most recent plays … up to
   50 at a time" because it renders `historyStore`'s 50-event window, and a negative test
   forbids any total/ranking/completeness claim on that surface.
+
+## M12 highlights worth remembering
+- **A mode is a question, so it belongs in the request, not in a filter.** One bounded
+  `category` parameter threaded route -> service -> chain -> providers -> filter ->
+  cache key. Music mode omits the parameter entirely, so a pre-M12 music request is
+  byte-identical (`/api/search?q=…&limit=20`) and its cache key unchanged.
+- **Podcast mode skips `ytmusic` and records the skip.** A tier removed for category
+  reasons is still reported as `{ tier, outcome: "skipped" }` — omitting it would make
+  the diagnostics lie about what was asked. The evidence run reads this from the
+  server: `ytmusic → skipped`, then the fallback chain carries the request.
+- **Category pinning, not the duration heuristic, in podcast mode.** The `> 1200s`
+  heuristic would have labelled a 6-minute spoken-word result as music and then dropped
+  it on the music duration floor.
+- **The filter split had to keep music byte-identical.** The plan put promo markers
+  (`trailer|teaser|preview`) in the category-independent set, which would have *newly
+  rejected* music results titled "Preview" — the one thing decision 4 promises not to
+  do. They are podcast-only; Shorts is the only any-category rule; the music-only
+  lists keep their exact pre-M12 bytes (substring matching, `react` inside "The
+  Reactor"). `tests/music-filter.test.ts` carries a 22-row x 2-category table whose
+  music column is the pre-M12 verdict, as the guard against the next refactor.
+- **A blank id is not an id.** `providerIdFor(artist) ?? artist.name` took `""` as a
+  provider id and produced `/artist/` — a keyless link that renders not-found and
+  prefetches a 404. The Invidious tier returns podcast shows with a name and an *empty*
+  channel id, so the mode made a pre-existing bug common. `ResultMenu` and
+  `HistoryView` already used `nonBlank`/`isProviderEntityId`; the tile now agrees.
+- **The session write is a 2s debounce fed by position updates**, so nothing is
+  persisted while the engine keeps reporting positions. Pre-existing M6 behavior;
+  harnesses must pause before reading the record. Documented, not changed.
+- **The remote-empty search state is unreachable**: the chain reports "no tier produced
+  a usable result" as a 503, which is the *error* state. Exercising an empty state in a
+  browser needs one stubbed 200 response (disclosed).
 
 ## Hard-won lessons
 1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
@@ -86,3 +130,17 @@ changes. `openspec validate --specs --strict`: 14 passed, 0 failed. Next objecti
     round trip exposed `applyImport` opening stores the transaction did not span — a
     pre-existing failure for any import writing only *some* datasets. Reproduce the live
     shape in a unit test before assuming the new code is at fault.
+11. **`npm ci` fails with EPERM while a `next start` server is running** (it cannot
+    unlink the SWC native binary). Stop the production server before the gate sequence.
+12. **In-page `headings.find(...)` returns a string, so `.parentElement` is undefined.**
+    A harness assertion that read the empty state's description through
+    `string.parentElement` silently compared against `""`. Find the *element*, then read
+    its text.
+13. **A harness must not assert against a different query's data.** Comparing a browser
+    search's rows with a probe of a *different* query produced a false failure; probe
+    the same query the page searched (the server cache makes both read one result set).
+14. **Architecture detectors that must find a guard need depth tracking.** A regex over
+    an `if` condition stops at the first `)`, which is the one inside
+    `PATTERN.test(lowerTitle)` — exactly the case a guard must be recognized for. The
+    reported range must start at the `if`, because a rule used in `a && b` sits before
+    the block's brace.
