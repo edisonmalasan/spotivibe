@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PLAYLIST_CACHE_TTL_MS, runResolvePlaylist } from "@/server/music/playlist";
+import { guardRequest } from "@/server/http/guard";
 import { parsePlaylistRef } from "@/server/music/playlistRef";
 import type { PlaylistDiagnostics, PlaylistResult } from "@/server/music/types";
 
@@ -47,6 +48,11 @@ function safeDiagnostics(diagnostics: PlaylistDiagnostics): PlaylistDiagnostics 
 }
 
 export async function GET(request: Request): Promise<Response> {
+  // Throttled before anything else: a refused request must not have already
+  // cost a provider call (spec `security` — bounded per-instance throttling).
+  const throttled = guardRequest(request);
+  if (throttled) return throttled;
+
   const params = new URL(request.url).searchParams;
   const parsed = playlistParamsSchema.safeParse({
     src: params.get("src") ?? undefined,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guardRequest } from "@/server/http/guard";
 import {
   CATALOG_CACHE_TTL_MS,
   resolveSimilar,
@@ -62,6 +63,11 @@ function errorResponse(
 }
 
 export async function GET(request: Request): Promise<Response> {
+  // Throttled before anything else: a refused request must not have already
+  // cost a provider call (spec `security` — bounded per-instance throttling).
+  const throttled = guardRequest(request);
+  if (throttled) return throttled;
+
   const params = new URL(request.url).searchParams;
   const parsed = similarParamsSchema.safeParse({
     title: params.get("title") ?? undefined,
