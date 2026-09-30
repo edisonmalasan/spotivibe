@@ -10,6 +10,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "next typegen && tsc --noEmit",
+    "icons:check": "node scripts/generate-icons.mjs --check",
     "test": "vitest run"
   },
   "dependencies": {

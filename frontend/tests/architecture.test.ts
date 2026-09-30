@@ -2,12 +2,13 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import manifestRoute from "@/app/manifest";
 
 /**
  * Static architecture invariants checked against the real source files
  * (M2 task 7.1 + M3 task 6.1 + M4 task 5.1 + M5 task 8.1 + M6 task 9.1 +
  * M7 task 9.1 + M8 task 8.1 + M9 task 7.1 + M10 task 6.1 + M11 task 6.1 +
- * M12 task 8.1) -
+ * M12 task 8.1 + M13 task 6.1) -
  * routes/components/features
  * depend on
  * repository interfaces (never the IndexedDB implementation), the data layer
@@ -40,7 +41,11 @@ import { describe, expect, it } from "vitest";
  * inside its own category's guard in the filter module, the category selects
  * tiers and upstream parameters but never a second provider capability, and the
  * curated podcast catalog resolves through the one language catalog and the one
- * preferences store while adding no podcast-specific local dataset.
+ * preferences store while adding no podcast-specific local dataset; and M13 keeps
+ * the service worker a self-contained classic script that names no application
+ * layer, the PWA feature off the server layer, raw provider shapes and IndexedDB,
+ * every PWA component client-only, the install affordance out of the dataset
+ * whitelist, and the manifest a parameter-free static install surface.
  *
  * Each detector is first exercised against a violating snippet, so a broken
  * invariant fails this suite instead of slipping through unnoticed.
@@ -2783,5 +2788,171 @@ describe("architecture: the M12 podcast surfaces hold (M12 task 8.1)", () => {
     expect(keys.some((key) => /podcast|episode/i.test(key))).toBe(false);
     const storeNames = extractStoreDefinitionNames(readSource("data", "indexeddb", "schema.ts"));
     expect(storeNames).toEqual(STORE_WHITELIST);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * M13 - the PWA shell (task 6.1)
+ * ------------------------------------------------------------------ *
+ *
+ * M13 adds a file that no architecture rule covered: a service worker lives in
+ * `public/`, outside `src/`, so every existing "walk the src tree" rule passed it
+ * by. These rules exist because that file is the one place in the application
+ * that can *silently change what every route returns*:
+ *
+ *   1. The worker is self-contained. It is a classic script with no module
+ *      imports, it names no application layer, and it cannot reach the data layer
+ *      or a provider module - so a caching decision can never be made from
+ *      application state.
+ *   2. The PWA feature stays off the server layer, off raw provider shapes, and
+ *      off IndexedDB: installability is a platform concern, not a data one.
+ *   3. Adding the install affordance adds no dataset and no backup envelope
+ *      change: the dismissal is a boot-time flag in `localStorage`, and the
+ *      whitelisted repository/store surface is byte-for-byte what M2 defined.
+ *   4. The manifest is a static install surface: no query parameters, so a
+ *      listener's own data can never be expressed in an install identity.
+ *   5. No server-side or data-layer module imports the PWA feature, and every
+ *      PWA component is client-only.
+ *
+ * Each detector is exercised against a violating snippet first.
+ */
+
+/** The M13 files, named so the coverage proof pins files, not only directories. */
+const M13_TOUCHED_FILES = [
+  join("app", "manifest.ts"),
+  join("app", "layout.tsx"),
+  join("app", "settings", "page.tsx"),
+  join("components", "layout", "AppShell.tsx"),
+  join("components", "layout", "ConnectionBanner.tsx"),
+  join("features", "pwa", "UpdateNotice.tsx"),
+  join("features", "pwa", "installPrompt.ts"),
+  join("features", "pwa", "serviceWorker.ts"),
+] as const;
+
+/** The worker, which lives outside `src/` and so is read by path. */
+const SW_SOURCE = readFileSync(join(srcDir, "..", "public", "sw.js"), "utf8");
+
+/** Layers the worker must not know about. */
+const APP_LAYER_SPECIFIER =
+  /(?:from|import)\s*["']@\/(?:data|server|features|components|stores|lib)\b/;
+
+/** Browser-storage and media capabilities a worker must not have. */
+function workerCapabilityViolations(source: string): string[] {
+  // Comments are stripped: this file documents each denial in prose, and a
+  // scanner that matched prose would be scanning the explanation.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const violations: string[] = [];
+  if (/^\s*(?:import|export)\s/m.test(code)) violations.push("module syntax");
+  if (APP_LAYER_SPECIFIER.test(code)) violations.push("application layer import");
+  for (const [label, pattern] of [
+    ["indexedDB", /\bindexedDB\b/],
+    ["localStorage", /\blocalStorage\b/],
+    ["sessionStorage", /\bsessionStorage\b/],
+    ["navigator.storage", /navigator\s*\.\s*storage/],
+    ["storage clearing", /\.clear\(\)/],
+    ["document access", /\bdocument\s*\./],
+  ] as const) {
+    if (pattern.test(code)) violations.push(label);
+  }
+  return violations;
+}
+
+describe("architecture: the M13 PWA shell holds (M13 task 6.1)", () => {
+  it("sweeps every M13 file, so the rules below are known to reach them", () => {
+    for (const file of M13_TOUCHED_FILES) {
+      expect(existsSync(join(srcDir, file)), file).toBe(true);
+    }
+    expect(M13_TOUCHED_FILES.length).toBeGreaterThanOrEqual(8);
+    // And the worker exists, since every rule about it would otherwise pass
+    // vacuously on a missing file.
+    expect(SW_SOURCE.length).toBeGreaterThan(1000);
+  });
+
+  it("keeps the worker a self-contained classic script, proven on violating snippets", () => {
+    expect(workerCapabilityViolations(SW_SOURCE)).toEqual([]);
+
+    // A module worker that imported the data layer: the violation is reported.
+    expect(
+      workerCapabilityViolations(
+        'import { db } from "@/data/indexeddb/index";\nexport default {};\n',
+      ),
+    ).toEqual(expect.arrayContaining(["module syntax", "application layer import"]));
+    // A worker that opened IndexedDB or cleared storage: reported, named.
+    expect(workerCapabilityViolations('const req = indexedDB.open("spotivibe");\n')).toEqual([
+      "indexedDB",
+    ]);
+    expect(workerCapabilityViolations('await caches.open("x").then((c) => c.clear());\n')).toEqual([
+      "storage clearing",
+    ]);
+    // A comment that *mentions* a denied capability is not a violation: this file
+    // explains the denials in prose and must be allowed to.
+    expect(workerCapabilityViolations("// never touch indexedDB or localStorage here\n")).toEqual(
+      [],
+    );
+  });
+
+  it("keeps the PWA feature off the server layer, raw provider shapes, and IndexedDB", () => {
+    for (const file of M13_TOUCHED_FILES.filter((path) => path.startsWith(join("features")))) {
+      const source = readSource(file);
+      expect(moduleSpecifiers(source).filter(targetsServerModule), file).toEqual([]);
+      expect(hasDirectIndexedDbImport(source), file).toBe(false);
+      expect(mentionsRawProviderShape(source), file).toBe(false);
+    }
+    // The feature also adds no data-layer dependency at all, so the install
+    // affordance cannot grow into a listener of the library.
+    for (const { file, source } of readTree(join(srcDir, "features", "pwa"))) {
+      expect(moduleSpecifiers(source), file).toEqual(
+        expect.not.arrayContaining([expect.stringMatching(/^@\/data/)]),
+      );
+    }
+  });
+
+  it("keeps every PWA component client-only, and the feature off the server and data layers", () => {
+    for (const { file, source } of readTree(join(srcDir, "features", "pwa"))) {
+      // Both components read browser APIs during render, so both are client
+      // components. A server component importing one would be a build-time lie.
+      if (file.endsWith(".tsx")) expect(source, file).toMatch(/^"use client";/);
+    }
+    // Nothing on the server or in the data layer imports the PWA feature: caching
+    // and installability are decided in the browser, and a server that knew about
+    // them could not be cached honestly anyway.
+    for (const dir of [join("src", "server"), join("src", "data")]) {
+      for (const { file, source } of readTree(join(srcDir, "..", dir))) {
+        expect(moduleSpecifiers(source), file).not.toContain("@/features/pwa/serviceWorker");
+        expect(moduleSpecifiers(source), file).not.toContain("@/features/pwa/installPrompt");
+      }
+    }
+  });
+
+  it("adds no dataset, store, or backup envelope field for the install affordance", () => {
+    // Decision 5 in the strongest available form: the repository surface and the
+    // store list are byte-for-byte the M2 whitelist, and the PWA feature names no
+    // store at all - the dismissal is a `localStorage` boot flag, not a dataset.
+    const keys = extractRepositoryKeys(readSource("data", "repositories", "index.ts"));
+    expect(keys).toEqual(STORE_WHITELIST);
+    const storeNames = extractStoreDefinitionNames(readSource("data", "indexeddb", "schema.ts"));
+    expect(storeNames).toEqual(STORE_WHITELIST);
+    for (const { file, source } of readTree(join(srcDir, "features", "pwa"))) {
+      expect(source, file).not.toMatch(/\bSTORE\.\w+/);
+      expect(source, file).not.toMatch(/\bMetadataCacheRepository\b|\bPreferencesRepository\b/);
+    }
+  });
+
+  it("keeps the manifest a static install surface, with no parameter to carry data", () => {
+    const manifest = readSource("app", "manifest.ts");
+    // No query is read and no local-data name appears: an install identity is a
+    // constant, and a parameter in it would be a channel for listener data.
+    expect(manifest).not.toMatch(/searchParams|params\.get|\?\w+=/);
+    for (const name of ["deviceId", "profile", "liked", "playlist", "history", "session"]) {
+      expect(manifest, name).not.toMatch(new RegExp(`"[^"]*${name}[^"]*":`, "i"));
+    }
+    // And the shipped manifest's own URLs are constant paths. The route module is
+    // a pure function whose only import is a type, so it is read directly here.
+    const shipped = manifestRoute();
+    for (const url of [shipped.start_url, shipped.scope, shipped.id]) {
+      expect(typeof url, "manifest url").toBe("string");
+      expect(String(url).startsWith("/")).toBe(true);
+      expect(String(url), "manifest url carries no parameter").not.toContain("?");
+    }
   });
 });

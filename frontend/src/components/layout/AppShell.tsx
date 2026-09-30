@@ -8,9 +8,11 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { PlayerHost } from "@/components/player/PlayerHost";
 import { useListeningRecorder } from "@/features/history/useListeningRecorder";
+import { UpdateNotice } from "@/features/pwa/UpdateNotice";
+import { attachServiceWorker } from "@/features/pwa/serviceWorker";
 import { RadioStartedTracker } from "@/features/personalization/RadioStartedTracker";
 import { RefillAgent } from "@/features/personalization/RefillAgent";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 /**
  * Single shell instance mounted in the root layout: the top bar, both variant
@@ -37,6 +39,11 @@ import type { ReactNode } from "react";
  */
 export function AppShell({ children }: { children: ReactNode }) {
   useListeningRecorder();
+  // M13: the shell is where the worker's lifecycle belongs, because an update
+  // notice that only appeared on one route would be an update most people never
+  // see. The attacher returns a detach function and is a no-op where service
+  // workers are unsupported, so this costs nothing in a browser without them.
+  useEffect(() => attachServiceWorker(), []);
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-void-black">
@@ -52,6 +59,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
       {/* Connectivity status: shell-global, fixed clear of the player regions. */}
       <ConnectionBanner />
+      {/* M13: a waiting build is announced here, on every route. */}
+      <UpdateNotice />
       {/* Radio/autofill observers, mounted with the persistent player. */}
       <RefillAgent />
       <RadioStartedTracker />

@@ -27,7 +27,7 @@ The application SHALL expose a Web App Manifest describing it as a standalone ap
 
 ### Requirement: Service worker caching strategy
 
-The application SHALL register a service worker that classifies every request before deciding what to do with it, and SHALL apply a documented rule per class rather than a blanket policy. The worker SHALL serve the application shell and its content-hashed static assets from cache, SHALL serve navigations network-first with a cached fallback for the application's own prerendered routes, and SHALL NOT offer a cached fallback for a route whose content is per-entity. Bounded caches of shell assets, provider metadata, and artwork SHALL each have a maximum entry count enforced by the worker, and the bounds SHALL be named values in the worker rather than implicit browser behavior.
+The application SHALL register a service worker that classifies every request before deciding what to do with it, and SHALL apply a documented rule per class rather than a blanket policy. The worker SHALL serve the application shell and its content-hashed static assets from cache, and SHALL serve every same-origin navigation network-first with a documented fallback chain: the route's own cached response when it has one, and the cached application shell when it does not. A navigation SHALL NEVER be answered with a cached response belonging to a different route, and a route whose content is per-entity SHALL never be answered with another entity's cached response. Bounded caches of shell assets, provider metadata, and artwork SHALL each have a maximum entry count enforced by the worker, and the bounds SHALL be named values in the worker rather than implicit browser behavior.
 
 #### Scenario: The shell and its assets are available offline
 
@@ -39,10 +39,20 @@ The application SHALL register a service worker that classifies every request be
 - **WHEN** a navigation to one of the application's own prerendered routes fails because the device is offline
 - **THEN** the previously cached response for that route is served instead of a network error
 
-#### Scenario: A per-entity route is not answered from someone else's cache
+#### Scenario: A route that was never visited still opens the application
 
-- **WHEN** a navigation to a per-entity route (an artist, an album, or an imported playlist) fails because the device is offline and no cached response for that exact entity exists
-- **THEN** the worker does not substitute a cached response for a different entity, and the route's own error state is what the listener sees
+- **WHEN** a navigation fails because the device is offline and no cached response exists for that exact route
+- **THEN** the navigation is answered with a redirect to the cached application shell, so the listener lands in a working application at a URL that matches what is shown, rather than on the browser's own "no internet" page, which would take away the navigation, the player, and any way back
+
+#### Scenario: A per-entity route falls back to the shell, never to another entity
+
+- **WHEN** a navigation to a per-entity route (an artist, an album, or an imported playlist) fails because the device is offline and no cached response exists for that exact entity
+- **THEN** the worker redirects to the cached application shell so the application itself still loads, and it does not substitute any cached response for the entity - neither the shell's own document under this URL nor another entity's
+
+#### Scenario: The offline fallback is the app, not the browser's error page
+
+- **WHEN** a per-entity route is opened for the first time while offline
+- **THEN** the application renders - navigation, player region, and the connection banner naming what needs a connection - rather than the browser's own "no internet" page, because a browser error page is a dead end the listener cannot leave. The route they asked for is not the route they get: a single offline shell cannot render a route it has never been sent.
 
 #### Scenario: Caches are bounded and evicted
 
@@ -61,7 +71,7 @@ The application SHALL register a service worker that classifies every request be
 
 ### Requirement: Bounded offline metadata and artwork
 
-The worker MAY cache provider metadata responses and artwork images for offline use, and SHALL do so only for endpoints and hosts that carry no user data, with a stated entry bound and a freshness bound for metadata. Cached metadata SHALL be used only as a fallback when the network cannot answer, never in preference to a live response, and artwork caching SHALL NOT alter, resize, or re-encode the image the provider served.
+The worker MAY cache provider metadata responses and artwork images for offline use, and SHALL do so only for responses that carry no listener data, with a stated entry bound and a freshness bound for metadata. A metadata request that carries listener-derived input SHALL NOT be cached; artwork is display data from a third party and is cached as it was served, without inspection or re-encoding. Cached metadata SHALL be used only as a fallback when the network cannot answer, never in preference to a live response, and artwork caching SHALL NOT alter, resize, or re-encode the image the provider served.
 
 #### Scenario: Previously seen entity metadata is available offline
 
@@ -85,7 +95,7 @@ The worker MAY cache provider metadata responses and artwork images for offline 
 
 ### Requirement: Service worker update flow
 
-The application SHALL tell the listener when a new version of the application is waiting to take over, SHALL offer a way to activate it, and SHALL complete the activation so the new build's assets are actually used. The update SHALL NOT destroy, reset, or rewrite any locally stored data, and the worker SHALL contain no storage-clearing behavior of its own.
+The application SHALL tell the listener when a new version of the application is waiting to take over, SHALL offer a way to activate it, and SHALL complete the activation so the new build's assets are actually used. The update SHALL NOT destroy, reset, or rewrite any locally stored data: the worker SHALL NOT open or modify the listener's datasets, session, or history, and on activation it SHALL delete only caches of its own previous version and nothing else.
 
 #### Scenario: A waiting update is announced
 

@@ -63,7 +63,20 @@ export function LikedSongsView() {
   }
 
   const empty = tracks.length === 0;
-  const shown = tracks.filter((track) =>
+  // A stored record is untrusted data, exactly as the repositories already treat it
+  // (see the preferences repository's "fall back per field"): a row written by an
+  // older build, or by an import that could not fill every field, must not
+  // white-screen the surface that reads it. M13's browser evidence run found this the
+  // hard way - a liked row with no artists crashed the route into the error boundary
+  // while offline, and the run scored it a pass until its assertion was scoped to the
+  // route's own subtree.
+  const usable = tracks.filter(
+    (track): track is Track & { title: string; artists: { name: string }[] } =>
+      typeof track?.title === "string" &&
+      Array.isArray(track?.artists) &&
+      track.artists.every((artist) => typeof artist?.name === "string"),
+  );
+  const shown = usable.filter((track) =>
     libraryFilterMatches(query, track.title, ...track.artists.map((artist) => artist.name)),
   );
 

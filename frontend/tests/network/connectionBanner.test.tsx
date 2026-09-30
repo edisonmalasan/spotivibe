@@ -40,7 +40,13 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/",
 }));
 
-const OFFLINE_COPY = "You're offline — some things won't load until you reconnect.";
+// M13 changed this copy, and the requirement with it (spec `network` — "Connection
+// status banner": the offline message names the capabilities that need a
+// connection). The old text — "some things won't load until you reconnect" — was
+// true and useless, so the constant below is the *new* contract rather than a
+// relaxed assertion: both halves are asserted in `pwa-client.test.tsx`.
+const OFFLINE_COPY =
+  "You're offline — search and playback need a connection. Your library, playlists, and history still work.";
 
 beforeEach(() => {
   resetNetworkStore();
