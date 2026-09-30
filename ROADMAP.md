@@ -121,7 +121,7 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M12 | Podcasts | `DONE` | M3, M4, M5 |
 | M13 | PWA installation, offline shell, offline metadata experience | `DONE` | M1, M2, M6 |
 | M14 | Hardening: performance, security, accessibility, resilience | `DONE` | M3–M13 |
-| M15 | Test matrix, release validation, Vercel deployment | `NOT STARTED` | M0–M14 |
+| M15 | Test matrix, release validation, Vercel deployment | `IN PROGRESS` | M0–M14 |
 
 ---
 
