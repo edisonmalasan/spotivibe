@@ -35,8 +35,8 @@
 
 - [x] 5.1 Extend the architecture suite for this milestone: the security policy is declared once and covers every route; the limiter is the only new server-side capability and stays off the provider layer; the audit harness stays outside the application bundle; no reporting or analytics call exists — verify: each detector is proven against a violating snippet.
 - [x] 5.2 Produce browser evidence against a production build: the headers on a document, a static asset, the manifest, and the worker file; the throttling loop refused and a human burst accepted; offline rendering with a corrupt cache entry; the storage-failure state; the performance and accessibility audits; exactly one worker; and zero console errors — verify: `results.json` reports `"pass": true` with screenshots and a reproduce-path README disclosing every deviation, including the machine the measurement ran on.
-- [ ] 5.3 Run the full quality gates from the repository root (`cd frontend && npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`) — verify: every command exits `0`.
-- [ ] 5.4 Re-verify the quality gates from a clean clone of the branch head, including the production build under the declared headers — verify: all six commands exit `0` in the fresh clone.
+- [x] 5.3 Run the full quality gates from the repository root (`cd frontend && npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`) — verify: every command exits `0`. **Run at the merged head and from a clean clone of it; every command exited `0`, and the repository is at zero lint warnings.**
+- [x] 5.4 Re-verify the quality gates from a clean clone of the branch head, including the production build under the declared headers — verify: all six commands exit `0` in the fresh clone. **Run from a fresh clone of the merge commit: 140 test files / 2231 tests, the production build succeeding, and the browser evidence reporting `"pass": true` with 62/62 checks and 0 console errors.**
 - [x] 5.5 Update `ROADMAP.md`: the M14 status row, the section checklist items this change delivers, and the targets the acceptance criteria refer to, with the reasoning that chose each number — verify: `git diff` shows the status cell, the ticked items, and the targets.
 
 ## Verification record
@@ -75,17 +75,25 @@ measurement:
 
 ### Gates
 
-Run from `frontend/` at the branch head, and again from a clean clone of it:
+Run from `frontend/` at the merged head, and again from a **fresh clone of the merge
+commit** — so these are measured, not carried over from the branch.
 
 | Command | Result |
 | --- | --- |
 | `npm ci` | 0 |
-| `npm run lint` | 0 |
+| `npm run lint` | 0, and **zero warnings** — the gate does not fail on warnings, which is how eight of them accumulated under a green build |
 | `npm run format:check` | 0 |
 | `npm run typecheck` | 0 |
-| `npm test` | 0 — 140 files, 2225 tests (was 2152 at M13) |
+| `npm test` | 0 — 140 files, 2231 tests (was 2152 at M13) |
 | `npm run build` | 0 |
-| `node evidence/audit.mjs` | 0 — 62/62, `"pass": true` |
+| `node evidence/audit.mjs` | 0 — 62/62, `"pass": true`, 0 console errors |
+
+**Reconciled at Sync.** The first version of this table said 2225 tests, because it was
+written before the verification pass's fixes added their regression tests. An evidence
+record that understates what was verified is the same class of error as one that
+overstates it, so the number is now the one the run produced, and the table says which
+commit it describes. The harness's own `task` field was corrected at the same time: it
+named four tasks while the run covered ten.
 
 ### What remains unverified, permanently
 

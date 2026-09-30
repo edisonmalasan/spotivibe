@@ -27,7 +27,7 @@ The application SHALL expose a Web App Manifest describing it as a standalone ap
 
 ### Requirement: Service worker caching strategy
 
-The application SHALL register a service worker that classifies every request before deciding what to do with it, and SHALL apply a documented rule per class rather than a blanket policy. The worker SHALL serve the application shell and its content-hashed static assets from cache, and SHALL serve every same-origin navigation network-first with a documented fallback chain: the route's own cached response when it has one, and the cached application shell when it does not. A navigation SHALL NEVER be answered with a cached response belonging to a different route, and a route whose content is per-entity SHALL never be answered with another entity's cached response. Bounded caches of shell assets, provider metadata, and artwork SHALL each have a maximum entry count enforced by the worker, and the bounds SHALL be named values in the worker rather than implicit browser behavior.
+The application SHALL register a service worker that classifies every request before deciding what to do with it, and SHALL apply a documented rule per class rather than a blanket policy. The worker SHALL serve the application shell and its content-hashed static assets from cache, and SHALL serve every same-origin navigation network-first with a documented fallback chain: the route's own cached response when it has one, and the cached application shell when it does not. A navigation SHALL NEVER be answered with a cached response belonging to a different route, and a route whose content is per-entity SHALL never be answered with another entity's cached response. Bounded caches of shell assets, provider metadata, and artwork SHALL each have a maximum entry count enforced by the worker, and the bounds SHALL be named values in the worker rather than implicit browser behavior. Every cache read SHALL be able to conclude that a stored entry is unusable, in which case the worker SHALL discard that entry and treat the read as absent rather than serving it.
 
 #### Scenario: The shell and its assets are available offline
 
@@ -68,6 +68,16 @@ The application SHALL register a service worker that classifies every request be
 
 - **WHEN** the browser requests the video player's API script or any player media
 - **THEN** the worker passes the request straight to the network, so the live player is always used
+
+#### Scenario: A corrupt cache entry is discarded rather than served
+
+- **WHEN** a cached entry exists for a request but cannot be used as an answer
+- **THEN** the worker deletes that entry, treats the cache as having no answer for the request, and falls through to its normal behavior for that class
+
+#### Scenario: A cache read that fails is a miss, not a failure
+
+- **WHEN** reading the cache throws for any reason
+- **THEN** the request continues as though the cache were empty, and the listener's page still loads
 
 ### Requirement: Bounded offline metadata and artwork
 
