@@ -15,6 +15,7 @@ import { MoreLikeThisShelf } from "@/features/related/MoreLikeThisShelf";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { usePlayerStore } from "@/stores/playerStore";
 import { useVideoModeStore } from "@/stores/videoModeStore";
+import { LyricsPanel } from "@/features/lyrics/LyricsPanel";
 import {
   ChevronDown,
   Heart,
@@ -359,6 +360,23 @@ export default function NowPlayingPage() {
             ) : null}
           </div>
         ) : null}
+      </div>
+
+      {/*
+        Lyrics (ROADMAP M16; spec `lyrics`, `app-shell`): a sibling in this
+        column, between the transport and the related shelf. Not a tab — lyrics
+        are only useful while the track plays, so a control that competes with
+        the transport for attention is the wrong trade, and at 390x844 there is
+        no room for a second navigation row.
+
+        It is given its own bounded height so a long lyric list scrolls inside
+        the panel instead of pushing More Like This off the screen, which is the
+        `app-shell` requirement that lyrics never displace the rest of the
+        surface. Its four states (loading / populated / unavailable / failed) are
+        all contained here, so none of them can affect the transport above.
+      */}
+      <div className="w-full max-w-3xl">
+        <LyricsPanel />
       </div>
 
       <div className="w-full max-w-3xl">
