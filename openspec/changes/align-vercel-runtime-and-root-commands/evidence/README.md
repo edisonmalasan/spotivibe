@@ -175,6 +175,39 @@ redundant.
 npmrc bypassed (`npm_config_userconfig`), because of the collision above. Every other
 condition was the default.
 
+## The runner resolves the repository by walking up, not by counting
+
+This change's own `release-gate.mjs` runner originally used `resolve(HERE, "../../../..")` —
+correct while the change is active, wrong the instant it is archived. That is precisely the
+defect the section above documents at length: three M15 harnesses each needed a patch for it,
+and `harness.mjs` carries a comment saying the real fix belongs in the harness design rather
+than in a fourth patch. Writing that fourth instance while explaining why it is a bug would
+have been absurd, so the runner walks up looking for `openspec/specs` and fails with a named
+marker if it finds none.
+
+Proven at both depths, because depth is the only thing that can break it:
+
+| Where the runner sits | Result |
+| --- | --- |
+| the active change directory | resolves; gate runs |
+| `openspec/changes/archive/<name>/evidence/` — the depth archiving creates | resolves; **gate runs, 15 passed / 0 failed** |
+| a copy with no repository above it | **fails loudly**, naming the marker it searched for |
+
+The second row is the real test: the copy was placed at the exact path `openspec archive` will
+create, inside the actual repository, and the gate ran from there.
+
+The first probe of this **was wrong and reported a false failure.** It put an archived-layout
+copy in a bare sandbox directory, and the resolver reported it could not find the repository —
+correctly, because that sandbox genuinely had no `openspec/specs` above it. The probe was
+testing for a repository that did not exist. The fix was to run the probe where archiving will
+actually put the file, and the lesson is the one this repository keeps relearning: a test that
+fails must be understood before it is believed, and "the tool is broken" and "my test is
+broken" look identical from the outside.
+
+That probe run refreshed M15's archived screenshots and result files again, since running the
+archived instruments writes beside them. They are restored to their committed state; the
+restore is visible in the commit that carries this section.
+
 ## Not verified, and not claimed
 
 - **A real Vercel deployment.** This change makes the build *satisfiable*; nothing here

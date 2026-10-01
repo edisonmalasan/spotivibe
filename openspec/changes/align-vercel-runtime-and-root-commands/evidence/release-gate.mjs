@@ -32,11 +32,45 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(HERE, "../../../..");
+
+/**
+ * Walk up looking for the repository, rather than counting directories.
+ *
+ * This file's first version used `resolve(HERE, "../../../..")`, which is correct while the
+ * change is active and wrong the moment it is archived — and this change is about to be
+ * archived. That is precisely the defect this runner's own header documents at length: M15's
+ * three harnesses each needed a patch for it, and `harness.mjs` carries a comment saying the
+ * real fix belongs in the harness design rather than in another patch.
+ *
+ * Writing the fourth instance of that bug while explaining why it is a bug would be absurd, so
+ * this file walks up for a marker instead. A marker cannot rot when a directory moves, and the
+ * error message names what was searched for rather than a path the caller has to reverse
+ * -engineer.
+ */
+function findRepo(from) {
+  let current = from;
+  for (;;) {
+    // `openspec/specs` exists only at the repository root, and is a more specific marker than
+    // `package.json` — the application package has one of those too.
+    if (existsSync(join(current, "openspec", "specs"))) return current;
+    const parent = dirname(current);
+    if (parent === current) {
+      throw new Error(
+        `could not find the repository root above ${from}: no ancestor contains openspec/specs`,
+      );
+    }
+    current = parent;
+  }
+}
+
+const REPO = process.env.SPOTIVIBE_REPO
+  ? resolve(process.env.SPOTIVIBE_REPO)
+  : findRepo(HERE);
 const M15 = join(
   REPO,
   "openspec",
