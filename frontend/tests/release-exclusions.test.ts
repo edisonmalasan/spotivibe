@@ -1143,23 +1143,40 @@ describe("the parked player is parked, and parking is not a workaround", () => {
     // correct code is a detector that gets switched off.
     const code = stripComments(hostSource);
     // `new yt.Player` was the first version's rule and it missed `new YT.Player` — the
-    // spelling this very repository uses in `engine.ts`. Aliasing and destructuring defeat
-    // any textual rule, so this is a *negative* check (the host is not the constructor site)
-    // backed by the positive site-count in `architecture.test.ts`, which enumerates rather
-    // than matching a spelling.
-    expect(code).not.toMatch(/new\s+(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/);
+    // spelling this very repository uses in `engine.ts`.
+    //
+    // The pattern matches the member access rather than the `new` keyword, because a probe
+    // found the gap: `new (window as unknown as {...}).YT.Player(...)` — a TypeScript cast
+    // between `new` and the member — is invisible to a `new\s+YT\.Player` rule. The prefix does
+    // not exclude a preceding dot either, since in `}).YT.Player(` the dot *is* the preceding
+    // character. It still cannot be defeated by destructuring or a renamed alias: **no textual
+    // rule can**, because resolving an alias is what a type checker does. The load-bearing
+    // assertion is the *count* of construction sites in `architecture.test.ts`, and that limit
+    // is recorded there as a fixture rather than left unexamined.
+    expect(code).not.toMatch(/(?:^|[^\w$])(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/);
     // React never renders an iframe as a child: the host is a stable wrapper around a node
     // the engine fills in.
     expect(code).not.toMatch(/document\.createElement\(\s*["']iframe["']\s*\)|<iframe\b/i);
 
-    // Proven able to fail, on every spelling the rule has to name.
-    const CONSTRUCTOR = /new\s+(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/;
+    // Proven able to fail, on every spelling the rule has to name — including the cast that
+    // the `new`-anchored version missed.
+    const CONSTRUCTOR = /(?:^|[^\w$])(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/;
     for (const shape of [
       "new yt.Player(target, {})",
       "new YT.Player(target, {})",
       "new window.YT.Player(target, {})",
+      "new (window as unknown as { YT: { Player: new () => unknown } }).YT.Player(target, {});",
     ]) {
       expect(CONSTRUCTOR.test(shape), `the rule missed: ${shape}`).toBe(true);
+    }
+    // The stated limit, asserted rather than assumed: an aliased or destructured constructor
+    // is not statically resolvable by a pattern. Recording it as a fixture means the boundary
+    // is a decision with a known cost, not an unexamined gap someone will rediscover.
+    for (const shape of [
+      "const p = YT.Player; new p(target, {});",
+      "const { Player } = YT; new Player(target, {});",
+    ]) {
+      expect(CONSTRUCTOR.test(shape), `${shape} is outside what a static rule can see`).toBe(false);
     }
     const IFRAME = /document\.createElement\(\s*["']iframe["']\s*\)|<iframe\b/i;
     for (const shape of [

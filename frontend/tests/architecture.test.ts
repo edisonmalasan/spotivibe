@@ -593,9 +593,27 @@ describe("architecture: the player is parked, and there is exactly one of it", (
     // Proven able to fail on the spellings the first version missed. Aliasing and
     // destructuring cannot be caught by any textual rule, which is exactly why the count
     // above is the load-bearing assertion and these are the two realistic near-misses.
-    const CONSTRUCTOR = /new\s+(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/;
+    // The prefix deliberately does *not* exclude a preceding `.`. A version that did
+    // (`[^\w$.]`) missed the cast form, because in `}).YT.Player(` the character before
+    // `YT` is a dot — the very dot the pattern was written to skip. Found by running it.
+    const CONSTRUCTOR = /(?:^|[^\w$])(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/;
     expect(CONSTRUCTOR.test("new YT.Player(target, {})")).toBe(true);
     expect(CONSTRUCTOR.test("new window.YT.Player(target, {})")).toBe(true);
+    // The cast form a probe found: `new (window as unknown as {...}).YT.Player(...)` is
+    // invisible to a `new\s+YT\.Player` rule, so the pattern anchors on the member access.
+    expect(
+      CONSTRUCTOR.test(
+        "new (window as unknown as { YT: { Player: new () => unknown } }).YT.Player(target, {});",
+      ),
+      "the cast form must be matched",
+    ).toBe(true);
+    // And the limit, asserted rather than assumed: an aliased constructor cannot be resolved
+    // by any textual rule, because resolving an alias is what a type checker does. Recording
+    // it as a fixture means the limit is a stated boundary, not an unexamined gap.
+    expect(
+      CONSTRUCTOR.test("const P = YT.Player; new P(target, {});"),
+      "an aliased constructor is outside what a static rule can see",
+    ).toBe(false);
   });
 
   it("gives the engine one reusable container, asserted by append count", () => {
