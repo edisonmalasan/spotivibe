@@ -7,7 +7,7 @@
     "node": "24.x"
   },
   "scripts": {
-    "setup": "npm --prefix frontend ci",
+    "setup": "cd frontend && npm ci",
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix frontend run start",

@@ -140,8 +140,45 @@ describe("every root command reaches the application package (M15 tasks 3.1, 3.3
     expect(scripts.setup, "the root must offer the install command").toBeDefined();
     // `ci`, not `install`: installing must reproduce the lockfile rather than resolve a
     // fresh tree, which is the whole reason a lockfile exists.
-    expect(scripts.setup, "setup must install from the lockfile").toMatch(
-      /npm --prefix frontend ci/,
+    expect(scripts.setup, "setup must install from the lockfile").toMatch(/\bnpm ci\b/);
+  });
+
+  it("runs the install in the application directory rather than with --prefix", () => {
+    // Found by running it from a clean checkout, which is the only way it could be found.
+    //
+    // npm 11 — the npm that ships with Node 24 — fails an `npm ci` that is *nested* inside
+    // an `npm run` script with `EALLOWSCRIPTS: --allow-scripts is not allowed in
+    // project-scoped installs` when the user's `~/.npmrc` sets `allow-scripts`. Both
+    // conditions are needed: with the npmrc bypassed the nested form works, and with the
+    // npmrc present a *direct* `cd frontend && npm ci` works. Only the combination fails.
+    //
+    // This is a property of npm and of one machine's global configuration, not of this
+    // repository, and the repository cannot control a user's npmrc. Adding a project-level
+    // `allowScripts` to work around it would grant script permissions the project has no
+    // reason to grant, so the fix is the other direction: the run scripts keep `--prefix`,
+    // and the documented fallback for an install is the non-nested form.
+    const scripts = root().scripts ?? {};
+    expect(scripts.setup, "the install must reach the application directory").toMatch(
+      /cd frontend/,
+    );
+    for (const name of REQUIRED_ROOT_SCRIPTS) {
+      expect(scripts[name], `"${name}" should keep using --prefix`).toMatch(
+        /npm --prefix frontend/,
+      );
+    }
+  });
+
+  it("documents the non-nested install, so the escape hatch cannot be deleted", () => {
+    // The fallback is the part that matters on an affected machine, and a fallback nobody
+    // can find is not a fallback. Held here because a documentation-only safety net is
+    // exactly the kind of thing a later edit removes as redundant.
+    const readme = readFileSync(join(REPO, "README.md"), "utf8");
+    expect(
+      readme,
+      "the root README must document `cd frontend && npm ci` as the install that does not nest",
+    ).toMatch(/cd frontend && npm ci/);
+    expect(readme, "the root README must name the failure the fallback exists for").toMatch(
+      /EALLOWSCRIPTS|allow-scripts/,
     );
   });
 });

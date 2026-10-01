@@ -51,6 +51,24 @@ commands below run without a `cd frontend` first. The Next.js application still 
 `npm install` at the root would create a second lockfile that nothing installs from. **Use
 `npm run setup`**, not `npm install`, to install.
 
+### If `npm run setup` fails with `EALLOWSCRIPTS`
+
+npm 11 (the npm that ships with Node 24) refuses an `npm ci` nested inside an `npm run`
+script when your `~/.npmrc` sets `allow-scripts`, reporting `--allow-scripts is not allowed in
+project-scoped installs`. Both conditions are needed: the nested form works with a default npm
+configuration, and a direct install works with that npmrc present.
+
+Run the install directly instead — it does not nest, so it is unaffected:
+
+```bash
+cd frontend && npm ci
+```
+
+This is a property of npm and of your global configuration, not of this repository, and the
+repository cannot change your `~/.npmrc`. Adding a project-level `allowScripts` to work around
+it would grant install-script permissions the project has no reason to grant, so the fallback
+is documented here instead.
+
 ## Verified commands
 
 Run from the repository root; each proxies to the application's own script:
