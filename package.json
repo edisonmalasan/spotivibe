@@ -1,0 +1,21 @@
+{
+  "name": "spotivibe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accountless, local-first music PWA. The Next.js application lives in frontend/; this manifest proxies to it so the common commands run from the repository root.",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "setup": "npm --prefix frontend ci",
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend run start",
+    "lint": "npm --prefix frontend run lint",
+    "format": "npm --prefix frontend run format",
+    "format:check": "npm --prefix frontend run format:check",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "test": "npm --prefix frontend test",
+    "gate": "npm --prefix frontend run lint && npm --prefix frontend run format:check && npm --prefix frontend run typecheck && npm --prefix frontend test && npm --prefix frontend run build"
+  }
+}
