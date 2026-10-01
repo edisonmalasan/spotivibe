@@ -137,15 +137,36 @@ process was built to find, found before the first deploy rather than during it:
 - **Root-level commands.** `npm run dev`, `test`, `lint`, and the rest now run from the
   repository root. `frontend/` remains the application and keeps the only lockfile.
 
+The work after that was a **deliberate reversal of M4's visible-player decision**, in
+`2026-10-02-lyrix-style-hidden-player`:
+
+- **The floating YouTube video panel is gone and the single persistent player is parked** at
+  1×1 with zero opacity, non-interactive, and behind the app UI. PlayerBar/MiniPlayer is the only
+  visible playback interface, and Now Playing has an opt-in video mode that reveals *that same*
+  player. The branding could not be suppressed — `modestbranding` is deprecated and inert, and a
+  cross-origin iframe cannot be reached by CSS or DOM — so it was made invisible rather than
+  absent, which is Lyrix's approach.
+- **This does not meet YouTube's documented visible-player requirement, and is intended for
+  private, personal use.** The `playback` capability now carries that as a requirement rather
+  than a caveat, and `frontend/docs/DEPLOYMENT.md` instructs a public deployer to revert it
+  first. No extraction, `yt-dlp`, stream download, media proxy, or ad blocking was introduced, and
+  a detector holds that.
+- An independent verification pass returned **NOT MERGEABLE** with six criticals, **four of them
+  detectors that could not fail**. All were fixed and each is now shown failing by inducing the
+  violation in the real file.
+
 ### What remains, and it is not a milestone
 
 | Item | Why it is not a milestone | Where it is recorded |
 |---|---|---|
 | The Vercel deployment itself | Needs account credentials this project does not have. External user-only input. | `frontend/docs/DEPLOYMENT.md`, including five post-deploy verification steps |
+| Whether a parked 1×1 iframe keeps advancing in a live browser | The IFrame API is blocked by CSP in this environment, so no browser run can confirm it. The largest open item in the parked-player change. | `2026-10-02-lyrix-style-hidden-player` evidence README, "Not verified" |
+| Reverting the parked player before any public deployment | The parked configuration is right for a personal instance and wrong for a public one. | `frontend/docs/DEPLOYMENT.md`; the `playback` spec's departure requirement |
 | Real multi-instance rate limiting | The limiter is per-instance in memory, so its effective ceiling multiplies by instance count on serverless. Never observed under load. | M15's archived `tasks.md`, "permanently unverified" |
 | Firefox / Android / iOS | Only Edge is installed here, and the automation protocol is Chrome DevTools-based. | M15's archived `tasks.md` |
 | The DESIGN.md visual audit | A proportion and hierarchy judgement, not a number. | M15's archived `tasks.md` |
 | `tests/podcast-playback-history.test.ts` flake | A pre-existing 2-second wall-clock budget standing in for synchronization; roughly 1 run in 3 under load. Found during the runtime correction, deliberately not fixed there. | `2026-10-01-align-vercel-runtime-and-root-commands` evidence README |
+| A flaky release gate | M15's end-to-end suite fails intermittently on a CDP race in its own fixture router, reproduced on the commit before the runtime correction. The gate's credibility rests on green meaning something. | Found during the runtime correction; not yet fixed |
 
 ---
 
