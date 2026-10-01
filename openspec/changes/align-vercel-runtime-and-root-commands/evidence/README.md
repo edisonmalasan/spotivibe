@@ -115,6 +115,66 @@ cleanly while checking the wrong thing.
   the root manifest says why, and `tests/root-commands.test.ts` asserts the properties that
   make the proxy correct.
 
+## A pre-existing flake found by running the suite repeatedly
+
+Running the suite three times in a row in the clean clone, one run in three failed:
+
+```
+tests/podcast-playback-history.test.ts > a played podcast episode is recorded in ...
+```
+
+**This change did not cause it and does not fix it.** The test was last touched by M12
+(`feb9fd0`), and this branch has zero commits touching it, its stores, or the recorder it
+uses. It is recorded here because it was found during this change's verification and a
+verification finding that is written down somewhere nobody reads has not been reported.
+
+The cause is legible from the test itself: `waitForEvents(count, timeoutMs = 2000)` polls a
+**serialized asynchronous repository chain** on a fixed 2-second wall-clock budget. That is a
+timeout standing in for a synchronization signal, so the assertion is really "the write
+finished within two seconds", which is a statement about the machine rather than about the
+code. It passes when the suite has the machine to itself and fails when it does not.
+
+Why it is not fixed here: it has nothing to do with the runtime target or the root commands,
+and `AGENTS.md` is explicit about not broadening a change. It is a release-gate concern
+instead — a gate whose input is intermittently red is the "flaky gate gets disabled" failure
+this project has already written about twice — so it belongs in its own change, where the fix
+can be judged on its own merits rather than smuggled in here.
+
+The gate run recorded in this change's evidence passed 18 of 18, and the full suite passed
+2331 of 2331 in two of the three repeat runs.
+
+## An npm collision the clean checkout found
+
+The clean-clone verification failed on the very first command. `npm run setup` reported:
+
+```
+npm error code EALLOWSCRIPTS
+npm error --allow-scripts is not allowed in project-scoped installs.
+```
+
+It is not a defect in the manifest, and it needs **two** conditions at once:
+
+| | user `~/.npmrc` has `allow-scripts` | result |
+| --- | --- | --- |
+| `npm run setup` (nested `npm ci`) | yes | **fails** |
+| `npm run setup` (nested `npm ci`) | bypassed | installs 445 packages |
+| `cd frontend && npm ci` (not nested) | yes | installs 445 packages |
+
+npm 11 — the npm that ships with Node 24 — refuses an install nested inside an `npm run`
+script when the user's npmrc sets `allow-scripts`. This machine's `~/.npmrc` does.
+
+The repository cannot change a user's global npm configuration, and adding a project-level
+`allowScripts` to route around it would grant install-script permissions the project has no
+reason to grant. So the resolution is in the other direction: `setup` changes into `frontend/`
+rather than using `--prefix`, and the documented fallback for an affected machine is the
+non-nested `cd frontend && npm ci`, which is unaffected. `tests/root-commands.test.ts` holds
+that fallback, because a documentation-only safety net is exactly what a later edit removes as
+redundant.
+
+**Consequence for the evidence below**: the clean-clone gate runs were made with the user
+npmrc bypassed (`npm_config_userconfig`), because of the collision above. Every other
+condition was the default.
+
 ## Not verified, and not claimed
 
 - **A real Vercel deployment.** This change makes the build *satisfiable*; nothing here
