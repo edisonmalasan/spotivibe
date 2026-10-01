@@ -123,6 +123,30 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M14 | Hardening: performance, security, accessibility, resilience | `DONE` | M3–M13 |
 | M15 | Test matrix, release validation, Vercel deployment | `DONE` | M0–M14 |
 
+**All 16 milestones are `DONE`. There is no remaining roadmap objective.**
+
+The work that followed M15 was not a milestone. It was the one defect M15's own release
+process was built to find, found before the first deploy rather than during it:
+
+- **The runtime target was unbuildable.** M15 pinned `engines.node: ">=26 <27"`, and Vercel
+  offers 24.x, 22.x, and 20.x for builds and functions — Node 26 is a Sandbox runtime. M15's
+  check asked whether the pin and CI agreed. They agreed, and both were unbuildable. The
+  correction, in `2026-10-01-align-vercel-runtime-and-root-commands`, moved the target to
+  Node 24 everywhere and added the check that was missing: not that the declaration is
+  internally consistent, but that the target host can satisfy it.
+- **Root-level commands.** `npm run dev`, `test`, `lint`, and the rest now run from the
+  repository root. `frontend/` remains the application and keeps the only lockfile.
+
+### What remains, and it is not a milestone
+
+| Item | Why it is not a milestone | Where it is recorded |
+|---|---|---|
+| The Vercel deployment itself | Needs account credentials this project does not have. External user-only input. | `frontend/docs/DEPLOYMENT.md`, including five post-deploy verification steps |
+| Real multi-instance rate limiting | The limiter is per-instance in memory, so its effective ceiling multiplies by instance count on serverless. Never observed under load. | M15's archived `tasks.md`, "permanently unverified" |
+| Firefox / Android / iOS | Only Edge is installed here, and the automation protocol is Chrome DevTools-based. | M15's archived `tasks.md` |
+| The DESIGN.md visual audit | A proportion and hierarchy judgement, not a number. | M15's archived `tasks.md` |
+| `tests/podcast-playback-history.test.ts` flake | A pre-existing 2-second wall-clock budget standing in for synchronization; roughly 1 run in 3 under load. Found during the runtime correction, deliberately not fixed there. | `2026-10-01-align-vercel-runtime-and-root-commands` evidence README |
+
 ---
 
 # 6. Product Scope Matrix
