@@ -608,5 +608,18 @@ export async function openSession({
 }
 
 export function repoRoot(evidenceDir) {
+  // Portability fix, the third of its kind in these harnesses and the same one line as the
+  // other two. This walk counted directories from the evidence directory, which was correct
+  // while the change was *active*; archiving moved `evidence/lib` three levels deeper, so the
+  // suite looked for `frontend/.next` in a directory that does not exist and reported "No
+  // production build found" - a message about the build when the fault was the path.
+  //
+  // All three patches exist because the underlying design is wrong: a harness that locates
+  // the repository by counting directories is portable only until somebody moves it. A
+  // resolver that walked *up* looking for a marker would be correct wherever the file ended
+  // up. That is recorded as design debt rather than done here, because these harnesses are
+  // M15's recorded instruments and a refactor is a larger claim against the archive than a
+  // disclosed three-line override.
+  if (process.env.SPOTIVIBE_REPO) return resolve(process.env.SPOTIVIBE_REPO);
   return resolve(evidenceDir, "../../../..");
 }
