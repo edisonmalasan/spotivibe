@@ -973,12 +973,21 @@ function KEEPS_PLAYING(code: string): boolean {
   const resumingNames = new Set(
     declarations.filter(({ body }) => resumes(body) && !triggers(body)).map((d) => d.name),
   );
+  // Link 3: a trigger that *calls* a resuming declaration, by bare name or as a member.
+  //
+  // Link 2 handles `setInterval(resume, 500)`, where the name sits where an argument goes.
+  // Link 3 is for `setInterval(() => this.holdAudioOpen(), 200)`, where the call is a member
+  // access and the resume lives one declaration away. Found by probe, not by reading: with
+  // only link 2, an unmute helper invoked through `this.` from a timer passed silently.
+  const memberCall = (name: string): RegExp =>
+    new RegExp(String.raw`(?:^|[^\w$.])(?:this\.)?${name}\s*\(`);
+  const callbackName = (name: string): RegExp => new RegExp(String.raw`\(\s*${name}\s*[,)]`);
   for (const { body } of declarations) {
     if (!triggers(body)) continue;
     for (const name of resumingNames) {
       if (name === null) continue;
-      // `setInterval(resume, 500)`, `addEventListener("online", onReconnect)`, `rAF(tick)`.
-      if (new RegExp(String.raw`\(\s*${name}\s*[,)]`).test(body)) return true;
+      if (callbackName(name).test(body)) return true;
+      if (memberCall(name).test(body)) return true;
     }
   }
   return false;
@@ -1042,6 +1051,21 @@ const MISSED_BY_THE_FIRST_VERSION: Array<[label: string, why: string, code: stri
         player.setMuted(false);
       }
       setTimeout(hold, 100);
+    `,
+  ],
+  [
+    "a timer whose callback calls an unmute helper as a member",
+    "the resume is one call away, through `this.`, so neither same-scope matching nor callback-name matching sees it",
+    `
+      class Engine {
+        holdAudioOpen() {
+          player.setMuted(false);
+        }
+
+        start() {
+          setInterval(() => this.holdAudioOpen(), 200);
+        }
+      }
     `,
   ],
 ];
