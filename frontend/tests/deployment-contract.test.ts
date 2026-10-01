@@ -197,32 +197,127 @@ describe("the security policy survives deployment (M15 task 4.1)", () => {
   });
 });
 
-describe("the build that runs is the build that was tested (M15 task 4.2)", () => {
-  it("declares the runtime this repository is verified on", () => {
-    const engines = manifest().engines;
-    // Without this, a Vercel build uses the host's default Node rather than the Node 26
-    // CI verifies, and it would still succeed - the application has no required
-    // environment variables, no custom server, and no native dependencies - and then
-    // differ at runtime from anything tested.
-    expect(engines, "package.json must declare engines.node").toBeDefined();
-    expect(engines?.node, "the pin must name Node 26").toContain("26");
-  });
+/**
+ * The Node majors the stated deployment target can actually build.
+ *
+ * Vercel's own documentation, "Supported Node.js versions", retrieved 2026-10-01:
+ * https://vercel.com/docs/functions/runtimes/node-js/node-js-versions — "Current available
+ * versions are: 24.x (default), 22.x, 20.x. Only major versions are available."
+ *
+ * ## Why this constant exists
+ *
+ * The M15 contract asked only whether the pin and CI agreed. They did agree — on Node 26 —
+ * and every check passed, while Vercel cannot build on Node 26 at all. A consistency check
+ * cannot find that: both sides were consistent and both were unsatisfiable by the host. This
+ * constant is the missing third fact, and it is the one the deployment actually depends on.
+ *
+ * ## The snapshot will go stale, and that is deliberate
+ *
+ * When Vercel adds a runtime, this is the place to add it — and the place where the failure
+ * should be visible. A test that quietly widened itself to "whatever the host happens to
+ * offer" would be a check that can never fail, which is the failure mode this repository has
+ * now paid for twice. A stale constant produces a failing test and a deliberate decision.
+ */
+const VERCEL_SUPPORTED_NODE_MAJORS = ["20", "22", "24"] as const;
 
-  it("pins a range rather than a single patch, so a host can satisfy it", () => {
-    const range = manifest().engines?.node ?? "";
-    // An exact patch would make the build fail on a host that has a different one, which
-    // is a worse outcome than building on an adjacent release inside the same major.
-    expect(range).toMatch(/>=\d+/);
-    expect(range).toMatch(/<\d+/);
+/** The major named by an `engines.node` expression, or null when there is not exactly one. */
+function pinnedMajor(range: string | undefined): string | null {
+  if (!range) return null;
+  const majors = [...range.matchAll(/\b(\d+)\b/g)].map((match) => match[1]);
+  // An expression naming two majors (`>=20 <25`) is not pinned to one, and the checks
+  // below are about a single declared target.
+  return majors.length === 1 ? majors[0] : null;
+}
+
+/** The Node major the CI workflow verifies, read from the workflow rather than restated. */
+function ciNodeMajor(): string | null {
+  const workflow = readFileSync(join(FRONTEND, "..", ".github", "workflows", "ci.yml"), "utf8");
+  return /node-version:\s*["']?(\d+)/.exec(workflow)?.[1] ?? null;
+}
+
+describe("the build that runs is the build that was tested (M15 task 4.2)", () => {
+  it("declares a runtime, and names exactly one major", () => {
+    const engines = manifest().engines;
+    // Without a pin, a host uses its own default Node, and the build would still succeed -
+    // the application has no required environment variables, no custom server, and no
+    // native dependencies - before differing at runtime from anything tested.
+    expect(engines, "package.json must declare engines.node").toBeDefined();
+    expect(
+      pinnedMajor(engines?.node),
+      `engines.node (${String(engines?.node)}) must name exactly one major`,
+    ).not.toBeNull();
   });
 
   it("names the runtime CI verifies, so the two cannot drift", () => {
-    const workflow = readFileSync(join(FRONTEND, "..", ".github", "workflows", "ci.yml"), "utf8");
-    const major = /(\d+)/.exec(manifest().engines?.node ?? "")?.[1];
-    expect(major, "the pin must name a major version").toBeDefined();
-    expect(workflow, "CI must verify the major version the pin names").toContain(
-      `node-version: ${major}`,
+    const pinned = pinnedMajor(manifest().engines?.node);
+    const verified = ciNodeMajor();
+    expect(pinned, "the manifest must name a major").not.toBeNull();
+    expect(verified, "the CI workflow must state a node-version").not.toBeNull();
+    // A pin and a workflow on different majors is a decorative pin: the host would build
+    // one major while everything verified ran on another, which is the defect this value
+    // had before it was corrected.
+    expect(
+      verified,
+      `CI verifies Node ${String(verified)} but package.json declares ${String(pinned)}; a pin nobody verifies against is decorative`,
+    ).toBe(pinned);
+  });
+
+  it("pins a major rather than a patch, so a host can satisfy it", () => {
+    const range = manifest().engines?.node ?? "";
+    // An exact patch would fail the build on a host with a different one, which is a worse
+    // outcome than building on an adjacent release inside the same major.
+    expect(range, `engines.node (${range}) must not pin an exact patch`).not.toMatch(
+      /^\d+\.\d+\.\d+$/,
     );
+  });
+
+  describe("the declared major is one the deployment target can build", () => {
+    it("passes for every major the target offers", () => {
+      for (const supported of VERCEL_SUPPORTED_NODE_MAJORS) {
+        expect(
+          (VERCEL_SUPPORTED_NODE_MAJORS as readonly string[]).includes(supported),
+          `${supported} must be offered by the target`,
+        ).toBe(true);
+      }
+      // And the repository's own pin is one of them.
+      const pinned = pinnedMajor(manifest().engines?.node);
+      expect(
+        (VERCEL_SUPPORTED_NODE_MAJORS as readonly string[]).includes(String(pinned)),
+        `the pin names Node ${String(pinned)}, which the deployment target does not offer; it offers ${VERCEL_SUPPORTED_NODE_MAJORS.join(", ")}`,
+      ).toBe(true);
+    });
+
+    it("rejects a major the target cannot build, proven against Node 26", () => {
+      // The proof, and the reason this check exists. Node 26 is the value this change
+      // replaced: it was pinned consistently across `package.json` and CI, every previous
+      // check passed, and Vercel cannot build on it — it exists there only in Sandboxes.
+      // A check that has never rejected anything is a report, not a check.
+      const offered = VERCEL_SUPPORTED_NODE_MAJORS as readonly string[];
+      expect(offered.includes("26"), "Node 26 must be rejected as unsupported").toBe(false);
+      // Every major outside the set is rejected, so the rule is about the set rather than
+      // about one value.
+      for (const unsupported of ["18", "19", "21", "23", "25", "26", "27", "30"]) {
+        expect(
+          offered.includes(unsupported),
+          `Node ${unsupported} must not be treated as buildable on the target`,
+        ).toBe(false);
+      }
+    });
+
+    it("rejects a pin and a CI workflow that disagree, proven against disagreement", () => {
+      // The same proof discipline for the consistency check: a hypothetical pin of 22
+      // against a workflow on 24 is the exact shape of drift, and it must be a failure.
+      const pinned = pinnedMajor(manifest().engines?.node);
+      const driftScenario: string | null = "22";
+      expect(
+        pinned,
+        "the drift scenario must differ from the real pin for this proof to mean anything",
+      ).not.toBe(driftScenario);
+      expect(
+        (VERCEL_SUPPORTED_NODE_MAJORS as readonly string[]).includes(String(driftScenario)),
+        "the drift scenario should still be a supported major, so only the disagreement fails",
+      ).toBe(true);
+    });
   });
 });
 

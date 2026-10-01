@@ -1,0 +1,740 @@
+{
+  "task": "1.2, 1.5, 2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 4.2, 5.2",
+  "phases": {
+    "1.2": "response security policy on a document, the manifest, the worker file and a static asset",
+    "1.5": "request loop refused at the ceiling, and a different route class unaffected",
+    "2.1, 2.2": "corrupt entries discarded and intact entries served and kept, with the origin stopped",
+    "2.3": "a database that cannot be opened is named and clears on recovery",
+    "3.1, 3.2": "Core Web Vitals at both viewports against the stated targets",
+    "4.1, 4.2": "contrast, accessible names and keyboard reachability, each proven against a degraded page",
+    "5.2": "this run, its conditions, its disclosures and its screenshots"
+  },
+  "generatedAt": "2026-10-01T12:41:09.998Z",
+  "origin": "http://localhost:3212",
+  "targets": {
+    "lcpMs": 2500,
+    "cls": 0.1,
+    "tbtMs": 400,
+    "longestTaskMs": 500
+  },
+  "steps": [
+    {
+      "name": "the measurement produces real numbers rather than nothing",
+      "ok": true,
+      "detail": "CLS 0, 11 contrast pairs, 28 interactive elements"
+    },
+    {
+      "name": "the degraded probe page is in the document",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the contrast, naming, and keyboard audits each detect their failure",
+      "ok": true,
+      "detail": "contrast=true unnamed=true unreachable=true"
+    },
+    {
+      "name": "desktop /library: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "11 pairs checked"
+    },
+    {
+      "name": "desktop /library: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "28 controls"
+    },
+    {
+      "name": "desktop /library: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "9 of 13 visible controls focusable"
+    },
+    {
+      "name": "desktop /library: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 88ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "desktop /search: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "11 pairs checked"
+    },
+    {
+      "name": "desktop /search: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "27 controls"
+    },
+    {
+      "name": "desktop /search: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "9 of 13 visible controls focusable"
+    },
+    {
+      "name": "desktop /search: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "desktop /history: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "13 pairs checked"
+    },
+    {
+      "name": "desktop /history: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "27 controls"
+    },
+    {
+      "name": "desktop /history: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "8 of 13 visible controls focusable"
+    },
+    {
+      "name": "desktop /history: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 80ms (≤2500), CLS 0.0598 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "desktop /settings: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "21 pairs checked"
+    },
+    {
+      "name": "desktop /settings: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "37 controls"
+    },
+    {
+      "name": "desktop /settings: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "15 of 19 visible controls focusable"
+    },
+    {
+      "name": "desktop /settings: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 48ms (≤2500), CLS 0.0132 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "desktop /now-playing: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "8 pairs checked"
+    },
+    {
+      "name": "desktop /now-playing: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "36 controls"
+    },
+    {
+      "name": "desktop /now-playing: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "12 of 20 visible controls focusable"
+    },
+    {
+      "name": "desktop /now-playing: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 48ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /library: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "9 pairs checked"
+    },
+    {
+      "name": "compact /library: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "28 controls"
+    },
+    {
+      "name": "compact /library: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "8 of 13 visible controls focusable"
+    },
+    {
+      "name": "compact /library: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 80ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /search: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "9 pairs checked"
+    },
+    {
+      "name": "compact /search: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "27 controls"
+    },
+    {
+      "name": "compact /search: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "8 of 13 visible controls focusable"
+    },
+    {
+      "name": "compact /search: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 56ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /history: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "10 pairs checked"
+    },
+    {
+      "name": "compact /history: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "27 controls"
+    },
+    {
+      "name": "compact /history: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "7 of 13 visible controls focusable"
+    },
+    {
+      "name": "compact /history: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 60ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /settings: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "19 pairs checked"
+    },
+    {
+      "name": "compact /settings: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "37 controls"
+    },
+    {
+      "name": "compact /settings: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "14 of 19 visible controls focusable"
+    },
+    {
+      "name": "compact /settings: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "compact /now-playing: every text style meets its contrast minimum",
+      "ok": true,
+      "detail": "7 pairs checked"
+    },
+    {
+      "name": "compact /now-playing: every interactive element has an accessible name",
+      "ok": true,
+      "detail": "36 controls"
+    },
+    {
+      "name": "compact /now-playing: no primary control is unreachable by keyboard",
+      "ok": true,
+      "detail": "11 of 20 visible controls focusable"
+    },
+    {
+      "name": "compact /now-playing: loading performance is within the stated targets",
+      "ok": true,
+      "detail": "LCP 52ms (≤2500), CLS 0 (≤0.1), TBT 0ms (≤400), longest task 0ms (≤500)"
+    },
+    {
+      "name": "a document carries the security policy and the hardening headers",
+      "ok": true,
+      "detail": "17 headers"
+    },
+    {
+      "name": "the manifest carries the security policy and the hardening headers",
+      "ok": true,
+      "detail": "15 headers"
+    },
+    {
+      "name": "the service worker file carries the security policy and the hardening headers",
+      "ok": true,
+      "detail": "15 headers"
+    },
+    {
+      "name": "a content-hashed static asset carries them too",
+      "ok": true,
+      "detail": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2"
+    },
+    {
+      "name": "the served production policy is well-formed and carries no development relaxation",
+      "ok": true,
+      "detail": "; no policy meta tag, which is correct - the header is authoritative"
+    },
+    {
+      "name": "a database that cannot be opened is named, and says the data was not deleted",
+      "ok": true,
+      "detail": "Spotivibe could not read your local data.Nothing was deleted — your library, playlists, an"
+    },
+    {
+      "name": "the application still renders around the storage failure",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the only console errors during the storage phase are the injected failure",
+      "ok": true,
+      "detail": "1 injected, recorded under notes.injectedStorageErrors"
+    },
+    {
+      "name": "the notice clears once storage opens again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "exactly one service worker is registered, and it controls the page",
+      "ok": true,
+      "detail": "1 registration(s): /"
+    },
+    {
+      "name": "zero console errors across every measured surface",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "a truncated document is seeded into the worker's page cache",
+      "ok": true,
+      "detail": "5 page entries, 1 shell entries"
+    },
+    {
+      "name": "the worker holds an intact cached document before the origin goes down",
+      "ok": true,
+      "detail": "30437 bytes"
+    },
+    {
+      "name": "the origin is genuinely refusing connections",
+      "ok": true,
+      "detail": "refused"
+    },
+    {
+      "name": "the application loads with the origin gone and a corrupt cached document present",
+      "ok": true,
+      "detail": "landed on /: SpotivibeYour LibraryStart your libraryPlayli t  and  ong  you  ave will live here.Open libraryDi cover  omething newSea"
+    },
+    {
+      "name": "the corrupt entry was discarded rather than served",
+      "ok": true,
+      "detail": "the truncated document is gone, or replaced by a real response"
+    },
+    {
+      "name": "an intact cached document is served from its own route with the origin gone",
+      "ok": true,
+      "detail": "landed on /history"
+    },
+    {
+      "name": "the intact entry survived being served",
+      "ok": true,
+      "detail": "30437 bytes, was 30437"
+    },
+    {
+      "name": "the worker survives the failure and still controls the page",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "screenshots": [
+    "desktop-library.png",
+    "compact-library.png",
+    "storage-unavailable.png",
+    "offline-corrupt-cache.png"
+  ],
+  "consoleErrors": [],
+  "notes": {
+    "disclosures": [
+      "The storage failure is forced, not natural: IndexedDB is removed before the document runs. That is the same shape as a denied site-data permission, but it is not a real private window. The one console error it produces is the injected failure itself, recorded under notes.injectedStorageErrors and asserted to be exactly that cause rather than counted against the application.",
+      "The throttling ceiling is reached by construction, because this run is the only client and the limiter is per-process. A real deployment behind a proxy sees different addresses, and behaviour across multiple serverless instances is untested by design: the limiter does not coordinate across them. The address also comes from x-forwarded-for, which a client can set, so behind a proxy that merely appends rather than overwrites, a caller that rotates the header gets a fresh budget per request.",
+      "The offline window is a stopped server process, not a severed network. A severed network would also fail DNS and TLS; a refused connection is the case the worker's fallback chain actually handles.",
+      "The idle-timer claim is a static sweep of the sources for a repeating timer, not a runtime count: a self-rescheduling setTimeout, a requestAnimationFrame loop, or an interval reached only through indirection would not be seen.",
+      "Browser candidates are Windows paths, so this harness does not run on the repository CI runner (ubuntu-latest); it was run locally against a production build.",
+      "The production server's own log was written outside the repository, to the OS temp directory (C:\\Users\\Edison\\AppData\\Local\\Temp\\spotivibe-m14-audit-3212.log); check it there if a run fails to reach the origin.",
+      "A single-machine run against a local production build is a regression signal, not a field lab score. The thresholds detect a change between two runs on the same machine; they are not a claim about a real listener's device, network, or field percentile.",
+      "INP is not observed, because it requires a real interaction. Total blocking time from long tasks stands in for responsiveness on a load, which is why the two thresholds are separate.",
+      "Contrast is computed for text whose background the browser can resolve to an opaque colour. Text painted over a third-party album image is not computable from the DOM and is excluded rather than guessed; the audit records how many pairs it checked so the exclusion is visible.",
+      "Keyboard reachability is checked through the elements' own semantics and tabindex, not by pressing Tab through the application; a control that is focusable but hidden behind a focus trap would not be caught.",
+      "Both the desktop and the compact viewport are measured, because the compact shell does not render at the desktop size. A surface that renders at neither size is not covered by this run."
+    ],
+    "conditions": {
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+      "platform": "win32 x64",
+      "cpuCount": 12,
+      "viewports": "1280x900, 390x844",
+      "load": "cold (fresh profile, first navigation)",
+      "servedBy": "next start on localhost",
+      "measurement": "PerformanceObserver inside the page; nothing is transmitted"
+    },
+    "desktoplibrary": {
+      "vitals": {
+        "lcp": 88,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 88,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 11,
+      "contrastFailures": 0,
+      "interactiveElements": 28,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "desktopsearch": {
+      "vitals": {
+        "lcp": 48,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 48,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 11,
+      "contrastFailures": 0,
+      "interactiveElements": 27,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "desktophistory": {
+      "vitals": {
+        "lcp": 80,
+        "cls": 0.0598,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 52,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 13,
+      "contrastFailures": 0,
+      "interactiveElements": 27,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "desktopsettings": {
+      "vitals": {
+        "lcp": 48,
+        "cls": 0.0132,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 48,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 21,
+      "contrastFailures": 0,
+      "interactiveElements": 37,
+      "unnamed": 0,
+      "primaryControls": 19,
+      "unreachableByTab": 0
+    },
+    "desktopnow-playing": {
+      "vitals": {
+        "lcp": 48,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 48,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 8,
+      "contrastFailures": 0,
+      "interactiveElements": 36,
+      "unnamed": 0,
+      "primaryControls": 20,
+      "unreachableByTab": 0
+    },
+    "compactlibrary": {
+      "vitals": {
+        "lcp": 80,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 60,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 9,
+      "contrastFailures": 0,
+      "interactiveElements": 28,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "compactsearch": {
+      "vitals": {
+        "lcp": 56,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 56,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 9,
+      "contrastFailures": 0,
+      "interactiveElements": 27,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "compacthistory": {
+      "vitals": {
+        "lcp": 60,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 60,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 10,
+      "contrastFailures": 0,
+      "interactiveElements": 27,
+      "unnamed": 0,
+      "primaryControls": 13,
+      "unreachableByTab": 0
+    },
+    "compactsettings": {
+      "vitals": {
+        "lcp": 52,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 52,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 19,
+      "contrastFailures": 0,
+      "interactiveElements": 37,
+      "unnamed": 0,
+      "primaryControls": 19,
+      "unreachableByTab": 0
+    },
+    "compactnow-playing": {
+      "vitals": {
+        "lcp": 52,
+        "cls": 0,
+        "longestTask": 0,
+        "totalBlockingTime": 0,
+        "firstContentfulPaint": 52,
+        "observedDuringLoad": true
+      },
+      "contrastChecked": 7,
+      "contrastFailures": 0,
+      "interactiveElements": 36,
+      "unnamed": 0,
+      "primaryControls": 20,
+      "unreachableByTab": 0
+    },
+    "observedResponses": [
+      {
+        "path": "/library",
+        "status": 200,
+        "headerCount": 17,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+        "status": 200,
+        "headerCount": 14,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/2_wf25ahthilb.css",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/19mx3mg6lkumu.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/0bma92pht_c97.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/2-rtuqsgzmno4.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/turbopack-43vu1xwipchft.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/3fntmmi971322.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/3o15dxlp1089a.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/08g20utdwnmg8.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/06aa882zd2gkl.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/1jpr12kqzkc5o.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/manifest.webmanifest",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/now-playing",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/icon.svg",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      },
+      {
+        "path": "/search",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/discover",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/settings",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/1kgsd09e9q64c.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/1h22qh4kr7ih4.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/3ocp5chcmysfe.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/now-playing",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/search",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/discover",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/134mtf0a5yfa4.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/0mv73rdxoqz7s.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/library",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/_next/static/chunks/2z8-sngjjo0tr.js",
+        "status": 200,
+        "headerCount": 18,
+        "hasPolicy": true
+      },
+      {
+        "path": "/sw.js",
+        "status": 200,
+        "headerCount": 15,
+        "hasPolicy": true
+      }
+    ],
+    "injectedStorageErrors": [
+      "exception: SecurityError: storage denied"
+    ]
+  },
+  "pass": true,
+  "browser": "Edg/154.0.4258.37",
+  "summary": {
+    "steps": 62,
+    "passed": 62,
+    "failed": 0,
+    "consoleErrors": 0
+  }
+}

@@ -1367,6 +1367,11 @@ This section prevents roadmap phases from accidentally shipping without importan
   verified on — and would still have *succeeded*, because the application has no required
   variables, no custom server, and no native dependencies, before differing at runtime from
   anything tested.
+  *Corrected after M15: the runtime target is now **Node 24**, because Vercel cannot build on
+  Node 26 at all — it offers 24.x, 22.x, and 20.x. The pin M15 added was internally consistent
+  and externally unsatisfiable, which is the failure mode the deployment contract could not
+  see; it now checks the target's documented set and proves itself by rejecting Node 26. See
+  `openspec/changes/archive/2026-10-01-align-vercel-runtime-and-root-commands/`.*
 - **The backup format, the browser matrix, and the deployment procedure documented**, each
   held to the code it describes by a test rather than trusted to prose.
 

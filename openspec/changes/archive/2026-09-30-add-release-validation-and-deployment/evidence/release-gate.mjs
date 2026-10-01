@@ -46,14 +46,24 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(HERE, "../../../..");
+// Portability fix, and the second one ever made to M15's harnesses after archiving moved
+// them a directory deeper. The relative walk was written while the change was *active*,
+// where `evidence/../../../..` is the repository root; from `changes/archive/<name>/evidence`
+// the same walk resolves to `openspec/` and the gate fails to find the frontend package. An
+// explicit override is used when given and the walk is retained as the fallback, so the gate
+// still works in an active change directory.
+//
+// The recurring lesson: a harness that locates the repository by counting directories is
+// portable only until someone moves it. Both M15 harnesses needed the same one-line fix
+// (`SPOTIVIBE_REPO` here, the same name in `audit.mjs`), which is evidence that the fix
+// belongs in the harness design rather than in two patches.
+const REPO = process.env.SPOTIVIBE_REPO
+  ? resolve(process.env.SPOTIVIBE_REPO)
+  : resolve(HERE, "../../../..");
 const FRONTEND = join(REPO, "frontend");
-const CHANGE = join(
-  REPO,
-  "openspec",
-  "changes",
-  "add-release-validation-and-deployment",
-);
+const CHANGE = process.env.SPOTIVIBE_CHANGE
+  ? resolve(process.env.SPOTIVIBE_CHANGE)
+  : join(REPO, "openspec", "changes", "add-release-validation-and-deployment");
 
 const SKIP_BROWSER = process.argv.includes("--skip-browser");
 
@@ -477,8 +487,11 @@ for (const item of ITEMS) {
   }
   const archivedBefore = guardsArchive ? snapshot(archive) : null;
 
-  // The repository root goes with it: the measurement harness finds the repository by
-  // walking up from its own directory, which is one level too shallow once archived.
+  // The repository root goes with every command item, not just the measurement one: all
+  // three harnesses find the repository by walking up from their own directory, and archiving
+  // moved them all deeper than the walk expects. The end-to-end suite's first symptom was
+  // "No production build found" - a message about the build when the fault was the path -
+  // and without this it fails in 0.8 seconds having tested nothing.
   const outcome = run(item.command, args, FRONTEND, {
     SPOTIVIBE_REPO: REPO,
     // A per-item environment, so an item that needs its own port or can say so rather than

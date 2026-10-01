@@ -17,7 +17,7 @@ environment and requires it to succeed. A required variable would fail that chec
 | Framework preset | Next.js (auto-detected) |
 | Build command | `npm run build` |
 | Install command | `npm ci` |
-| Runtime | **Node 26** — pinned in `package.json` `engines.node` |
+| Runtime | **Node 24** — pinned in `package.json` `engines.node` |
 | Environment variables | **none** |
 | Custom server | none, and there must not be one |
 
@@ -25,16 +25,28 @@ Two optional variables exist for operators who want to override the built-in pro
 instance lists, and neither is needed: `SPOTIVIBE_INVIDIOUS_INSTANCES` and
 `SPOTIVIBE_PIPED_INSTANCES`.
 
-### Why the runtime is pinned
+### Why the runtime is pinned, and why 24
 
-`package.json` declares `engines.node` as `>=26 <27`. Without it, a Vercel build uses
-Vercel's own default Node rather than the one CI verifies — and it would still *succeed*,
-because the application has no required variables, no custom server, and no native
-dependencies. It would then differ at runtime from anything that had been tested. A build
-that passes is not a build that was tested.
+`package.json` declares `engines.node` as `24.x`. Without a pin, a Vercel build uses Vercel's
+own default Node rather than the one CI verifies — and it would still *succeed*, because the
+application has no required variables, no custom server, and no native dependencies. It would
+then differ at runtime from anything that had been tested. A build that passes is not a build
+that was tested.
 
-The range is a range rather than an exact patch so that a host with a different Node 26
-patch can still satisfy it.
+**24 is not a preference; it is what the target can build.** Vercel documents its available
+build and function runtimes as **24.x (default), 22.x, and 20.x**
+([supported Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions)).
+A pin naming any other major is not a deployment target — it is a build that fails on
+Vercel's schedule rather than in this repository.
+
+This repository previously pinned Node 26, which is available on Vercel only in Sandboxes, not
+in builds and functions. The deployment contract now checks the pin against the target's
+documented set, and proves that check by rejecting Node 26, so the mistake cannot be repeated
+by editing one file. The archived M14 and M15 evidence records still say Node 26, which is
+correct: they describe runs that happened before this correction.
+
+`24.x` names a major rather than an exact patch so that a host with a different Node 24 patch
+can still satisfy it.
 
 ## What the deployment must serve correctly
 

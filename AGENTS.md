@@ -136,43 +136,45 @@ Current entry point:
 
 ```bash
 # Development server — run from the repository root
-cd frontend
 npm run dev
 # Serves http://localhost:3000 (falls back to the next free port if 3000 is busy)
+# Proxies to `npm --prefix frontend run dev`; see "Root-level commands" below.
 ```
 
 Current dependency manifest / install command:
 
 ```bash
 # Clean dependency install from the lockfile — run from the repository root
-cd frontend
-npm ci
+npm run setup       # proxies to `npm --prefix frontend ci`
+# The only lockfile is frontend/package-lock.json. Do not run `npm install` at the
+# root: the root manifest declares no dependencies, so that would create a second
+# lockfile that nothing installs from.
 ```
 
 Current baseline syntax / compile check:
 
 ```bash
 # Static type check and production build — run from the repository root
-cd frontend
-npm run typecheck   # next typegen && tsc --noEmit (strict mode)
-npm run build       # next build (production build + framework type checking)
+npm run typecheck   # proxies to: next typegen && tsc --noEmit (strict mode)
+npm run build       # proxies to: next build (production build + framework type checking)
 ```
 
-Project runtime prerequisite (verified 2026-09-27 on Windows):
+Project runtime prerequisite (verified 2026-10-01 on Windows, under Node 24):
 
 ```bash
-node --version      # v26.10.0
-npm --version       # 12.1.0
+node --version      # v24.21.0
+npm --version       # 11.19.0
 ```
 
-CI uses Node 26 on `ubuntu-latest` (`.github/workflows/ci.yml`). Development
+CI uses Node 24 on `ubuntu-latest` (`.github/workflows/ci.yml`). Development
 environment: Windows/PowerShell locally. Port 3000 may be occupied by another
 process; `next dev` then selects the next free port.
 
 Important:
 
-- The supported development/runtime environment is `Node.js v26.10.0 + npm 12.1.0 with Next.js 16.3.6, targeting current evergreen desktop/mobile browsers and Vercel serverless deployment`.
-- Executed dependency/package consistency check: `cd frontend && npm ci` (executed successfully 2026-09-27; installs from `package-lock.json` with 386 packages audited, 0 vulnerabilities reported).
+- The supported development/runtime environment is `Node.js 24.x with npm (lockfileVersion 3) and Next.js 16.3.6, targeting current evergreen desktop/mobile browsers and Vercel serverless deployment`.
+- **Node 24 is the target because it is what Vercel can build.** Vercel's available build and function runtimes are 24.x (default), 22.x, and 20.x; `engines.node`, the CI workflow, and that set are asserted to agree by `tests/deployment-contract.test.ts`, which proves itself by rejecting Node 26 — the pin this replaced, and one Vercel offers only in Sandboxes. Changing one of the three without the others fails a check.
+- Executed dependency/package consistency check: `npm run setup` (re-executed successfully 2026-10-01 under Node 24; installs from `frontend/package-lock.json` with 445 packages audited, 0 vulnerabilities reported). An earlier execution on 2026-09-27 reported 386 packages.
 - Run risky, state-mutating, legacy, or preservation checks in an appropriate disposable environment when required.
 - No verified automated test, lint, type-check, build, or runtime command exists unless it is explicitly listed in this section.
 - Do not invent commands in this file.
@@ -189,21 +191,53 @@ utility, generator, test suite, asset processor, schema checker, etc.
 Do not retain examples that do not apply to the project.
 -->
 
-### Verified project tool: `frontend/` quality gates (npm scripts)
+### Root-level commands
 
-Verified on `2026-09-27` (Windows local; commands run from the repository root with `cd frontend`):
+A `package.json` at the repository root proxies the application's commands, so they run
+without a `cd frontend`. It is `private` and declares **no dependencies**: the application
+package in `frontend/` remains the only manifest with a lockfile, and this is not a workspace.
 
 ```bash
-npm ci               # clean install from frontend/package-lock.json
+npm run setup        # npm --prefix frontend ci   (the install path)
+npm run dev          # npm --prefix frontend run dev
+npm run build        # npm --prefix frontend run build
+npm run start        # npm --prefix frontend run start
+npm run lint         # npm --prefix frontend run lint
+npm run format       # npm --prefix frontend run format
+npm run format:check # npm --prefix frontend run format:check
+npm run typecheck    # npm --prefix frontend run typecheck
+npm test             # npm --prefix frontend test
+npm run gate         # lint -> format:check -> typecheck -> test -> build
+```
+
+`tests/root-commands.test.ts` holds the root manifest to these properties: private, no
+dependencies, no workspace, no second lockfile, every required script present, each proxying
+into `frontend/`, each naming a script the application actually defines, and the same declared
+Node major as the application. The `format` check is deliberately strict — a root `format` that
+called prettier itself, rather than the application's own script, would look identical to a
+correct one and silently format the wrong tree.
+
+**Do not run `npm install` at the repository root.** The root manifest has no dependencies, so
+npm would create a root `package-lock.json` and a root `node_modules` that nothing installs
+from. npm cannot be told to refuse this; use `npm run setup`.
+
+### Verified project tool: `frontend/` quality gates (npm scripts)
+
+Verified on `2026-09-27` (Windows local), and re-verified on `2026-10-01` under **Node 24**
+after the runtime correction. Commands run from the repository root, with or without the root
+proxies:
+
+```bash
+npm run setup        # clean install from frontend/package-lock.json (was `cd frontend && npm ci`)
 npm run lint         # eslint (flat config, eslint-config-next)
 npm run format:check # prettier --check .
-npm run typecheck    # tsc --noEmit
+npm run typecheck    # next typegen && tsc --noEmit
 npm test             # vitest run
 npm run build        # next build
 npm run dev          # next dev (dev server; verified serving HTTP 200)
 ```
 
-Exit codes: `npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, and `npm run build` each exited `0` on 2026-09-27; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `npm test` executed 1 test file / 4 assertions (environment validation). `.github/workflows/ci.yml` runs `npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, and `npm run build` on push/PR to `main`.
+Exit codes: `npm run setup` (install), `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, and `npm run build` each exited `0`; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `.github/workflows/ci.yml` runs the install, `lint`, `format:check`, `typecheck`, `test`, and `build` steps in `frontend/` on push/PR to `main`, on Node 24.
 
 These commands establish `that dependencies install from the lockfile, ESLint reports no errors, formatting is consistent, strict TypeScript compiles, the current unit tests pass, a production Next.js build succeeds, and the dev server starts and serves the app`.
 
