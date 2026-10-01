@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LyricsPanel } from "@/features/lyrics/LyricsPanel";
@@ -454,6 +457,23 @@ describe("LyricsPanel — reduced motion", () => {
     render(<LyricsPanel />);
     await waitFor(() => expect(lines()).toHaveLength(3));
     expect(screen.getByTestId("lyrics-scroller")).toHaveAttribute("data-reduced-motion", "true");
+  });
+
+  it("has the global CSS rule the line-colour transition depends on", () => {
+    // The line colour change is a **CSS transition**, not a JavaScript animation, so there is no
+    // imperative call to switch off under reduced motion — the global rule in `globals.css` is what
+    // neutralises it. That makes the stylesheet part of this requirement, and the rule can disappear
+    // in a refactor of that file without any other test noticing. So it is asserted here, by name.
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "app", "globals.css"),
+      "utf8",
+    );
+    const block = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(block, "the global reduced-motion block must exist").toContain(
+      "@media (prefers-reduced-motion: reduce)",
+    );
+    expect(block).toContain("transition-duration: 0.01ms !important");
+    expect(block).toContain("scroll-behavior: auto !important");
   });
 });
 

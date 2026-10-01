@@ -5,6 +5,7 @@ import {
   type TtlCache,
 } from "@/server/music/cache";
 import { fetchJson, HttpFetchError } from "@/server/http/fetchJson";
+import { outboundLimiter, type Semaphore } from "@/server/music/limiter";
 
 /**
  * The lyrics resolution service (ROADMAP M16, spec `lyrics` — "Lyrics are resolved for the
@@ -25,7 +26,7 @@ import { fetchJson, HttpFetchError } from "@/server/http/fetchJson";
  *   free-text `q` search concurrently via `Promise.allSettled`. Two requests per lookup doubles
  *   provider load for a marginal recall gain, against a free service that asks clients to be
  *   polite. M3 established a shared outbound limiter and per-attempt timeout; this inherits both
- *   through `fetchJson` rather than bypassing them.
+ *   rather than bypassing either.
  * - **A miss is a distinct outcome from a failure.** "This track has no lyrics" is a fact about
  *   the track; "we could not reach the provider" is a fact about the network. Collapsing them
  *   would both mislead the listener and poison the cache — a transient outage cached as a
@@ -217,6 +218,12 @@ export interface ResolveLyricsInput {
   signal?: AbortSignal;
   /** Injected for tests. Defaults to the shared bounded `fetchJson`. */
   fetchJson?: LyricsFetcher;
+  /**
+   * Injected for tests. Defaults to the application's shared `outboundLimiter`, so lyrics competes
+   * for the same four outbound slots as every other provider call rather than having a ceiling of
+   * its own.
+   */
+  limiter?: Semaphore;
 }
 
 /**
@@ -256,6 +263,15 @@ async function queryProvider(input: ResolveLyricsInput): Promise<LyricsResult> {
 
   const fetchImpl = input.fetchJson ?? fetchJson;
   let candidates: unknown;
+
+  // **The shared outbound limiter, acquired here rather than assumed.** `fetchJson` provides the
+  // per-attempt timeout and the caller's abort, but it has no concurrency cap: the only thing that
+  // has ever acquired `outboundLimiter` is `chain.ts`. A route that skips it is therefore the one
+  // provider call in the application with no ceiling, and the inbound guard cannot substitute —
+  // `throttle.ts` documents that a caller rotating `x-forwarded-for` gets a fresh budget each time.
+  // So the slot is taken and released around the request, exactly as the chain does it.
+  const limiter = input.limiter ?? outboundLimiter;
+  const release = await limiter.acquire(input.signal);
   try {
     candidates = await fetchImpl<LrcLibCandidate[] | null>(`${LRCLIB_SEARCH}?${params}`, {
       headers: { "User-Agent": LRCLIB_USER_AGENT, Accept: "application/json" },
@@ -268,6 +284,8 @@ async function queryProvider(input: ResolveLyricsInput): Promise<LyricsResult> {
     if (input.signal?.aborted) throw error;
     const reason = error instanceof HttpFetchError ? error.kind : "unknown";
     return { kind: "unreachable", reason };
+  } finally {
+    release();
   }
 
   if (!Array.isArray(candidates)) return { kind: "unreachable", reason: "parse" };

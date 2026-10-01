@@ -75,12 +75,16 @@ export const CASES = [
     why: "Five simultaneous opens of one track would issue five provider queries against a free service that asks clients to be polite.",
   },
   {
-    name: "a superseded response is accepted",
-    file: "src/features/lyrics/useLyricsPanel.ts",
-    from: "  const current = settled !== null && settled.key === requestKey ? settled.resolution : null;",
-    to: "  const current = settled !== null ? settled.resolution : null;",
+    // This case used to remove the request-key comparison, and it **escaped** — legitimately.
+    // Reset-on-track-change is now enforced by the `key={providerId}` remount in `LyricsPanel`, so
+    // dropping the key tag leaves defence-in-depth intact and nothing observable changes. The
+    // violation therefore now targets the mechanism that actually does the work.
+    name: "a superseded response is accepted (the remount is what prevents it)",
+    file: "src/features/lyrics/LyricsPanel.tsx",
+    from: "  return <LyricsForTrack key={currentTrack.providerId} track={currentTrack} />;",
+    to: "  return <LyricsForTrack track={currentTrack} />;",
     test: "tests/lyrics/lyricsPanel.test.tsx",
-    why: "Without the key tag, a slow response for the previous track lands under the new track's title.",
+    why: "The `key` is the reset: it remounts the controller per track, so the previous track's lyrics, active line, scroll position and follow flag all start fresh with no reset code. Remove it and a slow response for the previous track can land under the new track's title.",
   },
   {
     name: "the active line becomes an aria-live region",
@@ -107,12 +111,40 @@ export const CASES = [
     why: "Reading ahead would be fought by the player — the exact defect the position-based live-band rule exists to prevent.",
   },
   {
-    name: "the lyrics panel is positioned over the player region",
-    file: "src/features/lyrics/LyricsPanel.tsx",
-    from: '      className="flex min-h-0 flex-col gap-2"',
-    to: '      className="fixed inset-0 z-50 flex min-h-0 flex-col gap-2"',
+    // The wrapper, not the panel. The first version of this case changed `LyricsPanel`'s own
+    // className — which the test *did* catch, so it looked like coverage. It was not: a `fixed`
+    // wrapper added in `page.tsx` is the more likely place for the bug, and it would have passed
+    // that test untouched. The case now breaks the element the test reads.
+    name: "the lyrics slot is positioned over the player region",
+    file: "src/app/now-playing/page.tsx",
+    from: '        className="flex max-h-[40vh] w-full max-w-3xl min-h-0 flex-col"',
+    to: '        className="fixed inset-0 z-50 flex max-h-[40vh] w-full max-w-3xl min-h-0 flex-col"',
     test: "tests/nowplaying-lyrics.test.tsx",
     why: "An overlay, which the `app-shell` spec forbids outright.",
+  },
+  {
+    name: "the lyrics slot loses its height bound",
+    file: "src/app/now-playing/page.tsx",
+    from: "max-h-[40vh] w-full max-w-3xl",
+    to: "w-full max-w-3xl",
+    test: "tests/nowplaying-lyrics.test.tsx",
+    why: "An unbounded column lets a track with eighty lyric lines push More Like This off screen — the displacement the `app-shell` requirement exists to prevent.",
+  },
+  {
+    name: "the transport is disabled while lyrics load",
+    file: "src/app/now-playing/page.tsx",
+    from: '<IconButton label="Queue" onClick={() => router.push("/queue")}>',
+    to: '<IconButton label="Queue" disabled onClick={() => router.push("/queue")}>',
+    test: "tests/nowplaying-lyrics.test.tsx",
+    why: "A presence-only assertion lets a panel that disables the transport pass. Plausible to build, since “lyrics must not interfere with playback” invites a guard that is too broad.",
+  },
+  {
+    name: "the lyrics provider bypasses the shared outbound limiter",
+    file: "src/server/lyrics/lyricsService.ts",
+    from: "  const release = await limiter.acquire(input.signal);",
+    to: "  const release = () => undefined; void limiter;",
+    test: "tests/lyrics/lyricsService.test.ts",
+    why: "The design document claimed this milestone inherited M3's shared outbound limiter; `fetchJson` supplies a timeout and an abort, and nothing else had ever acquired `outboundLimiter`, so lyrics was the one provider call with no concurrency ceiling.",
   },
   {
     name: "the route reads a taste-profile parameter",
@@ -126,7 +158,12 @@ export const CASES = [
     name: "a malformed video id is not rejected",
     file: "src/app/api/lyrics/route.ts",
     from: '    .regex(VIDEO_ID_PATTERN, "videoId must be an 11-character YouTube video id"),',
-    to: "",
+    // A *relaxation*, not a deletion. The first version of this case deleted the line, which took
+    // the trailing comma with it and turned the route into a parse error: the suite reported 0 tests,
+    // and the harness called that an escape — accusing a correct test of being dead when the truth
+    // was that nothing had run. The replacement keeps the file valid and genuinely weakens the
+    // check, so the route accepts a short or over-long id and returns 200 where it must return 400.
+    to: '    .regex(/^.{1,64}$/, "videoId shape not strictly enforced"),',
     test: "tests/lyrics-route.test.ts",
     why: "Malformed input must never reach a provider — the spec's first validation requirement.",
   },

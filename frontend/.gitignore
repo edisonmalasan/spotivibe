@@ -40,5 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Test-runner report artefacts. vitest's json reporter writes here by default, and the M16
+# induced-violation harness reads that path. Left in the tree it showed up as an untracked file
+# and failed `format:check`, so a tool that exists to verify the suite was itself breaking the gate.
+.vitest/
+
 # keep the environment example file under version control
 !.env.example

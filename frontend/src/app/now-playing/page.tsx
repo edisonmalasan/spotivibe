@@ -369,13 +369,19 @@ export default function NowPlayingPage() {
         the transport for attention is the wrong trade, and at 390x844 there is
         no room for a second navigation row.
 
-        It is given its own bounded height so a long lyric list scrolls inside
-        the panel instead of pushing More Like This off the screen, which is the
-        `app-shell` requirement that lyrics never displace the rest of the
-        surface. Its four states (loading / populated / unavailable / failed) are
-        all contained here, so none of them can affect the transport above.
+        The height bound is load-bearing, not cosmetic. A track with eighty lyric
+        lines in an auto-height column pushes More Like This off the screen, and
+        an unbounded panel is exactly the failure the `app-shell` requirement
+        that lyrics never displace the rest of the surface exists to prevent. So
+        the wrapper is capped and the panel scrolls inside it.
+
+        All four lyrics states (loading / populated / unavailable / failed) are
+        contained in the panel, so none of them can affect the transport above.
       */}
-      <div className="w-full max-w-3xl">
+      <div
+        data-testid="now-playing-lyrics-slot"
+        className="flex max-h-[40vh] w-full max-w-3xl min-h-0 flex-col"
+      >
         <LyricsPanel />
       </div>
 

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpFetchError } from "@/server/http/fetchJson";
+import { createSemaphore } from "@/server/music/limiter";
 import {
   cleanTitle,
   lyricsCacheSizes,
   LYRICS_HIT_TTL_MS,
   LYRICS_MISS_TTL_MS,
+  LYRICS_TIMEOUT_MS,
   resetLyricsCaches,
   resolveLyrics,
   scoreCandidate,
@@ -217,20 +219,34 @@ describe("resolveLyrics", () => {
     expect(impl).not.toHaveBeenCalled();
   });
 
-  it("propagates a caller abort untouched rather than reporting it as a failure", async () => {
-    // A client disconnect is not an upstream failure; the route must be able to tell them apart,
-    // and a listener that navigated away must not see a "provider error" message.
+  it("propagates a caller abort rather than reporting it as a provider failure", async () => {
+    // A listener who skipped a track must not see a "provider error". With an already-aborted
+    // signal the limiter refuses to queue a slot at all, so the abort surfaces from `acquire`
+    // rather than from the transport — hence asserting the *kind* of throw, not the identity of the
+    // object, which is an implementation detail of whichever layer noticed first.
     const controller = new AbortController();
     controller.abort();
-    const abort = new DOMException("aborted", "AbortError");
+    const impl = vi.fn(async () => [] as never);
+
     await expect(
-      resolveLyrics({
-        ...TRACK,
-        signal: controller.signal,
-        fetchJson: (async () => {
-          throw abort;
-        }) as never,
-      }),
+      resolveLyrics({ ...TRACK, signal: controller.signal, fetchJson: asTransport(impl) }),
+    ).rejects.toThrow(/abort/i);
+    expect(impl, "an aborted lookup must not reach the provider").not.toHaveBeenCalled();
+  });
+
+  it("propagates a transport abort that happens mid-flight, untouched", async () => {
+    // The other abort path: the signal is live when the slot is taken, and the transport is the one
+    // that observes the abort. Here the original error object must survive, because the route uses
+    // the distinction between "the user left" and "the provider is down".
+    const controller = new AbortController();
+    const abort = new DOMException("aborted", "AbortError");
+    const impl = vi.fn(async () => {
+      controller.abort();
+      throw abort;
+    });
+
+    await expect(
+      resolveLyrics({ ...TRACK, signal: controller.signal, fetchJson: asTransport(impl) }),
     ).rejects.toBe(abort);
   });
 
@@ -241,6 +257,200 @@ describe("resolveLyrics", () => {
     expect(requestedUrls).toHaveLength(1);
     expect(requestedUrls[0]).toContain("track_name=Song+Title");
     expect(requestedUrls[0]).not.toContain("Official");
+  });
+});
+
+describe("the shared outbound limiter (spec security — bounded provider fan-out)", () => {
+  // The design document claimed this milestone inherited M3's shared outbound limiter. It did not:
+  // `fetchJson` supplies a timeout and an abort, and the only thing that had ever acquired
+  // `outboundLimiter` was `chain.ts`, so lyrics was the one provider call in the application with no
+  // concurrency ceiling. It now acquires the same semaphore, and these tests are what make that a
+  // claim rather than a comment.
+  it("acquires a slot and releases it when the lookup succeeds", async () => {
+    const limiter = createSemaphore(1);
+    const held: number[] = [];
+
+    await resolveLyrics({
+      ...TRACK,
+      limiter,
+      fetchJson: asTransport(
+        vi.fn(async () => {
+          held.push(limiter.activeCount);
+          return [timedCandidate] as never;
+        }),
+      ),
+    });
+
+    // One slot is in use *during* the request...
+    expect(held).toEqual([1]);
+    // ...and none afterwards, or the limiter would leak a slot per lookup and eventually deadlock.
+    expect(limiter.activeCount).toBe(0);
+  });
+
+  it("releases the slot when the lookup fails, so a failure cannot leak capacity", async () => {
+    const limiter = createSemaphore(1);
+    await resolveLyrics({
+      ...TRACK,
+      limiter,
+      fetchJson: asTransport(failing(new HttpFetchError("network", "down"))),
+    });
+    expect(limiter.activeCount).toBe(0);
+  });
+
+  it("waits for a slot rather than exceeding the cap", async () => {
+    // The cap is what bounds the fan-out, so exceeding it is the failure being prevented.
+    //
+    // Two details this had to get right. The held slot is released by calling the *first* holder's
+    // release function: the semaphore's queue is FIFO, so a second `acquire()` would queue behind
+    // the very request it was meant to unblock and the test would deadlock — which it did. And the
+    // "has it started yet" check flushes microtasks rather than waiting on a timer, because a
+    // wall-clock budget standing in for synchronisation is the defect that makes
+    // `podcast-playback-history` flaky, and repeating it here would repeat the flake.
+    const limiter = createSemaphore(1);
+    const held = await limiter.acquire();
+
+    let entered = false;
+    const pending = resolveLyrics({
+      ...TRACK,
+      videoId: "queued",
+      limiter,
+      fetchJson: asTransport(
+        vi.fn(async () => {
+          entered = true;
+          return [timedCandidate] as never;
+        }),
+      ),
+    });
+
+    for (let flush = 0; flush < 5; flush += 1) await Promise.resolve();
+    expect(entered, "the request must wait for a slot").toBe(false);
+    expect(limiter.pendingCount).toBe(1);
+
+    held();
+    await pending;
+    expect(entered, "the request runs once a slot is free").toBe(true);
+    expect(limiter.activeCount).toBe(0);
+  });
+});
+
+describe("the lookup is bounded (spec lyrics — The lookup is bounded)", () => {
+  // The scenario says the lookup "fails within its timeout rather than holding the request open".
+  // A test that only injects a *pre-built* `HttpFetchError("timeout")` proves the classification of
+  // a timeout, not that a timeout is ever imposed — so the bound itself is asserted here, on the
+  // value actually handed to the transport.
+  it("passes the bounded per-attempt timeout to the transport", async () => {
+    const timeouts: number[] = [];
+    const spy = vi.fn(async (_url: string, options?: { timeoutMs?: number }) => {
+      timeouts.push(options?.timeoutMs ?? -1);
+      return [timedCandidate] as never;
+    });
+
+    await resolveLyrics({ ...TRACK, fetchJson: asTransport(spy) });
+
+    expect(timeouts).toEqual([LYRICS_TIMEOUT_MS]);
+    // And it is a real bound, not a number large enough to be meaningless.
+    expect(LYRICS_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(LYRICS_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
+  });
+
+  it("forwards the caller's abort signal to the transport", async () => {
+    const controller = new AbortController();
+    const seen: Array<AbortSignal | undefined> = [];
+    const spy = vi.fn(async (_url: string, options?: { signal?: AbortSignal }) => {
+      seen.push(options?.signal);
+      return [] as never;
+    });
+
+    await resolveLyrics({ ...TRACK, signal: controller.signal, fetchJson: asTransport(spy) });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeDefined();
+  });
+
+  it("reports a non-OK provider response as unreachable, not as no lyrics", async () => {
+    // A 500 from LRCLIB is a fact about the network. Answering "unavailable" would show the
+    // listener a claim about the track that is not true, and would cache it as one.
+    const failure = async () => {
+      throw new HttpFetchError("http", "server error", { status: 500 });
+    };
+    expect(await resolveLyrics({ ...TRACK, fetchJson: asTransport(failure) })).toEqual({
+      kind: "unreachable",
+      reason: "http",
+    });
+  });
+
+  it("classifies a malformed success body as a parse failure", async () => {
+    const impl = fetcher({ not: "an array" });
+    expect(await resolveLyrics({ ...TRACK, fetchJson: asTransport(impl) })).toEqual({
+      kind: "unreachable",
+      reason: "parse",
+    });
+  });
+});
+
+describe("candidate resolution (spec lyrics — timed beats untimed; closest duration wins)", () => {
+  // These two scenarios were previously asserted only against `scoreCandidate`, which leaves the
+  // resolution step itself — map, filter, sort, take the first — completely unpinned. Reversing the
+  // comparator, or taking the last element, would have left every other test green.
+  it("resolves the timed candidate from a list where the untimed one comes first", async () => {
+    const untimed = {
+      trackName: "Song Title",
+      artistName: "Artist Name",
+      duration: 210,
+      plainLyrics: "words",
+    };
+    // Array order is deliberately the *wrong* answer first, so a naive "take the first" fails.
+    const result = await resolveLyrics({
+      ...TRACK,
+      fetchJson: asTransport(fetcher([untimed, timedCandidate])),
+    });
+
+    expect(result).toEqual({
+      kind: "hit",
+      hit: { syncedLyrics: "[00:10]a", plainLyrics: null, source: "lrclib" },
+    });
+  });
+
+  it("resolves the closest-duration timed candidate from a list where the worse one comes first", async () => {
+    const worse = { ...timedCandidate, duration: 300, syncedLyrics: "[00:00]WRONG" };
+    const better = { ...timedCandidate, duration: 210, syncedLyrics: "[00:00]RIGHT" };
+
+    const result = await resolveLyrics({
+      ...TRACK,
+      fetchJson: asTransport(fetcher([worse, better])),
+    });
+
+    expect(result).toEqual({
+      kind: "hit",
+      hit: { syncedLyrics: "[00:00]RIGHT", plainLyrics: null, source: "lrclib" },
+    });
+  });
+
+  it("skips an instrumental even when it is the only near-exact duration match", async () => {
+    const instrumental = {
+      trackName: "Song Title",
+      duration: 210,
+      instrumental: true,
+      syncedLyrics: "[00:00]X",
+    };
+    const real = { ...timedCandidate, duration: 240 };
+
+    const result = await resolveLyrics({
+      ...TRACK,
+      fetchJson: asTransport(fetcher([instrumental, real])),
+    });
+
+    expect(result).toEqual({
+      kind: "hit",
+      hit: { syncedLyrics: "[00:10]a", plainLyrics: null, source: "lrclib" },
+    });
+  });
+
+  it("reports unavailable when every candidate is an instrumental", async () => {
+    const only = { trackName: "Song Title", duration: 210, instrumental: true };
+    expect(await resolveLyrics({ ...TRACK, fetchJson: asTransport(fetcher([only])) })).toEqual({
+      kind: "unavailable",
+    });
   });
 });
 

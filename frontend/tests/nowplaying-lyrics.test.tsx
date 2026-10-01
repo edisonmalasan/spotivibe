@@ -86,18 +86,25 @@ function stallLyrics() {
 /**
  * Everything on the surface that must survive whatever the lyrics are doing.
  *
- * The transport button is matched by `/Play|Pause/` rather than by one name, because the control
- * is a toggle and the test arranges a *playing* track. Asserting the literal "Play" here would fail
- * for a reason that has nothing to do with lyrics, which is how a genuine regression gets dismissed
- * as a test bug.
+ * The transport button is matched by `/Play|Pause/` rather than by one name, because the control is
+ * a toggle and the test arranges a *playing* track. Asserting the literal "Play" here would fail for
+ * a reason that has nothing to do with lyrics, which is how a genuine regression gets dismissed as a
+ * test bug.
+ *
+ * **Enabled, not merely present.** A lyrics panel that rendered over the surface, or that disabled
+ * the transport while its own request was in flight, would satisfy a presence-only assertion — and
+ * the second is a plausible thing for someone to build, since "don't let lyrics interfere with
+ * playback" invites a guard that is too broad.
  */
 function expectSurfaceIntact() {
   expect(screen.getByRole("heading", { level: 1, name: "Now Playing" })).toBeInTheDocument();
   expect(screen.getByTestId("now-playing-title")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /^(Play|Pause)$/ })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Previous track" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Next track" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Queue" })).toBeInTheDocument();
+  const transport = screen.getByRole("button", { name: /^(Play|Pause)$/ });
+  expect(transport).toBeInTheDocument();
+  expect(transport).toBeEnabled();
+  for (const name of ["Previous track", "Next track", "Queue"]) {
+    expect(screen.getByRole("button", { name })).toBeEnabled();
+  }
   // Progress and volume are both sliders; asserting one exists rather than which, because their
   // order is not a promise this milestone makes.
   expect(screen.getAllByRole("slider").length).toBeGreaterThanOrEqual(1);
@@ -176,11 +183,25 @@ describe("Now Playing with lyrics", () => {
     playTrack();
     render(<NowPlayingPage />);
 
-    const panel = screen.getByTestId("lyrics-panel");
-    // A `fixed` or `absolute` positioning would place it over the persistent player region, which
-    // the `app-shell` spec forbids outright.
-    expect(panel.className).not.toContain("fixed");
-    expect(panel.className).not.toContain("absolute");
+    // Asserted on the **wrapper**, not on the inner panel. Position comes from the element the page
+    // places, so a `fixed` wrapper added in `page.tsx` would sail past an assertion that only reads
+    // `LyricsPanel`'s own className — which is what the first version of this test did, and the
+    // induced violation confirmed it: the violation changed the panel's class and the test caught it,
+    // so nothing covered the more likely place for the bug.
+    const slot = screen.getByTestId("now-playing-lyrics-slot");
+    expect(slot.className).not.toContain("fixed");
+    expect(slot.className).not.toContain("absolute");
+    expect(screen.getByTestId("lyrics-panel").className).not.toContain("fixed");
+  });
+
+  it("bounds the lyrics slot's height, so a long track cannot push the shelf off screen", () => {
+    // A track with eighty lyric lines in an auto-height column pushes More Like This out of view,
+    // which is the failure the `app-shell` requirement exists to prevent. `40vh` is the cap.
+    answerLyrics({ status: "ok", syncedLyrics: "[00:00]one", plainLyrics: null });
+    playTrack();
+    render(<NowPlayingPage />);
+
+    expect(screen.getByTestId("now-playing-lyrics-slot").className).toContain("max-h-[40vh]");
   });
 
   it("renders the lyrics panel for the track that is actually playing", async () => {

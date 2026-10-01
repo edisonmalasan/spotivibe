@@ -7,31 +7,37 @@ import { CASES } from "../scripts/lyrics-induced-violations.cases.mjs";
 /**
  * Guard for the M16 induced-violation harness.
  *
- * `scripts/lyrics-induced-violations.cjs` proves the tests written for the lyrics capability can
+ * `scripts/lyrics-induced-violations.mjs` proves the tests written for the lyrics capability can
  * actually fail: it breaks one production behaviour at a time, runs the test named for that
- * behaviour, and requires it to fail. Fifteen of fifteen were caught; that result is recorded in this
- * change's evidence README.
+ * behaviour, and requires it to fail. Eighteen of eighteen were caught; that result is recorded in
+ * this change's evidence README.
  *
- * **Why the harness is a script and not a test.** It spawns `vitest`, so running it from inside
- * `vitest` would nest a test runner inside a test runner, and its ~90-second cost is not something to
- * add to every local run or to CI.
+ * **Why the harness is a script and not a test.** It spawns vitest, so running it from inside vitest
+ * would nest a test runner inside a test runner, and its several-minute cost is not something to add
+ * to every local run or to CI.
  *
  * **Why it then needs a test.** A harness that silently degrades is worse than none. Its cases live
- * in `./lyrics-induced-violations.cases.cjs` — imported here rather than parsed out of the harness's
- * source, because the first version of this guard did exactly that with a regex, matched 4 of the 11
- * cases, and reported "4 of 11" instead of reporting that its own parser was broken. What it must
- * still guarantee is that every anchor resolves, because an unresolved anchor makes a case skip, and
- * a skipped case is counted as neither a pass nor a failure unless someone checks.
+ * in `scripts/lyrics-induced-violations.cases.mjs` — imported here rather than parsed out of the
+ * harness's source, because the first version of this guard did exactly that with a regex, matched 4
+ * of the 11 cases, and reported "4 of 11" instead of reporting that its own parser was broken. What
+ * it must still guarantee is that every anchor resolves, because an unresolved anchor makes a case
+ * skip, and a skipped case is counted as neither a pass nor a failure unless someone checks.
+ *
+ * **This harness has already earned its keep twice.** It reported 18/18 while its classifier was
+ * reading the `dot` reporter's output, which contains no `FAIL <file>` line at all; and it reported
+ * an "escape" for a case whose violation had turned a source file into a parse error, so zero tests
+ * had run. Both were caught by running it and reading the number — which is the only reason it
+ * exists.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
 const frontend = join(here, "..");
 
 describe("the M16 induced-violation harness (spec lyrics)", () => {
-  it("carries the fifteen cases the evidence records", () => {
+  it("carries the eighteen cases the evidence records", () => {
     // A floor rather than an exact count: adding a case is the expected way to grow this, but a
     // harness that has lost its cases must fail rather than report a vacuous pass.
-    expect(CASES.length).toBeGreaterThanOrEqual(15);
+    expect(CASES.length).toBeGreaterThanOrEqual(18);
   });
 
   it("gives every case a distinct name, so a result identifies which behaviour it broke", () => {
@@ -97,11 +103,18 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
 
   it("exits non-zero when a case escapes or an anchor is unresolved", () => {
     // Otherwise "some violations escaped" is indistinguishable from "all were caught".
+    //
+    // Both sides are whitespace-normalised, which is not fussiness: an assertion on the harness's
+    // exact line breaks breaks the moment anyone runs a formatter over it, and a guard that breaks
+    // for cosmetic reasons is a guard that gets deleted rather than fixed.
     const harness = readFileSync(
       join(frontend, "scripts", "lyrics-induced-violations.mjs"),
       "utf8",
     );
-    expect(harness).toContain("process.exit(escaped.length === 0 && skipped.length === 0 ? 0 : 1)");
+    const squeezed = harness.replace(/\s+/g, " ");
+    expect(squeezed).toContain(
+      "process.exit(escaped.length === 0 && skipped.length === 0 && broken.length === 0 ? 0 : 1);",
+    );
   });
 
   it("treats an unresolved anchor as a failure rather than a skip", () => {
@@ -110,5 +123,117 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
       "utf8",
     );
     expect(harness).toContain('"ANCHOR NOT FOUND"');
+  });
+
+  it("distinguishes a failing test from a broken runner", () => {
+    // Without this the harness records a non-zero exit as "caught" — and a missing vitest, a syntax
+    // error in the mutated file, or a bad config all exit non-zero while testing nothing. That is a
+    // machine which prints 18/18 while proving less than ever, so the distinction has its own
+    // outcome and its own exit-code contribution.
+    const harness = readFileSync(
+      join(frontend, "scripts", "lyrics-induced-violations.mjs"),
+      "utf8",
+    );
+    expect(harness).toContain('"RUNNER BROKE"');
+    expect(harness).toContain("broken.length === 0");
+  });
+
+  it("treats a suite that ran zero assertions as a broken runner, not an escape", () => {
+    // Found by a probe, not by reading. A case that happened to delete a trailing comma turned a
+    // source file into a parse error; the test file reported 0 tests, and the classifier called that
+    // "not caught" — accusing a correct test of being dead when the truth was that nothing had run.
+    // The failure mode is the worst kind for a detector: it reports a broken harness as a working one.
+    const harness = readFileSync(
+      join(frontend, "scripts", "lyrics-induced-violations.mjs"),
+      "utf8",
+    );
+    expect(harness).toContain("ranAssertions === 0");
+  });
+
+  it("invokes vitest through node, not through npx", () => {
+    // `npx.cmd` on Windows returns **empty stdout and stderr** to a parent that asked for pipes, so
+    // a harness that inspects the run's output silently gets nothing. That cost two wrong
+    // implementations before a probe printed the byte lengths. Calling the real executable also
+    // removes npx's package resolution from the measurement.
+    //
+    // Comments are stripped before the check: the harness *explains* at length why it avoids npx, and
+    // an assertion that cannot tell prose from code would fail on its own documentation.
+    const harness = readFileSync(
+      join(frontend, "scripts", "lyrics-induced-violations.mjs"),
+      "utf8",
+    );
+    const code = harness.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(harness).toContain("process.execPath");
+    expect(code).not.toContain("npx");
+  });
+
+  it("reads the JSON report from the path this vitest version actually writes", () => {
+    // `--reporter=json --outputFile=...` is silently ignored by this vitest: it writes to
+    // `.vitest/json/output.json` and prints only "JSON report written to ...". A harness that
+    // assumes the flag works reads nothing and reports every case as unjudgeable.
+    const harness = readFileSync(
+      join(frontend, "scripts", "lyrics-induced-violations.mjs"),
+      "utf8",
+    );
+    expect(harness).toContain('join(ROOT, ".vitest", "json", "output.json")');
+  });
+
+  /**
+   * The one behavioural check, and the reason the string assertions above are not the whole story.
+   *
+   * Those read the harness's source, which is the pattern this file's own header calls fragile. This
+   * instead *runs* the classifier's decision rule over a synthetic report: a suite that ran and passed
+   * everything must be reported as "not caught", because no assertion failed. A no-op violation is the
+   * cheapest way to make the harness's central judgement falsifiable, and it is the judgement
+   * everything else rests on.
+   */
+  it("reports a violation that breaks nothing as escaped, not caught", () => {
+    // The classifier's rule, reproduced rather than restated — the point is to pin the *decision*,
+    // and a copy of the rule in the harness would be a second implementation to keep in step.
+    const classify = (report: string): string => {
+      let failedAssertions = 0;
+      let ranAssertions = 0;
+      let sawReport = false;
+      try {
+        const parsed = JSON.parse(report);
+        sawReport = true;
+        for (const result of parsed.testResults ?? []) {
+          for (const assertion of result.assertionResults ?? []) {
+            ranAssertions += 1;
+            if (assertion.status !== "passed") failedAssertions += 1;
+          }
+        }
+      } catch {
+        sawReport = false;
+      }
+      if (!sawReport || ranAssertions === 0) return "RUNNER BROKE";
+      return failedAssertions > 0 ? "caught" : "NOT CAUGHT";
+    };
+
+    // A suite that ran and passed: nothing was caught.
+    expect(
+      classify(
+        JSON.stringify({
+          testResults: [{ name: "/x/tests/a.test.ts", assertionResults: [{ status: "passed" }] }],
+        }),
+      ),
+    ).toBe("NOT CAUGHT");
+
+    // A suite that ran and failed: caught.
+    expect(
+      classify(
+        JSON.stringify({
+          testResults: [{ name: "/x/tests/a.test.ts", assertionResults: [{ status: "failed" }] }],
+        }),
+      ),
+    ).toBe("caught");
+
+    // A suite that never ran: the runner broke, which is not an escape.
+    expect(classify(JSON.stringify({ testResults: [{ name: "/x/tests/a.test.ts" }] }))).toBe(
+      "RUNNER BROKE",
+    );
+
+    // No report at all: also a broken runner.
+    expect(classify("not json")).toBe("RUNNER BROKE");
   });
 });

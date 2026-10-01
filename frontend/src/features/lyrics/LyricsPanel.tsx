@@ -109,7 +109,7 @@ function LyricsForTrack({ track }: { track: Track }) {
       {state.kind === "loading" ? <LoadingState /> : null}
 
       {state.kind === "unavailable" ? (
-        <p data-testid="lyrics-unavailable" className="px-1 py-2 text-sm text-neutral-400">
+        <p data-testid="lyrics-unavailable" className="px-1 py-2 text-body text-mist">
           No lyrics available for this track.
         </p>
       ) : null}
@@ -132,7 +132,7 @@ function LyricsForTrack({ track }: { track: Track }) {
       {state.kind === "plain" ? (
         <div
           data-testid="lyrics-plain"
-          className="max-h-64 overflow-y-auto whitespace-pre-wrap px-1 py-2 text-sm leading-7 text-neutral-300"
+          className="max-h-64 overflow-y-auto whitespace-pre-wrap px-1 py-2 text-body leading-7 text-mist"
         >
           {state.text}
         </div>
@@ -160,10 +160,14 @@ function LyricsForTrack({ track }: { track: Track }) {
                     data-testid="lyrics-line"
                     data-active={isActive}
                     aria-current={isActive ? "true" : undefined}
+                    // Only `pure-white`, `mist` and `spotify-green` are declared *text* tokens, and
+                    // `tests/token-contrast.test.ts` enforces it. `text-neutral-500` looked right and
+                    // was wrong twice over: `neutral-*` is neither a theme token nor a Tailwind default
+                    // here, so it compiled to nothing and the styling came from inheritance.
                     className={
                       isActive
-                        ? "text-base font-semibold text-base-content"
-                        : "text-base text-neutral-500 transition-colors"
+                        ? "text-heading font-semibold text-pure-white"
+                        : "text-body text-mist transition-colors"
                     }
                   >
                     {line.text}
@@ -177,7 +181,11 @@ function LyricsForTrack({ track }: { track: Track }) {
               type="button"
               onClick={resumeFollowing}
               data-testid="lyrics-back-to-live"
-              className="self-start rounded-full bg-base-surface px-3 py-1 text-xs font-semibold text-base-content"
+              // `text-caption`, not `text-body-xs`: the declared type scale is
+              // `text-caption | text-body | text-body-lg | text-label | text-title-lg | text-h1`, and
+              // `text-body-xs` compiles to nothing. `tests/token-contrast.test.ts` caught it —
+              // which is the detector doing exactly the job it was built for.
+              className="self-start rounded-full bg-graphite px-3 py-1 text-caption font-semibold text-pure-white transition-colors hover:bg-smoke"
             >
               Back to live
             </button>

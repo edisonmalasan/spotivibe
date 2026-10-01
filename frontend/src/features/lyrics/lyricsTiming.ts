@@ -36,9 +36,14 @@ const TIMESTAMP = /^\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/;
  * A metadata tag carrying no lyric text: `[ar:...]`, `[ti:...]`, `[al:...]`, `[length:...]`.
  *
  * These are matched explicitly rather than relying on the absence of a timestamp. `[length:03:21]`
- * contains something that *looks* like a timestamp to a loose reader, and `[offset:250]` is a real
- * LRC field that shifts every line — so a metadata line is dropped, not parsed, and an offset tag
- * is reported rather than silently applied.
+ * contains something that *looks* like a timestamp to a loose reader, so a metadata line is dropped
+ * rather than parsed.
+ *
+ * `[offset:...]` is deliberately **dropped and not applied**, and that is a stated limit rather than
+ * an oversight. The field shifts every line, and applying it wrongly is worse than not applying it:
+ * an unshifted lyric is at most a fraction of a second out, whereas a mis-parsed offset moves the
+ * whole song. LRCLIB's own output is not offset, and the LRC files that carry it are rare. Applying it
+ * properly is a small follow-up; mis-stating the comment as if it were applied would not be.
  */
 const METADATA_TAG = /^\[[a-z]+:[^\]]*\]\s*$/i;
 
@@ -86,9 +91,9 @@ export function parseLrc(raw: string): LyricLine[] {
 /**
  * Parse a provider payload that may carry timed lyrics, untimed lyrics, or both.
  *
- * Kept separate from {@link parseLrc} so the parser stays a single-concern text transform, and
- * so the "timed lines exist" question — which decides between the following view and the plain
- * view — is answered in one place.
+ * Kept separate from {@link parseLrc} so the parser stays a single-concern text transform, and so
+ * the "do timed lines exist" question — which decides between the following view and the plain view
+ * — is answered in one place.
  */
 export function parseLyricsPayload(payload: {
   syncedLyrics: string | null;
@@ -96,9 +101,9 @@ export function parseLyricsPayload(payload: {
 }): ParsedLyrics {
   const lines = payload.syncedLyrics === null ? [] : parseLrc(payload.syncedLyrics);
   const plain = payload.plainLyrics?.trim() || null;
-  // Timed lines win when both exist, because they carry strictly more information; the plain
-  // text is kept either way so a caller can still show something if it wants to.
-  return { lines, plain: lines.length > 0 ? plain : plain };
+  // Both are returned independently: the caller chooses. Timed lines are preferred for *display*,
+  // but the plain text is not discarded, so a caller can still fall back to it.
+  return { lines, plain };
 }
 
 /**
