@@ -123,7 +123,31 @@ Any deliberate product-scope change should update `ROADMAP.md` first or in the s
 | M14 | Hardening: performance, security, accessibility, resilience | `DONE` | M3–M13 |
 | M15 | Test matrix, release validation, Vercel deployment | `DONE` | M0–M14 |
 
-**All 16 milestones are `DONE`. There is no remaining roadmap objective.**
+**v1 is complete: M0–M15 are `DONE` and their records are historical, not to be rewritten.**
+
+### Post-v1 (approved 2026-10-03)
+
+Six new milestones, specified in §12. They are approved scope, not deferred ideas, and each runs
+the full `AGENTS.md` lifecycle: Propose → Apply → independent verification → Sync → Archive.
+
+| Milestone | Objective | Status | Depends on |
+|---|---|---|---|
+| **M16** | Lyrics and Now Playing enrichment | `APPROVED` | M9, M12 |
+| **M17** | Home discovery enrichment | `APPROVED` | M11, M8, M16 |
+| **M18** | Keyboard shortcuts, search suggestions, sharing | `APPROVED` | M5, M7, M9 |
+| **M19** | Motion and interaction polish | `APPROVED` | M16, M17, M18 |
+| **M20** | Personal-use media downloading | `APPROVED` | M3, M4 |
+| **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
+
+**Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external
+provider, a parser, a playback-position binding) and it proves the Now Playing surface can grow.
+M17 depends on M11's local Smart Mix system and reuses M16's motion vocabulary. M18 is three
+independent interaction features grouped because they share the "global input handling" problem
+and are individually small. M19 is last among features because it must be judged against surfaces
+that exist, and adding motion to a surface that is about to change is wasted work. M20 is
+independent of M16–M19 and is placed after them because it is the only milestone carrying a
+deployment risk, and it should not be able to block the rest. M21 exists because the release gate
+is currently intermittently red and post-v1 work must not ship on a gate that lies.
 
 The work that followed M15 was not a milestone. It was the one defect M15's own release
 process was built to find, found before the first deploy rather than during it:
@@ -167,6 +191,11 @@ The work after that was a **deliberate reversal of M4's visible-player decision*
 | The DESIGN.md visual audit | A proportion and hierarchy judgement, not a number. | M15's archived `tasks.md` |
 | `tests/podcast-playback-history.test.ts` flake | A pre-existing 2-second wall-clock budget standing in for synchronization; roughly 1 run in 3 under load. Found during the runtime correction, deliberately not fixed there. | `2026-10-01-align-vercel-runtime-and-root-commands` evidence README |
 | A flaky release gate | M15's end-to-end suite fails intermittently on a CDP race in its own fixture router, reproduced on the commit before the runtime correction. The gate's credibility rests on green meaning something. | Found during the runtime correction; not yet fixed |
+
+**Two of the above are prerequisites for post-v1 work and are scheduled inside it**: the flaky
+release gate is fixed in **M21** (post-v1 work must be gated by a gate that means something), and
+the parked-player browser re-verification is revisited in **M21** once the motion and interaction
+changes have altered the surfaces being measured.
 
 ---
 
@@ -280,22 +309,33 @@ This table is the authoritative translation of Lyrix capabilities plus Spotivibe
 
 ## 6.4 Deferred / Not Yet Approved
 
-These must not silently enter implementation without updating this roadmap:
+**Updated 2026-10-03.** The items marked **[NOW APPROVED — M16]** … **[NOW APPROVED — M20]** below
+were approved as post-v1 scope on 2026-10-03 and are specified in §12. They are no longer
+"merely deferred" and must not be described as such. Their v1 deferral is recorded rather than
+erased, because the reason for it was sound and the reversal is a decision someone will re-read.
 
-- Synced lyrics / karaoke lyrics.
-- Lyrics translation/romanization.
-- Social/friend activity.
-- Collaborative playlists.
-- Public user profiles.
-- Spotify account/library import.
-- Native Android/iOS apps; PWA comes first and is the intended client.
-- Equalizer.
-- Crossfade.
-- Gapless playback guarantees.
-- Sleep timer.
-- Chromecast/AirPlay integration.
-- Keyboard shortcut suite beyond basic accessible controls.
-- Download manager for non-YouTube licensed/owned audio. The Track model may remain capability-aware, but no download product work is scheduled without a legitimate media source.
+| Item | v1 decision | Post-v1 status |
+|---|---|---|
+| Synced lyrics / karaoke lyrics | Deferred | **[NOW APPROVED — M16]** |
+| Lyrics translation/romanization | Deferred | Still deferred. Not in post-v1 scope; it needs a translation service and a per-line data model neither of which exist. |
+| Keyboard shortcut suite beyond basic accessible controls | Deferred | **[NOW APPROVED — M18]** |
+| "Download manager for non-YouTube licensed/owned audio" | Deferred — *no download product work without a legitimate media source* | **[NOW APPROVED — M20] with the "legitimate media source" condition explicitly reversed.** See §12.6. |
+| Social/friend activity | Deferred | Still deferred. Requires accounts, which are a permanent exclusion. |
+| Collaborative playlists | Deferred | Still deferred. Same reason. |
+| Public user profiles | Deferred | Still deferred. Same reason. |
+| Spotify account/library import | Deferred | Still deferred. Same reason. |
+| Native Android/iOS apps | Deferred | Still deferred. PWA is the intended client. |
+| Equalizer | Deferred | Still deferred. No audio-graph surface exists, and the player is a YouTube IFrame. |
+| Crossfade | Deferred | Still deferred. Requires controlling playback across two media sources, which an IFrame does not expose. |
+| Gapless playback guarantees | Deferred | Still deferred. Same reason, and "guarantee" is a claim an IFrame cannot support. |
+| Sleep timer | Deferred | Still deferred. Not in the approved post-v1 set. |
+| Chromecast/AirPlay integration | Deferred | Still deferred. |
+| Richer Home (daily mix cards, quick picks, time-aware shelf, All/Music/Podcasts filters) | Not previously listed | **[NOW APPROVED — M17]** |
+| Search suggestions | Not previously listed | **[NOW APPROVED — M18]** |
+| Track/catalog sharing (Web Share + copy link) | Not previously listed | **[NOW APPROVED — M18]** |
+| Motion and interaction polish | Not previously listed | **[NOW APPROVED — M19]**, including a *decision* on whether `framer-motion` is justified |
+
+---
 
 ---
 
@@ -502,6 +542,20 @@ These are references, not drop-in dependencies.
 | Lyrix queue/radio services | Adapt queue lifecycle, dedupe, refill, seed behavior. |
 | Lyrix network handling | Adapt offline/slow/reconnect UX. |
 
+**Added 2026-10-03, for the post-v1 milestones** — again, references and not drop-in
+dependencies. Each row records the specific behaviour to take and, where it matters, the specific
+thing in the Lyrix original that must *not* be copied.
+
+| Lyrix area | Spotivibe use | Do not copy |
+|---|---|---|
+| `frontend/src/components/player/SyncedLyrics.tsx`, `services/lyricsApi.ts`, `backend/src/services/lyricsService.ts` | M16: LRC parsing, duration-aware LRCLIB scoring, active-line selection, auto-scroll following. | The inline-style component, the Zustand coupling, and the Prisma lyrics cache. |
+| `frontend/src/services/suggestionsService.ts` | M18: query refinements, recent searches, no-results recovery. | The hardcoded `FALLBACK_SUGGESTIONS` genre list as a fixed answer, and the separate `API_URL`/`fetchWithAuth` client. |
+| `frontend/src/hooks/useKeyboardShortcuts.ts` | M18: the binding set and help surface. | Its mute implementation — it sets volume to `0` and restores a hardcoded `70`, destroying the listener's volume. Spotivibe has a real `muted` state. Its `isContentEditable`-only focus check, which is not enough to protect a focused slider or dialog. |
+| `frontend/src/services/shareService.ts` | M18: Web Share with a copy-link fallback. | Any account-gated or server-side share path. |
+| `frontend/src/hooks/useDownload.ts`, `services/downloadService.ts` | M20: the four download states, the Blob→object-URL→`<a download>` flow. | The `isLoggedIn` gate and the `login()` call — Spotivibe has no accounts and adds none for this. |
+| `backend/src/routes/download.ts`, `controllers/downloadController.ts`, `services/downloadService.ts` | M20: ytdl-core primary with an Invidious fallback, ID validation, streaming. | The Express router/controller layer, `requireAuth`, and `stream.pipe(res)` — Spotivibe is one Next.js application with a route handler. |
+| `backend/src/middleware/rateLimiter.ts` | M20: the shape of a bounded per-instance download limit. | `express-rate-limit` itself, and the other five limiters, which exist for Lyrix's account-backed API. |
+
 ## 9.2 Lyrix Areas That Must Not Be Ported
 
 - Google OAuth/auth controllers/providers.
@@ -512,13 +566,25 @@ These are references, not drop-in dependencies.
 - User-profile rebuild jobs.
 - Collaborative-filtering/ALS model and cross-user training data.
 - Lyrix Python AI service as a required dependency.
-- Download/audio extraction service.
-- Auth-gated download route.
 - Private YouTube playlist export/sync that requires user OAuth.
 - Quota dashboard that exists only for official keyed API operations not used by baseline Spotivibe.
 - Lyrix branding/UI components as final Spotivibe UI.
-- Lyrix's undersized `120x68` YouTube player presentation.
 - Any behavior intended to suppress YouTube ads.
+
+**Revised 2026-10-03.** Two entries were removed from this list by §18's recorded reversal, not
+by oversight, and the reasoning is preserved here rather than left to be re-derived:
+
+- *"Download/audio extraction service"* and *"Auth-gated download route"* are no longer absolute
+  prohibitions. M20 approves a download route with **no auth**, because a personal instance has
+  no accounts to gate against. What remains prohibited is unchanged in substance: the **auth
+  gate** is still never ported, and any central server-side store of downloaded media is still
+  refused — download is to the device, not to a server library.
+- *"Lyrix's undersized `120x68` YouTube player presentation"* was removed by the parked-player
+  change (§12.5 in the earlier draft numbering; the parked-player archived change), which
+  deliberately adopted the hidden-player approach and documented the departure.
+
+Still absolutely prohibited, unchanged: ad suppression, audio capture/decoding, hidden
+background playback circumvention, and any account or cloud infrastructure.
 
 ## 9.3 Attribution
 
@@ -1370,7 +1436,8 @@ At minimum:
 - `frontend/docs/DESIGN.md` visual audit passed.
 - No account/auth/cloud-sync UI or code paths exist.
 - No Supabase/user database dependencies exist.
-- No YouTube audio downloader/extractor exists.
+- No YouTube audio downloader/extractor exists. **True for v1. Reversed for post-v1 private use
+  by M20** — see §18 and §21.5. The v1 line is preserved because it was the v1 release gate.
 - No forced background-play circumvention exists.
 - No ad-blocking behavior exists.
 - No media is proxied through Vercel.
@@ -1380,13 +1447,16 @@ At minimum:
 - PWA manifest/service worker validate.
 - Critical flows pass automated and manual tests.
 
+**Superseded for v1 only.** The two lines above — "No YouTube audio downloader/extractor exists"
+and "No forced background-play circumvention exists" — described the v1 release gate and are
+preserved as the v1 record. §12.6 reverses the first one for private/personal post-v1 use, and
+§12.5's parked player is the second. The second remains a permanent exclusion.
+
 ---
 
 # 11. Feature-Level Acceptance Checklist
 
 This section prevents roadmap phases from accidentally shipping without important user-facing pieces.
-
-
 
 ### Delivered by M15
 
@@ -1483,11 +1553,17 @@ with a note contradicting them.
 - [x] Artist navigation.
 - [x] Album navigation where metadata supports it.
 - [x] Podcast search/category.
+- [ ] **Post-v1:** search suggestions — query refinements, local recents, empty and no-results
+      recovery, with debounce/abort/URL sync preserved (M18).
+- [ ] **Post-v1:** richer Home — daily mix cards, Quick Picks, time-aware shelf, and
+      `All`/`Music`/`Podcasts` filters over one data model (M17).
+- [ ] **Post-v1:** motion polish, with a written and measured decision on `framer-motion` (M19).
 
 ## Player
 
 - [x] Single persistent YT player instance.
-- [x] Visible/compliant playback surface.
+- [x] Visible/compliant playback surface. **Reversed 2026-10-02**: the player is now parked and
+      there is no visible surface by default. See the parked-player change and §18.
 - [x] Play/pause.
 - [x] Previous/next.
 - [x] Seek/progress.
@@ -1499,6 +1575,10 @@ with a note contradicting them.
 - [ ] Pre-cue next where safe.
 - [x] Session restoration.
 - [x] YouTube attribution.
+- [ ] **Post-v1:** global keyboard shortcuts, with no shortcut firing in a focused control (M18).
+- [ ] **Post-v1:** share current track / catalog surface, Web Share with copy-link fallback (M18).
+- [ ] **Post-v1:** download current track to the device, honestly named for its real format (M20).
+- [ ] **Post-v1:** synced lyrics with active-line highlight and auto-follow on Now Playing (M16).
 
 ## Queue / Radio
 
@@ -1719,16 +1799,43 @@ Spotivibe v1 is complete only when all of the following are true:
 
 # 18. Post-v1 Changes Require Explicit Roadmap Approval
 
-After v1, new features are not assumed merely because Lyrix or Spotify has them. Additions such as lyrics, cast support, equalizer, crossfade, licensed-download sources, or new provider types require a deliberate update to this roadmap.
+After v1, new features are not assumed merely because Lyrix or Spotify has them. Additions such as cast support, equalizer, crossfade, licensed-download sources, or new provider types require a deliberate update to this roadmap.
 
-The following are **not eligible as post-v1 additions without reversing a permanent project decision** and therefore should be treated as out of scope rather than backlog items:
+**Updated 2026-10-03 — seven features were approved by this route** and are specified in §12:
+synced lyrics (M16), richer Home discovery (M17), global keyboard shortcuts, search suggestions
+and sharing (M18), motion polish (M19), and personal-use media downloading (M20). They are no
+longer "merely deferred" — see §6.4 for the per-item table, which records the v1 decision beside
+the post-v1 status so the history reads as a decision rather than an erasure.
+
+### Reversed on 2026-10-03, with the reversal recorded
+
+**"YouTube audio extraction/download" moves from permanently out of scope to approved post-v1
+private/personal-use scope (M20).** This is a deliberate reversal of a v1 decision and is
+recorded here rather than deleted. The v1 reasoning was sound: v1 aimed at a public, policy-
+compliant, free-tier product, and a permanent download path is incompatible with that. The
+post-v1 reasoning is that this instance is for private personal use, where the trade is the
+operator's alone to make.
+
+What the reversal explicitly does **not** do:
+
+- It does **not** make the feature compliant. Downloading YouTube audio is not permitted by
+  YouTube's documented embedded-player and download policies, and nothing in this repository
+  may describe it as compliant. `frontend/docs/DEPLOYMENT.md` states the same for the already-
+  reversed parked player.
+- It does **not** authorize ad blocking, ad suppression, or any interference with ad serving.
+- It does **not** authorize accounts, OAuth, cloud sync, a user database, or any centralized
+  profile — in particular, no Google Sign-In is added "merely for downloading".
+- It does **not** authorize unrelated media scraping, or a managed offline library in IndexedDB.
+  Download-to-device only; a managed offline library requires its own future change.
+- It does **not** change the parked-player decision in either direction.
+
+### Still not eligible without reversing a permanent decision
 
 - Spotivibe accounts;
 - cloud sync;
 - Supabase user storage;
 - centralized listening profiles;
 - cross-user collaborative filtering;
-- YouTube audio extraction/download;
 - forced hidden/background YouTube playback;
 - YouTube ad suppression.
 
@@ -1762,6 +1869,302 @@ This file is the project source of truth. During development:
 - Add newly approved scope before implementing it.
 - Mark intentionally removed scope as `REJECTED` rather than deleting history without explanation.
 - Keep technical implementation detail in dedicated docs when it becomes too granular for this roadmap.
-- Never silently introduce accounts, cloud sync, a user database, YouTube downloading, or background-play circumvention.
+- Never silently introduce accounts, cloud sync, a user database, or background-play circumvention.
+- YouTube downloading is **approved, but only through §18's recorded reversal**, as private/personal-use scope, and never described as compliant. It is neither silent nor open-ended.
 - When Lyrix changes upstream, Spotivibe does **not** automatically inherit those changes. Port only changes that match this roadmap.
 
+---
+
+# 21. Post-v1 Milestones (Approved 2026-10-03)
+
+These six milestones are approved scope. Each runs the full `AGENTS.md` lifecycle — Propose →
+Apply → independent read-only verification → Sync → Archive — on its own branch and PR, merge
+commits only.
+
+**What is common to all six**, and is therefore not repeated per milestone:
+
+- **No accounts, no OAuth, no cloud, no centralized profile, no Supabase.** Nothing here may
+  introduce one. "Adapting Lyrix" never means importing its `useAuth`/`requireAuth`/`fetchWithAuth`.
+- **Local-first stays local.** Taste, history, liked tracks and seeds are read from the existing
+  IndexedDB repositories. Nothing new is uploaded anywhere.
+- **Every new check must be shown to fail.** This repository has now paid for a green check over a
+  live defect four separate times. A detector proved only against phrasing its own author chose
+  proves much less than it appears to.
+- **Browser verification where UI is involved**, and a stated `NOT VERIFIED` for anything the
+  environment cannot exercise (this machine has Edge only, and the YouTube IFrame API is blocked
+  by CSP, so playback and lyrics-cue behaviour cannot be observed live here).
+
+## 21.1 M16 — Lyrics and Now Playing enrichment
+
+**Objective.** A lyrics panel on Now Playing that highlights and follows the playing line when
+timed lyrics exist, and shows plain lyrics when they do not, with honest empty/error states.
+
+**Depends on.** M9 (Now Playing surface), M12 (podcasts share the Now Playing layout).
+
+**In scope.**
+
+- An LRC parser producing `{ time, text }` lines, handling `[mm:ss]`, `[mm:ss.xx]`, and
+  `[mm:ss.xxx]`, ignoring untimed metadata tags, sorting by time, and dropping empty lines.
+- A lyrics provider: title/artist/duration lookup against **LRCLIB**, with a duration-aware
+  scoring preference for synced over plain and for the closest duration — the behaviour Lyrix's
+  `lyricsService.ts` implements — including its title-cleaning and artist/title split.
+- Caching **without a database**: an in-process LRU plus negative caching for "not found", since
+  Spotivibe has no server-side store. Lyrix's Prisma cache is not portable and is not wanted.
+- The active line computed from `playerStore.positionSeconds` by binary search, reset on track
+  change, so a new track never inherits the previous track's cursor.
+- Auto-scroll to centre the active line, with an explicit user-scroll override that suspends
+  following until the user returns to the live position.
+- Explicit states: idle, loading, unavailable, error. They must be distinguishable — "no lyrics
+  for this track" is not "we could not reach the provider".
+- `prefers-reduced-motion`: no animated transitions and no smooth-scroll following.
+- Accessible: the active line announced politely rather than read as a live region per line.
+
+**Non-goals.** Lyrics translation or romanization. Lyrics for podcasts (no lyric source). A
+lyrics database. Editing or correcting lyrics. Karaoke word-level timing.
+
+**Implementation notes.** Lyrix's `SyncedLyrics.tsx` is 234 lines of inline styles against a
+Zustand store; Spotivibe's equivalent must use `playerStore`/`queueStore`, the design-system
+primitives, and Tailwind tokens from `frontend/docs/DESIGN.md`. Its scroll maths
+(`el.offsetTop - container.offsetTop - ...`) is offset-parent-dependent and is the part most
+worth rewriting rather than porting. Note the existing Now Playing surface already has a
+long-title treatment and a bottom padding budget that a lyrics panel must respect.
+
+**Automated verification.** Parser unit tests over real LRC fixtures including malformed tags,
+duplicate timestamps, and out-of-order lines. Active-line selection at boundaries (exactly on a
+timestamp, between timestamps, before the first, after the last). Reset-on-track-change. The four
+UI states. Reduced-motion behaviour. Provider scoring and its negative cache.
+
+**Browser verification.** Active-line highlight advancing against a real position source, and
+auto-scroll following. **Not verifiable in this environment** (IFrame API blocked by CSP) — the
+position *plumbing* is verified in jsdom, the *following* is not.
+
+**Completion criteria.** Lyrics appear on Now Playing for a track that has them, in the correct
+format, and the panel is indistinguishable in structure from the rest of the surface. All four
+states reachable and distinct. No regression to existing Now Playing tests.
+
+## 21.2 M17 — Home discovery enrichment
+
+**Objective.** A materially richer Home built **entirely on the existing local taste system** —
+no cloud, no profile service, no new data models.
+
+**Depends on.** M11 (Smart Mixes: `generateMix`, `mixNaming`, `MixList`), M8 (Home: `HomeView`,
+`homeSections`, `localSeeds`, `useDiscoveryShelf`, `genreCatalog`), M16 (motion vocabulary).
+
+**In scope.**
+
+- **Daily mix cards** built on the existing mix generator and naming: Top Mix, Discovery Mix,
+  Chill Mix, Night Mix, and language-aware mixes derived from `preferences.languages`. Each is a
+  card that starts playback, not a new page. Multi-artwork collages where the mix has several
+  tracks.
+- **Quick Picks**: a compact artist/content shelf derived from selected languages, the local
+  listening profile, liked artists/tracks, and existing provider results. Every card leads to an
+  existing artist, album, or search surface — no dead ends.
+- **Time-aware shelf**: morning / afternoon / evening / late night, where local time selects a
+  **seed set and query construction only**. The listener's clock is the input; their history is
+  never sent anywhere.
+- **Home filters**: `All` / `Music` / `Podcasts`, selecting which shelves are presented. One data
+  model, three presentations — explicitly **not** three duplicated models.
+
+**Non-goals.** Any server-side recommendation. Uploading taste or history. A user profile page.
+New provider types. Following Lyrix's cloud mix service.
+
+**Implementation notes.** `generateMix`/`mixNaming` already exist and are the substrate; the
+work is presentation plus seed strategies, not a new generation engine. The filter must not fork
+the section list into three divergent copies — one section model, filtered at render. Time-of-day
+buckets must be injectable for tests (no test should depend on the wall clock, which is the same
+class of bug as the 2-second wall-clock budget in `podcast-playback-history`).
+
+**Automated verification.** Mix cards render from the existing generator and start playback on
+activation. Time-of-day bucketing across all four bands, with an injected clock. Filter switching
+presents the right shelves and preserves state. Quick Picks contain only resolvable links.
+
+**Browser verification.** Home layout at 1280×900 and 390×844, filter switching, and a card
+starting playback.
+
+**Completion criteria.** Home is visibly richer, every card does something, and no new persistent
+state was introduced.
+
+## 21.3 M18 — Keyboard shortcuts, search suggestions, and sharing
+
+**Objective.** Three independent interaction upgrades, grouped because they share the
+global-input-handling problem and are each small.
+
+**Depends on.** M5 (search), M7 (library/likes), M9 (catalog pages).
+
+**In scope — shortcuts.** `Space` play/pause, `ArrowLeft`/`ArrowRight` seek ±10s,
+`ArrowUp`/`ArrowDown` volume ±5, `M` mute, `L` like/unlike, `?` help, `Escape` dismiss.
+**No shortcut may fire while focus is in an input, textarea, `contenteditable`, or any surface
+where the key has a local meaning** — that includes the search field, the rename inputs in
+playlist dialogs, and sliders, where `ArrowLeft`/`ArrowRight` belong to the slider. A global
+handler that overrides a focused control is worse than no shortcut. A discoverable help surface
+lists every binding and is reachable by pointer as well as by key.
+
+**In scope — suggestions.** Query-derived refinements; local recent searches; optional
+provider-derived discovery for an empty or failed search. Debounce, abort-on-change, and URL
+synchronization preserved, and the existing `useSearchController` behaviour unchanged.
+
+**In scope — sharing.** `navigator.share()` where available, copy-link fallback, optional small
+menu for supported destinations. Spotivibe URLs and Spotivibe copy. Graceful fallback with no Web
+Share API. Tracks and the catalog surfaces that have a shareable URL.
+
+**Non-goals.** Customisable key bindings. Shortcuts while a modal owns the keyboard. A
+centralized suggestion or profile service. Social sharing that requires an account.
+
+**Implementation notes.** Lyrix's `useKeyboardShortcuts.ts` fakes mute by setting volume to `0` and
+restoring a hardcoded `70` — which destroys the listener's actual volume. Spotivibe has a real
+`muted` state and `toggleMute`, and must use it. Its `isContentEditable` check is also
+insufficient: a focused `role="slider"` or a dialog's own key handling is equally "local meaning".
+
+**Automated verification.** Every binding fires and does not fire in a focused input, textarea,
+`contenteditable`, and slider. Help opens on `?` and closes on `Escape` and on pointer dismissal.
+Suggestions debounce and abort; a superseded request never renders. Share falls back when
+`navigator.share` is absent, and is a no-op-safe path when it rejects.
+
+**Browser verification.** Shortcuts against a real focused element, help dialog focus trapping
+and restoration, share on a real user-gesture path.
+
+**Completion criteria.** No shortcut can break typing anywhere in the application — verified by
+test, not by inspection.
+
+## 21.4 M19 — Motion and interaction polish
+
+**Objective.** Motion that improves the product, and an explicit, evidence-backed decision on
+whether `framer-motion` is justified.
+
+**Depends on.** M16, M17, M18 — motion is judged against surfaces that exist.
+
+**In scope.** Shelf and card entrance transitions; hover/tap feedback; player transitions; dialog
+and sheet motion; Now Playing transitions; mix/Home content transitions. Every one gated on
+`prefers-reduced-motion`.
+
+**Non-goals.** Animating everything. Long or looping decorative motion. Any animation that costs
+responsiveness.
+
+**Implementation notes — the dependency decision is the milestone.** `framer-motion` is
+**currently absent** from the project. It is ~30kB gzipped before use, and Lyrix uses it for what
+CSS transitions and the Web Animations API already do. The decision must be made on measured
+grounds: a spike comparing (a) CSS transitions only, (b) `framer-motion` for layout/gesture/
+exit animations specifically, against bundle cost and measured frame behaviour. The default
+expectation is **(a)**; adding the dependency requires evidence that (a) cannot express what is
+needed. "Lyrix uses it" is not evidence — the question is what Spotivibe needs, and the project
+has a rule against unexamined dependencies.
+
+**Automated verification.** Every motion is behind a reduced-motion check, asserted by test, so a
+component cannot animate under `prefers-reduced-motion` by accident.
+
+**Browser verification.** Frame and responsiveness measurement before/after; visual review of each
+transition at both viewports.
+
+**Completion criteria.** A written decision on `framer-motion` with measurements behind it. No
+motion without a reduced-motion path.
+
+## 21.5 M20 — Personal-use media downloading
+
+> **This milestone reverses a permanent v1 decision.** See §18 for the full statement of what
+> the reversal does and does not authorize. Nothing here may be described as compliant with
+> YouTube's documented download policies.
+
+**Objective.** Download a currently playing track to the device, with an honest file format.
+
+**Depends on.** M3 (provider layer — the ID being downloaded is a provider ID), M4 (playback).
+
+**In scope.**
+
+- A Next.js **route handler** under `src/app/api/download/[videoId]/` — the single application,
+  no Express backend. Validates the provider ID shape and rejects malformed input with a
+  structured error.
+- **Primary extractor**: `@distube/ytdl-core` → `getInfo()` → filter `audioonly` formats →
+  select the highest **suitable** bitrate → stream the chosen format. "Suitable" is bounded by
+  the Vercel constraints below, not simply "highest available".
+- **Fallback extractor**: Invidious → video metadata → `adaptiveFormats` filtered to `audio/*` →
+  highest suitable bitrate → stream that URL. Bounded instance list with per-attempt timeouts.
+- **Streaming, never buffering.** The response is a `ReadableStream`; media is never
+  materialised whole in server memory.
+- Bounded timeouts, per-instance rate limiting, structured errors, and upstream abort on client
+  disconnect where practical.
+- **Correct format honesty.** The extension and MIME type come from the container and codec that
+  were actually selected. `audio/webm`+Opus → `.webm`/`.opus`; `audio/mp4`+AAC → `.m4a`;
+  `audio/mp4`+MP3 → `.mp3`. **A file is never named `.mp3` unless it contains MP3 audio**, and
+  format conversion is never faked by renaming. Real transcoding is explicitly out of scope.
+- Download-to-device only: a Blob, an object URL, and a temporary `<a download>`. **Nothing is
+  written to IndexedDB and nothing changes how playback works.**
+- Download actions on the PlayerBar/MiniPlayer overflow, Now Playing, and the track context
+  menu, each with idle / busy / success / failure states and **no duplicate concurrent download
+  of the same track**.
+- No authentication. No Google Sign-In. No accounts.
+
+**Non-goals.** Accounts or auth of any kind. Ad blocking or suppression. A managed offline
+library in IndexedDB. Local-file playback. Transcoding. Batch or playlist downloading. Progress
+reporting by percentage.
+
+**Deployment constraints — researched 2026-10-03, and they shape the design.** Vercel's documented
+limits for the stated target:
+
+| Constraint | Value | Consequence for this feature |
+| --- | --- | --- |
+| Response/request body size | **4.5 MB** | A full track exceeds this. Vercel documents that **streaming responses do not carry this limit**, so the route **must** stream. Buffering, even once, fails with a 413. |
+| Max function duration | **300 s** (Hobby, default *and* maximum, with Fluid compute — default for new projects) | Comfortable. Must be stated explicitly in `export const maxDuration` rather than left to default. |
+| Proxied request timeout | **120 s** | The real ceiling. A multi-megabyte stream finishes well inside it, but a very large file on a slow link could not, which is part of why the bitrate selection is bounded rather than maximal. |
+| Memory | 2 GB / 1 vCPU (Hobby) | Streaming avoids the buffering spike that would otherwise be the binding constraint. |
+| `@distube/ytdl-core` compatibility | Pure JavaScript, no native binary; makes its own outbound requests | Compatible in principle. **Not verified on a real deployment** — see below. |
+| Invidious reliability | Public instances are frequently rate-limited or down | The fallback is best-effort by nature. This must be surfaced as a failure state, not hidden. |
+
+**Because the bitrate is bounded, the honest file size is the bound, not the maximum.** Selecting
+the highest available bitrate is actively wrong here: it maximises the chance of exceeding the
+120 s proxy timeout for no benefit to a personal download. "Highest **suitable**" is therefore
+specified as highest-that-fits, with the ladder walked down when a candidate exceeds the budget.
+
+**If these constraints prove materially blocking in practice, the outcome is to document the
+constraint and choose the smallest architecture that works for private/personal use** — not to
+introduce paid infrastructure silently, and not to quietly buffer past the limit.
+
+**Automated verification.** ID validation and rejection of malformed input. Format→extension/MIME
+mapping over real container/codec pairs, including a **fixture proving an Opus-in-WebM stream is
+not named `.mp3`**. Format selection prefers the highest bitrate that fits the budget and walks
+down when it does not. Rate limiting. Timeout and abort behaviour. The route **streams** — proven
+by a test that asserts the response body is a stream and that no whole-body buffer is read.
+
+**Browser verification.** A real download in a real browser: the file lands, plays locally, and
+its extension matches its content.
+
+**NOT VERIFIABLE IN THIS ENVIRONMENT, and must not be claimed.** No Vercel deployment exists, so
+the 4.5 MB streaming bypass, the 300 s duration, and the 120 s proxy timeout are **documented
+constraints this milestone is designed against**, not observed behaviour. The route is verified
+locally against a real Next.js server. This mirrors the parked player's known limit and is
+recorded the same way.
+
+**Completion criteria.** A track downloads to the device, the file is honestly named, playback is
+untouched, and no new persistent state exists.
+
+## 21.6 M21 — Post-v1 integration, regression validation, and documentation
+
+**Objective.** Prove the six milestones did not break each other, fix the release gate so that
+proof is worth something, and update the documentation to describe the product as it now is.
+
+**Depends on.** M16, M17, M18, M19, M20.
+
+**In scope.**
+
+- **Fix the flaky release gate.** M15's end-to-end suite fails intermittently on a CDP race in
+  its own fixture router — reproduced on the commit before the runtime correction, so it predates
+  all post-v1 work. Post-v1 changes must not be gated by a gate that intermittently lies.
+- Full cross-feature regression: every critical flow with lyrics, Home filters, shortcuts,
+  sharing, motion, and downloading all present simultaneously.
+- `frontend/docs/DEPLOYMENT.md` updated for the download route's deployment implications, and for
+  the parked player and download feature both being non-compliant private-use choices.
+- `ROADMAP.md` and `MEMORY.md` brought current; `AGENTS.md`'s verified-command list refreshed with
+  anything genuinely new.
+- The feature-level acceptance checklist (§11) extended with the post-v1 features.
+- Re-attempt the parked player's live-browser verification if an environment allows it; otherwise
+  restate it as still unverified rather than letting it drift into an implied pass.
+
+**Non-goals.** New features. A public deployment.
+
+**Automated verification.** The full six-gate suite plus the release gate run **repeatedly**
+enough to show the flakiness is gone — a single green run is not evidence against an
+intermittent defect, which is the whole lesson.
+
+**Browser verification.** Every critical flow, both viewports, with the post-v1 features live.
+
+**Completion criteria.** Six consecutive green gate runs. Documentation describes the product as
+built, including the two deliberate non-compliance choices.
