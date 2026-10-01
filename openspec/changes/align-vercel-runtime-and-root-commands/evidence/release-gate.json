@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T18:54:03.886Z",
+  "generatedAt": "2026-10-01T12:43:15.203Z",
   "repo": "C:\\Users\\Edison\\Desktop\\Projects\\spotivibe",
   "skipBrowser": false,
   "totals": {
@@ -13,7 +13,7 @@
       "id": "gates-install",
       "requirement": "`npm ci` installs from the lockfile",
       "status": "PASS",
-      "detail": "29.2s",
+      "detail": "40.7s",
       "reason": null,
       "steps": null
     },
@@ -21,7 +21,7 @@
       "id": "gates-lint",
       "requirement": "`npm run lint` reports no errors",
       "status": "PASS",
-      "detail": "31.6s",
+      "detail": "60.4s",
       "reason": null,
       "steps": null
     },
@@ -29,7 +29,7 @@
       "id": "gates-format",
       "requirement": "`npm run format:check` passes",
       "status": "PASS",
-      "detail": "5.8s",
+      "detail": "6.4s",
       "reason": null,
       "steps": null
     },
@@ -37,7 +37,7 @@
       "id": "gates-typecheck",
       "requirement": "`npm run typecheck` passes in strict mode",
       "status": "PASS",
-      "detail": "9.7s",
+      "detail": "14.8s",
       "reason": null,
       "steps": null
     },
@@ -45,7 +45,7 @@
       "id": "gates-tests",
       "requirement": "`npm test` passes",
       "status": "PASS",
-      "detail": "70.6s",
+      "detail": "76.7s",
       "reason": null,
       "steps": null
     },
@@ -53,7 +53,7 @@
       "id": "gates-build",
       "requirement": "`npm run build` produces a production build",
       "status": "PASS",
-      "detail": "14.2s",
+      "detail": "17.0s",
       "reason": null,
       "steps": null
     },
@@ -61,7 +61,7 @@
       "id": "icons-drift",
       "requirement": "PWA icons match the committed generator's output",
       "status": "PASS",
-      "detail": "1.8s",
+      "detail": "2.1s",
       "reason": null,
       "steps": null
     },
@@ -101,7 +101,7 @@
       "id": "deployment-contract",
       "requirement": "The deployable shape is what a free-tier single application needs",
       "status": "PASS",
-      "detail": "14 assertions",
+      "detail": "17 assertions",
       "reason": null,
       "steps": null
     },
@@ -117,7 +117,7 @@
       "id": "evidence-parses",
       "requirement": "Every evidence script parses",
       "status": "PASS",
-      "detail": "0.3s",
+      "detail": "0.4s",
       "reason": null,
       "steps": null
     },
@@ -133,7 +133,7 @@
       "id": "accessibility-performance",
       "requirement": "Contrast, names, keyboard reachability, and loading are within the stated targets",
       "status": "PASS",
-      "detail": "35.2s - restored 1 archived file(s) the harness overwrote",
+      "detail": "35.7s - restored 1 archived file(s) the harness overwrote",
       "reason": null,
       "steps": null
     },
@@ -141,7 +141,7 @@
       "id": "end-to-end",
       "requirement": "The critical flows work in a real browser against a production build",
       "status": "PASS",
-      "detail": "36.3s",
+      "detail": "43.4s",
       "reason": null,
       "steps": null
     },
@@ -149,7 +149,7 @@
       "id": "falsifiability",
       "requirement": "The suite's own assertions are proven capable of failing",
       "status": "PASS",
-      "detail": "46.5s",
+      "detail": "46.1s",
       "reason": null,
       "steps": null
     },
