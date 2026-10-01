@@ -14,7 +14,17 @@ import { clearRefillFailure } from "@/features/personalization/RefillAgent";
 import { MoreLikeThisShelf } from "@/features/related/MoreLikeThisShelf";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { usePlayerStore } from "@/stores/playerStore";
-import { ChevronDown, Heart, ListMusic, Music2, Radio, SkipBack, SkipForward } from "lucide-react";
+import { useVideoModeStore } from "@/stores/videoModeStore";
+import {
+  ChevronDown,
+  Heart,
+  ListMusic,
+  Music2,
+  Radio,
+  SkipBack,
+  SkipForward,
+  Video,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -23,10 +33,16 @@ import { useEffect, useRef, useState } from "react";
  * Expanded Now Playing route (spec: store-backed playback state and control
  * synchronization). Renders the current track, seekable progress, transport,
  * shuffle/repeat, and volume/mute from the store; idle keeps the M1
- * placeholders with disabled controls. The visible "Watch on YouTube"
- * attribution links out to the watch page (policy: no referrer suppression,
- * no in-app extraction), and the bottom padding keeps content clear of the
- * docked video surface while a track is active.
+ * placeholders with disabled controls.
+ *
+ * `lyrix-style-hidden-player` changes two things here. The docked video surface
+ * is gone — the YouTube player is parked by the shell and this route no longer
+ * reserves space for it — and the route gained an opt-in **video mode** control
+ * that reveals that same parked player. The "Watch on YouTube" attribution is
+ * shown only while the video is actually visible, because with the player parked
+ * there is no video on screen to attribute; the visible player carries YouTube's
+ * own attribution. The link still opens the watch page in a new tab without
+ * suppressing the referrer.
  *
  * M9 added the surface's presentation layer (spec: `catalog` — "Now Playing
  * presentation of the current track"; design decisions 6 and 7), none of which
@@ -77,6 +93,10 @@ export default function NowPlayingPage() {
   const isLiked = currentTrack != null && likedIds?.has(currentTrack.id) === true;
   // M10: the radio's own state, read from the same store the refill agent uses.
   const radio = useRadioStatus();
+  // Video mode: reveals the shell's parked player. A view flag only — it changes
+  // no transport state, so playback is identical in both modes.
+  const videoVisible = useVideoModeStore((state) => state.visible);
+  const toggleVideoMode = useVideoModeStore((state) => state.toggle);
 
   useEffect(() => {
     void hydrate();
@@ -146,8 +166,10 @@ export default function NowPlayingPage() {
   return (
     <div
       className={
+        // Bottom padding still clears the persistent player region, which remains
+        // in the shell. The extra room the old docked video needed is gone with it.
         currentTrack
-          ? "relative isolate flex min-h-full flex-col items-center gap-6 px-4 py-6 pb-[320px] lg:pb-56"
+          ? "relative isolate flex min-h-full flex-col items-center gap-6 px-4 py-6 pb-[132px] lg:pb-[104px]"
           : "relative isolate flex min-h-full flex-col items-center gap-6 px-4 py-6"
       }
     >
@@ -302,16 +324,40 @@ export default function NowPlayingPage() {
           <VolumeControls />
         </div>
 
-        {watchUrl ? (
-          <a
-            href={watchUrl}
-            target="_blank"
-            rel="noopener"
-            data-testid="now-playing-attribution"
-            className="text-body font-regular text-mist underline-offset-2 transition-colors hover:text-pure-white hover:underline"
-          >
-            Watch on YouTube
-          </a>
+        {/*
+          Video mode (`lyrix-style-hidden-player`): the parked YouTube player is
+          revealed by the shell, so this control only flips a view flag. It is
+          omitted rather than disabled when there is no track, because there would
+          be nothing to show.
+
+          The attribution link is shown only alongside a *visible* video. When the
+          player is parked there is no video on screen to attribute, and a caption
+          pointing at an invisible video is noise; the visible player supplies
+          YouTube's own attribution itself, so this is the one case where the
+          application adds a second one.
+        */}
+        {currentTrack !== null ? (
+          <div className="flex items-center gap-4">
+            <IconButton
+              label={videoVisible ? "Hide video" : "Show video"}
+              data-testid="now-playing-video-mode"
+              aria-pressed={videoVisible}
+              onClick={toggleVideoMode}
+            >
+              <Video className="size-5" aria-hidden="true" />
+            </IconButton>
+            {videoVisible && watchUrl ? (
+              <a
+                href={watchUrl}
+                target="_blank"
+                rel="noopener"
+                data-testid="now-playing-attribution"
+                className="text-body font-regular text-mist underline-offset-2 transition-colors hover:text-pure-white hover:underline"
+              >
+                Watch on YouTube
+              </a>
+            ) : null}
+          </div>
         ) : null}
       </div>
 

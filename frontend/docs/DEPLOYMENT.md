@@ -48,6 +48,32 @@ correct: they describe runs that happened before this correction.
 `24.x` names a major rather than an exact patch so that a host with a different Node 24 patch
 can still satisfy it.
 
+## The playback surface is parked, and that is a departure
+
+**Read this before deploying Spotivibe anywhere other than your own machine.**
+
+The YouTube player is a single persistent IFrame, but it is **visually parked**: 1×1 CSS pixels,
+zero opacity, no pointer events, behind the application UI. Spotivibe's own PlayerBar and
+MiniPlayer are the only visible playback interface. Now Playing has an opt-in "Show video" that
+reveals that same player.
+
+**This does not meet YouTube's documented embedded-player requirements.** Their published rule
+asks for a player of a given minimum visible size, and the Developer Policies ask that clients
+not interfere with or obscure the attribution provided inside embedded players. Parking the
+player does both. It was done deliberately, for private and personal use, and
+`openspec/changes/archive/…-lyrix-style-hidden-player/` records the reasoning.
+
+What this deployment **does not** do, and what no test would catch a regression of beyond the
+detectors written for it: it does not extract, download, capture, or proxy audio or video, does
+not use `yt-dlp` or any stream download, does not proxy media through the application server,
+and does not block or alter ads. Media flows only through the embedded player. Those remain
+permanent product exclusions and are enforced by `tests/release-exclusions.test.ts`.
+
+**If you are deploying this publicly or sharing it with anyone else, change this back first.**
+The parked configuration is appropriate for a personal instance and is not appropriate for a
+public one. Reverting is a presentation change: restore a visible video surface on the
+Now Playing route and the `playback` requirements with it.
+
 ## What the deployment must serve correctly
 
 - **`/sw.js`** — the service worker, from `public/`. It must not be given a long-lived

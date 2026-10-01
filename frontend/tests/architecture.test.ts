@@ -537,6 +537,68 @@ describe("architecture: single persistent player host (task 5.1)", () => {
   });
 });
 
+/**
+ * The parked player (`lyrix-style-hidden-player`).
+ *
+ * M4's rule was "a visible surface of at least 200x200, never hidden or undersized", enforced
+ * so the build could not drift into an embedded-player configuration the platform prohibits.
+ * That rule is deliberately abandoned here: parking the player is the point, for private use.
+ *
+ * **The rule is replaced, not deleted, and the replacement is a real guarantee.** Keeping the
+ * old rule and satisfying it would be theatre; dropping it with nothing in its place would
+ * lose the property that still holds — exactly one player, always parked unless asked. So
+ * this asserts the parked state, the single instance, and the single host node, and each is
+ * proven able to fail: a detector nobody has seen reject anything is a report, not a check.
+ */
+describe("architecture: the player is parked, and there is exactly one of it", () => {
+  const playerHost = join(srcDir, "components", "player", "PlayerHost.tsx");
+
+  it("parks the host with 1x1, transparent, non-interactive, behind-the-app styling", () => {
+    const source = readFileSync(playerHost, "utf8");
+    // Every token is load-bearing, which is why they are listed rather than pattern-matched
+    // as a phrase: a 1x1 box that is not transparent still shows a thumbnail, and a
+    // transparent box that still takes pointer events still eats clicks in the corner.
+    for (const token of ["h-px", "w-px", "opacity-0", "pointer-events-none", "fixed"]) {
+      expect(source, `the parked state must include ${token}`).toContain(token);
+    }
+    // Distinguishable without measuring pixels, so a test can tell the two states apart.
+    expect(source).toContain("data-video-mode");
+    expect(source).toContain("aria-hidden");
+  });
+
+  it("is proven able to fail on a host that is not parked", () => {
+    // The same proof discipline as every other rule here, on the same reasoning.
+    const PARKED = ["h-px", "w-px", "opacity-0", "pointer-events-none"];
+    const unparked = `className="fixed bottom-2 right-4 z-50 aspect-video w-[400px]"`;
+    const parked = `className="pointer-events-none fixed bottom-0 left-0 z-0 h-px w-px opacity-0"`;
+    for (const token of PARKED) {
+      expect(parked).toContain(token);
+      expect(unparked, `an unparked host must not satisfy ${token}`).not.toContain(token);
+    }
+  });
+
+  it("constructs no player and no second host anywhere outside the engine", () => {
+    // `YT.Player` is constructed in exactly one place in the whole application. A second site
+    // is the failure that matters: two iframes means two audio streams and no single
+    // authoritative position, and it is invisible until something is heard twice.
+    const sites = readTree(srcDir)
+      .filter(({ source }) => /new\s+(?:yt|YT)\.Player\s*\(/.test(source))
+      .map(({ file }) => file);
+    expect(sites, "exactly one module may construct a YT.Player").toHaveLength(1);
+    expect(/[\\/]player[\\/]engine\.ts$/.test(sites[0]), sites[0]).toBe(true);
+  });
+
+  it("gives the engine one reusable container rather than a node per render", () => {
+    const source = readFileSync(playerHost, "utf8");
+    // Re-parenting an iframe reloads it and restarts playback, so the target is looked up
+    // and reused. A version that called `createElement` unconditionally on every effect run
+    // would satisfy neither this nor the single-instance requirement.
+    expect(source).toMatch(/firstElementChild/);
+    expect(source).toMatch(/engine\.attach\(target\)/);
+    expect(source).not.toMatch(/appendChild\(\s*document\.createElement\(["']iframe/i);
+  });
+});
+
 describe("architecture: no audio-extraction surfaces (task 5.1)", () => {
   it("finds no capture or decode indicators anywhere in src", () => {
     const offenders = readTree(srcDir)

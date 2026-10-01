@@ -221,9 +221,17 @@ export class PlaybackEngine implements PlaybackBridge {
       this.player = new yt.Player(this.container, {
         width: "100%",
         height: "100%",
+        // Documented, currently-functional parameters only.
+        //
+        // `modestbranding` was removed here deliberately: YouTube deprecated it and its
+        // documentation states it "has no effect", so it was inert configuration that read
+        // as effective. There is no replacement — the branding is hidden by parking the
+        // host, not by asking the player to drop it (see PlayerHost and design.md
+        // decision 6). `release-exclusions.test.ts` fails if a deprecated-only parameter
+        // reappears.
         playerVars: {
-          controls: 0, // Spotivibe's custom controls drive the player (documented param)
-          modestbranding: 1,
+          controls: 0, // Spotivibe's own controls drive the player
+          fs: 0, // no fullscreen: the host is a bounded surface, not a theatre
           rel: 0,
           playsinline: 1,
           iv_load_policy: 3,

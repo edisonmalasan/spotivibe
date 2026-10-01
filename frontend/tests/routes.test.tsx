@@ -20,6 +20,7 @@ import { resetLibraryStore } from "@/stores/libraryStore";
 import { resetPreferencesStore } from "@/stores/preferencesStore";
 import { resetQueueStore } from "@/stores/queueStore";
 import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { resetVideoModeStore, useVideoModeStore } from "@/stores/videoModeStore";
 import { resetRadioStore, useRadioStore } from "@/stores/radioStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
@@ -196,6 +197,9 @@ beforeEach(() => {
   resetLibraryStore();
   resetQueueStore();
   resetPlayerStore();
+  // Video mode is a per-visit view flag, so it is cross-case state here too: a
+  // case that enables it must not leave the next case with a visible player.
+  resetVideoModeStore();
   clearPlaybackBridge();
   resetHistoryStore();
   // M11: the mix store backs the Home Smart Mixes section and the /history mixes
@@ -498,6 +502,12 @@ describe("route shells: Now Playing after the M9 presentation layer", () => {
     expect(queue).toBeEnabled();
     fireEvent.click(queue);
     expect(push).toHaveBeenCalledWith("/queue");
+
+    // The video-mode control is the route's entry point to the parked player;
+    // the watch attribution appears beside it only while the video is visible.
+    expect(screen.getByTestId("now-playing-video-mode")).toBeEnabled();
+    expect(screen.queryByTestId("now-playing-attribution")).toBeNull();
+    act(() => useVideoModeStore.getState().setVisible(true));
 
     // The compliant watch attribution: no referrer suppression, still required.
     const watch = screen.getByTestId("now-playing-attribution");

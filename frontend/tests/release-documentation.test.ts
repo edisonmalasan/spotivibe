@@ -258,6 +258,37 @@ describe("the deployment procedure is held by the application it describes (M15 
     expect(steps.length, "the document must give verification steps").toBeGreaterThanOrEqual(4);
   });
 
+  /**
+   * The parked player is a deliberate departure from YouTube's documented
+   * visible-player requirement (`lyrix-style-hidden-player`). A document that described it
+   * as a visible compliant surface would be making a claim the code no longer supports, so
+   * this holds both halves: the departure is stated, and the false claim is gone.
+   */
+  it("states that the player is parked and does not claim documented compliance", () => {
+    const text = documentText("DEPLOYMENT.md");
+    expect(text, "the parked player must be stated, not implied").toMatch(/parked/i);
+    expect(text, "the departure from the documented requirement must be named").toMatch(
+      /does not meet YouTube'?s documented/i,
+    );
+    expect(text, "the intended audience must be named").toMatch(/private|personal/i);
+    // The claim this change invalidated, gone for good rather than softened.
+    expect(text).not.toMatch(/visible,? compliant/i);
+    // And the reader is told what to do about it, because a stated departure with no
+    // instruction is a warning nobody acts on.
+    expect(text, "a public deployment must be told to revert this").toMatch(
+      /publicly|public deployment/i,
+    );
+  });
+
+  it("names the exclusions the parked configuration does not relax", () => {
+    // Parking the player is what tempts a "just fetch the stream instead" shortcut, so the
+    // document has to say that the permanent exclusions still hold.
+    const text = documentText("DEPLOYMENT.md");
+    expect(text, "stream download must be ruled out").toMatch(/yt-dlp|stream download/i);
+    expect(text, "media proxying must be ruled out").toMatch(/prox(y|ies)/i);
+    expect(text, "ad blocking must be ruled out").toMatch(/ads?\b/i);
+  });
+
   it("cites only files that exist", () => {
     const text = documentText("DEPLOYMENT.md");
     // Repository-relative paths only: the document also writes served URLs such as

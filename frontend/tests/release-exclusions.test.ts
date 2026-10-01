@@ -807,6 +807,176 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
       "the application must have API routes for this to mean anything",
     ).toBeGreaterThan(3);
   });
+
+  it("has no route for extracting, proxying, or downloading media", () => {
+    // `no media proxied` has a content detector, and a route that proxies media has ordinary
+    // handler code — so the *name* is the evidence, exactly as the sync/auth paths above.
+    // This became load-bearing when the player was parked: the parked configuration is the
+    // one most likely to tempt a "just fetch the stream instead" route, because the visible
+    // surface is gone and the policy pressure is real.
+    const MEDIA_ROUTE =
+      /\/(?:stream|proxy|media|audio|extract|download|dl)(?:\/|$)|\/(?:video|youtube|videoid)s?\/[a-z]+\/route/i;
+    const offenders = applicationSources()
+      .map((entry) => entry.file)
+      .filter((file) => /\/api\/.*\/route\.ts$/.test(file))
+      .filter((file) => MEDIA_ROUTE.test(`/${file}`));
+    expect(offenders, "no route may sit at a path naming a media-extraction capability").toEqual(
+      [],
+    );
+    // Proven able to fail.
+    for (const path of [
+      "src/app/api/stream/route.ts",
+      "src/app/api/proxy/route.ts",
+      "src/app/api/media/route.ts",
+      "src/app/api/audio/route.ts",
+      "src/app/api/extract/route.ts",
+      "src/app/api/download/route.ts",
+    ]) {
+      expect(MEDIA_ROUTE.test(`/${path}`), `${path} must be rejected`).toBe(true);
+    }
+    // And the real routes clear it, so the rule is not "reject any second path segment".
+    for (const path of [
+      "src/app/api/search/route.ts",
+      "src/app/api/artist/route.ts",
+      "src/app/api/discover/route.ts",
+    ]) {
+      expect(MEDIA_ROUTE.test(`/${path}`), `${path} must be allowed`).toBe(false);
+    }
+  });
+});
+
+/**
+ * The parked player (`lyrix-style-hidden-player`).
+ *
+ * Parking the YouTube player at 1x1 is an intentional departure from YouTube's documented
+ * visible-player requirement, taken for private/personal use. That decision makes two
+ * things worth holding mechanically, because the departure is exactly the kind of change
+ * that decays into something else over time:
+ *
+ * 1. **The parking is real.** A dropped class, a `display: none`, or a wider box puts a
+ *    branded, clickable video panel back in the corner of every screen — the problem the
+ *    change was made to solve, reappearing invisibly.
+ * 2. **Parking was not a gateway to circumvention.** A hidden player is precisely the setup
+ *    a background-play workaround needs, so the shape of that workaround is checked here
+ *    too: nothing resumes, un-mutes, or re-triggers playback to keep an invisible player
+ *    running. Parking is presentation.
+ */
+describe("the parked player is parked, and parking is not a workaround", () => {
+  const hostSource = readFileSync(join(SRC, "components", "player", "PlayerHost.tsx"), "utf8");
+
+  it("declares the parked state on the one host node", () => {
+    // Each token is load-bearing. A 1x1 box that is not transparent still shows a thumbnail;
+    // a transparent box that still takes pointer events still eats clicks in the corner.
+    for (const token of ["h-px", "w-px", "opacity-0", "pointer-events-none", "fixed"]) {
+      expect(hostSource, `the parked state must include ${token}`).toContain(token);
+    }
+    // Marked for assistive traversal, and the visible state is a distinct one so a test can
+    // tell them apart without measuring pixels.
+    expect(hostSource).toContain("data-video-mode");
+    expect(hostSource).toContain("aria-hidden");
+  });
+
+  it("is proven able to fail on a host that is not parked", () => {
+    // The same two-proofs discipline as the exclusions above, on the same reasoning: a rule
+    // nobody has seen reject anything is a report rather than a check.
+    const PARKED = ["h-px", "w-px", "opacity-0", "pointer-events-none"];
+    const compliantButUnparked = `
+      <div className="fixed bottom-2 right-4 z-50 aspect-video w-[400px]" />
+    `;
+    const parked = `
+      <div className="pointer-events-none fixed bottom-0 left-0 z-0 h-px w-px opacity-0" />
+    `;
+    for (const token of PARKED) {
+      expect(parked, `a parked host must carry ${token}`).toContain(token);
+      expect(compliantButUnparked, `an unparked host must not satisfy ${token}`).not.toContain(
+        token,
+      );
+    }
+  });
+
+  it("never collapses the host to display:none or removes it while a track is active", () => {
+    // Matched as whole tokens, not as substrings: `overflow-hidden` contains "hidden", so a
+    // substring check fails on correct code — and a check that cries wolf gets switched off.
+    const classes = new Set(
+      (hostSource.match(/className=\{[\s\S]*?\}"/) ?? [""])[0].split(/[\s"'\\]+/),
+    );
+    expect(classes.has("hidden"), "the parked host must stay laid out, not display-hidden").toBe(
+      false,
+    );
+    expect(classes.has("invisible")).toBe(false);
+    // `display: none` written as an inline style is the same failure in a different syntax.
+    expect(hostSource).not.toMatch(/style\s*=\s*\{\{[^}]*display\s*:\s*["']none/i);
+  });
+
+  it("creates exactly one player host and never re-parents it", () => {
+    // Re-parenting an iframe reloads it, which restarts playback — the failure the
+    // single-persistent-instance rule exists to prevent. So this is not "count the hosts",
+    // it is "the engine's container is created once and stays in this host".
+    const constructors = hostSource.match(/new yt\.Player/g) ?? [];
+    expect(constructors, "the host must not construct a player itself").toHaveLength(0);
+    // The imperative target is created once, inside the attach effect, and reused.
+    expect(hostSource).toMatch(/firstElementChild/);
+    expect(hostSource).toMatch(/engine\.attach\(target\)/);
+    // React never renders the engine's node as a child: the host is a stable wrapper.
+    expect(hostSource).not.toMatch(/appendChild\(\s*document\.createElement\(["']iframe/i);
+  });
+
+  it("keeps video mode out of every persisted surface", () => {
+    // The flag is a per-visit view state. If it reached the session snapshot, a cold launch
+    // would restore into a *visible* player, which is the state this change parks by default.
+    const session = readFileSync(join(SRC, "data", "indexeddb", "session.ts"), "utf8");
+    expect(session, "the session snapshot must not carry a video-visible field").not.toMatch(
+      /video(Visible|Mode|Shown)/i,
+    );
+    // The persisted *type* is the other half: a field added to the snapshot type is how it
+    // would reach storage in the first place.
+    const snapshotType = readFileSync(join(SRC, "data", "repositories", "types.ts"), "utf8");
+    expect(
+      snapshotType,
+      "the session snapshot type must not carry a video-visible field",
+    ).not.toMatch(/video(Visible|Mode|Shown)/i);
+    const backupSchema = readFileSync(join(SRC, "data", "backup", "schema.ts"), "utf8");
+    expect(backupSchema, "the backup format must not carry a video-visible field").not.toMatch(
+      /video(Visible|Mode|Shown)/i,
+    );
+  });
+
+  it("uses no deprecated player parameter, and the detector can fail", () => {
+    // `modestbranding: 1` was here and did nothing — YouTube deprecated it and its docs say
+    // it "has no effect". It read like working configuration, which is the problem: a line
+    // that looks effective and is inert is worse than no line. A commented-out one would invite
+    // an uncomment, so the rule is on the *token*, not on a live assignment.
+    const engine = stripComments(readFileSync(join(SRC, "player", "engine.ts"), "utf8"));
+    for (const deprecated of ["modestbranding", "showinfo", "autohide", "theme"]) {
+      expect(engine, `${deprecated} is deprecated and inert; it must not be passed`).not.toContain(
+        deprecated,
+      );
+    }
+    // Proven able to fail, against the shape the code used to have.
+    const withModestBranding = `playerVars: { controls: 0, modestbranding: 1, rel: 0 }`;
+    expect(withModestBranding).toContain("modestbranding");
+  });
+
+  it("does not keep a hidden player playing through a timer or a visibility handler", () => {
+    // The parked configuration is the natural setup for this workaround, so the shape is
+    // checked here rather than trusted. Matched on the *technique* — a timed or
+    // visibility-triggered callback that resumes or un-mutes — and not on keywords, because a
+    // keyword rule is defeated by renaming a variable.
+    const CIRCUMVENTION =
+      /setInterval\s*\([\s\S]{0,200}?\.play(?:Video)?\s*\(|visibilitychange[\s\S]{0,200}?\.play\s*\(|setTimeout\s*\([\s\S]{0,200}?\.play(?:Video)?\s*\(|\.muted\s*=\s*(?:true|!0|false)|setInterval\s*\([\s\S]{0,200}?(isPaused|paused)/i;
+    const offenders = applicationSources()
+      .filter((entry) => CIRCUMVENTION.test(entry.code))
+      .map((entry) => entry.file);
+    expect(offenders, "parked playback must never be kept alive programmatically").toEqual([]);
+    // Proven able to fail, on the three shapes that got past earlier drafts.
+    for (const shape of [
+      `setInterval(() => { if (player.isPaused) player.playVideo(); }, 500);`,
+      `document.addEventListener("visibilitychange", () => { el.play(); });`,
+      `setInterval(() => { player.muted = true; void player.play(); }, 200);`,
+    ]) {
+      expect(CIRCUMVENTION.test(shape), `the detector missed: ${shape.slice(0, 40)}`).toBe(true);
+    }
+  });
 });
 
 describe("a source that documents an exclusion does not break it (M15 task 1.3)", () => {

@@ -1,10 +1,11 @@
 import "fake-indexeddb/auto";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NowPlayingPage from "@/app/now-playing/page";
 import { getLocalData, type RepositorySet } from "@/data/localData";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { resetVideoModeStore, useVideoModeStore } from "@/stores/videoModeStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
@@ -33,6 +34,7 @@ let repositories: RepositorySet;
 beforeEach(async () => {
   resetPlayerStore();
   resetLibraryStore();
+  resetVideoModeStore();
   localStorage.clear();
   clearPlaybackBridge();
   push.mockClear();
@@ -109,6 +111,14 @@ describe("Now Playing with an active track", () => {
     expect(screen.getByRole("button", { name: "Repeat: Off" })).toBeInTheDocument();
     expect(screen.getByLabelText("Volume")).toBeInTheDocument();
 
+    // The video is parked by default, so there is nothing on screen to
+    // attribute and no caption is rendered. Enabling video mode reveals the
+    // player, and only then does the attribution appear beside it.
+    expect(screen.queryByTestId("now-playing-attribution")).toBeNull();
+    expect(screen.getByTestId("now-playing-video-mode")).toHaveAccessibleName("Show video");
+
+    act(() => useVideoModeStore.getState().setVisible(true));
+
     // Visible attribution opening the watch page in a new tab (policy:
     // referrer must NOT be suppressed).
     const link = screen.getByTestId("now-playing-attribution");
@@ -116,6 +126,43 @@ describe("Now Playing with an active track", () => {
     expect(link).toHaveAttribute("href", "https://www.youtube.com/watch?v=aaa");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener");
+  });
+
+  it("offers the video control only when there is a track to show", () => {
+    render(<NowPlayingPage />);
+    expect(screen.queryByTestId("now-playing-video-mode")).toBeNull();
+
+    act(() => usePlayerStore.getState().playTrack(track, [track]));
+    expect(screen.getByTestId("now-playing-video-mode")).toBeInTheDocument();
+  });
+
+  it("shows the video control as pressed only while the video is shown", () => {
+    act(() => usePlayerStore.getState().playTrack(track, [track]));
+    render(<NowPlayingPage />);
+
+    const control = screen.getByTestId("now-playing-video-mode");
+    expect(control).toHaveAttribute("aria-pressed", "false");
+
+    act(() => useVideoModeStore.getState().toggle());
+    expect(screen.getByTestId("now-playing-video-mode")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("now-playing-video-mode")).toHaveAccessibleName("Hide video");
+
+    act(() => useVideoModeStore.getState().toggle());
+    expect(screen.getByTestId("now-playing-video-mode")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("does not start playback when the video control is activated", () => {
+    // The parked player is already playing; the control must not be a playback
+    // action, and turning the video on must not autoplay anything by itself.
+    const playTrack = vi.spyOn(usePlayerStore.getState(), "playTrack");
+    act(() => usePlayerStore.getState().playTrack(track, [track]));
+    playTrack.mockClear();
+
+    render(<NowPlayingPage />);
+    act(() => screen.getByTestId("now-playing-video-mode").click());
+
+    expect(playTrack).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().currentTrack).toEqual(track);
   });
 
   it("surfaces a playback error while keeping the controls operable", () => {
