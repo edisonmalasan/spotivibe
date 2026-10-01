@@ -8,9 +8,19 @@
 
 ## Objective
 
-Finish the remaining roadmap milestones autonomously, following the `AGENTS.md`
-OpenSpec lifecycle per milestone (Propose → Apply → Sync → Archive; one remote
-branch + PR per stage; merge commits only) and keeping `ROADMAP.md` current.
+**The roadmap is complete.** All 16 milestones are `DONE` and `ROADMAP.md` states there is no
+remaining objective. The work that followed M15 was a post-roadmap correction, not a
+milestone: the runtime target was unbuildable on Vercel, and it was corrected in
+`2026-10-01-align-vercel-runtime-and-root-commands` (PRs #68, #69, #70).
+
+**What remains is not roadmap work**, and `ROADMAP.md` lists it: the Vercel deployment itself
+(needs credentials this project does not have), real multi-instance rate limiting, Firefox /
+Android / iOS, the DESIGN.md visual audit, and one pre-existing test flake. See
+"What the runtime correction changed" below.
+
+**How the lifecycle was run**, for the next stage: the `AGENTS.md` OpenSpec lifecycle per unit
+of work (Propose → Apply → Sync → Archive; one remote branch + PR per stage; merge commits
+only; `MEMORY.md` in its own `docs:` commit), keeping `ROADMAP.md` current.
 
 **Every milestone now runs an independent read-only verification pass before its
 Apply PR is merged.** The agent gets the specification and the implementation and
@@ -54,17 +64,82 @@ thirty-four defects two independent passes found in it and the eight transferabl
 | **M13** | `2026-09-30-add-pwa-install-and-offline-shell` | #53 propose `e8f0576`, #54 apply `6bdc296`, #55 sync `74307b8`, #56 archive `f8e0afb`, #57 record `fbad5cc` |
 | **M14** | `2026-09-30-add-deployment-hardening` | #58 propose `0d855f9`, #59 apply `d65abb4`, #60 sync `a6cfb1c`, #61 archive `e2362f9` |
 | **M15** | `2026-09-30-add-release-validation-and-deployment` | #63 propose `f83f3f6`, #64 apply `0cbd1dc`, #65 sync `9b8bab7`, #66 archive `78baa67` |
+| **post-M15** | `2026-10-01-align-vercel-runtime-and-root-commands` | #68 apply `ae34183`, #69 sync `f5c22d0`, #70 archive `56c34bf` |
 
 Baseline at the M12 merge (`3cabc58`): **130 test files / 2084 tests**; after M13:
-**134 test files / 2152 tests**; after M14: **140 test files / 2231 tests**, all six
-after M15: **143 test files / 2316 tests**, all six gates green from a clean clone,
-**and zero lint warnings** for the fourth milestone running. Specs of record: 20
-capabilities, `release-validation` and `end-to-end` added. Archived changes: 16.
+**134 test files / 2152 tests**; after M14: **140 test files / 2231 tests**; after
+M15: **143 test files / 2316 tests**; after the runtime correction: **144 test files
+/ 2331 tests**, all six gates green from a clean clone **under Node 24**, and zero
+lint warnings. Specs of record: 20 capabilities. Archived changes: 17. No active
+changes.
 
-M15 is the last milestone in this roadmap. The release gate reports 18 passed, 0
-failed, 8 not run, with 13 of 13 release-checklist items represented and one of them
-only partly. Browser evidence: 11 of 11 end-to-end flows in Edge, 4 of 4
-prove-can-fail probes, 11 screenshots.
+M15 was the last milestone. The release gate reports 18 passed, 0 failed, 8 not run,
+with 13 of 13 release-checklist items represented and one of them only partly.
+Browser evidence: 11 of 11 end-to-end flows in Edge, 4 of 4 prove-can-fail probes,
+11 screenshots.
+
+## What the runtime correction changed, and why it happened after the roadmap ended
+
+`frontend/package.json` declared `engines.node: ">=26 <27"`. Vercel offers **24.x (default),
+22.x, 20.x** for builds and functions; Node 26 exists there only in Sandboxes. The first
+Vercel build would most likely have failed.
+
+The pin was M15's own work, and **M15's check was the wrong shape**: it asked whether `engines`
+and CI's `node-version` agreed. They agreed, on 26, and every check passed while the host could
+not build either value. A consistency check cannot find a problem where both sides are
+consistently wrong. The missing third fact is whether the target host can satisfy the pin.
+
+**Node 24 is now the verified runtime** in `engines.node`, CI, `@types/node` (`^24.19.0`,
+lockfile regenerated), and the current docs. All of it moved together on purpose — if CI kept
+verifying 26 while the host built 24, the pin would be decorative and the M15 defect would be
+back in a new shape. `VERCEL_SUPPORTED_NODE_MAJORS` in `frontend/tests/deployment-contract.test.ts`
+carries the set with its source URL and retrieval date; it **will** go stale, and that is
+deliberate — a check that widened itself to "whatever the host offers" could never fail.
+
+The two new checks were made to fail here, not just asserted: `engines.node: 26.x` with CI on
+26 reproduced the shipped M15 state and produced "the pin names Node 26, which the deployment
+target does not offer; it offers 20, 22, 24"; a drifted workflow produced "CI verifies Node 26
+but package.json declares 24".
+
+**Root `package.json`**: `private`, no dependencies, proxies `dev`/`build`/`start`/`lint`/
+`format`/`format:check`/`typecheck`/`test` plus `setup` and `gate` via `npm --prefix frontend`.
+`frontend/` stays the application and keeps the only lockfile; not a workspace.
+`frontend/tests/root-commands.test.ts` holds the properties, and its `format` check is strict on
+purpose — a root `format` that called prettier itself would look correct and format the wrong
+tree.
+
+### Two findings the clean-clone verification produced, neither fixed there
+
+- **npm 11 refuses an install nested inside `npm run`** when `~/.npmrc` sets `allow-scripts`:
+  `EALLOWSCRIPTS: --allow-scripts is not allowed in project-scoped installs`. Needs both
+  conditions: with the npmrc bypassed the nested form works, and with it present a direct
+  `cd frontend && npm ci` works. `setup` therefore changes directory, and the non-nested form is
+  the documented fallback — held by a test, since a documentation-only safety net is what a
+  later edit removes as redundant. Clean-clone gate runs used `npm_config_userconfig` bypassed
+  because of this.
+- **`tests/podcast-playback-history.test.ts` flakes ~1 run in 3 under load.** Predates this
+  change (last touched by M12, zero commits here). `waitForEvents(count, timeoutMs = 2000)`
+  polls a serialized async repository chain on a fixed 2-second budget — a timeout standing in
+  for synchronization. Left unfixed on purpose: it is a release-gate concern and belongs in
+  its own change.
+
+### Disclosed archive edits
+
+Three one-line `SPOTIVIBE_REPO`/`SPOTIVIBE_CHANGE` overrides in M15's archived harnesses
+(`release-gate.mjs`, `lib/harness.mjs`, and the measurement harness's earlier one), without
+which the gate and suite cannot run from the archive at all. **No archived result was
+rewritten** — M15's results and screenshots are byte-identical, restored after every run and
+confirmed by the gate's own archive-restore check.
+
+The recurring lesson, and the reason this change's own runner was rewritten: **a harness that
+locates the repository by counting directories is portable only until somebody moves it.** The
+new runner walks up for `openspec/specs` and is proven at all three depths — active, archived
+(gate runs, 15/0), and no-repository-above (fails loudly). The first proof attempt was a bare
+sandbox with no marker above it and reported a *false* failure; the probe was wrong, not the
+resolver.
+
+Archived M14 and M15 evidence still says Node 26. That is correct — those runs happened before
+this correction. Do not "fix" them.
 
 ## What M14's verification pass taught
 
@@ -304,3 +379,28 @@ found by *executing* things rather than reading them. The transferable lessons:
     a workable query is an upstream hiccup, and reading it as "no results exist"
     fabricates a conclusion. Retry the probe (recording every attempt) and never retry
     the thing being asserted.
+19. **A consistency check cannot find a problem where both sides are consistently
+    wrong.** The runtime pin and CI's `node-version` agreed, on a major Vercel cannot
+    build, and every check passed. Internal agreement is a real property and it was the
+    wrong one: what mattered was whether the *host* could satisfy the declaration. Ask
+    what the check is being used to decide, then check that.
+20. **A harness that finds the repository by counting directories is portable only
+    until somebody moves it.** Archiving moved M15's three harnesses one to three
+    levels deeper than their walks expected; the end-to-end suite's symptom was
+    "No production build found" — a message about the build when the fault was the
+    path — failing in 0.8s having tested nothing. It took three one-line
+    `SPOTIVIBE_REPO` overrides, and the *new* runner in the follow-up change had to walk
+    up for a marker instead, or it would have shipped the fourth instance in the same
+    commit that explained the bug.
+21. **A failing test may be the wrong test, and both look identical from outside.** The
+    resolver's depth proof reported a failure from a bare sandbox — correctly, because
+    no `openspec/specs` existed above it. The probe was looking for a repository that
+    was not there. Understand a failure before believing it, and run the probe where the
+    real thing will live.
+22. **Do not write the bug you just diagnosed into the fix.** Stated as a rule because
+    the runner rewrite was one edit away from `resolve(HERE, "../../../..")` again, and
+    the change's own evidence documents at length why counting directories is wrong.
+23. **A documentation-only safety net is what a later edit removes as redundant.** The
+    non-nested `cd frontend && npm ci` fallback exists for one machine's npm
+    configuration; hold it with a test that asserts the README still names it, or it
+    disappears as clutter the first time someone tidies the prose.
