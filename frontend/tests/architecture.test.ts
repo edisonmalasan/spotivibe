@@ -577,25 +577,58 @@ describe("architecture: the player is parked, and there is exactly one of it", (
     }
   });
 
-  it("constructs no player and no second host anywhere outside the engine", () => {
+  it("constructs the player in exactly one module, enumerated rather than pattern-matched", () => {
     // `YT.Player` is constructed in exactly one place in the whole application. A second site
     // is the failure that matters: two iframes means two audio streams and no single
     // authoritative position, and it is invisible until something is heard twice.
+    //
+    // The pattern accepts the spellings this repository actually uses plus the obvious
+    // qualified ones, and the count — not a single match — is the assertion. A rule that
+    // greps for one spelling passes on the next one somebody writes.
     const sites = readTree(srcDir)
-      .filter(({ source }) => /new\s+(?:yt|YT)\.Player\s*\(/.test(source))
+      .filter(({ source }) => /new\s+(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/.test(source))
       .map(({ file }) => file);
     expect(sites, "exactly one module may construct a YT.Player").toHaveLength(1);
     expect(/[\\/]player[\\/]engine\.ts$/.test(sites[0]), sites[0]).toBe(true);
+    // Proven able to fail on the spellings the first version missed. Aliasing and
+    // destructuring cannot be caught by any textual rule, which is exactly why the count
+    // above is the load-bearing assertion and these are the two realistic near-misses.
+    const CONSTRUCTOR = /new\s+(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/;
+    expect(CONSTRUCTOR.test("new YT.Player(target, {})")).toBe(true);
+    expect(CONSTRUCTOR.test("new window.YT.Player(target, {})")).toBe(true);
   });
 
-  it("gives the engine one reusable container rather than a node per render", () => {
+  it("gives the engine one reusable container, asserted by append count", () => {
     const source = readFileSync(playerHost, "utf8");
-    // Re-parenting an iframe reloads it and restarts playback, so the target is looked up
-    // and reused. A version that called `createElement` unconditionally on every effect run
-    // would satisfy neither this nor the single-instance requirement.
-    expect(source).toMatch(/firstElementChild/);
-    expect(source).toMatch(/engine\.attach\(target\)/);
-    expect(source).not.toMatch(/appendChild\(\s*document\.createElement\(["']iframe/i);
+    // Re-parenting an iframe reloads it and restarts playback, so the target is looked up and
+    // reused. A positive check for the reuse token ("contains firstElementChild") passes on
+    // code that *also* appends a second container every run, which is the exact regression
+    // an earlier draft of this rule could not see — so the assertion is a **count**: exactly
+    // one append, in the first-mount branch.
+    expect(source, "the host must reuse the engine's container").toMatch(/firstElementChild/);
+    expect(source, "the engine target must be the one that is attached").toMatch(
+      /engine\.attach\(target\)/,
+    );
+    const appends = (source.match(/appendChild\s*\(/g) ?? []).length;
+    expect(
+      appends,
+      "exactly one container may be appended, on first mount — a second append per effect run is the regression",
+    ).toBe(1);
+    // And the single append is inside the `if (!target)` branch, not unconditional.
+    expect(source).toMatch(/if\s*\(\s*!target\s*\)\s*\{[\s\S]{0,200}?appendChild\(/);
+  });
+
+  it("keeps the engine's container when it is still connected, and replaces a detached one", () => {
+    // The bug this guards: the host unmounts when the app goes idle, which detaches the
+    // engine's node. Caching that node forever meant the *next* visit to Now Playing mounted
+    // a fresh host that never received the player — so video mode, the only way to see the
+    // player at all, showed an empty box. Verified by driving the real engine.
+    const source = readFileSync(join(srcDir, "player", "engine.ts"), "utf8");
+    expect(source, "a detached container must not be kept").toMatch(/isConnected/);
+    // Proven able to fail: the buggy form, which is the line this replaced.
+    expect(/if\s*\(\s*!this\.container\s*\)\s*this\.container\s*=\s*container/.test(source)).toBe(
+      false,
+    );
   });
 });
 

@@ -195,7 +195,7 @@ This table is the authoritative translation of Lyrix capabilities plus Spotivibe
 | Language-aware recommendations | **KEEP / REIMPLEMENT** | Local profile and query heuristics. |
 | Smart Mixes | **KEEP / REIMPLEMENT** | Generated locally/on demand without cloud user models. |
 | Podcasts | **KEEP** | Discovery/search/playback category. |
-| Full Now Playing | **KEEP / REDESIGN** | Add compliant visible YouTube surface where needed. |
+| Full Now Playing | **KEEP / REDESIGN** | Add the YouTube playback surface where needed. *The "visible compliant" part was reversed* by `lyrix-style-hidden-player` (2026-10-02): the player is parked during normal playback and revealed by an opt-in video mode on this route. See the §6.2 note on the reversed visible-surface row. |
 | Dynamic Now Playing background | **KEEP** | Artwork-derived presentation. |
 | Marquee long titles | **KEEP** | UX detail. |
 | More Like This | **KEEP / ADAPT** | Provider + local preference based. |

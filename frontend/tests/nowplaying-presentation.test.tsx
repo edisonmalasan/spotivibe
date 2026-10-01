@@ -416,7 +416,9 @@ describe("Now Playing: the existing surface contract is unchanged", () => {
 
     act(() => useVideoModeStore.getState().setVisible(true));
 
-    // The compliant watch link: no referrer suppression, still required.
+    // The watch link: no referrer suppression, still required. Not "the compliant watch
+    // link" — the visible player is where attribution actually lives now, and this one
+    // appears only beside a visible video.
     const link = screen.getByTestId("now-playing-attribution");
     expect(link).toHaveTextContent("Watch on YouTube");
     expect(link).toHaveAttribute("href", "https://www.youtube.com/watch?v=aaa");

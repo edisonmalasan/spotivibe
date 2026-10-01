@@ -509,7 +509,7 @@ describe("route shells: Now Playing after the M9 presentation layer", () => {
     expect(screen.queryByTestId("now-playing-attribution")).toBeNull();
     act(() => useVideoModeStore.getState().setVisible(true));
 
-    // The compliant watch attribution: no referrer suppression, still required.
+    // The watch attribution: no referrer suppression, still required.
     const watch = screen.getByTestId("now-playing-attribution");
     expect(watch).toHaveTextContent("Watch on YouTube");
     expect(watch).toHaveAttribute("href", "https://www.youtube.com/watch?v=aaa");

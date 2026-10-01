@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { getPlaybackEngine } from "@/player/engine";
 import { attachSessionPersistence, restorePlaybackSession } from "@/player/persistence";
 import { initNetworkMonitor } from "@/stores/networkStore";
@@ -52,18 +53,63 @@ export function PlayerHost() {
     };
   }, []);
 
-  // Video mode is a per-visit view state, so it is released when the app goes
-  // idle: a cold launch with a restored session must never open with a visible
-  // player, and leaving a stale `true` behind would be exactly that.
+  // Video mode is a per-visit view state, and it is released on **leaving Now Playing** as
+  // well as on going idle.
+  //
+  // The navigation half is load-bearing, and it was missing. "Off when idle" alone left a
+  // branded 640x360 panel following the user onto Home: the host lives in the shell, so
+  // nothing unmounted it, and the only escape was playback stopping entirely. Verified in a
+  // real browser before this line existed.
+  //
+  // `usePathname` rather than a prop: the host is in the shell and the toggle is on the route,
+  // so the shell is what has to notice the route changing.
+  const pathname = usePathname();
+  const onNowPlaying = pathname === "/now-playing";
   useEffect(() => {
-    if (!currentTrack) setVideoVisible(false);
-  }, [currentTrack, setVideoVisible]);
+    if (!currentTrack || !onNowPlaying) setVideoVisible(false);
+  }, [currentTrack, onNowPlaying, setVideoVisible]);
 
-  // Attach the singleton engine to the surface's imperative target node
-  // whenever a track exists. Re-attaches idempotently after StrictMode's
-  // simulated unmount; never creates a second container.
+  // The engine's node is an <iframe>, and an iframe is a sequential focus navigation target:
+  // `pointer-events: none` and `aria-hidden` do **not** remove one from the tab order. It was
+  // measurably the last tab stop of the document while parked, so a keyboard user tabbed
+  // through the whole app and landed in an invisible video.
+  //
+  // `tabIndex = -1` on the *host* is not enough either — the iframe is a descendant, not the
+  // host. It goes on the iframe itself, after the player creates it, because that node is the
+  // one in the tab order and nothing else reaches it. The observer is needed because
+  // `YT.Player` replaces the container's contents after construction, not synchronously.
   useEffect(() => {
-    if (!currentTrack) return;
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const unframe = (node: Element): void => {
+      if (node instanceof HTMLIFrameElement) node.tabIndex = -1;
+    };
+    for (const node of surface.querySelectorAll("iframe")) unframe(node);
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element) {
+            unframe(node);
+            for (const nested of node.querySelectorAll("iframe")) unframe(nested);
+          }
+        }
+      }
+    });
+    observer.observe(surface, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [currentTrack, videoVisible]);
+
+  // Attach the singleton engine to the surface's imperative target node whenever a track
+  // exists. Re-attaches idempotently after StrictMode's simulated unmount; never creates a
+  // second container.
+  //
+  // Deps are the *boolean*, not the track object. Keying on `currentTrack` re-ran this effect
+  // on every track change, tearing down the subscription and calling `suspend()` — and
+  // `suspend()` clears the engine's retry and advance timers, which `attach()` does not
+  // restore. The host exists for "a track is active", not "which track".
+  const docked = currentTrack !== null;
+  useEffect(() => {
+    if (!docked) return;
     const surface = surfaceRef.current;
     if (!surface) return;
     let target = surface.firstElementChild as HTMLElement | null;
@@ -76,7 +122,7 @@ export function PlayerHost() {
     const engine = getPlaybackEngine();
     engine.attach(target);
     return () => engine.suspend();
-  }, [currentTrack]);
+  }, [docked]);
 
   if (!currentTrack) return null;
 
@@ -100,7 +146,7 @@ export function PlayerHost() {
       */
       className={
         videoVisible
-          ? "fixed bottom-[152px] left-1/2 z-40 aspect-video w-[min(92vw,640px)] -translate-x-1/2 overflow-hidden rounded-md bg-void-black shadow-2xl lg:bottom-[104px]"
+          ? "fixed bottom-[152px] left-1/2 z-50 aspect-video w-[min(92vw,640px)] -translate-x-1/2 overflow-hidden rounded-md bg-void-black shadow-2xl lg:bottom-[104px]"
           : "pointer-events-none fixed bottom-0 left-0 z-0 h-px w-px overflow-hidden opacity-0"
       }
     >

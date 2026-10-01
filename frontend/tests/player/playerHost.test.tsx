@@ -24,6 +24,28 @@ vi.mock("@/player/engine", () => ({
 
 const track = makeTrack({ id: "youtube:aaa", providerId: "aaa", title: "Alpha" });
 
+/**
+ * Everything that can hold a sequential focus stop.
+ *
+ * The first version listed `a,button,input,select,textarea,[tabindex]` and asserted the parked
+ * host contained none — which passed with a real `<iframe>` present. An iframe is a focus
+ * navigation target in its own right, so the element the rule most needed to see was the one
+ * it could not name. `contenteditable`, `summary`, `object`, `embed`, `audio`, and `video` are
+ * in the same class.
+ */
+const TABBABLE =
+  "a[href], button, input, select, textarea, iframe, audio, video, summary, object, embed, [tabindex], [contenteditable]";
+
+/** The route `usePathname` reports; the host watches it to know when Now Playing is left. */
+let currentPath = "/";
+vi.mock("next/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/navigation")>();
+  return {
+    ...actual,
+    usePathname: () => currentPath,
+  };
+});
+
 function state() {
   return usePlayerStore.getState();
 }
@@ -44,6 +66,9 @@ beforeEach(() => {
   resetPlayerStore();
   resetNetworkStore();
   resetVideoModeStore();
+  // The host watches the route, and the route mock reads this. Default to the route video mode
+  // is reached from, so a test only has to change it when that is the point.
+  currentPath = "/now-playing";
   localStorage.clear();
   clearPlaybackBridge();
   attach.mockClear();
@@ -152,7 +177,56 @@ describe("PlayerHost boot and the parked host", () => {
     expect(parkedClasses.has("overflow-hidden")).toBe(true);
     // Hidden from assistive traversal, and no tab stop inside it.
     expect(host).toHaveAttribute("aria-hidden", "true");
-    expect(host.querySelectorAll("a,button,input,select,textarea,[tabindex]")).toHaveLength(0);
+    // The selector includes `iframe`, `contenteditable`, `summary`, and `object` because the
+    // first version omitted them and the assertion passed with a real iframe present — and an
+    // iframe *is* a sequential focus navigation target, so `pointer-events: none` and
+    // `aria-hidden` do not remove it from the tab order. It was measurably the last tab stop
+    // of the document while parked. `TABBABLE` is module-scoped so this assertion and the
+    // iframe test below share one definition of "can hold focus".
+    expect(
+      host.querySelectorAll(TABBABLE),
+      "the parked host must contain no tab stop",
+    ).toHaveLength(0);
+    // The selector is itself proven able to name an iframe, so it cannot silently stop
+    // matching the element this assertion exists to exclude.
+    const probe = document.createElement("div");
+    probe.innerHTML = "<iframe title='p'></iframe><span tabindex='0'></span>";
+    expect(probe.querySelectorAll(TABBABLE)).toHaveLength(2);
+  });
+
+  /**
+   * The engine's own node is an iframe, and the test above cannot see one because the engine
+   * is mocked here. So this is the check that actually covers the real DOM: with a genuine
+   * iframe inside the host, the app must still take it out of the tab order.
+   */
+
+  it("removes the player's iframe from the tab order when the video is shown", async () => {
+    await seedSession();
+    render(<PlayerHost />);
+    await waitFor(() => expect(attach).toHaveBeenCalledTimes(1));
+
+    // Stand in for what `YT.Player` does to the engine's container: replace its contents
+    // with an iframe, which is what lands in the document in production.
+    const target = screen.getByTestId("player-host").firstElementChild
+      ?.firstElementChild as HTMLElement;
+    const iframe = document.createElement("iframe");
+    iframe.title = "YouTube player";
+    target.appendChild(iframe);
+
+    // The default is a tab stop, which is the whole problem: `pointer-events: none` and
+    // `aria-hidden` on the *host* do nothing for a descendant iframe's focusability. Measured
+    // in a real browser, this node was the last tab stop of the entire document.
+    expect(iframe.tabIndex, "an iframe is a tab stop by default, as in a real browser").toBe(0);
+
+    act(() => useVideoModeStore.getState().setVisible(true));
+
+    // The observer must find the node `YT.Player` added *after* construction, with no
+    // re-render in between — which is the production order.
+    await waitFor(() => expect(iframe.tabIndex).toBe(-1));
+    expect(
+      screen.getByTestId("player-host").querySelector("iframe")?.tabIndex,
+      "the iframe itself must leave the tab order; tabIndex on the host is not enough",
+    ).toBe(-1);
   });
 
   /**
@@ -190,6 +264,39 @@ describe("PlayerHost boot and the parked host", () => {
     expect(host.dataset.videoMode).toBe("parked");
     expect(host.firstElementChild?.firstElementChild).toBe(targetBefore);
     expect(attach).toHaveBeenCalledTimes(attachesBefore);
+  });
+
+  /**
+   * The navigation half, which was missing entirely.
+   *
+   * "Off when idle" is not the same as "off when you leave": the host lives in the shell, so
+   * navigating from Now Playing to Home unmounts nothing. Verified in a real browser before this
+   * test existed — a branded 640x360 panel followed the user onto `/`, and the only escape was
+   * playback stopping completely.
+   */
+  it("re-parks when the user navigates away from Now Playing", async () => {
+    currentPath = "/now-playing";
+    await seedSession();
+    render(<PlayerHost />);
+    await waitFor(() => expect(attach).toHaveBeenCalled());
+
+    act(() => useVideoModeStore.getState().setVisible(true));
+    expect(screen.getByTestId("player-host").dataset.videoMode).toBe("visible");
+
+    // A client-side navigation: the same shell, the same host node, a different route.
+    currentPath = "/";
+    act(() => {
+      usePlayerStore.setState({ currentTrack: { ...track } });
+    });
+
+    expect(useVideoModeStore.getState().visible, "leaving Now Playing must clear video mode").toBe(
+      false,
+    );
+    const host = screen.getByTestId("player-host");
+    expect(host.dataset.videoMode, "the host must return to the parked state").toBe("parked");
+    expect(host.className, "and to the 1x1 transparent presentation").toContain("opacity-0");
+    // Same node throughout: re-parking is presentation, not a remount.
+    expect(attach).toHaveBeenCalledTimes(1);
   });
 
   it("clears video mode when the app goes idle, so a later visit never opens visible", async () => {

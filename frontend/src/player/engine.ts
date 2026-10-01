@@ -80,9 +80,16 @@ export class PlaybackEngine implements PlaybackBridge {
   /**
    * Idempotent: attach the bridge/subscription and start player creation once.
    * Re-attach after a `suspend()` (StrictMode) reuses the same player.
+   *
+   * A container that has been **detached** is replaced rather than kept. The host unmounts when
+   * the app goes idle (`currentTrack` goes null), which detaches its node; without this the
+   * engine would hold the stale node forever and the next visit would attach a fresh host that
+   * never receives the player — so video mode, the only way to see the player at all, showed an
+   * empty box. Re-using a *connected* container is what preserves the single instance:
+   * re-parenting a live iframe is what would restart playback, so a live node is never moved.
    */
   attach(container: HTMLElement): void {
-    if (!this.container) this.container = container;
+    if (!this.container || !this.container.isConnected) this.container = container;
     if (this.attached) return;
     this.attached = true;
     setPlaybackBridge(this);

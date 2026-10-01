@@ -2,7 +2,7 @@
 
 ## MODIFIED Requirements
 
-### Requirement: Visible compliant playback surface
+### Requirement: Parked playback surface
 
 The YouTube player SHALL exist as exactly one persistent IFrame instance that, during normal
 music playback, is visually parked: laid out at approximately 1×1 CSS pixels, fully transparent,
@@ -32,10 +32,13 @@ begins with a visible player.
 
 #### Scenario: Nothing renders in front of the surface
 
-- **WHEN** the topmost element at the centre of the player host is inspected, in either the
-  parked or the video-mode state
-- **THEN** it is the player itself — no application overlay or control stack ever covers it,
-  because obscuring the player is prohibited independently of whether it is visible
+- **WHEN** the topmost element at the centre of the player host is inspected **while the video
+  is visible**
+- **THEN** it is the player itself — no application overlay, dialog, or control stack ever
+  covers the visible video, because obscuring it is prohibited independently of how the player
+  is otherwise configured. In the parked state there is nothing to inspect: the host is
+  transparent and takes no pointer events, so it is skipped by hit-testing entirely, which is
+  the intended behaviour rather than a surface the rule applies to.
 
 #### Scenario: Normal music playback parks the player visually
 
@@ -61,7 +64,15 @@ begins with a visible player.
 
 - **WHEN** the user enables video mode on Now Playing
 - **THEN** the same player instance becomes visible at a usable size, no additional player
-  instance or API script tag is created, and the video's own controls are operable
+  instance or API script tag is created, and the application's own transport controls remain
+  operable over it
+
+#### Scenario: The visible video carries no YouTube controls or keyboard handling
+
+- **WHEN** video mode is enabled
+- **THEN** the player's own controls and keyboard shortcuts stay disabled, so the visible
+  video is operated only through the application's transport controls and cannot trap or
+  diverge from them
 
 #### Scenario: Leaving video mode re-parks the same player
 
@@ -96,8 +107,9 @@ player replaced with a visible one.
 #### Scenario: Attribution is present for the active track
 
 - **WHEN** video mode is enabled and the video is visible
-- **THEN** the visible player supplies YouTube's own attribution and a route to the watch page is
-  reachable from the surface, and the application adds no second caption that duplicates it
+- **THEN** the visible player supplies YouTube's own attribution, and the application offers a
+  watch-page link on that same surface, so there is exactly one app-owned caption and it appears
+  only where there is a video to attribute
 
 #### Scenario: Only functional documented parameters are used
 

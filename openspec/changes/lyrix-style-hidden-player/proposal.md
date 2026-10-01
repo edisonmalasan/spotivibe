@@ -65,18 +65,28 @@ None. This modifies existing behaviour rather than introducing a new capability.
   rather than claiming documented compliance.
 - `app-shell`: the persistent player region's video dock is removed, and the Now Playing route
   gains the opt-in video mode.
+- `network`: the connection banner's "must not obscure the player" rule is rescoped to the
+  *visible* state. It is included because it is otherwise left unsatisfiable — with a
+  transparent 1×1 host, a hit-test at the player centre can never return the player, so the
+  requirement as written would demand something impossible. Leaving it alone would have shipped
+  a spec that no implementation can satisfy.
 
 ## Impact
 
-- **Code**: `frontend/src/components/player/PlayerHost.tsx` (dock removal, parked host), a new
-  parked/visible host state, `frontend/src/app/now-playing/page.tsx` (the video mode), and
-  `frontend/src/player/engine.ts` (documented parameters only — `fs: 0` added; the inert
-  `modestbranding` line either removed or annotated as deprecated, not left looking effective).
-- **Tests**: `frontend/tests/architecture.test.ts` (the hidden-iframe detector is replaced, not
-  weakened), `frontend/tests/player/playerHost.test.tsx`, `nowplaying*.test.tsx`, and
-  `routes.test.tsx` (the dock's "Watch on YouTube" assertions).
-- **Docs**: `frontend/docs/DEPLOYMENT.md` and the release documentation, which currently state a
-  visible compliant surface exists.
+- **Code**: `frontend/src/components/player/PlayerHost.tsx` (dock removal, parked host, the
+  iframe tab-index fix, and re-parking on navigation away), a new
+  `frontend/src/stores/videoModeStore.ts`, `frontend/src/app/now-playing/page.tsx` (the video
+  mode), and `frontend/src/player/engine.ts` (documented parameters only — `fs: 0` added; the
+  inert `modestbranding` line removed rather than annotated, because a commented-out deprecated
+  parameter invites an uncomment, and a detached-container fix so a second visit to Now Playing
+  finds a live player).
+- **Tests**: `frontend/tests/architecture.test.ts` and `frontend/tests/release-exclusions.test.ts`
+  (the visible-surface detectors are replaced, not weakened, and each replacement is shown
+  failing against a violating input), `frontend/tests/player/playerHost.test.tsx`,
+  `nowplaying*.test.tsx`, `routes.test.tsx` (the dock's "Watch on YouTube" assertions), and
+  `network/connectionBanner.test.tsx` (the dock-relative assertion, re-expressed).
+- **Docs**: `frontend/docs/DEPLOYMENT.md` and `ROADMAP.md` §6.2, which currently state a visible
+  compliant surface exists.
 - **Risk**: the parked iframe is what YouTube's visible-player rule exists to prevent. If the
   project is ever deployed publicly or shared, this configuration should be revisited before
   launch. That is recorded as a first-class constraint rather than a caveat in passing.
