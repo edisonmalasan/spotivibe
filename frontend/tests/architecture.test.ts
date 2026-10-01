@@ -537,6 +537,119 @@ describe("architecture: single persistent player host (task 5.1)", () => {
   });
 });
 
+/**
+ * The parked player (`lyrix-style-hidden-player`).
+ *
+ * M4's rule was "a visible surface of at least 200x200, never hidden or undersized", enforced
+ * so the build could not drift into an embedded-player configuration the platform prohibits.
+ * That rule is deliberately abandoned here: parking the player is the point, for private use.
+ *
+ * **The rule is replaced, not deleted, and the replacement is a real guarantee.** Keeping the
+ * old rule and satisfying it would be theatre; dropping it with nothing in its place would
+ * lose the property that still holds — exactly one player, always parked unless asked. So
+ * this asserts the parked state, the single instance, and the single host node, and each is
+ * proven able to fail: a detector nobody has seen reject anything is a report, not a check.
+ */
+describe("architecture: the player is parked, and there is exactly one of it", () => {
+  const playerHost = join(srcDir, "components", "player", "PlayerHost.tsx");
+
+  it("parks the host with 1x1, transparent, non-interactive, behind-the-app styling", () => {
+    const source = readFileSync(playerHost, "utf8");
+    // Every token is load-bearing, which is why they are listed rather than pattern-matched
+    // as a phrase: a 1x1 box that is not transparent still shows a thumbnail, and a
+    // transparent box that still takes pointer events still eats clicks in the corner.
+    for (const token of ["h-px", "w-px", "opacity-0", "pointer-events-none", "fixed"]) {
+      expect(source, `the parked state must include ${token}`).toContain(token);
+    }
+    // Distinguishable without measuring pixels, so a test can tell the two states apart.
+    expect(source).toContain("data-video-mode");
+    expect(source).toContain("aria-hidden");
+  });
+
+  it("is proven able to fail on a host that is not parked", () => {
+    // The same proof discipline as every other rule here, on the same reasoning.
+    const PARKED = ["h-px", "w-px", "opacity-0", "pointer-events-none"];
+    const unparked = `className="fixed bottom-2 right-4 z-50 aspect-video w-[400px]"`;
+    const parked = `className="pointer-events-none fixed bottom-0 left-0 z-0 h-px w-px opacity-0"`;
+    for (const token of PARKED) {
+      expect(parked).toContain(token);
+      expect(unparked, `an unparked host must not satisfy ${token}`).not.toContain(token);
+    }
+  });
+
+  it("constructs the player in exactly one module, enumerated rather than pattern-matched", () => {
+    // `YT.Player` is constructed in exactly one place in the whole application. A second site
+    // is the failure that matters: two iframes means two audio streams and no single
+    // authoritative position, and it is invisible until something is heard twice.
+    //
+    // The pattern accepts the spellings this repository actually uses plus the obvious
+    // qualified ones, and the count — not a single match — is the assertion. A rule that
+    // greps for one spelling passes on the next one somebody writes.
+    const sites = readTree(srcDir)
+      .filter(({ source }) => /new\s+(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/.test(source))
+      .map(({ file }) => file);
+    expect(sites, "exactly one module may construct a YT.Player").toHaveLength(1);
+    expect(/[\\/]player[\\/]engine\.ts$/.test(sites[0]), sites[0]).toBe(true);
+    // Proven able to fail on the spellings the first version missed. Aliasing and
+    // destructuring cannot be caught by any textual rule, which is exactly why the count
+    // above is the load-bearing assertion and these are the two realistic near-misses.
+    // The prefix deliberately does *not* exclude a preceding `.`. A version that did
+    // (`[^\w$.]`) missed the cast form, because in `}).YT.Player(` the character before
+    // `YT` is a dot — the very dot the pattern was written to skip. Found by running it.
+    const CONSTRUCTOR = /(?:^|[^\w$])(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/;
+    expect(CONSTRUCTOR.test("new YT.Player(target, {})")).toBe(true);
+    expect(CONSTRUCTOR.test("new window.YT.Player(target, {})")).toBe(true);
+    // The cast form a probe found: `new (window as unknown as {...}).YT.Player(...)` is
+    // invisible to a `new\s+YT\.Player` rule, so the pattern anchors on the member access.
+    expect(
+      CONSTRUCTOR.test(
+        "new (window as unknown as { YT: { Player: new () => unknown } }).YT.Player(target, {});",
+      ),
+      "the cast form must be matched",
+    ).toBe(true);
+    // And the limit, asserted rather than assumed: an aliased constructor cannot be resolved
+    // by any textual rule, because resolving an alias is what a type checker does. Recording
+    // it as a fixture means the limit is a stated boundary, not an unexamined gap.
+    expect(
+      CONSTRUCTOR.test("const P = YT.Player; new P(target, {});"),
+      "an aliased constructor is outside what a static rule can see",
+    ).toBe(false);
+  });
+
+  it("gives the engine one reusable container, asserted by append count", () => {
+    const source = readFileSync(playerHost, "utf8");
+    // Re-parenting an iframe reloads it and restarts playback, so the target is looked up and
+    // reused. A positive check for the reuse token ("contains firstElementChild") passes on
+    // code that *also* appends a second container every run, which is the exact regression
+    // an earlier draft of this rule could not see — so the assertion is a **count**: exactly
+    // one append, in the first-mount branch.
+    expect(source, "the host must reuse the engine's container").toMatch(/firstElementChild/);
+    expect(source, "the engine target must be the one that is attached").toMatch(
+      /engine\.attach\(target\)/,
+    );
+    const appends = (source.match(/appendChild\s*\(/g) ?? []).length;
+    expect(
+      appends,
+      "exactly one container may be appended, on first mount — a second append per effect run is the regression",
+    ).toBe(1);
+    // And the single append is inside the `if (!target)` branch, not unconditional.
+    expect(source).toMatch(/if\s*\(\s*!target\s*\)\s*\{[\s\S]{0,200}?appendChild\(/);
+  });
+
+  it("keeps the engine's container when it is still connected, and replaces a detached one", () => {
+    // The bug this guards: the host unmounts when the app goes idle, which detaches the
+    // engine's node. Caching that node forever meant the *next* visit to Now Playing mounted
+    // a fresh host that never received the player — so video mode, the only way to see the
+    // player at all, showed an empty box. Verified by driving the real engine.
+    const source = readFileSync(join(srcDir, "player", "engine.ts"), "utf8");
+    expect(source, "a detached container must not be kept").toMatch(/isConnected/);
+    // Proven able to fail: the buggy form, which is the line this replaced.
+    expect(/if\s*\(\s*!this\.container\s*\)\s*this\.container\s*=\s*container/.test(source)).toBe(
+      false,
+    );
+  });
+});
+
 describe("architecture: no audio-extraction surfaces (task 5.1)", () => {
   it("finds no capture or decode indicators anywhere in src", () => {
     const offenders = readTree(srcDir)

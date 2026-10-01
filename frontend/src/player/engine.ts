@@ -80,9 +80,16 @@ export class PlaybackEngine implements PlaybackBridge {
   /**
    * Idempotent: attach the bridge/subscription and start player creation once.
    * Re-attach after a `suspend()` (StrictMode) reuses the same player.
+   *
+   * A container that has been **detached** is replaced rather than kept. The host unmounts when
+   * the app goes idle (`currentTrack` goes null), which detaches its node; without this the
+   * engine would hold the stale node forever and the next visit would attach a fresh host that
+   * never receives the player — so video mode, the only way to see the player at all, showed an
+   * empty box. Re-using a *connected* container is what preserves the single instance:
+   * re-parenting a live iframe is what would restart playback, so a live node is never moved.
    */
   attach(container: HTMLElement): void {
-    if (!this.container) this.container = container;
+    if (!this.container || !this.container.isConnected) this.container = container;
     if (this.attached) return;
     this.attached = true;
     setPlaybackBridge(this);
@@ -221,9 +228,17 @@ export class PlaybackEngine implements PlaybackBridge {
       this.player = new yt.Player(this.container, {
         width: "100%",
         height: "100%",
+        // Documented, currently-functional parameters only.
+        //
+        // `modestbranding` was removed here deliberately: YouTube deprecated it and its
+        // documentation states it "has no effect", so it was inert configuration that read
+        // as effective. There is no replacement — the branding is hidden by parking the
+        // host, not by asking the player to drop it (see PlayerHost and design.md
+        // decision 6). `release-exclusions.test.ts` fails if a deprecated-only parameter
+        // reappears.
         playerVars: {
-          controls: 0, // Spotivibe's custom controls drive the player (documented param)
-          modestbranding: 1,
+          controls: 0, // Spotivibe's own controls drive the player
+          fs: 0, // no fullscreen: the host is a bounded surface, not a theatre
           rel: 0,
           playsinline: 1,
           iv_load_policy: 3,

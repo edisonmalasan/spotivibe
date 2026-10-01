@@ -8,6 +8,7 @@ import type { Track } from "@/data/repositories";
 import { getLocalData, type RepositorySet } from "@/data/localData";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { clearPlaybackBridge, resetPlayerStore, usePlayerStore } from "@/stores/playerStore";
+import { resetVideoModeStore, useVideoModeStore } from "@/stores/videoModeStore";
 import { makeTrack } from "./helpers/music-fixtures";
 
 /**
@@ -139,6 +140,7 @@ let repositories: RepositorySet;
 beforeEach(async () => {
   resetPlayerStore();
   resetLibraryStore();
+  resetVideoModeStore();
   localStorage.clear();
   clearPlaybackBridge();
   push.mockClear();
@@ -363,10 +365,16 @@ describe("Now Playing: the More Like This shelf", () => {
     const { container } = renderWith();
 
     const root = container.firstElementChild as HTMLElement;
-    // The same padding that keeps content clear of the docked player, so the
-    // shelf clears it too.
-    expect(root.className).toContain("pb-[320px]");
-    expect(root.className).toContain("lg:pb-56");
+    // The same padding that keeps content clear of the persistent player region,
+    // so the shelf clears it too. The values shrank when the docked video surface
+    // was removed: the player bar is 72px and the compact stack 120px, and there
+    // is no longer a floating video above them to reserve room for.
+    expect(root.className).toContain("pb-[132px]");
+    expect(root.className).toContain("lg:pb-[104px]");
+    // Explicitly not the old docked-surface padding: a value that happens to
+    // still pass is worse than one that cannot.
+    expect(root.className).not.toContain("pb-[320px]");
+    expect(root.className).not.toContain("lg:pb-56");
     expect(root.querySelector('[data-testid="more-like-this"]')).not.toBeNull();
   });
 
@@ -400,7 +408,17 @@ describe("Now Playing: the existing surface contract is unchanged", () => {
       "249",
     );
 
-    // The compliant watch link: no referrer suppression, still required.
+    // The video-mode control is the new entry point; the watch link is shown
+    // beside it only while the video is actually visible.
+    const videoMode = screen.getByTestId("now-playing-video-mode");
+    expect(videoMode).toBeEnabled();
+    expect(screen.queryByTestId("now-playing-attribution")).toBeNull();
+
+    act(() => useVideoModeStore.getState().setVisible(true));
+
+    // The watch link: no referrer suppression, still required. Not "the compliant watch
+    // link" — the visible player is where attribution actually lives now, and this one
+    // appears only beside a visible video.
     const link = screen.getByTestId("now-playing-attribution");
     expect(link).toHaveTextContent("Watch on YouTube");
     expect(link).toHaveAttribute("href", "https://www.youtube.com/watch?v=aaa");
@@ -420,6 +438,9 @@ describe("Now Playing: the existing surface contract is unchanged", () => {
     expect(screen.getByRole("button", { name: "Next track" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save to Liked Songs" })).toBeDisabled();
     expect(screen.queryByTestId("now-playing-attribution")).not.toBeInTheDocument();
+    // Nothing to show, so the video control is omitted rather than disabled —
+    // offering an action the surface cannot perform is worse than not offering it.
+    expect(screen.queryByTestId("now-playing-video-mode")).not.toBeInTheDocument();
   });
 
   it("reflects a track change anywhere in the app without a remount", async () => {
@@ -441,6 +462,9 @@ describe("Now Playing: the existing surface contract is unchanged", () => {
 
     expect(screen.getByTestId("now-playing-title")).toHaveTextContent("Delta");
     expect(screen.getByText("Cobalt")).toBeInTheDocument();
+    // The watch link follows the track change, so it is asserted in video mode —
+    // the state in which the surface renders it at all.
+    act(() => useVideoModeStore.getState().setVisible(true));
     expect(screen.getByTestId("now-playing-attribution")).toHaveAttribute(
       "href",
       "https://www.youtube.com/watch?v=ddd",

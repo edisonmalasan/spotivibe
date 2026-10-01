@@ -195,7 +195,7 @@ This table is the authoritative translation of Lyrix capabilities plus Spotivibe
 | Language-aware recommendations | **KEEP / REIMPLEMENT** | Local profile and query heuristics. |
 | Smart Mixes | **KEEP / REIMPLEMENT** | Generated locally/on demand without cloud user models. |
 | Podcasts | **KEEP** | Discovery/search/playback category. |
-| Full Now Playing | **KEEP / REDESIGN** | Add compliant visible YouTube surface where needed. |
+| Full Now Playing | **KEEP / REDESIGN** | Add the YouTube playback surface where needed. *The "visible compliant" part was reversed* by `lyrix-style-hidden-player` (2026-10-02): the player is parked during normal playback and revealed by an opt-in video mode on this route. See the §6.2 note on the reversed visible-surface row. |
 | Dynamic Now Playing background | **KEEP** | Artwork-derived presentation. |
 | Marquee long titles | **KEEP** | UX detail. |
 | More Like This | **KEEP / ADAPT** | Provider + local preference based. |
@@ -229,7 +229,7 @@ This table is the authoritative translation of Lyrix capabilities plus Spotivibe
 | First-class Album pages | **REQUIRED** | Spotify-style album/release view where metadata permits. |
 | Provider abstraction | **REQUIRED** | UI cannot depend directly on Innertube response shapes. |
 | Source-aware Track model | **REQUIRED** | Track identifies provider/source and capability flags. |
-| Visible compliant YouTube surface | **REQUIRED** | Do not reproduce Lyrix's tiny hidden-ish player approach. |
+| ~~Visible compliant YouTube surface~~ | **REVERSED** | **Deliberately reversed by `lyrix-style-hidden-player` (2026-10-02), for private/personal use.** Spotivibe now parks the single persistent YouTube IFrame at 1×1 with zero opacity and takes Spotivibe's PlayerBar/MiniPlayer as its only visible playback interface, with an opt-in video mode on Now Playing. This is Lyrix's hidden-player architecture, and it does **not** meet YouTube's documented visible-player requirement. Nothing else in this table changes, and no extraction, stream download, media proxy, or ad blocking was introduced. **Before any public deployment this must be reverted to a visible surface.** |
 | DESIGN.md implementation discipline | **REQUIRED** | Every UI milestone validated against `frontend/docs/DESIGN.md`. |
 | Local-only recommendation profile | **REQUIRED** | History/likes/preferences never uploaded as a user profile. |
 | PWA update handling | **REQUIRED** | Safe service-worker/version upgrades. |

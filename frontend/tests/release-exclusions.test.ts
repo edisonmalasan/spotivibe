@@ -807,6 +807,543 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
       "the application must have API routes for this to mean anything",
     ).toBeGreaterThan(3);
   });
+
+  it("has no route for extracting, proxying, or downloading media", () => {
+    // `no media proxied` has a content detector, and a route that proxies media has ordinary
+    // handler code — so the *name* is the evidence, exactly as the sync/auth paths above.
+    // This became load-bearing when the player was parked: the parked configuration is the
+    // one most likely to tempt a "just fetch the stream instead" route, because the visible
+    // surface is gone and the policy pressure is real.
+    const MEDIA_ROUTE =
+      /\/(?:stream|proxy|media|audio|extract|download|dl)(?:\/|$)|\/(?:video|youtube|videoid)s?\/[a-z]+\/route/i;
+    const offenders = applicationSources()
+      .map((entry) => entry.file)
+      .filter((file) => /\/api\/.*\/route\.ts$/.test(file))
+      .filter((file) => MEDIA_ROUTE.test(`/${file}`));
+    expect(offenders, "no route may sit at a path naming a media-extraction capability").toEqual(
+      [],
+    );
+    // Proven able to fail.
+    for (const path of [
+      "src/app/api/stream/route.ts",
+      "src/app/api/proxy/route.ts",
+      "src/app/api/media/route.ts",
+      "src/app/api/audio/route.ts",
+      "src/app/api/extract/route.ts",
+      "src/app/api/download/route.ts",
+    ]) {
+      expect(MEDIA_ROUTE.test(`/${path}`), `${path} must be rejected`).toBe(true);
+    }
+    // And the real routes clear it, so the rule is not "reject any second path segment".
+    for (const path of [
+      "src/app/api/search/route.ts",
+      "src/app/api/artist/route.ts",
+      "src/app/api/discover/route.ts",
+    ]) {
+      expect(MEDIA_ROUTE.test(`/${path}`), `${path} must be allowed`).toBe(false);
+    }
+  });
+});
+
+/**
+ * The parked player (`lyrix-style-hidden-player`).
+ *
+ * Parking the YouTube player at 1x1 is an intentional departure from YouTube's documented
+ * visible-player requirement, taken for private/personal use. That decision makes two
+ * things worth holding mechanically, because the departure is exactly the kind of change
+ * that decays into something else over time:
+ *
+ * 1. **The parking is real.** A dropped class, a `display: none`, or a wider box puts a
+ *    branded, clickable video panel back in the corner of every screen — the problem the
+ *    change was made to solve, reappearing invisibly.
+ * 2. **Parking was not a gateway to circumvention.** A hidden player is precisely the setup
+ *    a background-play workaround needs, so the shape of that workaround is checked here
+ *    too: nothing resumes, un-mutes, or re-triggers playback to keep an invisible player
+ *    running. Parking is presentation.
+ */
+
+/**
+ * A *scheduled or event-driven* trigger: a timer, a frame callback, an observer, a
+ * lifecycle/connectivity listener, or a media-session action.
+ */
+const PLAYBACK_TRIGGER =
+  /set(?:Interval|Timeout|Immediate)\s*\(|requestAnimationFrame\s*\(|addEventListener\s*\(\s*["'`](?:visibilitychange|focus|blur|pageshow|pagehide|online|beforeunload|unload)["'`]|new\s+(?:MutationObserver|IntersectionObserver|ResizeObserver|PerformanceObserver)\s*\(|mediaSession[\s\S]{0,80}?setActionHandler|addEventListener\s*\(\s*["'`](?:play|pause|resume|waiting|stalled|emptied|canplay)["'`]/i;
+
+/** A *resume or unmute*: something that restarts playback or lifts the mute. */
+const PLAYBACK_RESUME =
+  /\.play(?:Video)?\s*\(|\bplay\s*\(\s*\)|setMuted\s*\(\s*false|\.muted\s*=\s*(?:false|!1)|\.volume\s*=/i;
+
+/** One scope a trigger and a resume can be compared within. */
+interface Declaration {
+  name: string | null;
+  body: string;
+}
+
+/** A class member signature, at the 2-space indent this repository writes classes with. */
+const CLASS_MEMBER =
+  /^\s{2}(?:(?:public|private|protected|readonly|static|abstract|async|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[^>]*>)?\s*\(/;
+
+/**
+ * Split a source into the scopes a trigger and a resume can be compared within.
+ *
+ * **Classes are containers, not scopes.** The first version treated a whole `class` body as one
+ * declaration and immediately reported `src/player/engine.ts`: a `setTimeout` in
+ * `scheduleRetry` and a `play()` in the `play` method are in the same *class* and were
+ * therefore "in the same function". A rule that fires on the application's correct code is a
+ * rule that gets switched off, so members are split out.
+ */
+function topLevelDeclarations(code: string): Declaration[] {
+  // A declaration starts at column 0. An indented `if`/`}` belongs to the declaration above it,
+  // which is what keeps a recursive poll loop's `requestAnimationFrame` in scope with its own
+  // `playVideo()` call.
+  const lines = code.split("\n");
+  const top: Declaration[] = [];
+  let name: string | null = null;
+  let body: string[] = [];
+  const flush = (): void => {
+    if (body.some((entry) => entry.trim() !== "")) top.push({ name, body: body.join("\n") });
+    body = [];
+  };
+  for (const line of lines) {
+    const opens =
+      /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z_$][\w$]*)?/.exec(
+        line,
+      );
+    if (opens && body.some((entry) => entry.trim() !== "")) flush();
+    if (opens) name = opens[1] ?? null;
+    body.push(line);
+  }
+  flush();
+
+  // Descend one level into class bodies, so members are independent scopes.
+  const scopes: Declaration[] = [];
+  for (const declaration of top) {
+    if (!/^\s*(?:export\s+)?(?:abstract\s+)?class\b/.test(declaration.body)) {
+      scopes.push(declaration);
+      continue;
+    }
+    const memberLines = declaration.body.split("\n");
+    let member: string[] = [];
+    let memberName: string | null = null;
+    const flushMember = (): void => {
+      if (member.some((entry) => entry.trim() !== "")) {
+        scopes.push({ name: memberName, body: member.join("\n") });
+      }
+      member = [];
+      memberName = null;
+    };
+    for (const line of memberLines) {
+      const isMember = CLASS_MEMBER.test(line);
+      if (isMember && member.some((entry) => entry.trim() !== "")) flushMember();
+      if (isMember) {
+        memberName =
+          /^\s{2}(?:(?:public|private|protected|readonly|static|abstract|async|get|set)\s+)*([A-Za-z_$][\w$]*)/.exec(
+            line,
+          )?.[1] as string;
+      }
+      member.push(line);
+    }
+    flushMember();
+  }
+  return scopes;
+}
+
+/**
+ * True when a trigger drives a resume in the same source.
+ *
+ * **Two links, because one is not enough.** Matching a trigger and a resume inside one
+ * declaration catches the inline forms; it misses the indirection that defeated the first
+ * version of this rule entirely — a named helper invoked by a timer, a `requestAnimationFrame`
+ * loop, a reconnect listener calling a bridge method. Those need the second link: a trigger
+ * whose callback *names* a function that resumes.
+ *
+ * A trigger alone is a poll and this application has several legitimate ones. A resume alone
+ * is a user-driven control and it has many. Only a trigger that actually reaches a resume is
+ * the circumvention.
+ */
+function KEEPS_PLAYING(code: string): boolean {
+  const declarations = topLevelDeclarations(code);
+  const resumes = (source: string): boolean => PLAYBACK_RESUME.test(source);
+  const triggers = (source: string): boolean => PLAYBACK_TRIGGER.test(source);
+
+  // Link 1: same declaration.
+  if (declarations.some(({ body }) => triggers(body) && resumes(body))) return true;
+
+  // Link 2: a trigger whose callback names a declaration that resumes.
+  const resumingNames = new Set(
+    declarations.filter(({ body }) => resumes(body) && !triggers(body)).map((d) => d.name),
+  );
+  // Link 3: a trigger that *calls* a resuming declaration, by bare name or as a member.
+  //
+  // Link 2 handles `setInterval(resume, 500)`, where the name sits where an argument goes.
+  // Link 3 is for `setInterval(() => this.holdAudioOpen(), 200)`, where the call is a member
+  // access and the resume lives one declaration away. Found by probe, not by reading: with
+  // only link 2, an unmute helper invoked through `this.` from a timer passed silently.
+  const memberCall = (name: string): RegExp =>
+    new RegExp(String.raw`(?:^|[^\w$.])(?:this\.)?${name}\s*\(`);
+  const callbackName = (name: string): RegExp => new RegExp(String.raw`\(\s*${name}\s*[,)]`);
+  for (const { body } of declarations) {
+    if (!triggers(body)) continue;
+    for (const name of resumingNames) {
+      if (name === null) continue;
+      if (callbackName(name).test(body)) return true;
+      if (memberCall(name).test(body)) return true;
+    }
+  }
+  return false;
+}
+
+/** Shapes that defeated the first version of {@link KEEPS_PLAYING}, with why each one did. */
+const MISSED_BY_THE_FIRST_VERSION: Array<[label: string, why: string, code: string]> = [
+  [
+    "a requestAnimationFrame resume loop",
+    "no setInterval/setTimeout, and the play call sits inside the loop's own `if`",
+    `
+      function pollTick() {
+        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+          void player.playVideo();
+        }
+        requestAnimationFrame(pollTick);
+      }
+    `,
+  ],
+  [
+    "a named helper called from a timer",
+    "the play call is in the helper, so it is not inline within the trigger",
+    `
+      function resume() { void player.playVideo(); }
+      setInterval(resume, 500);
+    `,
+  ],
+  [
+    "a media-session action handler that restarts playback",
+    "neither a timer nor a visibilitychange",
+    `
+      navigator.mediaSession.setActionHandler("play", () => {
+        void player.playVideo();
+      });
+    `,
+  ],
+  [
+    "an unmute-and-resume keep-alive",
+    "no keyword from the first pattern; the unmute is the tell",
+    `
+      function holdAudio() {
+        player.setMuted(false);
+        void player.play();
+      }
+      setInterval(holdAudio, 200);
+    `,
+  ],
+  [
+    "a reconnect subscription that re-invokes play",
+    "an 'online' listener calling a bridge method, not `.play`",
+    `
+      function onReconnect() { bridge.play(); }
+      window.addEventListener("online", onReconnect);
+    `,
+  ],
+  [
+    "a frame-loop self-rescheduler with no player reference at all",
+    "the resume is `setMuted(false)`, which the first pattern did not list",
+    `
+      function hold() {
+        player.setMuted(false);
+      }
+      setTimeout(hold, 100);
+    `,
+  ],
+  [
+    "a timer whose callback calls an unmute helper as a member",
+    "the resume is one call away, through `this.`, so neither same-scope matching nor callback-name matching sees it",
+    `
+      class Engine {
+        holdAudioOpen() {
+          player.setMuted(false);
+        }
+
+        start() {
+          setInterval(() => this.holdAudioOpen(), 200);
+        }
+      }
+    `,
+  ],
+];
+
+describe("the parked player is parked, and parking is not a workaround", () => {
+  const hostSource = readFileSync(join(SRC, "components", "player", "PlayerHost.tsx"), "utf8");
+
+  it("declares the parked state on the one host node", () => {
+    // Each token is load-bearing. A 1x1 box that is not transparent still shows a thumbnail;
+    // a transparent box that still takes pointer events still eats clicks in the corner.
+    for (const token of ["h-px", "w-px", "opacity-0", "pointer-events-none", "fixed"]) {
+      expect(hostSource, `the parked state must include ${token}`).toContain(token);
+    }
+    // Marked for assistive traversal, and the visible state is a distinct one so a test can
+    // tell them apart without measuring pixels.
+    expect(hostSource).toContain("data-video-mode");
+    expect(hostSource).toContain("aria-hidden");
+  });
+
+  it("is proven able to fail on a host that is not parked", () => {
+    // The same two-proofs discipline as the exclusions above, on the same reasoning: a rule
+    // nobody has seen reject anything is a report rather than a check.
+    const PARKED = ["h-px", "w-px", "opacity-0", "pointer-events-none"];
+    const compliantButUnparked = `
+      <div className="fixed bottom-2 right-4 z-50 aspect-video w-[400px]" />
+    `;
+    const parked = `
+      <div className="pointer-events-none fixed bottom-0 left-0 z-0 h-px w-px opacity-0" />
+    `;
+    for (const token of PARKED) {
+      expect(parked, `a parked host must carry ${token}`).toContain(token);
+      expect(compliantButUnparked, `an unparked host must not satisfy ${token}`).not.toContain(
+        token,
+      );
+    }
+  });
+
+  it("never collapses the host to display:none or removes it while a track is active", () => {
+    // Every class token the host applies, read from the source.
+    //
+    // The first version matched /className=\{[\s\S]*?\}"/ — and the ternary in `PlayerHost`
+    // closes with `}` then a newline, never `}"`, so the pattern had **zero** matches in the
+    // file it was written for. The token set was `[""]`, and appending `hidden invisible` to
+    // the real parked class string left all 65 tests green. A regex-based reader of another
+    // file's formatting is the defect: it fails silently and in the safe direction.
+    //
+    // Read every string literal in the file instead, and require the extraction to have found
+    // the parked classes *specifically* — so an extraction that returns nothing fails rather
+    // than passing on an empty set.
+    const literals = [...hostSource.matchAll(/["'`]([^"'`\n]+)["'`]/g)].map((match) => match[1]);
+    const tokens = new Set(literals.flatMap((literal) => literal.split(/\s+/)));
+    const PARKED = ["pointer-events-none", "fixed", "h-px", "w-px", "opacity-0"];
+    for (const token of PARKED) {
+      expect(tokens.has(token), `the extraction must find ${token}`).toBe(true);
+    }
+    // Whole-token comparisons: `overflow-hidden` contains "hidden" as a substring, so a
+    // substring check fails on correct code — and a check that cries wolf gets switched off.
+    expect(tokens.has("hidden"), "the parked host must stay laid out, not display-hidden").toBe(
+      false,
+    );
+    expect(tokens.has("invisible")).toBe(false);
+    // `display: none` written as an inline style or a raw style object is the same failure in
+    // a different syntax, so it is matched rather than inferred from the class list.
+    expect(hostSource).not.toMatch(/display\s*:\s*["']none/i);
+    // And the same extraction is shown to find a forbidden token when one is present, so a
+    // future refactor cannot make this pass vacuously again.
+    const withHidden = new Set([...tokens, "hidden", "invisible"]);
+    expect(withHidden.has("hidden"), "the token set must catch an added hidden class").toBe(true);
+  });
+
+  it("the host creates no player, by any spelling", () => {
+    // Comments are stripped first, and that is not tidiness: the host's own doc comment
+    // explains that the player's node is an `<iframe>`, so a raw-source match for `<iframe`
+    // fires on the documentation of the very thing the rule forbids. A detector that fires on
+    // correct code is a detector that gets switched off.
+    const code = stripComments(hostSource);
+    // `new yt.Player` was the first version's rule and it missed `new YT.Player` — the
+    // spelling this very repository uses in `engine.ts`.
+    //
+    // The pattern matches the member access rather than the `new` keyword, because a probe
+    // found the gap: `new (window as unknown as {...}).YT.Player(...)` — a TypeScript cast
+    // between `new` and the member — is invisible to a `new\s+YT\.Player` rule. The prefix does
+    // not exclude a preceding dot either, since in `}).YT.Player(` the dot *is* the preceding
+    // character. It still cannot be defeated by destructuring or a renamed alias: **no textual
+    // rule can**, because resolving an alias is what a type checker does. The load-bearing
+    // assertion is the *count* of construction sites in `architecture.test.ts`, and that limit
+    // is recorded there as a fixture rather than left unexamined.
+    expect(code).not.toMatch(/(?:^|[^\w$])(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/);
+    // React never renders an iframe as a child: the host is a stable wrapper around a node
+    // the engine fills in.
+    expect(code).not.toMatch(/document\.createElement\(\s*["']iframe["']\s*\)|<iframe\b/i);
+
+    // Proven able to fail, on every spelling the rule has to name — including the cast that
+    // the `new`-anchored version missed.
+    const CONSTRUCTOR = /(?:^|[^\w$])(?:yt|YT|window\.YT)\s*\.\s*Player\s*\(/;
+    for (const shape of [
+      "new yt.Player(target, {})",
+      "new YT.Player(target, {})",
+      "new window.YT.Player(target, {})",
+      "new (window as unknown as { YT: { Player: new () => unknown } }).YT.Player(target, {});",
+    ]) {
+      expect(CONSTRUCTOR.test(shape), `the rule missed: ${shape}`).toBe(true);
+    }
+    // The stated limit, asserted rather than assumed: an aliased or destructured constructor
+    // is not statically resolvable by a pattern. Recording it as a fixture means the boundary
+    // is a decision with a known cost, not an unexamined gap someone will rediscover.
+    for (const shape of [
+      "const p = YT.Player; new p(target, {});",
+      "const { Player } = YT; new Player(target, {});",
+    ]) {
+      expect(CONSTRUCTOR.test(shape), `${shape} is outside what a static rule can see`).toBe(false);
+    }
+    const IFRAME = /document\.createElement\(\s*["']iframe["']\s*\)|<iframe\b/i;
+    for (const shape of [
+      `document.createElement("iframe")`,
+      `return <iframe src={embedUrl} allow="autoplay" />;`,
+    ]) {
+      expect(IFRAME.test(shape), `the rule missed: ${shape}`).toBe(true);
+    }
+  });
+
+  it("proves the host-shape rules can fail, since a positive token match proves nothing", () => {
+    // The single-container rules in both suites reduce to "the source contains
+    // `firstElementChild`", and appending a second container on every effect run left them
+    // all green — only a rendered-DOM test caught it. A positive source-token check cannot
+    // detect a *behavioural* regression, so what is proven here is the negative half: the
+    // rules that must fire when a real violation is written.
+    const APPENDS_SECOND_CONTAINER = /appendChild\s*\(/;
+    const VIOLATION = `
+      const engine = getPlaybackEngine();
+      const extra = document.createElement("div");
+      surface.appendChild(extra);
+      engine.attach(extra);
+    `;
+    // The first version's rule ("contains firstElementChild") passes on the violation.
+    expect(VIOLATION, "the first version's rule cannot see this").not.toContain(
+      "firstElementChild",
+    );
+    // The rule that *can* see it counts appends, not the presence of a reuse token.
+    expect(APPENDS_SECOND_CONTAINER.test(VIOLATION), "an append must be detectable").toBe(true);
+    // And the shipped code reuses rather than appends, so the count is exactly the one
+    // legitimate append it has.
+    const appends = (hostSource.match(/appendChild\s*\(/g) ?? []).length;
+    expect(appends, "the host must append exactly one container, on first mount only").toBe(1);
+  });
+
+  it("keeps video mode out of every persisted surface", () => {
+    // The flag is a per-visit view state. If it reached any persistence channel, a cold
+    // launch would restore into a *visible* player, which is the state this change parks by
+    // default.
+    //
+    // **Three named files are not enough**, which is what the first version checked. It read
+    // the session store, the snapshot type, and the backup schema — and ignored
+    // `localStorage`, a channel this project demonstrably uses for playback-adjacent state
+    // (`spotivibe.volume` is exactly that). A `localStorage.setItem("spotivibe.videoMode", …)`
+    // inside `setVisible` left all 65 tests green.
+    //
+    // So the rule is on the *store itself* and on every persistence call it makes, rather than
+    // on a list of files someone remembered: the module that owns the flag must not import a
+    // persistence API at all, and no source may key a storage write on a video-visible name.
+    const store = readFileSync(join(SRC, "stores", "videoModeStore.ts"), "utf8");
+    for (const channel of [
+      "localStorage",
+      "sessionStorage",
+      "indexedDB",
+      "getLocalData",
+      "write",
+    ]) {
+      expect(
+        store,
+        `the video-mode store must not reach ${channel}; it is a per-visit view state`,
+      ).not.toContain(channel);
+    }
+
+    // And the sweep, over every source rather than three files: a storage key naming a
+    // video-visible flag, whatever the channel.
+    const PERSISTED_VIDEO =
+      /(?:localStorage|sessionStorage)\s*\.\s*setItem\s*\(\s*["'`][^"'`]*video[^"'`]*(?:mode|visible|shown)/i;
+    const offenders = applicationSources()
+      .filter((entry) => PERSISTED_VIDEO.test(entry.code))
+      .map((entry) => entry.file);
+    expect(offenders, "no source may persist a video-visible flag").toEqual([]);
+    // Proven able to fail, on the exact shape that got past the first version.
+    expect(
+      PERSISTED_VIDEO.test(`localStorage.setItem("spotivibe.videoMode", String(visible));`),
+      "a localStorage video-mode write must be caught",
+    ).toBe(true);
+
+    // The persisted shapes themselves, kept as a belt-and-braces check on the files that
+    // would carry such a field if it were ever added properly.
+    for (const file of [
+      join(SRC, "data", "indexeddb", "session.ts"),
+      join(SRC, "data", "repositories", "types.ts"),
+      join(SRC, "data", "backup", "schema.ts"),
+    ]) {
+      expect(
+        readFileSync(file, "utf8"),
+        `${file} must not carry a video-visible field`,
+      ).not.toMatch(/video(Visible|Mode|Shown)/i);
+    }
+  });
+
+  it("uses no deprecated player parameter, and the detector can fail", () => {
+    // `modestbranding: 1` was here and did nothing — YouTube deprecated it and its docs say
+    // it "has no effect". It read like working configuration, which is the problem: a line
+    // that looks effective and is inert is worse than no line. A commented-out one would invite
+    // an uncomment, so the rule is on the *token*, not on a live assignment.
+    const engine = stripComments(readFileSync(join(SRC, "player", "engine.ts"), "utf8"));
+    for (const deprecated of ["modestbranding", "showinfo", "autohide", "theme"]) {
+      expect(engine, `${deprecated} is deprecated and inert; it must not be passed`).not.toContain(
+        deprecated,
+      );
+    }
+    // Proven able to fail, against the shape the code used to have.
+    const withModestBranding = `playerVars: { controls: 0, modestbranding: 1, rel: 0 }`;
+    expect(withModestBranding).toContain("modestbranding");
+  });
+
+  it("does not keep a hidden player playing through a timer, visibility handler, or media session", () => {
+    const offenders = applicationSources()
+      .filter((entry) => KEEPS_PLAYING(entry.code))
+      .map((entry) => entry.file);
+    expect(offenders, "parked playback must never be kept alive programmatically").toEqual([]);
+  });
+
+  it("the parked-playback detector is proven able to fail, on every shape that got past it", () => {
+    // The two-proofs discipline, and the specific list of shapes the first version missed.
+    // A detector proved only against phrasing its own author chose proves much less than it
+    // appears to; these are the ten that either got past an earlier draft or are the obvious
+    // ways to defeat this one.
+    for (const [label, why, code] of MISSED_BY_THE_FIRST_VERSION) {
+      expect(KEEPS_PLAYING(stripComments(code)), `the detector missed ${label} — ${why}`).toBe(
+        true,
+      );
+    }
+
+    // And the shapes the first version did catch, so the fix is not a narrowing.
+    for (const [label, code] of [
+      [
+        "an inline setInterval play",
+        `setInterval(() => { if (player.isPaused) player.playVideo(); }, 500);`,
+      ],
+      [
+        "a visibilitychange play",
+        `document.addEventListener("visibilitychange", () => { el.play(); });`,
+      ],
+      [
+        "a fast mute-and-replay loop",
+        `setInterval(() => { player.muted = true; void player.play(); }, 200);`,
+      ],
+      ["a setTimeout chain", `setTimeout(function again() { player.playVideo(); again(); }, 100);`],
+    ]) {
+      expect(KEEPS_PLAYING(stripComments(code)), `the detector missed ${label}`).toBe(true);
+    }
+
+    // The other half of the proof: a poll that only *reports* is not a keep-alive, and the
+    // application has plenty of legitimate ones — including its own 1s position poller and its
+    // own reconnect recovery. A rule that fires on those gets switched off, and a rule that
+    // would have fired on them is a rule that was not run against the real sources.
+    for (const [label, code] of [
+      [
+        "a position poll that only reads state",
+        `setInterval(() => { void player.getCurrentTime(); }, 1000);`,
+      ],
+      [
+        "a health probe that only reads state",
+        `setInterval(() => { report(player.getPlayerState()); }, 2000);`,
+      ],
+      ["a user-driven play control", `onClick={() => void player.playVideo()}`],
+      ["a resume helper that is never scheduled", `function resume() { void player.playVideo(); }`],
+      [
+        "an observer that only re-renders",
+        `new MutationObserver(() => { forceUpdate(); }).observe(node, { childList: true });`,
+      ],
+    ]) {
+      expect(KEEPS_PLAYING(stripComments(code)), `${label} must NOT be reported`).toBe(false);
+    }
+  });
 });
 
 describe("a source that documents an exclusion does not break it (M15 task 1.3)", () => {

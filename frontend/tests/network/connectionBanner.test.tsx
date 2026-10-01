@@ -133,17 +133,21 @@ describe("ConnectionBanner in the shell", () => {
     const banner = screen.getByTestId("connection-banner");
 
     // Fixed top-right under the 64px top bar (top-18 = 64 + 8px gap) and
-    // below the docked player surface (z-40 < z-50): never over the player.
+    // above the parked player host (z-40 > the host's z-0) but below nothing it
+    // could cover: never over the player.
     expect(banner.className).toContain("fixed");
     expect(banner.className).toContain("top-18");
     expect(banner.className).toContain("right-4");
     expect(banner.className).toContain("z-40");
     expect(banner.className).not.toContain("bottom-");
 
-    // Direct shell child: outside the scrolling main and the player dock.
+    // Direct shell child: outside the scrolling main and the player host. The
+    // assertion is re-expressed against the host that still exists rather than
+    // dropped, because "the banner is not nested in the player region" is the
+    // property the old `player-dock` id was standing in for.
     expect(banner.parentElement).toBe(container.firstElementChild);
-    const dock = screen.getByTestId("player-dock");
-    expect(banner.closest('[data-testid="player-dock"]')).toBeNull();
-    expect(dock.contains(banner)).toBe(false);
+    const host = screen.getByTestId("player-host");
+    expect(banner.closest('[data-testid="player-host"]')).toBeNull();
+    expect(host.contains(banner)).toBe(false);
   });
 });
