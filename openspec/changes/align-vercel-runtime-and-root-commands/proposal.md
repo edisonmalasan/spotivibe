@@ -47,8 +47,25 @@ shape as the bug it closed: a check that could pass while the thing it checked w
 - **Modified**: `release-validation` — the deployment contract gains the host-support check it
   was missing, and its runtime requirement stops naming a specific major the host cannot
   build.
-- **New**: none. Root-level commands are developer ergonomics rather than product behaviour,
-  so they belong in documentation and a manifest, not in a behavioural spec.
+- **New**: none. No new capability is created; both changes land inside `release-validation`.
+
+### A correction to this section, made during sync
+
+The first draft of this proposal said root-level commands "belong in documentation and a
+manifest, not in a behavioural spec", and the spec delta then added a requirement for them
+anyway. The claim was wrong, and it is worth being precise about why rather than quietly
+dropping the sentence.
+
+The requirement earns its place here because the deployment procedure *already depended* on a
+documented install path — `DEPLOYMENT.md` states an install command, and someone must be able
+to run it. A root manifest that proxies is now that path, and its failure mode is specific
+rather than aesthetic: a manifest that quietly gained dependencies, or a workspace that moved
+the lockfile, would leave the documented install command installing nothing. That is a
+release-correctness property, not a preference about directory structure, which is the same
+distinction that put the deployment contract in this capability in the first place.
+
+So the behaviour is specified, not merely documented. What is *not* specified is anything
+about how the proxy should be implemented — that stays in the manifest and the tests.
 
 ## Impact
 

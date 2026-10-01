@@ -71,12 +71,16 @@ report a single overall pass in place of per-item results.
 
 ### Requirement: The deployment contract is asserted
 
-The application's deployable shape SHALL be asserted by checks rather than assumed, and
-SHALL cover: a single application with no custom server and no request-interception hook;
-no required environment variable; the response security policy declared where a CDN cannot
-remove it rather than injected at the edge; and the service worker and manifest served as
-static files whose caching does not prevent the worker's update flow. The runtime the
-application is verified on SHALL be declared so that a host builds it with that runtime.
+The application's deployable shape SHALL be asserted by checks rather than assumed, and SHALL
+cover: a single application with no custom server and no request-interception hook; no
+required environment variable; the response security policy declared where a CDN cannot remove
+it rather than injected at the edge; and the service worker and manifest served as static files
+whose caching does not prevent the worker's update flow.
+
+The runtime the application is verified on SHALL be declared, and the declared runtime SHALL be
+one the project's stated deployment target can actually build, with the CI workflow verifying
+the same major, so that a host builds the thing that was tested rather than a thing that
+merely resembles it.
 
 #### Scenario: A shape that breaks single-application deployment fails a check
 
@@ -92,9 +96,23 @@ application is verified on SHALL be declared so that a host builds it with that 
 
 #### Scenario: A build uses a different runtime than the one verified
 
-- **WHEN** a host builds the application without the declared runtime
-- **THEN** the declared runtime is what the host is instructed to use, so a build that
-  passes is a build of the thing that was tested
+- **WHEN** the declared runtime and the runtime the CI workflow verifies are different majors
+- **THEN** the deployment contract check fails, because the pin is then decorative and the
+  host would build something other than the thing that was tested
+
+#### Scenario: A runtime the deployment target cannot build fails a check
+
+- **WHEN** the declared runtime names a major the stated deployment target does not offer
+- **THEN** the deployment contract check fails and names the major and the supported set,
+  because a build would otherwise fail on the target's own schedule rather than in this
+  repository
+
+#### Scenario: The check rejects a runtime the target cannot build
+
+- **WHEN** the host-support check is proven
+- **THEN** it is shown failing against every major the target does not offer, including the
+  one this change replaced, so a check that cannot reject an unsupported pin is never mistaken
+  for one that can
 
 #### Scenario: The service worker can still update after deployment
 
@@ -147,3 +165,35 @@ run.
 
 - **WHEN** the bookkeeping states a count, a status, or a pass
 - **THEN** it is the value the run or check produced, and it names what produced it
+
+### Requirement: The application is reachable from the repository root
+
+The repository root SHALL provide a manifest whose scripts run the application's commands, so
+that a developer starting the application, testing it, or linting it does not first have to
+change directory. The root manifest SHALL proxy to the application package and SHALL NOT
+introduce a second dependency manifest, a second lockfile, or a workspace, and the application
+directory SHALL remain where it is.
+
+#### Scenario: The application starts from the repository root
+
+- **WHEN** a developer runs the development command from the repository root
+- **THEN** the application starts, and the command does not require a prior change of directory
+
+#### Scenario: The root adds no second source of truth
+
+- **WHEN** the root manifest is inspected
+- **THEN** it declares no dependencies and the application package's lockfile remains the only
+  one, so installing from the root cannot produce a manifest nothing installs from
+
+#### Scenario: A root command reaches the application's own tooling
+
+- **WHEN** a root command runs the formatter, the linter, or the type checker
+- **THEN** it runs the application's configured tool over the application directory, and not a
+  different command with a similar name
+
+#### Scenario: Installation still has one correct path
+
+- **WHEN** a developer is told how to install dependencies
+- **THEN** there is one documented command that installs from the application lockfile, and it
+  is reachable from the repository root, so the lockfile's location is not something a
+  developer has to discover
