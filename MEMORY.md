@@ -65,6 +65,7 @@ thirty-four defects two independent passes found in it and the eight transferabl
 | **M14** | `2026-09-30-add-deployment-hardening` | #58 propose `0d855f9`, #59 apply `d65abb4`, #60 sync `a6cfb1c`, #61 archive `e2362f9` |
 | **M15** | `2026-09-30-add-release-validation-and-deployment` | #63 propose `f83f3f6`, #64 apply `0cbd1dc`, #65 sync `9b8bab7`, #66 archive `78baa67` |
 | **post-M15** | `2026-10-01-align-vercel-runtime-and-root-commands` | #68 apply `ae34183`, #69 sync `f5c22d0`, #70 archive `56c34bf` |
+| **reversal** | `2026-10-02-lyrix-style-hidden-player` | #72 propose `b6328f5`, #73 apply `1196e70`, #74 sync `2a9f760`, #75 archive `81cb223` |
 
 Baseline at the M12 merge (`3cabc58`): **130 test files / 2084 tests**; after M13:
 **134 test files / 2152 tests**; after M14: **140 test files / 2231 tests**; after
@@ -315,6 +316,41 @@ found by *executing* things rather than reading them. The transferable lessons:
   at unrelated code. `node --check` the harness after every scripted edit; the symptom
   is a syntax error several lines away from the cause.
 
+## The parked player, and the fourth dead detector
+
+`lyrix-style-hidden-player` removed the floating YouTube video panel and parks the single
+persistent IFrame at 1×1 with zero opacity, non-interactive, and behind the app UI. PlayerBar is
+the only visible playback interface; Now Playing has an opt-in video mode that reveals *that same*
+node, never re-parented, because re-parenting an iframe reloads it and restarts playback.
+
+**The branding could not be suppressed, only hidden.** `modestbranding: 1` was already set and
+does nothing — YouTube deprecated it, and their docs say "has no effect". A cross-origin iframe
+cannot be reached by CSS or DOM. So parking *is* the solution, and it is the Lyrix approach.
+
+**It is a deliberate reversal of M4's visible-player decision, for private/personal use, and the
+`playback` capability now carries that as a requirement rather than a caveat.** Not extraction,
+`yt-dlp`, stream download, media proxy, ad blocking, or background-play circumvention — and a
+detector holds that.
+
+**The verification pass returned NOT MERGEABLE with six criticals, four of them detectors that
+could not fail.** The four, all now fixed and each proven by inducing the violation in the real
+file:
+
+| Dead check | Why it could not fail |
+| --- | --- |
+| "no tab stop in the parked host" | Selector omitted `iframe`; the engine is `vi.mock`ed there so none existed |
+| "never `display:none`" | Matched a literal the file does not contain — zero matches, token set `[""]` |
+| "exactly one player container" | Reduced to "contains `firstElementChild`", which a version that *also* appends a second container satisfies |
+| "no keep-alive of a hidden player" | Required the play call inline within 200 chars; an injected rAF loop in the real engine passed |
+
+Two behavioural defects came with them, both measured in Edge: the parked iframe was **the last tab
+stop of the whole document**, and **leaving Now Playing did not re-park** — a 640×360 branded panel
+followed the user onto Home, because the host lives in the shell so navigating unmounts nothing.
+
+**The largest open item is unverified and unticked:** whether a 1×1 `opacity: 0` iframe actually
+keeps advancing position in a live browser. The IFrame API is blocked by CSP here, so no run can
+confirm it. Geometry and the tab stop were measured *before* the fixes; there is no re-run after.
+
 ## Hard-won lessons
 1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
    `[System.IO.File]::WriteAllText` must use an explicit `New-Object System.Text.UTF8Encoding($false)`;
@@ -404,3 +440,34 @@ found by *executing* things rather than reading them. The transferable lessons:
     non-nested `cd frontend && npm ci` fallback exists for one machine's npm
     configuration; hold it with a test that asserts the README still names it, or it
     disappears as clutter the first time someone tidies the prose.
+24. **`aria-hidden` and `pointer-events: none` do not take an `<iframe>` out of the tab
+    order.** It is a focus navigation target, and `tabIndex = -1` on the *host* cannot help
+    a descendant — it goes on the iframe, which `YT.Player` creates after construction, so
+    it needs a `MutationObserver`. Measured in Edge: the parked iframe was the last tab stop
+    of the entire document.
+25. **A detector that reads another file with a regex is the fragile kind.** Two of this
+    repository's dead checks did: one matched a class-string shape the file's own
+    formatting did not contain (zero matches, empty token set), and one anchored on `new`
+    so a TypeScript cast defeated it. Read *values* — every string literal, an append
+    *count* — and require the extraction to have found what it was looking for, so an
+    empty result fails instead of passing.
+26. **A rule that resolves structure must scope the structure.** Treating a whole `class`
+    body as one "function" made the keep-alive detector report the real `engine.ts`, and
+    narrowing the character window to silence it would have been the wrong fix. Class
+    members are separate scopes; a rule that fires on correct code gets switched off.
+27. **"Off when idle" is not "off when you leave."** A component that lives in a shell
+    outlives the route that controls it, so a per-visit view flag has to be released by
+    watching the route, not only by watching the data. The visible artefact was a 640×360
+    video following the user onto Home.
+28. **A probe that cannot fail is not a probe, and neither is one that restores the tree.**
+    `$host` is a PowerShell reserved variable: a script assigning to it read nothing and
+    reported PASS for every probe, because the suite failed for an unrelated reason. And
+    restoring with `git checkout -- frontend` reverted uncommitted work twice, silently, so
+    the third run reported on code that was not under test. Commit first; restore the one
+    file the probe wrote; and confirm the assertion named is the one you expected.
+29. **A requirement rename is not a body replacement.** A `MODIFIED` delta is matched by
+    name, so retitling a requirement leaves the record under the old heading — here
+    "Visible compliant playback surface" over a body mandating a 1×1 non-compliant iframe.
+    Apply the rename explicitly, and make the retained-name check compare against the
+    *expected* set so a rename does not read as a loss. A scenario name is a handle, not a
+    label: `validate --strict` refused a delta that renamed one, and correctly so.
