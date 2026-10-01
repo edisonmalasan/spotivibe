@@ -22,7 +22,7 @@ be applied to it, and asserting it there would be asserting a tautology rather t
 - **WHEN** connectivity returns
 - **THEN** the banner disappears without navigation or reload
 
-#### Scenario: The banner never covers a visible player
+#### Scenario: The banner never covers the player surface
 
 - **WHEN** the banner is visible, video mode is on, and the topmost element at the center of the
   visible player viewport is inspected
