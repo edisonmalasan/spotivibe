@@ -2188,11 +2188,20 @@ by a test that asserts the response body is a stream and that no whole-body buff
 **Browser verification.** A real download in a real browser: the file lands, plays locally, and
 its extension matches its content.
 
-**NOT VERIFIABLE IN THIS ENVIRONMENT, and must not be claimed.** No Vercel deployment exists, so
-the 4.5 MB streaming bypass, the 300 s duration, and the 120 s proxy timeout are **documented
+**NOT VERIFIABLE IN THIS ENVIRONMENT, and must not be claimed.** **Amended 2026-10-03**, because
+the original reason was written before the first deployment and is now false. A production
+deployment **does** exist — `https://spotivibe-web.vercel.app`, verified 2026-10-02 — but **both it
+and every Preview deployment sit behind Vercel Deployment Protection**, so no route on either can be
+exercised from here.
+
+So the 4.5 MB streaming bypass, the 300 s duration, and the 120 s proxy timeout remain **documented
 constraints this milestone is designed against**, not observed behaviour. The route is verified
-locally against a real Next.js server. This mirrors the parked player's known limit and is
-recorded the same way.
+locally against a real Next.js server. This mirrors the parked player's known limit and the
+milestone's own browser-verification limit, and is recorded the same way.
+
+**What would change it:** someone with Vercel account access running the route on the protected
+origin with a real provider id. That is user-only input, and it is the only way these three numbers
+stop being documentation.
 
 **Completion criteria.** A track downloads to the device, the file is honestly named, playback is
 untouched, and no new persistent state exists.
