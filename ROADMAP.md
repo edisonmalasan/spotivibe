@@ -134,7 +134,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 |---|---|---|---|
 | **M16** | Lyrics and Now Playing enrichment | `DONE` | M9, M12 |
 | **M17** | Home discovery enrichment | `DONE` | M11, M8 |
-| **M18** | Keyboard shortcuts, search suggestions, sharing | `PROPOSED` | M5, M7, M9 |
+| **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `APPROVED` | M18 |
 | **M20** | Personal-use media downloading | `APPROVED` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
@@ -159,9 +159,10 @@ distinguishable panel states, and a duration-aware LRCLIB lookup cached without 
 Three things M16 established that the rest of the post-v1 work inherits:
 
 - **The induced-violation harness** (`frontend/scripts/lyrics-induced-violations.mjs`) and its guard
-  are now the repository's way of showing a check can fail. **36 cases, all caught** (22 from M16, 8
-  from M17's first pass, 6 more once the time band's seed set was wired to a real query). M18–M20
-  should add cases for their own load-bearing behaviour rather than trusting a green suite.
+  are now the repository's way of showing a check can fail. **64 cases, all caught** — 22 from M16,
+  14 from M17, 24 from M18, and 4 more added after independent review found M18's shift rule had
+  no coverage at all. M19–M20 should add cases for their own load-bearing behaviour rather than
+  trusting a green suite.
 - **Five independent verification passes** on one change found ten CRITICALs, every one a claim that
   outran its evidence and none a behavioural defect — and four of them introduced by an earlier pass's
   own fix. A ticked task clause is a contract about what a test does, and reviewing those clauses is
@@ -221,6 +222,10 @@ The work after that was a **deliberate reversal of M4's visible-player decision*
 | `tests/settings-ui.test.tsx` flake | A pre-existing load-sensitivity flake, roughly 1 run in 7: the file's `waitFor` for the local-data connection to open exceeds its 5s `asyncUtilTimeout` when the suite is loaded. The file already sets that timeout, so raising it further would mask a genuine hang rather than fix anything. Observed independently during M17; whether M17's added tests made it more likely is **unproven**. | M17's evidence README, "Suite"; `2026-10-02-m17-home-discovery` archived `tasks.md` 8.2 |
 | **No browser verification of M17's Home** | Home was never opened at 1280×900 or 390×844, the filter was never switched by hand, and no card was ever pressed in a real browser. The time shelf's layout is reasoned from the existing `mb-8`/`gap-8` rhythm, not seen, and the hydration fix rests on `renderToStaticMarkup` plus `useSyncExternalStore` rather than on a console free of mismatch warnings. | M17's evidence README, "Not verified" |
 | **M17's "no motion" is about vocabulary, not the rendered DOM** | The time shelf's action reuses the design system's Ghost Text Button, which DESIGN.md defines *with* a `transition`, so the rendered control fades on hover — and `HomeFilterBar` in the same milestone already used `variant="ghost"`. This is reuse of a documented primitive, not a new vocabulary, but a reader who takes "M17 adds no motion" as a claim about the DOM will be wrong. The guard's documentation states the distinction explicitly. | M17's evidence README, "Scoped claims"; `frontend/tests/home-m17-no-motion.test.ts` |
+
+| **The no-motion guard covers only M17's surface** | Found during M18's verification. `frontend/tests/home-m17-no-motion.test.ts` scopes itself to `features/home` plus `Shelf.tsx`, so a motion utility added to `features/shortcuts`, `features/sharing`, `features/search`, or `components/design-system/Dialog.tsx` is caught by nothing. M18 was checked by hand — no added line in `frontend/src` contains `transition-`, `animate-`, `duration-` or `ease-`, and the three `transition-` hits in M18-touched files are all pre-existing — but a by-hand check does not survive the next milestone. Generalising the guard is the natural companion to M19, which is the milestone that adds motion deliberately. | M18's evidence README, "Scoped claims"; scheduled into **M19** |
+| **No shortcut, dialog, or share has been exercised in a browser** | Only Edge is installed here and there is no browser-automation dependency, so M18's evidence is jsdom plus static architecture rules. Unverified: real `KeyboardEvent.key` values (so the `"Space"` legacy branch is untested against any engine); real `Tab` movement, so `Dialog`'s focus trap has never been driven by the browser's own tabbing — the tests assert the cycle the code performs, because jsdom does not move focus; the `isContentEditable === true` branch, which jsdom does not implement at all; screen-reader announcement of `aria-activedescendant`, `role="listbox"`, and the dynamically-mounted `role="status"`; `navigator.share` cancel semantics and `navigator.clipboard`, both needing a user gesture; that `preventDefault` actually cancels scrolling; and the help trigger's placement at `fixed bottom-32 right-4`. One unresolved detail: the combobox popup and the `Dialog` backdrop are both `z-40`, so the stacking winner is DOM order. | M18's evidence README, "Not verified" |
+| **One harness run reported 59/60 and could not be attributed** | During M18's Apply, one induced-violation run reported 59/60 and the next four reported 60/60. It could not be pinned to a case because the output was filtered too aggressively to distinguish the harness's own `FAIL` line from vitest's output inside it. Independent verification then ran the suggestion suite 22 consecutive times with no failure and showed its timing is deterministic by construction, so the most likely explanation is environmental rather than a flaky detector — but that is a hypothesis, not a measurement, and it is recorded as such rather than dismissed. | M18's evidence README, "Gates" |
 
 **Three of the above are prerequisites for post-v1 work and are scheduled inside it**: the flaky
 release gate is fixed in **M21** (post-v1 work must be gated by a gate that means something), the
