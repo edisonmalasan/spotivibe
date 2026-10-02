@@ -15,6 +15,7 @@ import { MoreLikeThisShelf } from "@/features/related/MoreLikeThisShelf";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { usePlayerStore } from "@/stores/playerStore";
 import { useVideoModeStore } from "@/stores/videoModeStore";
+import { LyricsPanel } from "@/features/lyrics/LyricsPanel";
 import {
   ChevronDown,
   Heart,
@@ -204,12 +205,23 @@ export default function NowPlayingPage() {
       </div>
 
       <div className="flex w-full max-w-md flex-col items-center gap-6">
-        <div className="grid aspect-square w-full place-items-center overflow-hidden rounded-images bg-graphite">
+        <div
+          className="grid aspect-square w-full place-items-center overflow-hidden rounded-images bg-graphite"
+          // The *visible* cover, as distinct from the blurred backdrop above. A test has to be able
+          // to tell the two apart, and `now-playing-background` is the backdrop: asserting on it
+          // would pass with the artwork image deleted and a listener looking at an empty grey box.
+          data-testid="now-playing-artwork"
+        >
           {artworkUrl ? (
             // Provider artwork thumbnails: dynamic remote URLs, no optimizer
             // allowlist yet (M9 owns asset handling).
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={artworkUrl} alt="" className="size-full object-cover" />
+            <img
+              src={artworkUrl}
+              alt=""
+              data-testid="now-playing-artwork-image"
+              className="size-full object-cover"
+            />
           ) : (
             <Music2 className="size-16 text-fog" aria-hidden="true" />
           )}
@@ -359,6 +371,29 @@ export default function NowPlayingPage() {
             ) : null}
           </div>
         ) : null}
+      </div>
+
+      {/*
+        Lyrics (ROADMAP M16; spec `lyrics`, `app-shell`): a sibling in this
+        column, between the transport and the related shelf. Not a tab — lyrics
+        are only useful while the track plays, so a control that competes with
+        the transport for attention is the wrong trade, and at 390x844 there is
+        no room for a second navigation row.
+
+        The height bound is load-bearing, not cosmetic. A track with eighty lyric
+        lines in an auto-height column pushes More Like This off the screen, and
+        an unbounded panel is exactly the failure the `app-shell` requirement
+        that lyrics never displace the rest of the surface exists to prevent. So
+        the wrapper is capped and the panel scrolls inside it.
+
+        All four lyrics states (loading / populated / unavailable / failed) are
+        contained in the panel, so none of them can affect the transport above.
+      */}
+      <div
+        data-testid="now-playing-lyrics-slot"
+        className="flex max-h-[40vh] w-full max-w-3xl min-h-0 flex-col"
+      >
+        <LyricsPanel />
       </div>
 
       <div className="w-full max-w-3xl">

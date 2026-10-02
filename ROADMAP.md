@@ -191,11 +191,13 @@ The work after that was a **deliberate reversal of M4's visible-player decision*
 | The DESIGN.md visual audit | A proportion and hierarchy judgement, not a number. | M15's archived `tasks.md` |
 | `tests/podcast-playback-history.test.ts` flake | A pre-existing 2-second wall-clock budget standing in for synchronization; roughly 1 run in 3 under load. Found during the runtime correction, deliberately not fixed there. | `2026-10-01-align-vercel-runtime-and-root-commands` evidence README |
 | A flaky release gate | M15's end-to-end suite fails intermittently on a CDP race in its own fixture router, reproduced on the commit before the runtime correction. The gate's credibility rests on green meaning something. | Found during the runtime correction; not yet fixed |
+| **The release gate destroys `node_modules` when its install step fails** | Discovered by running it during M16. `gates-install` runs `npm ci`, which deletes `node_modules` *before* installing; when it aborts — e.g. `EPERM` on a native `.node` file held by a running production server — it leaves **19 top-level packages, no `node_modules/.bin`, and `next` without its `package.json`**. Every later gate item then fails in under a second for a reason that is not the code. This is a hazard to any developer's working tree, not only a red gate. | M16's evidence README, "The release gate could not be used as a comparison"; `node_modules` restored there with `npm ci` (445 packages, 0 vulnerabilities) |
 
-**Two of the above are prerequisites for post-v1 work and are scheduled inside it**: the flaky
-release gate is fixed in **M21** (post-v1 work must be gated by a gate that means something), and
-the parked-player browser re-verification is revisited in **M21** once the motion and interaction
-changes have altered the surfaces being measured.
+**Three of the above are prerequisites for post-v1 work and are scheduled inside it**: the flaky
+release gate is fixed in **M21** (post-v1 work must be gated by a gate that means something), the
+gate's destructive install step is fixed in **M21** (a gate that can silently break a working tree
+cannot be run to validate anything), and the parked player's browser re-verification is revisited in
+**M21** once the motion and interaction changes have altered the surfaces being measured.
 
 ---
 
@@ -2148,6 +2150,13 @@ proof is worth something, and update the documentation to describe the product a
 - **Fix the flaky release gate.** M15's end-to-end suite fails intermittently on a CDP race in
   its own fixture router — reproduced on the commit before the runtime correction, so it predates
   all post-v1 work. Post-v1 changes must not be gated by a gate that intermittently lies.
+- **Make the release gate non-destructive.** Found by running it during M16: its `gates-install` step
+  runs `npm ci`, which deletes `node_modules` before installing, so a failed install — an `EPERM` on
+  a native module held by a running server, for instance — leaves 19 packages, no `.bin`, and a
+  `next` without its `package.json`, after which every later item fails for a reason that is not the
+  code. A gate that can silently break a working tree cannot be the thing that validates one. The
+  repair is to stage the install (or refuse to run while `node_modules` is in use) and to detect and
+  report a broken install as its own named failure rather than as sixteen unrelated ones.
 - Full cross-feature regression: every critical flow with lyrics, Home filters, shortcuts,
   sharing, motion, and downloading all present simultaneously.
 - `frontend/docs/DEPLOYMENT.md` updated for the download route's deployment implications, and for

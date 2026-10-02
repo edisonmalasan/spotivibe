@@ -5,6 +5,9 @@ build/
 node_modules/
 next-env.d.ts
 
+# Test-runner report artefacts (see .gitignore for why)
+.vitest/
+
 # Lockfiles and generated agent files
 package-lock.json
 AGENTS.md
