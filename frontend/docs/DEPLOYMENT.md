@@ -89,11 +89,26 @@ Now Playing route and the `playback` requirements with it.
 
 ## Verifying a deployment
 
-The first deployment is a **manual step**. Nothing in this repository can deploy to
-Vercel: it would need account credentials this project does not have and does not want, and
-a free-tier account is a resource the project should not spend on a check.
+**Spotivibe is deployed.** The canonical production origin is
 
-After deploying, verify by hand:
+    https://spotivibe-web.vercel.app
+
+It was deployed manually — nothing in this repository can deploy to Vercel, because that needs
+account credentials this project does not have and does not want — and then verified against the
+live origin. The full record is `openspec/changes/archive/2026-10-02-first-production-deployment.md`.
+
+Eight automated checks passed against the deployed origin: `/` returns 200; all four required
+security headers are present **through Vercel's CDN** rather than only in a local build;
+`/sw.js` returns 200 with `public, max-age=0, must-revalidate`, so a new worker can still be
+fetched; `/manifest.webmanifest` parses and its four icons resolve; `/api/search` returns real
+provider results; rate limiting answers `429` with `Retry-After`; all eleven declared routes answer
+and an undeclared one 404s.
+
+The browser-only list below is **still open** and is recorded as such rather than claimed. Nothing in
+this repository can automate it: only a real browser can show whether the offline shell survives a
+reload, whether the parked player advances, or whether a layout is right.
+
+The checks themselves:
 
 1. `GET /` returns 200 and the response carries `Content-Security-Policy`,
    `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
@@ -108,6 +123,16 @@ After deploying, verify by hand:
 Items 1 to 5 are what the local suites already assert against a production build, so a
 deployment that fails any of them has failed something this repository knows how to check.
 The manual step is deploying, not verifying.
+
+Item 5 — offline → reload — is the one that cannot be automated from a terminal, and it remains
+unverified, exactly as the parked player has been unverified since M4. Both are browser work.
+
+### Where the deployment URL lives
+
+It is **not** in this file by accident: the per-commit deployment URL Vercel reports in a GitHub
+deployment status is behind Vercel Deployment Protection, so every path on it answers `302` to
+`vercel.com/sso-api`. Verification used the open canonical origin above. Nothing here bypasses that
+protection, and a protected URL is not a production URL.
 
 ## Rolling back
 
