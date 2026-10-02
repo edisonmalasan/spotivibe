@@ -1,0 +1,47 @@
+# Tasks
+
+## 1. The local-meaning guard, before any binding
+
+- [ ] 1.1 Implement `keyHasLocalMeaning(target)` as a **pure function over an event target**, covering `input`, `textarea`, `select`, `[contenteditable]`, `[role="slider"]`, `[role="spinbutton"]`, a `[role="dialog"]` subtree, and a `[role="menu"]` subtree — verify: a test per surface type asserting `true`, plus tests asserting `false` for a plain element, an unfocused element, and a `null` target (spec: `keyboard-shortcuts` — "No shortcut fires while a text field has focus"; "No shortcut fires inside editable content"; "A slider keeps its own arrow keys"; "The guard is decidable from the target alone").
+- [ ] 1.2 Prove the guard reads **only** the target — verify: a test that the same element yields the same answer with application state changed underneath it, so the guard cannot have consulted a store (spec: `keyboard-shortcuts` — "The guard is decidable from the target alone").
+
+## 2. The global listener
+
+- [ ] 2.1 Mount the listener from `AppShell` — the existing client mount point for cross-cutting non-visual agents — in the **bubble** phase on `document`, so the five dialogs that already call `stopPropagation()` keep precedence without new code (spec: `keyboard-shortcuts` — "A dialog keeps its own dismissal").
+- [ ] 2.2 Bind play/pause, seek ±10s, volume ±5, mute, and like, each routed through the player store's own actions and never by writing state directly — verify: a test per binding spying the store action and asserting the state change, plus a test asserting `seek` clamps to the track's bounds (spec: `keyboard-shortcuts` — "Play and pause toggle"; "Seeking moves within the current track"; "Volume adjusts in steps").
+- [ ] 2.3 Bind mute to the real `toggleMute`, and unmute when the volume is raised on a muted player — verify: a test asserting `muted` toggles while `volume` is **unchanged**, and a test asserting `ArrowUp` on a muted player yields both louder and unmuted (spec: `keyboard-shortcuts` — "Mute uses the player's real muted state"; "Raising volume while muted unmutes").
+- [ ] 2.4 Bind like to the now-playing track, matching `app/now-playing/page.tsx`'s existing precedent — verify: a test asserting a playing track's liked state toggles, and a test asserting nothing is liked with no track playing (spec: `keyboard-shortcuts` — "The like key acts on the now-playing track"; "The like key does nothing with no track playing").
+- [ ] 2.5 Assert the guard is consulted before **every** binding, so a future binding cannot be added without it — verify: a test iterating the whole binding table and asserting none fires under each guarded surface type (spec: `keyboard-shortcuts` — all of "No shortcut fires…", "A slider keeps its own arrow keys").
+
+## 3. The help surface
+
+- [ ] 3.1 Build a `Dialog` design-system primitive: `role="dialog"`, `aria-modal`, focus moved in on open, **Tab and Shift+Tab trapped**, focus restored to the invoking element on close, dismissed by key, close control, or backdrop — verify: a test per dismissal path and a test asserting focus never leaves the dialog under repeated cycling (spec: `keyboard-shortcuts` — "Focus is trapped while help is open"; "Focus returns to the invoking element"; "Help dismisses by key, by button, and by pointer").
+- [ ] 3.2 Render the help surface listing **every** binding, derived from the binding table rather than transcribed — verify: a test asserting the rendered list and the binding table have the same length and the same keys, so a new binding cannot be unlisted (spec: `keyboard-shortcuts` — "Help opens from the keyboard and lists every binding").
+- [ ] 3.3 Make it reachable by pointer as well as by key, and give every listed binding a stable key so no combination can be silently duplicated — verify: a test per duplicate detection (spec: `keyboard-shortcuts` — "Help is reachable by pointer").
+
+## 4. Suggestions
+
+- [ ] 4.1 Derive refinements from the typed query and **local recent searches only**, with no provider request — verify: a test spying the provider layer and asserting zero calls, plus a test asserting an empty field offers this device's own history (spec: `search` — "Suggestions come from the query and local history only"; "An empty field offers recent searches").
+- [ ] 4.2 Run suggestions on their own debounce and their own abort — verify: a test asserting a suggestion request and a results request proceed together and neither aborts the other (spec: `search` — "Suggestions do not cancel result requests").
+- [ ] 4.3 Establish the combobox pattern — `role="combobox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant`, `role="listbox"`, `role="option"` — and keep full keyboard traversal: navigation moves the active option, commit accepts it, dismissal closes and returns focus — verify: a test per interaction (spec: `search` — "The suggestion list is a combobox"; "The keyboard moves and commits a suggestion"; "Dismissing returns focus to the field").
+- [ ] 4.4 Ensure a superseded or cancelled suggestion request never renders and is never reported as a failure — verify: a test that a slow first request resolving after a fast second one renders nothing from the first (spec: `search` — "A superseded suggestion never renders").
+- [ ] 4.5 Assert `useSearchController`'s public surface, debounce, cancellation, URL synchronisation, and history recording are **unchanged**, and that committing a suggestion updates the URL exactly as a typed query does — verify: the pre-existing controller suite staying green plus a test per property (spec: `search` — "The controller's public surface is unchanged"; "URL synchronisation still follows the committed query").
+
+## 5. Sharing
+
+- [ ] 5.1 Implement `useShare` over the platform share sheet with a clipboard fallback, treating a **rejected** share — including a dismissed sheet — as the fallback rather than an error — verify: a test per transport, and a test asserting a rejected promise renders no error (spec: `sharing` — "The platform share sheet is used when present"; "A missing share API falls back to copying"; "A rejected share is not an error").
+- [ ] 5.2 Report every outcome in a `role="status"` region — shared, copied, dismissed — and persist nothing — verify: a test per outcome, and a test asserting no store or repository write is reached (spec: `sharing` — "The outcome is always reported"; "Sharing persists nothing").
+- [ ] 5.3 Share an album, an artist, and a playlist through their **own** href builders, adding the missing `playlistHref` rather than concatenating at the call site — verify: a test per surface asserting the shared URL equals its builder's output (spec: `sharing` — "An album shares its own page URL"; "An artist shares its own page URL"; "A playlist shares its own page URL").
+- [ ] 5.4 Share a track as a search URL built from its artist and title through the existing `buildSearchUrl`, recorded as a lossy representation — verify: a test asserting the shared URL is a search URL that resolves to the track, and a comment recording the trade-off (spec: `sharing` — "A track shares a resolvable search URL").
+- [ ] 5.5 Give every share action an accessible name identifying what it shares, and place the action where the surface already has a slot — verify: a test per surface asserting the action's accessible name names the surface (spec: `sharing` — "The share action is labelled").
+
+## 6. The detector
+
+- [ ] 6.1 Add induced-violation cases for: a binding that fires inside a text field, inside a dialog, and inside a slider; a dialog that fails to trap focus; a controller that cancels a results request from a suggestion request; a share that reports a dismissal as an error; a share action with no accessible name — verify: every case caught by its named test, and the harness's anchor guard still resolving for all cases.
+
+## 7. Verification
+
+- [ ] 7.1 Run the quality gates from the repository root under Node 24 — verify: each exits `0`, with the interpreter version recorded.
+- [ ] 7.2 Run the suite repeatedly and record the run count, distinguishing any pre-existing flake from a regression — verify: the counts recorded, and `tests/podcast-playback-history.test.ts` and `tests/settings-ui.test.tsx` named explicitly if either appears.
+- [ ] 7.3 State plainly what could not be verified here: no shortcut has been pressed in a real browser, no help dialog has been focus-cycled by a real user, and no share has gone through a real platform sheet — verify: the claim is recorded as a limit, not as a pass.
+- [ ] 7.4 Re-verify that no existing requirement in `search`, `playback`, `library`, or `app-shell` stopped being true, and that the Sync stage therefore has no lossy-merge surface — verify: `openspec validate --specs --strict` exit 0, and the deltas containing no MODIFIED block.
