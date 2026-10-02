@@ -9,8 +9,9 @@ import { CASES } from "../scripts/lyrics-induced-violations.cases.mjs";
  *
  * `scripts/lyrics-induced-violations.mjs` proves the tests written for the lyrics capability can
  * actually fail: it breaks one production behaviour at a time, runs the test named for that
- * behaviour, and requires it to fail. Twenty-two of twenty-two were caught; that result is recorded
- * in this change's evidence README.
+ * behaviour, and requires it to fail. The cases now span three milestones — M16's lyrics work and
+ * M17's home-discovery work — and the harness's own printed count is the authority for how many
+ * were caught.
  *
  * The number in this sentence has gone stale twice — once when cases were added and the docstring was
  * not, and once when pass 4 fixed a stale "Eighteen" here and added a case in the same commit. It is
@@ -40,10 +41,23 @@ const here = dirname(fileURLToPath(import.meta.url));
 const frontend = join(here, "..");
 
 describe("the M16 induced-violation harness (spec lyrics)", () => {
-  it("carries the twenty-two cases the evidence records", () => {
+  it("carries the thirty-six cases the evidence records", () => {
     // A floor rather than an exact count: adding a case is the expected way to grow this, but a
     // harness that has lost its cases must fail rather than report a vacuous pass.
-    expect(CASES.length).toBeGreaterThanOrEqual(22);
+    //
+    // The M17 home-discovery change added **eight** cases, taking the count from twenty-two to
+    // thirty: the band's effect on seeds, the one generator for a card, the honest-name rule,
+    // deferred composition, the filter's subset property, the unrecognised-filter fallback, and
+    // Quick Pick resolvability. (An earlier version of this comment said *seven* while the diff
+    // added eight — a sentence about a number, wrong without anything to notice.)
+    //
+    // The M17 verification pass added **six** more for the time-aware shelf's activation, taking it
+    // to thirty-six: composition on render, an activation that composes nothing, the band's seeds
+    // dropped from the composed profile, the band's label riding along in the request, a
+    // `data-band` attribute that never reaches the DOM, and motion added to the new action. As with
+    // every number in this file, it is stated here to be checked against the harness's own output
+    // rather than trusted.
+    expect(CASES.length).toBeGreaterThanOrEqual(36);
   });
 
   it("gives every case a distinct name, so a result identifies which behaviour it broke", () => {
@@ -80,6 +94,23 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
         source.includes(entry.from),
         `${entry.name}: anchor not found in ${entry.file}. The harness would skip this case.`,
       ).toBe(true);
+    }
+  });
+
+  it("breaks one behaviour per case, in a file the milestone actually wrote", () => {
+    // Every case is an edit to production source that one named test must notice. Two
+    // shape properties are asserted here rather than left to the harness run, because
+    // the harness only notices them when they happen to be *this* case's failure:
+    //
+    // - an anchor must resolve to exactly **one** place in the file. Zero means the
+    //   harness would silently skip the case; more than one means it edits whichever
+    //   came first, which is a different behaviour from the one the case describes.
+    // - the edited text must differ, which the `changes the source for every case`
+    //   case below already covers. What is added here is the uniqueness.
+    for (const entry of CASES) {
+      const source = readFileSync(join(frontend, entry.file), "utf8");
+      const occurrences = source.split(entry.from).length - 1;
+      expect(occurrences, `${entry.name}: anchor must resolve exactly once`).toBe(1);
     }
   });
 

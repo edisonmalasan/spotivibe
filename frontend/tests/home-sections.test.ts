@@ -66,6 +66,7 @@ function section(id: string, shape: "square" | "circular"): HomeSection {
     description: "",
     shape,
     kind: "local",
+    filters: ["music"],
     enabled: () => true,
   };
 }
@@ -124,6 +125,46 @@ describe("homeSections: the ordered feed", () => {
     expect(trending?.description).not.toMatch(
       /popular|popularity|hot|hottest|biggest|number one|now|top|chart|rank/i,
     );
+  });
+});
+
+/**
+ * M17 design decision 4: the `All`/`Music`/`Podcasts` filter is a selection over
+ * this one list, and the only way it can stay a selection is if membership is
+ * declared here rather than in a second list somewhere else.
+ */
+describe("homeSections: every section declares the filters it belongs to", () => {
+  it("declares at least one filter for every section", () => {
+    for (const section of HOME_SECTIONS) {
+      expect(section.filters.length, section.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("never declares 'all', which is implicit for every section", () => {
+    // `all` is structural rather than declared, so no section can forget it — which
+    // is what makes the `All` presentation and the unrecognised-value fallback the
+    // same two lines of code.
+    for (const section of HOME_SECTIONS) {
+      expect(section.filters, section.id).not.toContain("all");
+    }
+  });
+
+  it("puts the long-form shelf under Podcasts and every music shelf under Music", () => {
+    const podcasts = HOME_SECTIONS.find((section) => section.id === "podcasts");
+    expect(podcasts?.filters).toEqual(["podcasts"]);
+
+    for (const section of HOME_SECTIONS) {
+      if (section.id === "podcasts") continue;
+      expect(section.filters, section.id).toEqual(["music"]);
+    }
+  });
+
+  it("keeps the podcast filter's presentation to exactly the long-form shelf", () => {
+    // The strongest form of the subset claim available at the model level: the
+    // Podcasts filter can present one shelf, because exactly one section declares
+    // it.
+    const presented = HOME_SECTIONS.filter((section) => section.filters.includes("podcasts"));
+    expect(presented.map((section) => section.id)).toEqual(["podcasts"]);
   });
 });
 

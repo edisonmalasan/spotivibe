@@ -8,6 +8,12 @@ import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
 import type { Track } from "@/data/repositories";
 import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
 import { genreHref, GENRE_CATALOG } from "@/features/home/genreCatalog";
+import { HomeFilterBar } from "@/features/home/HomeFilterBar";
+import {
+  sectionsForFilter,
+  type HomeFilter,
+  type HomeFilterValue,
+} from "@/features/home/homeFilter";
 import {
   assertShelfRhythm,
   HOME_SECTIONS,
@@ -21,7 +27,11 @@ import {
   recentlyPlayedTracks,
   RECENT_LIMIT,
 } from "@/features/home/localSeeds";
+import { MixCards } from "@/features/home/mixes/MixCards";
+import { QuickPicksShelf } from "@/features/home/QuickPicksShelf";
 import { ShelfTrackCard } from "@/features/home/ShelfTrackCard";
+import { TimeShelf } from "@/features/home/TimeShelf";
+import { systemClock, type Clock } from "@/features/home/timeBands";
 import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDiscoveryShelf";
 import { MixList } from "@/features/mixes/MixList";
 import { LanguageOnboarding } from "@/features/preferences/LanguageOnboarding";
@@ -53,6 +63,17 @@ import { usePreferencesStore } from "@/stores/preferencesStore";
  *   then send a seedless (400) request.
  * - **No autoplay.** Nothing here starts playback; a card activation is the only
  *   path in, and it records the `browse` queue source.
+ * - **M17's three new surfaces add nothing to the request count.** The filter is a
+ *   selection over `HOME_SECTIONS`, not a second model; the mix cards and the
+ *   Quick Picks are links and activations over local data; and the time-aware
+ *   shelf is a lens over the store slices the feed already holds. Only the mix
+ *   cards and the time shelf's own activation can reach a provider, and only on
+ *   activation — which is why the shelf is handed the listener's language codes:
+ *   the discovery contract rejects a request with none, so a shelf that composed
+ *   without them could only ever fail.
+ * - **One clock read per mount.** The band is derived from an instant supplied
+ *   here, so the filter, the cards, and the shelf cannot disagree about what time
+ *   it is because they each asked separately.
  */
 
 /** A resolved duration of at least this many seconds counts as long-form. */
@@ -303,8 +324,13 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
  * The `/` feed. Reads the three local stores it depends on, hydrates each on
  * mount (the stores are idempotent and shell-global), and renders only the
  * sections the local signals enable.
+ *
+ * `clock` is injectable (M17) so the whole surface — the mix cards' profile and
+ * the time-aware shelf's band — reads **one** instant per mount instead of asking
+ * separately and disagreeing at a band boundary. The default is the shared system
+ * clock, so no production caller passes anything.
  */
-export function HomeView() {
+export function HomeView({ clock = systemClock }: { clock?: Clock }) {
   const languages = usePreferencesStore((state) => state.languages);
   const preferencesHydrated = usePreferencesStore((state) => state.hydrated);
   const onboardingComplete = usePreferencesStore((state) => state.onboardingComplete);
@@ -319,6 +345,12 @@ export function HomeView() {
   const hydrateMixes = useMixStore((state) => state.hydrate);
   // Onboarding is offered until it is confirmed *or* dismissed for this visit.
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  // M17: the presented filter, for this visit only. No store, no preference, no
+  // URL — a lens on the feed is not a piece of state the device keeps.
+  const [filter, setFilter] = useState<HomeFilterValue>("all");
+  // The one clock read this surface makes per mount, handed to both surfaces that
+  // need an instant.
+  const [now] = useState(() => clock());
 
   useEffect(() => {
     // Storage failures are reported by the stores' own surfaces; the feed must
@@ -357,7 +389,12 @@ export function HomeView() {
     localArtistCount,
     hasMixes: mixes.length > 0,
   };
-  const sections = selectHomeSections(signals, HOME_SECTIONS);
+  // Two selections over the one model: the local-signal gate the feed has always
+  // applied, and the presented filter. Neither can add a section, so the
+  // geometry rhythm is checked on the list that is actually rendered — and an
+  // unrecognised filter value presents everything, never nothing.
+  const enabled = selectHomeSections(signals, HOME_SECTIONS);
+  const sections = sectionsForFilter(enabled, filter);
   assertShelfRhythm(sections);
 
   const feed: Feed = {
@@ -382,6 +419,45 @@ export function HomeView() {
 
   return (
     <div className="flex flex-col gap-8" data-testid="home-view">
+      <HomeFilterBar
+        value={filter}
+        onChange={(chosen: HomeFilter) => {
+          setFilter(chosen);
+        }}
+      />
+
+      {/*
+        The three M17 surfaces sit above the shelves, in their own rows rather than
+        inside the section flow: they are *not* `HOME_SECTIONS` entries, so folding
+        them in would mean either growing the one section list (which the rhythm
+        check then guards as if they were shelves) or keeping a second list of what
+        Home presents — the drift design decision 4 exists to prevent. Each one
+        reads the same presented filter the sections do, so they appear and
+        disappear together.
+      */}
+      <MixCards
+        likedTracks={likedTracks}
+        events={events}
+        languages={languages}
+        now={now}
+        clock={clock}
+        filter={filter}
+      />
+      <TimeShelf
+        likedTracks={likedTracks}
+        events={events}
+        now={now}
+        languages={languages}
+        clock={clock}
+        filter={filter}
+      />
+      <QuickPicksShelf
+        likedTracks={likedTracks}
+        events={events}
+        languages={languages}
+        filter={filter}
+      />
+
       {sections.map((section) => (
         <HomeSectionView key={section.id} section={section} feed={feed} />
       ))}

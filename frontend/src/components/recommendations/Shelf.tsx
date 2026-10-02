@@ -79,6 +79,18 @@ export interface ShelfProps {
   className?: string;
   /** Optional test hook, e.g. `"home-shelf-trending"`. */
   "data-testid"?: string;
+  /**
+   * Optional evidence hook for a shelf whose content follows a local time band:
+   * the band it is currently presenting, e.g. `"evening"`.
+   *
+   * Declared as its own narrow prop rather than spread onto the node, because
+   * TypeScript does not check hyphenated JSX attribute names — `data-band={band}`
+   * on a component that never declared it compiles cleanly, type-checks cleanly,
+   * and then reaches no DOM at all. Naming it here makes the attribute part of
+   * the component's real contract, keeps the rendered attribute set finite and
+   * reviewable, and lets a shelf that has no band simply render none.
+   */
+  "data-band"?: string;
 }
 
 /**
@@ -104,6 +116,7 @@ export function Shelf({
   skeletonCount = DEFAULT_SKELETON_COUNT,
   className = "",
   "data-testid": testId,
+  "data-band": band,
 }: ShelfProps) {
   // A ready shelf with nothing to show is an empty shelf, not a blank one: the
   // feed must never render an unexplained gap (spec: explanatory empty state).
@@ -154,7 +167,12 @@ export function Shelf({
   return (
     // Named region: assistive tech announces the shelf by its own title without
     // depending on heading order inside the feed.
-    <section aria-label={title} className={`mb-8 ${className}`} data-testid={testId}>
+    <section
+      aria-label={title}
+      className={`mb-8 ${className}`}
+      data-testid={testId}
+      data-band={band}
+    >
       <SectionHeader title={title} action={action} />
       {description && <p className="mb-6 text-body-lg font-regular text-mist">{description}</p>}
       {body()}

@@ -1,8 +1,9 @@
 import type { DiscoveryKind } from "@/features/home/discoveryApi";
+import type { HomeFilter } from "@/features/home/homeFilter";
 
 /**
  * The Home feed's ordered section list (ROADMAP M8; spec: `discovery` — "Home
- * discovery feed"; design §7/§9).
+ * discovery feed"; design §7/§9; M17 design decision 4).
  *
  * The feed order is **data**, not a convention: a typed, data-only list of
  * section descriptors, so the geometry rule DESIGN.md's "Geometry Rhythm"
@@ -77,6 +78,16 @@ export interface HomeSection {
   readonly shape: HomeShelfShape;
   /** The discovery feed this section resolves, or `"local"` for local data. */
   readonly kind: HomeSectionKind;
+  /**
+   * Which of the `All`/`Music`/`Podcasts` filters present this section (M17).
+   *
+   * Declared **here**, on the one section model, because a filter that only ever
+   * removes sections cannot introduce a shelf the list does not contain — and
+   * because a second list of "which sections a filter shows" would be the drift
+   * this declaration exists to prevent. `all` is implicit for every section, so
+   * no entry repeats it (see `features/home/homeFilter`).
+   */
+  readonly filters: readonly HomeFilter[];
   /** Whether the local signals make this section render at all. */
   readonly enabled: (signals: HomeSectionSignals) => boolean;
 }
@@ -98,6 +109,8 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     description: "What you played on this device, newest first.",
     shape: "square",
     kind: "local",
+    // A local listening shelf: music, never the podcast filter.
+    filters: ["music"],
     // Omitted entirely with no history — never an empty "recently played".
     enabled: (signals) => signals.hasHistory,
   },
@@ -110,6 +123,7 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     description: "A rotating shelf built from provider queries, refreshed each visit.",
     shape: "square",
     kind: "trending",
+    filters: ["music"],
     enabled: always,
   },
   {
@@ -118,6 +132,7 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     description: "Seeded by the artists you like and play on this device.",
     shape: "square",
     kind: "for-you",
+    filters: ["music"],
     // No local signal means no seeds, and the `for-you` feed requires seeds.
     enabled: (signals) => signals.hasLocalArtists,
   },
@@ -128,6 +143,7 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     shape: "circular",
     // Derived from the Trending result — no extra request of its own.
     kind: "local",
+    filters: ["music"],
     enabled: always,
   },
   {
@@ -139,6 +155,7 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     // what a feed could produce. It renders only when a generated mix exists —
     // the section is the mix list, so an empty list has nothing to show.
     kind: "local",
+    filters: ["music"],
     enabled: (signals) => signals.hasMixes,
   },
   {
@@ -148,6 +165,7 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     shape: "square",
     // Pure navigation to the Discover surface — no request of its own.
     kind: "local",
+    filters: ["music"],
     enabled: always,
   },
   {
@@ -156,6 +174,9 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     description: "Long-form listening in your languages.",
     shape: "square",
     kind: "podcast",
+    // The one section the Podcasts filter presents on its own: M17 splits
+    // Home's shelves by content kind, and long-form is the whole of that split.
+    filters: ["podcasts"],
     enabled: always,
   },
   {
@@ -164,6 +185,7 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     description: "Shelves built from search themes in your languages.",
     shape: "square",
     kind: "collection",
+    filters: ["music"],
     enabled: always,
   },
 ];
