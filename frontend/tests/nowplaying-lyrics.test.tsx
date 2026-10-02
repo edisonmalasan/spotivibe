@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NowPlayingPage from "@/app/now-playing/page";
 import { getLocalData, type RepositorySet } from "@/data/localData";
@@ -116,7 +116,20 @@ function expectSurfaceIntact() {
   expect(volume).toBeEnabled();
 
   // The artwork, which the `app-shell` scenario names first among the things that must survive.
-  expect(screen.getByTestId("now-playing-background")).toBeInTheDocument();
+  //
+  // `now-playing-artwork` is the **visible cover**, not `now-playing-background` — the latter is the
+  // blurred `aria-hidden` backdrop, and a previous version of this assertion used it. That version
+  // passed with the artwork image deleted: the assertion could not see the named element go missing,
+  // which is the same defect it was added to catch. Asserted twice over, because the tile and the
+  // image inside it are different elements and either can go.
+  const artworkTile = screen.getByTestId("now-playing-artwork");
+  expect(artworkTile).toBeInTheDocument();
+  const artworkImage = within(artworkTile).getByTestId("now-playing-artwork-image");
+  expect(artworkImage).toBeInTheDocument();
+  // The image must carry the *playing track's* artwork, not merely exist — an empty `src` would
+  // otherwise satisfy a presence check.
+  const playing = usePlayerStore.getState().currentTrack;
+  expect(artworkImage).toHaveAttribute("src", playing?.artwork[0]?.url);
 
   expect(screen.getByRole("link", { name: "Close Now Playing" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { level: 2, name: "More Like This" })).toBeInTheDocument();

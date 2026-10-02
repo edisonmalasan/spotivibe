@@ -132,6 +132,13 @@ function layout(activeLine: { top: number }) {
     }
     Element.prototype.scrollBy = originalScrollBy;
   };
+
+  // Clear the recorder when the geometry is installed, not only in `afterEach`. A scroll issued by a
+  // previous test's component can land after that test's teardown, so relying on the reset alone left
+  // the array holding a call from a test with different configuration — which failed a later
+  // assertion roughly one run in six. Clearing here plus slicing per-assertion below makes every
+  // reading describe only its own effect.
+  scrollCalls = [];
 }
 
 afterEach(() => {
@@ -317,13 +324,13 @@ describe("LyricsPanel — following yields to the listener", () => {
     // a positive value rather than a negative one is not cosmetic: it pins that the panel scrolls
     // *toward* the line, not that it moved at all.
     layout(ACTIVE_LINE_BELOW_CENTRE);
-    scrollCalls = [];
+    const before = scrollCalls.length;
 
     act(() => usePlayerStore.setState({ positionSeconds: 25 }));
 
     // The exact centring delta, so the assertion is about centring rather than "a scroll happened".
     const expected = BELOW_LINE.top - (SCROLLER_HEIGHT - LINE_HEIGHT) / 2;
-    expect(scrollCalls).toEqual([{ top: expected, behavior: "smooth" }]);
+    expect(scrollCalls.slice(before)).toEqual([{ top: expected, behavior: "smooth" }]);
   });
 
   it("does not scroll when following has been suspended", async () => {
@@ -338,9 +345,9 @@ describe("LyricsPanel — following yields to the listener", () => {
     });
     expect(screen.getByTestId("lyrics-scroller")).toHaveAttribute("data-following", "false");
 
-    scrollCalls = [];
+    const before = scrollCalls.length;
     act(() => usePlayerStore.setState({ positionSeconds: 25 }));
-    expect(scrollCalls).toHaveLength(0);
+    expect(scrollCalls.slice(before)).toHaveLength(0);
   });
 
   it("keeps following when the panel is scrolled but the active line stays in the live band", async () => {
@@ -425,16 +432,25 @@ describe("LyricsPanel — reduced motion", () => {
     // Asserted on the `behavior` actually handed to `scrollBy`, not on a `data-` attribute: an
     // attribute proves the component *knows* the preference, not that it changed anything. This is
     // the requirement the spec words as "SHALL NOT use smooth scrolling".
+    //
+    // Only the calls recorded **after** the position change are examined. `scrollCalls` is a
+    // module-level array shared by the file, and asserting on all of it made this test fail roughly
+    // one run in six: a scroll issued by an earlier test's component could land in the array after
+    // that test's `afterEach` had reset it, and a `smooth` call from a test with no reduced-motion
+    // preference then failed this assertion. The contamination was real, it was in this file, and
+    // the fix is to measure the effect under test rather than the file's history.
     setReducedMotion(true);
     play(0);
     render(<LyricsPanel />);
     await waitFor(() => expect(lines()).toHaveLength(3));
     layout(ACTIVE_LINE_ABOVE_THE_BAND);
 
+    const before = scrollCalls.length;
     act(() => usePlayerStore.setState({ positionSeconds: 15 }));
+    const issued = scrollCalls.slice(before);
 
-    expect(scrollCalls.length).toBeGreaterThan(0);
-    expect(scrollCalls.every((call) => call.behavior === "auto")).toBe(true);
+    expect(issued.length).toBeGreaterThan(0);
+    expect(issued.every((call) => call.behavior === "auto")).toBe(true);
   });
 
   it("smooth-scrolls when no reduced-motion preference is set", async () => {
@@ -445,10 +461,12 @@ describe("LyricsPanel — reduced motion", () => {
     await waitFor(() => expect(lines()).toHaveLength(3));
     layout(ACTIVE_LINE_ABOVE_THE_BAND);
 
+    const before = scrollCalls.length;
     act(() => usePlayerStore.setState({ positionSeconds: 15 }));
+    const issued = scrollCalls.slice(before);
 
-    expect(scrollCalls.length).toBeGreaterThan(0);
-    expect(scrollCalls.some((call) => call.behavior === "smooth")).toBe(true);
+    expect(issued.length).toBeGreaterThan(0);
+    expect(issued.some((call) => call.behavior === "smooth")).toBe(true);
   });
 
   it("reports the preference on the scroller for diagnosis", async () => {
@@ -457,6 +475,26 @@ describe("LyricsPanel — reduced motion", () => {
     render(<LyricsPanel />);
     await waitFor(() => expect(lines()).toHaveLength(3));
     expect(screen.getByTestId("lyrics-scroller")).toHaveAttribute("data-reduced-motion", "true");
+  });
+
+  it("transitions the line colour on both branches, so a change is animated and then neutralisable", async () => {
+    // The claim task 4.4 makes is that reduced motion neutralises a *transition*. That only holds if a
+    // transition exists, and for two passes nothing checked: removing `transition-colors` entirely
+    // left all 2494 tests green. A transition class applied only on the inactive branch also produces
+    // none, because the element never carries the property before the colour changes — so this
+    // asserts both branches carry it, and that the two branches differ in colour.
+    setReducedMotion(false);
+    play(0);
+    render(<LyricsPanel />);
+    await waitFor(() => expect(lines()).toHaveLength(3));
+
+    const active = lines()[0];
+    const inactive = lines()[1];
+
+    expect(active.className).toContain("transition-colors");
+    expect(inactive.className).toContain("transition-colors");
+    // And the transition has something to act on: the active and inactive styling must differ.
+    expect(active.className).not.toBe(inactive.className);
   });
 
   it("has the global CSS rule the line-colour transition depends on", () => {

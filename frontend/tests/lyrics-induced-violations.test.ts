@@ -35,10 +35,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const frontend = join(here, "..");
 
 describe("the M16 induced-violation harness (spec lyrics)", () => {
-  it("carries the eighteen cases the evidence records", () => {
+  it("carries the twenty-one cases the evidence records", () => {
     // A floor rather than an exact count: adding a case is the expected way to grow this, but a
     // harness that has lost its cases must fail rather than report a vacuous pass.
-    expect(CASES.length).toBeGreaterThanOrEqual(18);
+    expect(CASES.length).toBeGreaterThanOrEqual(21);
   });
 
   it("gives every case a distinct name, so a result identifies which behaviour it broke", () => {
@@ -189,10 +189,13 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
    * instead *runs* the classifier's decision rule — including the file-scoping step, which is what
    * stops a failure in some *other* test file counting as coverage.
    *
-   * A previous version of this check omitted the scoping step, so it pinned a different rule from the
-   * one the harness actually runs, and it had already drifted on the status comparison. That is the
-   * risk of keeping a copy, and the copy exists here only to make the central judgement falsifiable —
-   * not to be the implementation.
+   * **This is a hand-copied duplicate of the harness's rule, and that is a known structural risk.**
+   * It was checked against the harness line by line and is currently faithful, but editing the
+   * harness does not fail this check — which is the defect the string assertions have too. The
+   * proper fix is a single shared exported predicate, which is a small refactor of the harness; until
+   * then, treat a `scripts/lyrics-induced-violations.mjs` edit as requiring a manual re-read of the
+   * block below. A previous version of this check had already drifted, which is how the risk was
+   * confirmed rather than assumed.
    */
   it("classifies a run the way the harness does, including scoping and interrupted runs", () => {
     const classify = (report: string, testFile: string): string => {

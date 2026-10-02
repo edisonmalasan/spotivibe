@@ -205,12 +205,23 @@ export default function NowPlayingPage() {
       </div>
 
       <div className="flex w-full max-w-md flex-col items-center gap-6">
-        <div className="grid aspect-square w-full place-items-center overflow-hidden rounded-images bg-graphite">
+        <div
+          className="grid aspect-square w-full place-items-center overflow-hidden rounded-images bg-graphite"
+          // The *visible* cover, as distinct from the blurred backdrop above. A test has to be able
+          // to tell the two apart, and `now-playing-background` is the backdrop: asserting on it
+          // would pass with the artwork image deleted and a listener looking at an empty grey box.
+          data-testid="now-playing-artwork"
+        >
           {artworkUrl ? (
             // Provider artwork thumbnails: dynamic remote URLs, no optimizer
             // allowlist yet (M9 owns asset handling).
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={artworkUrl} alt="" className="size-full object-cover" />
+            <img
+              src={artworkUrl}
+              alt=""
+              data-testid="now-playing-artwork-image"
+              className="size-full object-cover"
+            />
           ) : (
             <Music2 className="size-16 text-fog" aria-hidden="true" />
           )}

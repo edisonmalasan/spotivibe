@@ -175,4 +175,31 @@ export const CASES = [
     test: "tests/radio-entry-points.test.tsx",
     why: "Two identically-labelled retry buttons on one screen leave the listener no way to tell which thing they are retrying. This was found by an existing test, not invented here.",
   },
+  {
+    // Added after the third verification pass found that removing `transition-colors` entirely left
+    // the whole suite green. The *code* had been fixed in pass 2; nothing had been added to keep the
+    // fix true, which is the harness's own standard turned against it.
+    name: "the line colour stops transitioning",
+    file: "src/features/lyrics/LyricsPanel.tsx",
+    from: "`${isActive ? ACTIVE_LINE_CLASSES : LINE_CLASSES} transition-colors`",
+    to: "`${isActive ? ACTIVE_LINE_CLASSES : LINE_CLASSES}`",
+    test: "tests/lyrics/lyricsPanel.test.tsx",
+    why: "Task 4.4 claims reduced motion neutralises a colour transition. With no transition there is nothing to neutralise, so the requirement would be silently unmet while every test passed.",
+  },
+  {
+    name: "the visible artwork is replaced by an empty box",
+    file: "src/app/now-playing/page.tsx",
+    from: '              data-testid="now-playing-artwork-image"\n',
+    to: "",
+    test: "tests/nowplaying-lyrics.test.tsx",
+    why: "The `app-shell` scenario names the artwork among the things that must survive every lyrics state. A previous assertion read `now-playing-background` — the blurred aria-hidden backdrop — so deleting the cover image left all four state tests green.",
+  },
+  {
+    name: "the volume control is removed from the surface",
+    file: "src/app/now-playing/page.tsx",
+    from: "          <VolumeControls />",
+    to: "",
+    test: "tests/nowplaying-lyrics.test.tsx",
+    why: 'Volume is named in the same scenario. `getAllByRole("slider").length >= 1` is satisfied by the progress slider alone, so the volume control could vanish without a single test failing.',
+  },
 ];

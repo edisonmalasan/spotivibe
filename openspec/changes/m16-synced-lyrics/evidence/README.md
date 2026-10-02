@@ -15,13 +15,22 @@ implied by a green check elsewhere.
 | Types | `npm run typecheck` (`next typegen && tsc --noEmit`) | exit `0` |
 | Tests | `npm test` (`vitest run`) | exit `0` |
 | Build | `npm run build` | exit `0` |
-| Tests, repeated | `npx vitest run` ×4 | **2493 passed, 0 failed** each run |
-| Induced violations | `node scripts/lyrics-induced-violations.mjs` (from `frontend/`) | **18/18 caught**, exit `0` |
+| Tests, repeated | `npx vitest run` ×10 after the final fixes | **2495 passed, 0 failed** each run |
+| Induced violations | `node scripts/lyrics-induced-violations.mjs` (from `frontend/`) | **21/21 caught**, exit `0` |
 | Change validation | `openspec validate m16-synced-lyrics --strict` | valid |
 | Spec validation | `openspec validate --specs --strict` | 20 passed, 0 failed |
 | **Release gate** | M15's archived `evidence/release-gate.mjs` | **exit `1`, and not usable as a comparison — see below.** |
 
-**Full suite: 2494 tests** (2356 before this change, so +138).
+**Full suite: 2495 tests** (2356 before this change, so +139), across 150 files.
+
+**On the earlier counts, and the flake.** Intermediate drafts of this file recorded 2491, then 2493,
+then 2494. Only the last of those was ever observed, and it went stale by one the moment a test was
+added; the third verification pass caught it disagreeing with the line below it. The figure above is
+the one every run reported. While measuring, the **pre-existing**
+`tests/podcast-playback-history.test.ts` flake — the wall-clock budget already recorded in
+`ROADMAP.md` — was observed failing in roughly one full-suite run in three, consistent with its
+documented rate. It is not caused by this change: that file is untouched, and the M16 suites were green
+in every run.
 
 ### What the counts do and do not prove
 
@@ -33,30 +42,44 @@ The suite was run four times rather than once because a single green run is not 
 *intermittent* defect, which is the whole lesson of the known `podcast-playback-history` flake. Four
 consecutive clean runs is a sample, not a proof, and is labelled as such.
 
-## The two verification passes
+## The three verification passes
 
-Two independent read-only verification agents reviewed this change. The first returned
-**`NOT MERGEABLE`** (3 CRITICALs, 6 WARNINGs, 9 NITs); the second, reviewing the fixes, returned
-**`NOT MERGEABLE`** again (2 CRITICALs, 6 WARNINGs, 7 NITs). Every CRITICAL in both passes was real.
-That the *fixes* were the thing that failed the second time is the most useful fact here, and it is
-why this section exists at all.
+Three independent read-only verification agents reviewed this change, in sequence, each reviewing the
+previous one's fixes. **All three returned `NOT MERGEABLE`**, and every CRITICAL in every pass was
+real:
 
-### What both passes confirmed clean
+| Pass | CRITICALs | What they were about |
+|---|---|---|
+| 1 | 3 | claims the suite did not support; two dead CSS utilities; a bypassed outbound limiter |
+| 2 | 2 | volume not verified; an arithmetically impossible tick-state claim |
+| 3 | 3 | artwork verified via the *decorative backdrop*; a fabricated test count; a code fix shipped with no test able to catch its removal |
+
+That the **fixes** were what passes 2 and 3 failed is the most useful fact here. Nine CRITICALs were
+found across three reviews of one change, and every one of them was a statement that outran its
+evidence — not a behavioural defect in the lyrics code, which has now survived three attempts to
+break it. Two of the pass-3 CRITICALs were *caused by pass 1 and pass 2's fixes*: the artwork
+assertion was added next to the volume assertion that pass 2 had just fixed, and repeated its mistake
+one line later; the `transition-colors` change was made to satisfy a task clause, and no test was
+added to keep it true. Both are the harness's own standard turned against it.
+
+### What all three passes confirmed clean
 
 - **Spec preservation.** Compared programmatically: 12 scenarios in, 13 out, **zero dropped**, every
   preserved WHEN/THEN body byte-identical, one added ("Lyrics never displace or delay the rest of
   the surface"). Nothing was silently weakened.
 - **Local-first boundary.** Nothing sends taste, history, likes or playlists. `/api/lyrics` reads only
   `videoId`/`title`/`artist`/`channel`/`duration` and forwards only `track_name`/`artist_name`. No
-  store, no schema change, no persisted state, no new dependency. `LrcLibCandidate` is confined to
-  the service; the panel sees two strings.
-- **Untouched areas.** No changes under `openspec/specs/` or `openspec/changes/archive/`, and no
-  M0–M15 milestone record in `ROADMAP.md` altered.
-- **The limiter fix is not testing a double.** The test injects the *real* `createSemaphore` and reads
-  `activeCount` from inside the transport, so it observes production behaviour; and induced case 15
-  proves it fails when production stops acquiring.
-- **The harness's honesty**, verified by running it (18/18, exit 0, tree left clean), and the guard's
-  anchor, distinct-anchor and non-empty-`to` assertions.
+  store, no schema change, no persisted state, no new dependency. `LrcLibCandidate` is unexported and
+  confined to the service; the panel sees two strings.
+- **Untouched areas.** No changes under `openspec/specs/` or `openspec/changes/archive/`; the M0–M15
+  status table in `ROADMAP.md` is byte-identical; no `package.json`, no lockfile, nothing under
+  `frontend/src/data` or `frontend/src/stores`.
+- **The limiter fix is not testing a double.** Verified by mutation: moving `release()` out of the
+  `finally` makes the new abort test fail. The test injects the *real* `createSemaphore` and reads
+  `activeCount` from inside the transport.
+- **Pass-2 fixes verified by mutation**: deleting `VolumeControls` fails 4 tests; deleting the Queue
+  button fails 4 tests; removing `transition-colors` now fails the panel suite; removing the artwork
+  image testid fails the Now Playing lyrics suite; removing `VolumeControls` is now induced case 21.
 
 ### Pass 1 — CRITICALs
 
@@ -72,13 +95,12 @@ the value handed to the transport, a non-OK response is asserted to be `unreacha
 line transition is CSS, so the stylesheet is part of the requirement), and the transport controls are
 asserted enabled. The mapping table below is that map.
 
-**C2 — two dead CSS utilities shipped.** `bg-base-surface` and `text-base-content` are neither theme
-tokens nor valid utilities, so they emitted no rule: the "Back to live" button had no background and
-the active line's colour came from inheritance. Fixed to real tokens — and the repository's own
-`token-contrast.test.ts` then **rejected the replacements**, because only `pure-white`, `mist` and
-`spotify-green` are declared text tokens and `text-body-xs` is not in the type scale at all. The
-clearest argument in the change for not trusting a review: the reviewer suggested colours, and the
-detector still rejected them.
+**C2 — two dead CSS utilities shipped.** `bg-base-surface` and `text-base-content` emitted no rule:
+the "Back to live" button had no background and the active line's colour came from inheritance. Fixed
+to real tokens — and the repository's own `token-contrast.test.ts` then **rejected the
+replacements**, because only `pure-white`, `mist` and `spotify-green` are declared text tokens and
+`text-body-xs` is not in the type scale. The clearest argument in the change for not trusting a
+review: the reviewer suggested colours, and the detector still rejected them.
 
 **C3 — the provider bypassed the shared outbound limiter while two artifacts claimed otherwise.**
 `design.md` and the service header both said this milestone inherits M3's limiter "through
@@ -91,61 +113,97 @@ paths.
 
 ### Pass 2 — CRITICALs, both about claims rather than behaviour
 
-**C1 — task 5.2 named volume, and volume was not verified in any lyrics state.** `expectSurfaceIntact`
-asserted `getAllByRole("slider").length >= 1` with a comment explaining that progress and volume are
-both sliders. That is satisfied by `ProgressSlider` alone: deleting `VolumeControls` would have left
-all four state tests green. Volume is now located by name (`getByLabelText("Volume")`, matching the
-pre-existing Now Playing suite) and asserted enabled, the **artwork** the `app-shell` scenario names
-first is asserted, and each control is named rather than counted.
+**C1 — task 5.2 named volume, and volume was not verified in any lyrics state.** The fix had asserted
+`getAllByRole("slider").length >= 1` with a comment explaining that progress and volume are both
+sliders. That is satisfied by `ProgressSlider` alone: deleting `VolumeControls` left all four state
+tests green. Volume is now located by name (`getByLabelText("Volume")`, matching the pre-existing
+Now Playing suite) and asserted enabled, and every control is named rather than counted.
 
 **C2 — the tick-state comment was still false, in an arithmetically impossible form.** It claimed "the
 19 load-bearing ones were shown to FAIL" when there are 17 ticked tasks and 18 induced cases — 19
-cannot refer to anything — and it claimed a task-to-test mapping the table did not support (the table
-maps tasks to test *files*, no case covers task 6.1, and two cases map to no ticked task). The C1
-pattern, restated. Replaced with the actual relationship, which is deliberately not one-to-one.
+cannot refer to anything — and it claimed a task-to-test mapping the table did not support. Replaced
+with the actual relationship, which is deliberately not one-to-one.
 
-### Warnings fixed in pass 2
+### Pass 3 — CRITICALs, two of them caused by the previous fixes
 
-- **The harness counted `pending`/`skipped`/`todo` as failed.** vitest's status set is
+**C1 — the "artwork" assertion was on the decorative backdrop.** The test asserted
+`now-playing-background`, which is the blurred `aria-hidden` wash; the actual cover tile had no
+`data-testid`. Deleting the artwork `<img>` left all nine tests green. The tile and the image inside it
+now have `now-playing-artwork` and `now-playing-artwork-image`, both asserted per state, with the
+image's `src` checked against the playing track. This is the same defect pass 2 fixed for volume,
+reproduced one line below the fix.
+
+**C2 — the evidence recorded a test count no run can produce.** One row said 2493 while the line below
+said 2494 and the commit said 2494. The file opens with "Everything below was actually run", and 2493
+was typed rather than observed. Corrected, along with the note about the three earlier counts.
+
+**C3 — the `transition-colors` fix was pinned by nothing.** Pass 2 had moved the class onto both
+branches so a transition would actually exist, which made task 4.4's claim true — and added no test
+that it existed. Removing `transition-colors` entirely left **all 2494 tests green**. The panel suite
+now asserts both branches carry it and that the two branches differ in colour, and it is induced case
+19. The same pass added induced cases 20 and 21 for the artwork testid and the volume control, so the
+two failures pass 3 found by experiment are now permanent.
+
+### Warnings fixed in passes 2 and 3
+
+- **The harness counted `pending`/`skipped` as failed.** vitest's status set is
   `{ pass, fail, only, run, skip, todo, queued }`, so `!== "passed"` meant an **interrupted or
   timed-out** run left tests as `pending` and was reported as a caught violation. Now `=== "failed"`.
 - **The guard's behavioural check pinned a different rule than the harness runs** — it omitted the
-  file-scoping step and had already drifted on the status comparison. It now mirrors the harness,
-  including scoping, and has cases for a failure in a *different* file and for an interrupted run.
+  file-scoping step and had already drifted on the status comparison. It now mirrors the harness
+  including scoping, and covers a failure in another file and an interrupted run. It remains a
+  hand-copied duplicate, which the file now says plainly: editing the harness does not fail the
+  check, and a shared exported predicate is the proper fix.
 - **`text-body` is a dead size utility.** The declared scale is `caption | label | body-lg | link |
-  heading`; `text-body` emits no rule. The panel now uses `text-body-lg`. **The repo has 56 uses
-  across 22 pre-existing files**, so this is a wider finding that is recorded rather than fixed
-  piecemeal; the earlier claim that "every colour and size used was cross-checked" was a *consistency*
-  claim presented as a *validity* one.
+  heading`. The panel uses `text-body-lg`. There are **55 uses across 23 other files** under `src`
+  (counted 2026-10-02; an earlier draft of this file said 56, which counted the panel's own mentions
+  and went stale when they were removed), so it is recorded as a repository-wide finding rather than
+  fixed piecemeal inside a lyrics feature.
 - **The `transition-colors` class was on only the inactive branch**, so the colour change and the
-  transition were applied in the same commit and no transition was generated. Task 4.4's clause claims
-  the global reduced-motion rule neutralises a transition that did not exist. The class is now on both
-  branches, so the claim is true.
+  transition landed in the same commit and no transition was generated. Now on both branches (C3
+  above).
 - **The TTL asymmetry test's clock did not move** — it advanced then un-advanced by the same amount, a
-  no-op, so the hit was re-read at the instant it was written. Rewritten as two tracks seeded at `t0`
-  and one elapsed duration chosen to sit between the two TTLs, with an assertion that the duration is
-  in fact shorter than the hit TTL.
+  no-op. Rewritten as two tracks seeded at `t0` and one elapsed duration asserted to sit strictly
+  between the two TTLs.
 - **Two limiter exit paths were unasserted**: an abort *after* the grant and an abort *while queued*.
-  Both are now asserted against observable counts, because a leaked slot is a permanent loss for the
-  process and the existing mid-flight test runs against the shared 4-slot limiter where a leak is
-  invisible.
+  Both are now asserted against observable counts, because a leaked slot is a permanent loss and the
+  existing mid-flight test runs against the shared 4-slot limiter where a leak is invisible.
+- **Task 1.3's tick** now states in the clause that its second half is a type-signature argument and
+  not verification, and that the behavioural proxy is weak by nature.
+
+### A flake I introduced, and fixed
+
+Running the suite repeatedly — which is the only reason the counts above mean anything — turned up a
+failure **in my own new test**, roughly one run in six: `scrolls without smoothing under a
+reduced-motion preference` read a `scrollCalls` array shared across the file, and a scroll issued by
+an earlier test's component could land in it after that test's teardown. A `smooth` call from a test
+with no reduced-motion preference then failed an assertion about a different test.
+
+The irony is not lost: this change spends a great deal of effort on a wall-clock flake elsewhere in
+the repository, and the defect here was cross-test contamination through shared mutable state. Fixed
+by clearing the recorder when the geometry is installed *and* by having every assertion examine only
+the calls recorded after its own action, so each reading describes its own effect. Ten consecutive
+full-suite runs were green afterwards. The pre-existing `podcast-playback-history` flake is separate
+and is not fixed here — it is scheduled for M21.
 
 ### A test I wrote, and got wrong
 
-The new duplicate-timestamp test asserted that the **earlier** of two lines sharing a timestamp is
+The duplicate-timestamp test asserted that the **earlier** of two lines sharing a timestamp is
 selected. It failed, and it was the test that was wrong: the selector returns the *last* line at or
 before the position, so the later one wins — which is also what a listener expects when two lines
 share a start time. The test now asserts the real semantics, and `tasks.md` states it.
 
-## The induced-violation harness, and three ways it lied
+## The induced-violation harness, and the five ways it lied
 
 This repository has paid four separate times for a green check sitting on top of a live defect, so a
 test never observed to fail is a claim rather than evidence. The harness breaks one production
 behaviour at a time, runs the test named for it, and requires it to fail.
 
-**18/18 caught.** But getting to a trustworthy 18/18 took three attempts, and the failures are the
-most useful part of this record — because every one of them failed in the direction that looks like
-"your tests are dead", which is the direction that gets a correct suite deleted:
+**21/21 caught.** Getting to a trustworthy number took three attempts, and the failures are the most
+useful part of this record — because every one of them failed in the direction that looks like "your
+tests are dead", which is the direction that gets a correct suite deleted. Three further cases were
+added by the third verification pass after it found, by experiment, that deleting the artwork image or
+the volume control left the suite green.
 
 1. **It matched the `dot` reporter's output for a `FAIL <file>` line.** That reporter prints no such
    line, so stdout never matched and the harness reported **0 of 18 caught** on a suite where all 18
@@ -180,8 +238,8 @@ over synthetic reports, so the central judgement is falsifiable rather than mere
 ## Task → test file map
 
 This maps tasks to test **files**, and is deliberately not one-to-one in either direction: 17 ticked
-tasks, 18 induced cases, no case covering task 6.1, and two cases (the taste-profile parameter, the
-retry-label collision) mapping to no ticked task.
+tasks, 21 induced cases, no case covering task 6.1, and two cases (the retry-label collision, the
+limiter) mapping to no ticked task by number.
 
 | Task | Test file |
 |---|---|

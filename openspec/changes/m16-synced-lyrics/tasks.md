@@ -4,7 +4,7 @@
 
 - [x] 1.1 Implement the LRC parser producing time-ordered non-empty lines, handling `[mm:ss]`, `[mm:ss.xx]`, `[mm:ss.xxx]`, ignoring metadata tags, sorting by time, and dropping empty timed lines — verify: unit tests over real LRC fixtures, including all three timestamp precisions, metadata tags, unparsable lines, and out-of-order source (spec: `lyrics` — "Timed lyrics are parsed into ordered lines" and its four siblings).
 - [x] 1.2 Implement `activeLineIndex(lines, positionSeconds)` as a pure binary search returning the last line at or before the position, or `-1` before the first — verify: tests at every boundary — exactly on a timestamp, between timestamps, before the first, beyond the last, two lines sharing a timestamp (asserting **which** of the pair is chosen — the later one, since the selector returns the last line at or before the position — which pins the comparator direction), and empty input — plus a test that two identical calls separated by elapsed time give the same answer (spec: `lyrics` — "The active line is selected from playback position").
-- [x] 1.3 Prove the selector is pure and clock-free — verify: a test shows the answer is unchanged by elapsed wall-clock time. The second half of the claim — that the functions take only the lines and the position, so nothing but the position can advance — is a **type-signature** argument, not a test, and is stated here as reasoning rather than as verification. Stated as a **behavioural** check, not a source scan: a source scan for `Date.now` is the fragile detector this repository has been bitten by, and the check is only worth what it can actually detect. The reason it matters is that `podcast-playback-history` is a flake caused by a wall-clock budget standing in for synchronization, and repeating that here would repeat the defect.
+- [x] 1.3 Prove the selector is pure and clock-free — verify: a test shows the answer is unchanged by elapsed wall-clock time. **The second half of the requirement is not claimed as verified:** the argument that the functions take only the lines and the position — so nothing but the position can advance — is a type-signature reading, and is recorded as reasoning. The behavioural proxy is weak by nature: a selector that read a clock and one that did not behave identically under it, so this task's evidence is "no clock is observable", not "no clock is read". Stated as a **behavioural** check, not a source scan: a source scan for `Date.now` is the fragile detector this repository has been bitten by, and the check is only worth what it can actually detect. The reason it matters is that `podcast-playback-history` is a flake caused by a wall-clock budget standing in for synchronization, and repeating that here would repeat the defect.
 
 ## 2. The provider and its cache
 
@@ -41,8 +41,10 @@
   Tick state, recorded 2026-10-02 on Node v24.21.0. 17 of 19 ticked.
 
   Two independent verification passes found seven of these clauses overstated what the suite asserts;
-  every one was corrected, and two real tests were added because of the first pass. Nothing here is
-  ticked on the strength of a green suite alone.
+  every one was corrected, and two real tests were added because of the first pass. A **third** pass
+  found four more, all of the same kind — including one where the previous pass's own fix asserted the
+  decorative backdrop instead of the artwork, and one where a code fix shipped with no test able to
+  catch its removal. 17 of 19 ticked; nothing here is ticked on the strength of a green suite alone.
 
   The relationship to the induced-violation evidence is deliberately NOT one-to-one, and stating it
   accurately matters more than making it tidy: there are **17 ticked tasks and 18 induced cases**,
