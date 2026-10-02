@@ -348,4 +348,262 @@ export const CASES = [
     test: "tests/home-m17-no-motion.test.ts",
     why: "A hover transition on a new control is the piece of motion M19 is most likely to inherit, and it is invisible in review because one transition utility among a dozen classes reads as house style. Design decision 6 exists so M19 can standardise one vocabulary rather than four.",
   },
+
+  // ---------------------------------------------------------------- M18 ---------
+  // Global keyboard shortcuts. The milestone's central correctness claim is that no
+  // shortcut can fire while a key already means something local, and the four cases
+  // below are the four ways that claim is broken while everything still looks fine:
+  // the guard stops matching one surface type, and the resulting keypress is
+  // indistinguishable from a working shortcut. Each names the sweep that crosses the
+  // whole binding table with one surface, because a guard that quietly stopped
+  // covering `input` cannot be seen by a test that only exercises a slider.
+
+  {
+    name: "a binding fires inside a text field",
+    file: "src/features/shortcuts/localMeaning.ts",
+    from: 'const TEXT_ENTRY_TAGS = ["input", "textarea", "select"] as const;',
+    to: 'const TEXT_ENTRY_TAGS = ["textarea", "select"] as const;',
+    test: "tests/shortcut-bindings.test.ts",
+    why: "Typing a playlist name would pause playback, seek, and change the volume on every keystroke - and `Space` is the key a name is full of, so the most ordinary thing anyone does in this application would stop working while looking like a bug in the player rather than in the shortcut. Nothing else in the app would notice: the field still receives the key, because a global handler that does not call `preventDefault` for letters cannot take it away.",
+  },
+  {
+    name: "a binding fires inside a dialog",
+    file: "src/features/shortcuts/localMeaning.ts",
+    from: "const DIALOG_SELECTOR = '[role=\"dialog\"]';",
+    to: "const DIALOG_SELECTOR = '[data-spotivibe-dialog]';",
+    test: "tests/shortcut-bindings.test.ts",
+    why: "The five hand-rolled dialogs stop `Escape` themselves, so `Escape` would keep working while they were open - which is exactly what makes this invisible. Every *other* key is the exposure: a delete confirmation open, and the volume slider behind it is adjusted by whatever arrows the dialog itself does not consume.",
+  },
+  {
+    name: "a binding fires while a slider has focus",
+    file: "src/features/shortcuts/localMeaning.ts",
+    from: "const SLIDER_SELECTOR = '[role=\"slider\"]';",
+    to: "const SLIDER_SELECTOR = '[data-spotivibe-slider]';",
+    test: "tests/shortcut-bindings.test.ts",
+    why: "`ProgressSlider` reads `ArrowLeft`/`ArrowRight` for five seconds and calls `preventDefault`, but not `stopPropagation`, so the global ten-second seek runs on the same press and the position moves fifteen. A listener scrubbing to the chorus hears the track jump past it, and both handlers look correct in isolation.",
+  },
+  {
+    name: "a binding fires inside a menu",
+    file: "src/features/shortcuts/localMeaning.ts",
+    from: "const MENU_SELECTOR = '[role=\"menu\"]';",
+    to: "const MENU_SELECTOR = '[data-spotivibe-menu]';",
+    test: "tests/shortcut-bindings.test.ts",
+    why: "`ResultMenu` is the one surface that does *not* stop propagation, so its `Escape` really does reach the global listener. Without this rule the menu closes and the global handler acts on the same press - so a listener dismissing a context menu also toggles mute or likes a track they did not choose.",
+  },
+  {
+    name: "M fakes mute by writing the volume instead of toggling the real muted state",
+    file: "src/features/shortcuts/bindings.ts",
+    from: "    run: () => usePlayerStore.getState().toggleMute(),",
+    to: "    run: () => {\n      const player = usePlayerStore.getState();\n      player.setVolume(player.muted ? 70 : 0);\n      player.toggleMute();\n    },",
+    test: "tests/shortcut-bindings.test.ts",
+    why: "This is Lyrix's shortcut, and the reason it is on this list rather than in a comment: `muted` still flips, so every assertion about the flag passes, while the listener's own volume is destroyed on the first press and replaced with a hardcoded 70 on the second. The listener hears their music change volume without touching anything.",
+  },
+  {
+    name: "ArrowUp raises the volume without unmuting",
+    file: "src/features/shortcuts/bindings.ts",
+    from: "  if (player.muted) player.toggleMute();\n",
+    to: "  // Mute is left exactly as the store holds it: volume and mute are independent.\n",
+    test: "tests/shortcut-bindings.test.ts",
+    why: "`setVolume` deliberately does not clear `muted` - that is the store's contract, not an oversight - so without this line `ArrowUp` on a muted player changes a number the listener cannot hear and the keypress looks broken. Design decision 3 exists to make it stated behaviour rather than a surprise, and the only evidence it is implemented is this assertion.",
+  },
+  {
+    name: "L likes with no track playing",
+    file: "src/features/shortcuts/bindings.ts",
+    from: "  const track = usePlayerStore.getState().currentTrack;\n  if (!track) return;\n  void useLibraryStore.getState().toggleLike(track);",
+    to: '  const track =\n    usePlayerStore.getState().currentTrack ??\n    ({ id: "youtube:none", source: "youtube", providerId: "none", title: "Nothing playing", artists: [], artwork: [], category: "music", capabilities: { stream: false, offlineDownload: false } } as Track);\n  void useLibraryStore.getState().toggleLike(track);',
+    test: "tests/shortcut-bindings.test.ts",
+    why: "The guard is the whole behaviour, and the shape that removes it is the plausible one: a shortcut wants *something* to act on, so it supplies a placeholder. With nothing loaded, `L` then writes a like into Liked Songs for a track nobody chose - persisted, exported, and visible, so the library is wrong on every device it syncs to and the mistake is not visible until someone opens Liked Songs.",
+  },
+  {
+    name: "the dialog does not trap focus",
+    file: "src/components/design-system/Dialog.tsx",
+    from: '    if (event.key !== "Tab") return;',
+    to: '    if (event.key !== "Tab") return;\n    // No trap: the browser is left to move focus where it would anyway.\n    if (event.key === "Tab") return;',
+    test: "tests/dialog.test.tsx",
+    why: "This is the defect all five hand-rolled dialogs in this repository have, and it is invisible for the same reason jsdom makes it easy to assert wrongly: jsdom does not move focus on `Tab` at all, so a containment-only check ('focus never left the panel') passes on a dialog with no trap whatsoever. The test asserts the *cycle* - last to first, first to last, repeatedly - and only that can fail here.",
+  },
+  {
+    name: "the dialog does not restore focus on close",
+    file: "src/components/design-system/Dialog.tsx",
+    from: "      if (previouslyFocused?.isConnected) previouslyFocused.focus();",
+    to: "      // The invoker is not restored: focus is left wherever the browser put it.\n      void previouslyFocused;",
+    test: "tests/dialog.test.tsx",
+    why: "Opening help by pointer and closing it drops the listener at the top of the document, so the next `Tab` starts from the banner instead of returning to the control they pressed. It is the same class of defect as the missing trap and is asserted separately because it is a different line and a different failure: a dialog that traps but does not restore traps the listener inside a surface they can no longer leave by the key they used to enter it.",
+  },
+  {
+    name: "the help list drifts from the binding table",
+    file: "src/features/shortcuts/ShortcutHelpDialog.tsx",
+    from: "        {SHORTCUT_BINDINGS.map((binding) => (",
+    to: '        {/* The list is filtered here rather than derived from the table. */}\n        {SHORTCUT_BINDINGS.filter((binding) => binding.id !== "mute").map((binding) => (',
+    test: "tests/shortcut-listener.test.tsx",
+    why: "Filtering or reordering the rows is the ordinary way a help dialog starts lying - a binding gets excluded because someone thought the row was redundant, or the list is sorted by a second hand-written order. The dialog still looks complete and every row still renders, so only a comparison against the table can see it; that comparison is the test, and this case is what proves the comparison is not vacuous.",
+  },
+
+  // ------------------------------------------------------ M18: search suggestions --
+  // The suggestion lane is the milestone's first genuinely concurrent surface: two
+  // request lanes that are *supposed* to be independent, mounted on one keystroke
+  // stream, with a popup that renders whatever it is handed. Every case below is a
+  // way that goes wrong while the popup still looks completely fine - a lane that
+  // quietly shares state with the other one, a stale answer rendered against the
+  // query being typed, a hint list that reaches the provider, and a combobox whose
+  // roles quietly stop being a combobox.
+
+  {
+    name: "a suggestion request cancels the controller's results request",
+    file: "src/features/search/useSearchSuggestions.ts",
+    from: "      setSettled({ query: forQuery, items: deriveSuggestions(forQuery, history) });\n",
+    to: '      setSettled({ query: forQuery, items: deriveSuggestions(forQuery, history) });\n      // The field is kept in step with what the popup offers, so a completion\n      // fills it as the popup settles.\n      if (history.length > 0 && forQuery !== "")\n        useSearchStore.setState({ query: history[0].normalizedQuery });\n',
+    test: "tests/search-suggestions.test.tsx",
+    why: "This is the only way a suggestion request *can* reach the search controller in this architecture, and it is therefore the whole of case 1: the two lanes share nothing but the search store, so any lane that writes the query re-runs the controller's effect, and that effect cancels the in-flight results request. The listener then watches their results blink away every time the popup opens, and because the popup itself is unharmed nothing else notices. Design decision 5 is the claim that the two lanes are independent, and this is the only edit that could break it.",
+  },
+  {
+    name: "a superseded suggestion response overwrites the newest one",
+    file: "src/features/search/useSearchSuggestions.ts",
+    from: "      if (!isCurrent(seq, controller)) return; // superseded or cancelled: renders nothing",
+    to: "      // The response is rendered as it arrives; only a failure checks the lane.",
+    test: "tests/search-suggestions.test.tsx",
+    why: "The lane's monotonic sequence and its abort signal are the *only* thing standing between a slow read for 'kar' and the popup for 'karma'. Drop the guard and a late response replaces the settled set derived for the query being typed - here the popup goes empty rather than showing the wrong text, because the newest answer was thrown away, which is the same defect wearing a different hat.",
+  },
+  {
+    name: "the suggestion lane fires on every keystroke",
+    file: "src/features/search/useSearchSuggestions.ts",
+    from: "    }, SUGGESTION_DEBOUNCE_MS);",
+    to: "    }, 0);",
+    test: "tests/search-suggestions.test.tsx",
+    why: "Design decision 5 is that the lane runs on *its own* debounce as well as its own abort, and a debounce nobody can measure is not a debounce. Setting it to zero looks like a latency improvement and is invisible in every rendered assertion: the popup still appears, with the same suggestions, from the same local read. What it costs is a storage read per character typed, which is the one cost this lane exists to avoid - it is the surface that fires on every keystroke, so an undebounced suggestion list is the most expensive read path in the application wearing the cheapest-looking change.",
+  },
+  {
+    name: "suggestions are derived from a provider request",
+    file: "src/features/search/useSearchSuggestions.ts",
+    from: "        history = await loadSearchHistory(SUGGESTION_HISTORY_LIMIT);",
+    to: "        history = await loadSearchHistory(SUGGESTION_HISTORY_LIMIT);\n        // Suggestions come from the catalogue, like every other search surface.\n        const found = (await (await fetch(`/api/search?q=${forQuery}&limit=6`)).json()) as {\n          tracks?: Array<{ title: string }>;\n        };\n        history = [\n          ...history,\n          ...(found.tracks ?? []).map((entry) => ({\n            query: entry.title,\n            normalizedQuery: entry.title.toLowerCase(),\n            searchedAt: 0,\n          })),\n        ];",
+    test: "tests/search-suggestions.test.tsx",
+    why: "The obvious way to make suggestions useful - ask the catalogue - and the reason it is forbidden. The popup fires on every keystroke, so this turns typing into provider traffic, makes the hint list's usefulness depend on network latency, and quietly sends the listener's half-typed query outward dozens of times per search. The local-first boundary this repository treats as inviolable, entered through a surface nobody would think to check because the results still look right.",
+  },
+  {
+    name: "the search field stops being a combobox",
+    file: "src/features/search/SearchCombobox.tsx",
+    from: '        role="combobox"\n        aria-expanded={open}\n        aria-controls={LISTBOX_ID}\n        aria-activedescendant={activeOptionId}\n',
+    to: "        aria-expanded={open}\n        aria-controls={LISTBOX_ID}\n",
+    test: "tests/search-suggestions.test.tsx",
+    why: "The field still *looks* like a field, still takes focus, still opens a popup on typing, and still navigates on commit - every one of those assertions passes. What is gone is the part that makes it usable without sight: a screen reader is no longer told there is a listbox, that it is open, or which option is active, so arrow-key navigation becomes an unannounced hunt through a list the listener cannot hear. This is the repository's first combobox, which is exactly why the pattern has to be pinned by a test rather than by review.",
+  },
+  {
+    name: "the suggestion popup is not a listbox",
+    file: "src/features/search/SearchCombobox.tsx",
+    from: '          role="listbox"\n',
+    to: '          role="group"\n',
+    test: "tests/search-suggestions.test.tsx",
+    why: "The options and the keyboard handling both survive, so this is a one-word change with no visible effect. It removes the popup's relationship to the field's `aria-controls`, which is what turns a list of suggestions into an announced popup with a position, and it leaves assistive technology with a group of list items the arrow keys move through in silence.",
+  },
+  {
+    name: "a committed suggestion updates the field but not the URL",
+    file: "src/features/search/SearchCombobox.tsx",
+    from: "  function commit(next: string): void {\n    onCommit(next);",
+    to: '  function commit(next: string): void {\n    // A commit is not a keystroke: the field shows what was chosen and the page\n    // is left to catch up on the next edit.\n    const field = wrapperRef.current?.querySelector("input") as HTMLInputElement | null;\n    if (field !== null) field.value = next;\n    setDismissed(true);\n    setActiveIndex(-1);\n    return;',
+    test: "tests/search-suggestions.test.tsx",
+    why: "Reading a commit as 'the user typed this' rather than 'the user chose this' is the natural mistake, because the field visibly fills in either way and the listener sees a working search. It is only the *link* that breaks - the address bar keeps the old query, so the search they are looking at cannot be shared, bookmarked, or reloaded, and the difference between typing and choosing is invisible until they try to send someone what they found.",
+  },
+
+  // ------------------------------------------------------- M18: the search controller --
+  // The last two cases target the controller this milestone promised not to change.
+  // They are here because 'unchanged' is the kind of claim that is only true until
+  // the next person decides a constant or a line is not load-bearing.
+
+  {
+    name: "the search controller's debounce is removed",
+    file: "src/features/search/useSearchController.ts",
+    from: "    }, SEARCH_DEBOUNCE_MS);",
+    to: "    }, 0);",
+    test: "tests/search-controller.test.tsx",
+    why: "A 300 ms debounce is what turns a typed word into one request instead of one per character, and removing it looks like a performance improvement while typing. It is also the controller's published contract - SEARCH_DEBOUNCE_MS is imported by this milestone's own suggestion tests to schedule around it - and the cost lands on the shared outbound limiter rather than on the keyboard, where it looks like lag.",
+  },
+  {
+    name: "the search controller stops aborting a superseded request",
+    file: "src/features/search/useSearchController.ts",
+    from: "      abortRef.current?.abort();\n      abortRef.current = null;",
+    to: "      // A superseded request is left to finish; its sequence guard drops it.\n      abortRef.current = null;",
+    test: "tests/search-controller.test.tsx",
+    why: "Dropping the abort looks free, because the sequence guard still throws the stale response away - the results on screen are identical. What changes is the wire: the request that was already superseded keeps running to completion against the provider's concurrency budget, so a fast typist's abandoned queries queue up behind the one they actually want. The abort is a resource decision the sequence guard cannot make, and it is invisible in every assertion about what is rendered.",
+  },
+
+  // -------------------------------------------------------------- M18: sharing --
+  // Sharing's whole claim is that it is honest on a browser without the Web Share
+  // API, and that a cancelled share is not a failure. Both are easy to state and
+  // easy to lose: an extra line turns the cancellation into an error, a convenient
+  // 'remember this' turns an act into a record, and a provider URL is the one link
+  // shape that looks most like sharing.
+
+  {
+    name: "a dismissed share is reported as a failure",
+    file: "src/features/sharing/useShare.ts",
+    from: '    return dismissed ? "dismissed" : "copied";',
+    to: '    return dismissed ? "unavailable" : "copied";',
+    test: "tests/share-transports.test.tsx",
+    why: "The most common rejection a share sheet produces is a listener closing it, and mapping that to 'unavailable' tells them the feature is broken when they used it exactly as intended - while the clipboard copy that actually succeeded is never mentioned. It also inverts the requirement's reasoning: cancelling is not failing, and a UI whose dismissal path reads as an error teaches people not to dismiss.",
+  },
+  {
+    name: "a share persists the link it shared",
+    file: "src/features/sharing/useShare.ts",
+    from: '      await platformShare({ title, url });\n      return "shared";',
+    to: '      await platformShare({ title, url });\n      // Remember the last share so it can be offered again.\n      window.localStorage.setItem("spotivibe:last-share", url);\n      return "shared";',
+    test: "tests/share-transports.test.tsx",
+    why: "'Remember what I just shared' is a small, friendly feature and it is why sharing would become a record. The cost is that a share is the one action a listener takes *about someone else* - the link is the thing they were going to send to a person - and writing it into device storage turns their gesture into a row in a list they never asked for and cannot see. It is also the first step toward a share history, which this repository's accountless, local-first product does not have and does not want.",
+  },
+  {
+    name: "a track shares a provider URL",
+    file: "src/features/sharing/trackShare.ts",
+    from: "    url: buildSearchUrl(query),",
+    to: "    url: `https://music.youtube.com/watch?v=${track.providerId}&list=${encodeURIComponent(query)}`,",
+    test: "tests/share-links.test.tsx",
+    why: "The track's provider id is the one identifier that is exact rather than lossy, so reaching for it is the obvious way to share a track precisely - and it produces a link that resolves on somebody else's service, in an account-bound player, for a URL this application neither owns nor can keep alive. It is also the shape that silently breaks the moment the deployment address changes, and the shape that leaks the provider relationship into every message a listener sends.",
+  },
+  {
+    name: "a playlist URL is concatenated at the call site",
+    file: "src/features/playlists/PlaylistDetailView.tsx",
+    from: "          url={playlistHref(playlistId)}",
+    to: "          url={`/playlist/${playlistId}`}",
+    test: "tests/share-links.test.tsx",
+    why: "The copy produces a byte-identical link for every id this application generates - playlist ids are uuids, so nothing needs encoding - which is precisely why it survives review and why an equality assertion on the shared URL passes on either. What it removes is the only place that could encode an id that *did* need it, so the day an id carries a slash or a question mark the link navigates somewhere else. This is also the case that proves the structural sweep is not vacuous: without it the detector would be a rule nobody had ever seen reject anything.",
+  },
+  {
+    name: "a share action has no accessible name",
+    file: "src/features/sharing/ShareButton.tsx",
+    from: "      <IconButton label={`Share ${name}`} size={size} disabled={busy} onClick={share}>",
+    to: '      <IconButton label={"Share"} size={size} disabled={busy} onClick={share}>',
+    test: "tests/share-transports.test.tsx",
+    why: "A column of identically-labelled share buttons is the failure this requirement names, and it is what a 'Share' string constant looks like after somebody tidies it. Nothing else changes: the control is still focusable, still has a title tooltip, still shares the right link, and a screen-reader user now hears 'Share' eight times in a result list with no way to tell which track. A name that identifies what it shares is the only thing separating the icon from the thing it acts on.",
+  },
+  {
+    name: "shift is treated as a platform chord, so the help key cannot open help",
+    file: "src/features/shortcuts/bindings.ts",
+    from: "return event.ctrlKey || event.metaKey || event.altKey;",
+    to: "return event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;",
+    test: "tests/shortcut-bindings.test.ts",
+    why: "The help key is Shift+/: '?' arrives as key '?' with shiftKey true on every current engine, so this mutation does not merely violate a scenario, it makes the ONLY way to discover that the other shortcuts exist unreachable — the feature removes its own documentation. A capitalised letter arrives with shiftKey true too, so 'M' and 'L' break for anyone holding shift. This case was added after a review proved the mutation left all 2750 tests green: a rule nobody can violate has no test, and this one had no case.",
+  },
+  {
+    name: "a chord answers a shortcut",
+    file: "src/features/shortcuts/bindings.ts",
+    from: "  if (hasPlatformModifier(event)) return null;",
+    to: "  // the chord rule was dropped",
+    test: "tests/shortcut-bindings.test.ts",
+    why: "The chord rule lives in the lookup rather than in the dispatcher, so removing one call is what makes Cmd+M and Ctrl+L answer a global shortcut instead of minimising a window and focusing the address bar. The whole-table sweep is what catches it: the first version of this test named only M and L, and an independent review found the other seven bindings uncovered — which is the exact defect this milestone exists to prevent, reappearing inside its own evidence. A binding added later is the one nobody checks by hand.",
+  },
+  {
+    name: "editable content stops suppressing shortcuts",
+    file: "src/features/shortcuts/localMeaning.ts",
+    from: '  const host = element.closest("[contenteditable]");',
+    to: '  const host = null as ReturnType<Element["closest"]>;',
+    test: "tests/shortcut-local-meaning.test.ts",
+    why: "contenteditable occurs nowhere in src today, so the selector looks like dead code and reads as safe to simplify. It is the one piece of non-trivial logic in the guard: a future rich-text surface inherits the claim automatically, and without this case the simplification would pass every suite while turning any editor added later into a surface where Space types a space AND pauses playback.",
+  },
+  {
+    name: "a spinbutton stops suppressing shortcuts",
+    file: "src/features/shortcuts/localMeaning.ts",
+    from: "  if (element.closest(SPINBUTTON_SELECTOR)) return true;",
+    to: "  // a spinbutton is not a text field",
+    test: "tests/shortcut-local-meaning.test.ts",
+    why: "Same shape, different selector: no spinbutton exists in the application yet either, which is precisely why a reviewer would not notice it being removed. Arrow keys on a spinbutton belong to the spinbutton, and the guard exists so a global volume or seek binding never takes them.",
+  },
 ];

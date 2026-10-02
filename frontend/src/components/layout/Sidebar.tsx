@@ -4,6 +4,7 @@ import { pillButtonClassName } from "@/components/design-system/Button";
 import { IconButton } from "@/components/design-system/IconButton";
 import { PlaylistCover } from "@/components/playlist/PlaylistCover";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
+import { playlistHref } from "@/features/playlists/playlistKeys";
 import {
   PlaylistFormDialog,
   type PlaylistFormValue,
@@ -104,7 +105,7 @@ export function Sidebar() {
               return (
                 <Link
                   key={playlist.id}
-                  href={`/playlist/${playlist.id}`}
+                  href={playlistHref(playlist.id)}
                   className="flex items-center gap-3 rounded-cards px-2 py-2 transition-colors hover:bg-graphite"
                 >
                   <PlaylistCover urls={coverUrls} className="size-10 shrink-0" />

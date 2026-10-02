@@ -9,9 +9,9 @@ import { CASES } from "../scripts/lyrics-induced-violations.cases.mjs";
  *
  * `scripts/lyrics-induced-violations.mjs` proves the tests written for the lyrics capability can
  * actually fail: it breaks one production behaviour at a time, runs the test named for that
- * behaviour, and requires it to fail. The cases now span three milestones — M16's lyrics work and
- * M17's home-discovery work — and the harness's own printed count is the authority for how many
- * were caught.
+ * behaviour, and requires it to fail. The cases now span five milestones — M16's lyrics work,
+ * M17's home-discovery work, M18's keyboard shortcuts, and M18's search suggestions and sharing —
+ * and the harness's own printed count is the authority for how many were caught.
  *
  * The number in this sentence has gone stale twice — once when cases were added and the docstring was
  * not, and once when pass 4 fixed a stale "Eighteen" here and added a case in the same commit. It is
@@ -41,7 +41,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const frontend = join(here, "..");
 
 describe("the M16 induced-violation harness (spec lyrics)", () => {
-  it("carries the thirty-six cases the evidence records", () => {
+  it("carries the sixty cases the evidence records", () => {
     // A floor rather than an exact count: adding a case is the expected way to grow this, but a
     // harness that has lost its cases must fail rather than report a vacuous pass.
     //
@@ -57,7 +57,38 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
     // `data-band` attribute that never reaches the DOM, and motion added to the new action. As with
     // every number in this file, it is stated here to be checked against the harness's own output
     // rather than trusted.
-    expect(CASES.length).toBeGreaterThanOrEqual(36);
+    //
+    // The M18 keyboard-shortcut change added **ten**, taking it to forty-six: a binding firing
+    // inside a text field, inside a dialog, while a slider has focus, and inside a menu (the four
+    // ways the local-meaning guard can quietly stop covering a surface); `M` faking mute by writing
+    // the volume; `ArrowUp` raising volume without unmuting; `L` liking with nothing playing; a
+    // dialog that does not trap focus; a dialog that does not restore focus; and the help list
+    // drifting from the binding table.
+    //
+    // The M18 suggestions-and-sharing change added **fourteen**, taking it to sixty: a suggestion
+    // request cancelling the controller's results request; a superseded suggestion response
+    // overwriting the newest one; the suggestion lane firing on every keystroke; suggestions
+    // derived from a provider request; the field stopping being a combobox; the popup stopping
+    // being a listbox; a committed suggestion that updates the field but not the URL; the
+    // controller's debounce removed; the controller's abort removed; a dismissed share reported as
+    // a failure; a share that persists the link; a track sharing a provider URL; a playlist URL
+    // concatenated at the call site; and a share action with no accessible name.
+    //
+    // Four more were added after an independent review found the evidence incomplete: the shift rule
+    // (which had NO case and whose mutation left all 2750 tests green while making `?` — the only way
+    // to discover the other shortcuts — unreachable), a chord answering a shortcut, and the guard's
+    // two dormant branches, `contenteditable` and `role="spinbutton"`. Neither branch matches anything
+    // in `src` today, which is exactly why a reviewer would not notice one being removed: code that
+    // matches nothing looks like dead code and reads as safe to simplify.
+    //
+    // One case written for this change was **removed rather than kept**: a fifteenth that removed
+    // the suggestion lane's render-side query-identity guard escaped, and the reason it escaped is
+    // the finding. That guard is unreachable on its own — no code path reaches the setter with a
+    // query the lane has moved past, because the request-side guard rejects such a response first —
+    // so removing it alone leaves every test green. A case that cannot fail would be a case
+    // claiming coverage it does not have, which is the exact failure this harness exists to
+    // prevent, so it was deleted and the reason recorded in `useSearchSuggestions.ts` instead.
+    expect(CASES.length).toBeGreaterThanOrEqual(64);
   });
 
   it("gives every case a distinct name, so a result identifies which behaviour it broke", () => {

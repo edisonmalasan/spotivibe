@@ -11,11 +11,13 @@ import { PlaylistCover } from "@/components/playlist/PlaylistCover";
 import type { Track } from "@/data/repositories";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
 import { DeletePlaylistDialog } from "@/features/playlists/DeletePlaylistDialog";
+import { playlistHref } from "@/features/playlists/playlistKeys";
 import {
   PlaylistFormDialog,
   type PlaylistFormValue,
 } from "@/features/playlists/PlaylistFormDialog";
 import { PlaylistTrackRow } from "@/features/playlists/PlaylistTrackRow";
+import { ShareButton } from "@/features/sharing/ShareButton";
 import { playAll, shufflePlay } from "@/lib/libraryPlayback";
 import {
   artworkUrl,
@@ -204,6 +206,16 @@ export function PlaylistDetailView({ playlistId }: PlaylistDetailViewProps) {
             Delete
           </Button>
         </span>
+        {/* M18: the playlist's own page URL through the shared `playlistHref`
+            builder. A playlist is a record on this device, so the link resolves
+            on the device that opens it — which is the honest thing to share and
+            the reason the route is not a provider URL. */}
+        <ShareButton
+          name={playlist.name}
+          url={playlistHref(playlistId)}
+          title={playlist.name}
+          size="md"
+        />
       </div>
 
       {empty ? (

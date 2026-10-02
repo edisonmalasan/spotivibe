@@ -27,6 +27,7 @@ import { likedTracksByArtist } from "@/features/artist/likedByArtist";
 import { playFromShelf } from "@/features/home/browsePlayback";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
 import { startArtistRadio } from "@/features/personalization/startRadio";
+import { ShareButton } from "@/features/sharing/ShareButton";
 import { songCountLabel } from "@/lib/playlistPresentation";
 import { useLibraryStore } from "@/stores/libraryStore";
 
@@ -471,7 +472,7 @@ export function ArtistView({ artistKey }: ArtistViewProps) {
           <p className="text-body-lg font-regular text-mist">
             {["Artist", songCountLabel(tracks.length)].join(" • ")}
           </p>
-          <div className="mt-2">
+          <div className="mt-2 flex flex-wrap items-center gap-3">
             <Button
               onClick={() => {
                 void beginArtistRadio(artist);
@@ -482,6 +483,15 @@ export function ArtistView({ artistKey }: ArtistViewProps) {
               <Radio className="size-4" aria-hidden="true" />
               Start artist radio
             </Button>
+            {/* M18: the artist's own page URL, from the same `artistHref` the
+                artist links use — the route key is the one that resolves back to
+                this page. */}
+            <ShareButton
+              name={artist.name}
+              url={artistHref(artistKey)}
+              title={artist.name}
+              size="md"
+            />
           </div>
         </div>
       </div>

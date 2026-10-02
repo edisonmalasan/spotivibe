@@ -10,6 +10,7 @@ import { PlaylistCover } from "@/components/playlist/PlaylistCover";
 import { filterPlaylists, libraryFilterMatches } from "@/features/library/libraryFilter";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
 import { ImportPlaylistDialog } from "@/features/playlists/ImportPlaylistDialog";
+import { playlistHref } from "@/features/playlists/playlistKeys";
 import {
   PlaylistFormDialog,
   type PlaylistFormValue,
@@ -134,7 +135,7 @@ export function LibraryView() {
               {shownPlaylists.map((playlist) => (
                 <li key={playlist.id}>
                   <Link
-                    href={`/playlist/${playlist.id}`}
+                    href={playlistHref(playlist.id)}
                     className="group flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 transition-colors hover:bg-graphite"
                   >
                     <PlaylistCover

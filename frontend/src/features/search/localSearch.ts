@@ -1,18 +1,41 @@
-import type { Track } from "@/data/repositories";
+import type { SearchEntryRecord, Track } from "@/data/repositories";
 import { getLocalData } from "@/data/localData";
 import type { SearchMode } from "@/features/search/searchApi";
 
 /**
- * Local-library fallback for search (design §6): the remote is unreachable
- * (offline) or failed, so the query runs against the tracks the user owns
- * locally. Everything goes through the repositories — feature code never
- * touches IndexedDB (AGENTS.md architecture rules).
+ * The search feature's reads of local data (design §6).
+ *
+ * Both readers live here rather than at their call sites because they are the two
+ * places this feature touches storage at all: a results request falls back to the
+ * locally owned library, and the suggestion lane (M18 §5) offers the searches
+ * this device has made. Everything goes through the repositories — feature code
+ * never touches IndexedDB (AGENTS.md architecture rules) — and a reader that is
+ * *named* in the architecture guard is a deliberate addition rather than a silent
+ * second path into the data layer.
  */
 
 /** Bounded number of listening-history events pulled into the fallback. */
 export const LOCAL_HISTORY_LIMIT = 50;
 
-/** The locally owned tracks a fallback query runs against. */
+/**
+ * This device's recent searches, newest first, optionally bounded.
+ *
+ * Used by the suggestion lane, which must reach the same records as the browse
+ * state's recents list but through a lane of its own — it settles on its own
+ * debounce and its own cancellation, and it never records (a suggestion is not a
+ * search until it is committed).
+ */
+export async function loadSearchHistory(limit?: number): Promise<SearchEntryRecord[]> {
+  const data = await getLocalData();
+  return data.searchHistory.list(limit);
+}
+
+/**
+ * The locally owned tracks a fallback query runs against.
+ *
+ * Read when the remote is unreachable (offline) or failed, so the query runs
+ * against the tracks the user owns locally instead of returning nothing.
+ */
 export interface LocalLibrary {
   /** Deduplicated tracks in source order: liked → playlists → history. */
   tracks: Track[];
