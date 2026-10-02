@@ -19,7 +19,9 @@
 //      `## Requirements` section, leaving every existing line byte-identical; and
 //   6. re-reads what it wrote and re-checks it.
 //
-// Usage, from the repository root:  node scripts/sync-m18-interactions.mjs [--check]
+// Usage, from the repository root:
+//   node scripts/sync-m18-interactions.mjs [--check]              # M18, the defaults
+//   SPOTIVIBE_CHANGE=m19-motion node scripts/sync-m18-interactions.mjs [--check]
 //   --check  report what would change and write nothing
 //
 // `SPOTIVIBE_REPO` overrides the repository root so every refusal path can be exercised against a
@@ -32,15 +34,20 @@ import { dirname, join } from "node:path";
 const ROOT = process.env.SPOTIVIBE_REPO ?? process.cwd();
 
 const CHECK_ONLY = process.argv.includes("--check");
-const CHANGE = join(ROOT, "openspec", "changes", "m18-interactions", "specs");
+/**
+ * The change to merge, and which of its capabilities are new versus appended to an existing one.
+ * Defaults are M18's own arrangement; M19 has the same shape — one new capability and one ADDED
+ * block against a capability that already exists — so it reuses this guard rather than adding a third
+ * near-identical copy of the same refusal logic.
+ */
+const CHANGE_NAME = process.env.SPOTIVIBE_CHANGE ?? "m18-interactions";
+const CHANGE = join(ROOT, "openspec", "changes", CHANGE_NAME, "specs");
+const NEW_CAPABILITIES = (process.env.SPOTIVIBE_NEW ?? "keyboard-shortcuts,sharing").split(",");
+const EXTENDED_CAPABILITIES = (process.env.SPOTIVIBE_EXTENDED ?? "search").split(",");
 const RECORD = join(ROOT, "openspec", "specs");
 
 /** What this sync is for. Anything else in the delta directory is a stray and must be refused. */
-const EXPECTED = ["keyboard-shortcuts", "sharing", "search"];
-/** Capabilities that must not already exist; an ADDED block means the record has no such capability. */
-const NEW_CAPABILITIES = ["keyboard-shortcuts", "sharing"];
-/** Capabilities that already exist and receive requirements inserted into them. */
-const EXTENDED_CAPABILITIES = ["search"];
+const EXPECTED = [...NEW_CAPABILITIES, ...EXTENDED_CAPABILITIES];
 
 const problems = [];
 const report = [];
