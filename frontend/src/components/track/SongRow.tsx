@@ -61,7 +61,7 @@ function RowBody({ track, interactive }: { track: Track; interactive: boolean })
  */
 export function SongRow({ track, onPlay, trailing }: SongRowProps) {
   return (
-    <li className="flex items-center gap-3 rounded-cards bg-smoke px-3 py-2 transition-colors hover:bg-graphite">
+    <li className="motion-feedback flex items-center gap-3 rounded-cards bg-smoke px-3 py-2 hover:bg-graphite">
       {onPlay ? (
         <button
           type="button"

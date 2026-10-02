@@ -127,7 +127,7 @@ function GenreTile({ id, name }: { id: string; name: string }) {
     <Link
       href={genreHref(id)}
       data-testid={`home-genre-${id}`}
-      className="flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 transition-colors hover:bg-graphite"
+      className="motion-reveal motion-feedback flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 hover:bg-graphite"
     >
       <span className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-cards bg-graphite">
         <Disc3 className="size-8 text-fog" aria-hidden="true" />
@@ -458,9 +458,31 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
         filter={filter}
       />
 
-      {sections.map((section) => (
-        <HomeSectionView key={section.id} section={section} feed={feed} />
-      ))}
+      {/*
+        M19, task 3.5 — the presented content changes when the filter changes.
+
+        `key={filter}` is what makes this a *transition* rather than a swap: a new
+        filter remounts the stack, and `@starting-style` gives the arriving content the
+        vocabulary's entrance. Without the key the element would survive the change and
+        nothing would animate, because the entrance is a rendering event, not a state
+        change.
+
+        **The leaving half is deliberately absent, and this is a recorded gap.** The
+        only way to fade a section *out* is to keep it in the DOM for the length of the
+        fade, and M17's own contract forbids that: `tests/home-view.test.tsx` asserts
+        that a section dropped by the filter is *not in the document* immediately after
+        the click, and a ghost copy would double every `home-section-*` test id and
+        every section landmark. So the removal stays immediate and the arrival is what
+        animates — which is the half that keeps the requirement that matters true: no
+        listener ever loses content to a motion, because no action waits for one. The
+        discrete route (`transition-behavior: allow-discrete`) is in the vocabulary and
+        is load-bearing on the `Dialog` primitive, where the leave *is* expressible.
+      */}
+      <div key={filter} className="motion-reveal flex flex-col gap-8">
+        {sections.map((section) => (
+          <HomeSectionView key={section.id} section={section} feed={feed} />
+        ))}
+      </div>
 
       {showOnboarding && (
         <LanguageOnboarding

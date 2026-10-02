@@ -1,0 +1,381 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { MOTION_ALLOWED } from "@/styles/motionTokens";
+import {
+  CLIENT_BUDGET,
+  measureClientBundle,
+  measureRouteFirstLoad,
+  routeFirstLoads,
+} from "../scripts/measure-client-bundle.mjs";
+import { code, sourceFiles } from "./helpers/motionSource";
+
+/**
+ * M19 tasks 5.1–5.3 (spec `performance` — "A motion budget holds the client bundle";
+ * spec `motion` — "Motion costs no client JavaScript").
+ *
+ * The milestone's central decision is that motion is **CSS**, and therefore free. That is
+ * only worth something if it is a number, and the number has to be measured the way a CDN
+ * serves bytes. `scripts/measure-client-bundle.mjs` is that measurement; this file asserts
+ * against it and states the ceiling.
+ *
+ * **Why the emitted chunks and not the build log.** `next build` under Turbopack prints the
+ * route table with **no size columns at all** — an earlier version of this idea assumed it
+ * did, and would have read nothing. The emitted `.js` chunks under `.next/static/chunks`
+ * are gzipped at level 9, which is what a CDN applies.
+ *
+ * **A caveat stated rather than hidden.** A build is required for these checks to mean
+ * anything. In CI the suite runs *before* `next build`, so on a cold checkout
+ * `.next/static/chunks` does not exist and the measured assertions are **skipped with a
+ * printed reason** rather than reported as passes. The assertions that do not need a build —
+ * the recorded figure, the manifest rule — run unconditionally, so the "no animation
+ * library" half of the decision is enforced on every run.
+ */
+
+// Keep every literal in a variable — Vite rewrites an inline
+// `new URL("...", import.meta.url)` into a non-`file:` URL under the jsdom environment,
+// and `fileURLToPath` rejects it.
+const motionCssRel = "../src/styles/motion.css";
+const frontendRel = "..";
+const manifestRel = "../package.json";
+
+const vocabularyCss = readFileSync(fileURLToPath(new URL(motionCssRel, import.meta.url)), "utf8");
+const FRONTEND = fileURLToPath(new URL(frontendRel, import.meta.url));
+
+/**
+ * A measured build, or `null` when there is none.
+ *
+ * `null` is reported as a skip, never as a pass: a budget that cannot be measured is a
+ * budget nobody checked, and a green run must not be able to claim otherwise.
+ */
+function measuredBuild(): ReturnType<typeof measureClientBundle> | null {
+  try {
+    return measureClientBundle(FRONTEND);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("no build to measure")) {
+      console.warn(
+        `[motion budget] SKIPPED: ${error.message} Run \`npm run build\` first; these are measurements, not estimates.`,
+      );
+      return null;
+    }
+    throw error;
+  }
+}
+
+const measured = measuredBuild();
+
+/**
+ * The published cost of the `framer-motion` spike, in bytes.
+ *
+ * The proposal states the spike as **+41.4 kB total**, and the measurement script reports in
+ * 1 kB = 1024 B, so this is that figure converted rather than a second measurement. It is
+ * derived rather than recorded because it came from a *different* build — the spike branch —
+ * and pretending to byte precision across two builds would be the exact kind of invented
+ * number this file exists to prevent.
+ */
+const SPIKE_COST_BYTES = Math.round(41.4 * 1024);
+
+/** The ceiling: the recorded baseline plus its stated headroom. */
+const CEILING = CLIENT_BUDGET.totalGzippedBytes + CLIENT_BUDGET.toleranceBytes;
+
+describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", () => {
+  it("states the toolchain, the subject, and the route it was measured on", () => {
+    // A figure with no provenance is a guess someone wrote down. Three things make it a
+    // measurement: what was measured, what measured it, and where.
+    expect(CLIENT_BUDGET.subject).toContain(".next/static/chunks");
+    expect(CLIENT_BUDGET.toolchain).toContain("Node");
+    expect(CLIENT_BUDGET.toolchain).toContain("gzip level 9");
+    expect(CLIENT_BUDGET.route).toBe("/");
+    expect(CLIENT_BUDGET.method).toContain("gzip");
+  });
+
+  it("records the pre-milestone figures this milestone measured before changing anything", () => {
+    // Taken from a `next build` of the tree as M19 found it, on 2026-10-03 under Node
+    // 24.21.0: 24 emitted chunks, 384,831 bytes gzipped in total, largest 96,644, and
+    // `/` first load 227,266 across 12 chunks. These are bytes, so the comparison cannot
+    // move when someone rounds.
+    expect(CLIENT_BUDGET.totalGzippedBytes).toBe(384831);
+    expect(CLIENT_BUDGET.largestChunkGzippedBytes).toBe(96644);
+    expect(CLIENT_BUDGET.chunkCount).toBe(24);
+    expect(CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(227266);
+    expect(CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(12);
+  });
+
+  it("names what the headroom is for, and keeps it far smaller than any real dependency", () => {
+    // 4,096 bytes of gzipped headroom. The animation library this decision considered
+    // measured **+41.4 kB** — more than ten times the slack — so a ceiling that could absorb
+    // one is not a ceiling. See `docs/MOTION.md` for the measurement.
+    expect(CLIENT_BUDGET.toleranceBytes).toBe(4096);
+    expect(CLIENT_BUDGET.toleranceBytes * 10).toBeLessThan(SPIKE_COST_BYTES);
+  });
+});
+
+describe("the emitted client bundle is held to the ceiling (task 5.2)", () => {
+  it.skipIf(measured === null)("keeps the total gzipped client bundle under the ceiling", () => {
+    expect(measured!.totalGzippedBytes).toBeLessThanOrEqual(CEILING);
+  });
+
+  it.skipIf(measured === null)("keeps the largest single chunk under the recorded figure", () => {
+    expect(measured!.largestChunkGzippedBytes).toBeLessThanOrEqual(
+      CLIENT_BUDGET.largestChunkGzippedBytes,
+    );
+  });
+
+  it.skipIf(measured === null)("adds no chunk: the count is a measurement too", () => {
+    // The `framer-motion` spike added exactly one chunk. A chunk-count assertion catches
+    // that shape even if the total happened to compress well.
+    expect(measured!.chunkCount).toBeLessThanOrEqual(CLIENT_BUDGET.chunkCount);
+  });
+
+  it.skipIf(measured === null)("holds Home's first load under the recorded figure", () => {
+    // `/` is emitted as `index.html` by this build — the route table's naming is not
+    // uniform (`/discover` is `discover.html`), which is why the document is named here
+    // rather than derived.
+    const home = measureRouteFirstLoad(FRONTEND, "index.html");
+    expect(home.chunkCount).toBeLessThanOrEqual(CLIENT_BUDGET.homeFirstLoadChunkCount);
+    expect(home.totalGzippedBytes).toBeLessThanOrEqual(
+      CLIENT_BUDGET.homeFirstLoadGzippedBytes + CLIENT_BUDGET.toleranceBytes,
+    );
+  });
+
+  it.skipIf(measured === null)(
+    "costs a shared chunk once per route, because each visit pays for it",
+    () => {
+      // Spec `performance`: a chunk two routes load is counted in *each* route's total, not
+      // once globally. Asserted by finding a chunk that appears in two routes' figures.
+      const routes = routeFirstLoads(FRONTEND);
+      const shared = new Map<string, number>();
+      for (const route of routes as Array<{
+        route: string;
+        totalGzippedBytes: number;
+        chunkCount: number;
+        perChunk: Array<{ file: string; gzippedBytes: number }>;
+      }>) {
+        for (const chunk of route.perChunk) {
+          shared.set(chunk.file, (shared.get(chunk.file) ?? 0) + 1);
+        }
+      }
+      const twiceOrMore = [...shared.values()].filter((count) => count >= 2);
+      expect(twiceOrMore.length, "routes really do share chunks").toBeGreaterThan(0);
+      // And the deduplicated union is strictly smaller than the sum, which is exactly why
+      // summing would understate what a listener downloads.
+      const sum = (routes as Array<{ totalGzippedBytes: number }>).reduce(
+        (total: number, route) => total + route.totalGzippedBytes,
+        0,
+      );
+      expect(sum).toBeGreaterThan(measured!.totalGzippedBytes);
+    },
+  );
+
+  it.skipIf(measured === null)("accounts for every emitted chunk in the total", () => {
+    // Guards the measurement itself: a walker that silently missed a directory would report
+    // a smaller, more flattering total and every ceiling above would be satisfied by it.
+    const summed = (measured!.perChunk as Array<{ gzippedBytes: number }>).reduce(
+      (total: number, chunk) => total + chunk.gzippedBytes,
+      0,
+    );
+    expect(summed).toBe(measured!.totalGzippedBytes);
+    expect(measured!.perChunk).toHaveLength(CLIENT_BUDGET.chunkCount);
+  });
+});
+
+describe("an animation library in the manifest fails the budget (task 5.3)", () => {
+  /**
+   * The rule the decision depends on, written so it is checked against a **parsed
+   * manifest** rather than a grep of the file: a test that reads `package.json` as text can
+   * be satisfied by a dependency list that no npm ever read.
+   */
+  const ANIMATION_LIBRARIES = [
+    "framer-motion",
+    "motion",
+    "motion-dom",
+    "motion-utils",
+    "gsap",
+    "animejs",
+    "anime",
+    "@react-spring/web",
+    "@react-spring/animated",
+    "react-spring",
+    "react-transition-group",
+    "react-motion",
+    "popmotion",
+    "auto-animate",
+    "velocity-animate",
+    "lottie-web",
+    "react-lottie",
+  ] as const;
+
+  /** A manifest, parsed — the shape a package manager would install from. */
+  function manifest(overrides: {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  }): { dependencies: Record<string, string>; devDependencies: Record<string, string> } {
+    return {
+      dependencies: overrides.dependencies ?? {},
+      devDependencies: overrides.devDependencies ?? {},
+    };
+  }
+
+  /** Every animation library a parsed manifest declares, in either section. */
+  function animationLibraries(parsed: {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  }): string[] {
+    const names = [...Object.keys(parsed.dependencies), ...Object.keys(parsed.devDependencies)];
+    return names.filter((name) => (ANIMATION_LIBRARIES as readonly string[]).includes(name));
+  }
+
+  it("declares none today, in either section", () => {
+    const parsed = JSON.parse(
+      readFileSync(fileURLToPath(new URL(manifestRel, import.meta.url)), "utf8"),
+    ) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(animationLibraries(manifest(parsed))).toEqual([]);
+  });
+
+  it("fails the budget the moment one appears — in dependencies or in devDependencies", () => {
+    // The half of the decision that has to run on every invocation, build or no build. The
+    // spike measured `framer-motion` at **+41.4 kB gzipped** — more than ten times the
+    // ceiling's headroom — so the manifest rule and the size rule agree; whichever fires
+    // first, adding the library cannot be done quietly.
+    for (const library of ANIMATION_LIBRARIES) {
+      for (const section of ["dependencies", "devDependencies"] as const) {
+        const found = animationLibraries(manifest({ [section]: { [library]: "1.0.0" } }));
+        expect(found, `${section}.${library} must be reported as a budget violation`).toContain(
+          library,
+        );
+      }
+    }
+    // And the whole list is longer than the application's own dependency set, so a library
+    // is recognised whether it is spelled the common way or an alias of it.
+    expect(ANIMATION_LIBRARIES.length).toBeGreaterThan(Object.keys(ANIMATION_LIBRARIES).length / 2);
+  });
+
+  it("would be caught by the size rule too, not only by name", () => {
+    // A dependency not on the list — a fork, a renamed package — slips past the manifest
+    // rule, which is why the measured ceiling exists at all. The two rules are independent,
+    // and this states which one catches what.
+    expect(SPIKE_COST_BYTES).toBeGreaterThan(CLIENT_BUDGET.toleranceBytes * 10);
+    expect(CLIENT_BUDGET.totalGzippedBytes + SPIKE_COST_BYTES).toBeGreaterThan(CEILING);
+  });
+
+  it("imports no animation library from any source file", () => {
+    // The other half of "no `framer-motion`": a library that is installed but never
+    // imported would measure zero and prove nothing. That is not hypothetical — it is why
+    // the M19 spike deliberately *rendered* the library from `HomeView`, so the number it
+    // produced was a number about the shipped application.
+    const offenders: string[] = [];
+    for (const file of sourceFiles()) {
+      if (!file.path.endsWith(".ts") && !file.path.endsWith(".tsx")) continue;
+      for (const match of code(file.source).matchAll(/(?:from|import)\s+["']([^"']+)["']/g)) {
+        const specifier = match[1] ?? "";
+        if (!specifier.startsWith(".") && !specifier.startsWith("@/")) continue;
+        const bare = specifier.replace(/^@\//, "").split("/")[0] ?? "";
+        const packageName = specifier.startsWith("@")
+          ? specifier.split("/").slice(0, 2).join("/")
+          : bare;
+        if ((ANIMATION_LIBRARIES as readonly string[]).includes(packageName)) {
+          offenders.push(`${file.path}: ${specifier}`);
+        }
+      }
+    }
+    expect(offenders, "no animation library may be imported").toEqual([]);
+  });
+});
+
+describe("the motion itself is CSS, and costs no JavaScript of its own", () => {
+  it("declares every duration, easing, and travel distance as a custom property", () => {
+    // The reason the budget holds: a duration is a string in a stylesheet, not a number in
+    // a bundle. Asserted on the stylesheet the application actually imports.
+    expect(vocabularyCss).toContain("--motion-feedback:");
+    expect(vocabularyCss).toContain("--motion-reveal:");
+    expect(vocabularyCss).toContain("--motion-surface:");
+    // And no class writes a duration longhand, which is what would put a number back into a
+    // component's own stylesheet and start the drift the vocabulary exists to end.
+    expect(vocabularyCss).not.toMatch(/transition-duration:\s*\d/);
+    expect(vocabularyCss).not.toMatch(/animation-duration:\s*\d/);
+  });
+});
+
+describe("the evidence file carries the decision and what would reverse it (task 5.4)", () => {
+  // Written evidence is only evidence if something checks it. The numbers in
+  // `docs/MOTION.md` are asserted against the recorded budget, so the file cannot quietly
+  // start claiming a smaller cost than the build shows.
+  const evidenceRel = "../docs/MOTION.md";
+  const evidence = readFileSync(fileURLToPath(new URL(evidenceRel, import.meta.url)), "utf8");
+
+  it("carries the before/after table, with both totals", () => {
+    expect(evidence).toContain("375.8 kB");
+    expect(evidence).toContain("417.2 kB");
+    expect(evidence).toContain("+41.4 kB");
+    expect(evidence).toContain("+41.5 kB");
+    expect(evidence).toContain("263.4 kB");
+    expect(evidence).toMatch(/18\.7%/);
+    // This milestone's own cost, measured rather than asserted.
+    expect(evidence).toContain("385,238 B");
+    expect(evidence).toContain("384,831 B");
+  });
+
+  it("states the milestone's own cost as the difference of the two totals it recorded", () => {
+    // **The two figures were contradicting each other and nothing noticed.** The table said
+    // `+407 B` and the paragraph below it said "the 406 bytes are the `Dialog` primitive's
+    // leave lifecycle", in a file whose whole purpose is that its numbers are measurements.
+    // 385,238 − 384,831 is 407, so the *difference* is the authority here and the prose is
+    // asserted against it — which means the two cannot drift apart again, and neither can
+    // drift from the recorded baseline without this failing.
+    const measuredAfterM19 = 385238;
+    const delta = measuredAfterM19 - CLIENT_BUDGET.totalGzippedBytes;
+    expect(delta, "the recorded totals must actually differ by the published figure").toBe(407);
+    expect(evidence).toContain(`+${delta} B`);
+    expect(evidence, "the prose must name the same number the table publishes").toMatch(
+      new RegExp(`\\b${delta}\\b\\s+bytes\\b`),
+    );
+    // And no *other* three-digit byte figure is published as this milestone's cost, which is
+    // the exact shape the contradiction took: a correct table beside a wrong sentence.
+    expect(evidence, "and must not publish a different one anywhere").not.toMatch(
+      new RegExp(`\\b(?!${delta}\\b)4\\d\\d\\s+bytes\\b`),
+    );
+  });
+
+  it("counts the named surfaces from the contract rather than from memory", () => {
+    // The same class of drift, in words: the file said "the six the roadmap lists" while
+    // `MOTION_ALLOWED` carries five. Read from the contract, so the prose cannot disagree
+    // with the thing it is describing — and matched in words, because that is how the
+    // sentence reads.
+    const NUMBER_WORDS = [
+      "zero",
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+      "nine",
+      "ten",
+    ];
+    const surfaces = new Set([...MOTION_ALLOWED.values()].map((allowance) => allowance.surface));
+    expect(surfaces.size, "the five named surfaces").toBe(5);
+    expect(evidence).toContain(`the ${NUMBER_WORDS[surfaces.size]} the roadmap lists`);
+  });
+
+  it("carries the reversal conditions, so the decision is reversible on evidence", () => {
+    expect(evidence).toMatch(/What would reverse this/i);
+    expect(evidence).toMatch(/spring/i);
+    expect(evidence).toMatch(/gesture/i);
+    expect(evidence).toMatch(/interruptible/i);
+  });
+
+  it("carries the method and the toolchain the numbers were taken with", () => {
+    expect(evidence).toContain("scripts/measure-client-bundle.mjs");
+    expect(evidence).toMatch(/level 9/i);
+    expect(evidence).toMatch(/Turbopack/);
+    // And the measurement gap, stated rather than hidden.
+    expect(evidence).toMatch(/No transition was seen/i);
+    expect(evidence).toMatch(/Deployment Protection/);
+    expect(evidence).toMatch(/prefers-reduced-motion/);
+  });
+});

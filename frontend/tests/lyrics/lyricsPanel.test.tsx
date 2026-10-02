@@ -583,8 +583,18 @@ describe("LyricsPanel — reduced motion", () => {
     expect(block, "the global reduced-motion block must exist").toContain(
       "@media (prefers-reduced-motion: reduce)",
     );
-    expect(block).toContain("transition-duration: 0.01ms !important");
+    expect(block).toContain("transition-duration: var(--motion-floor) !important");
     expect(block).toContain("scroll-behavior: auto !important");
+    // M19 moved the value into the vocabulary, so the number this requirement depends on
+    // is asserted where it is declared. The claim — that the rule overrides
+    // `transition-duration` with `!important` and therefore collapses this panel's
+    // transition — is unchanged; what it now names is a step that cannot drift rather
+    // than a literal that could be edited in one place and not the other.
+    const motionCss = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "styles", "motion.css"),
+      "utf8",
+    );
+    expect(motionCss).toContain("--motion-floor: 0.01ms");
   });
 });
 

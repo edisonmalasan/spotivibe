@@ -105,7 +105,7 @@ export function TopBar() {
       <Link
         href="/settings"
         aria-label="Settings"
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-buttons text-pure-white transition hover:bg-smoke"
+        className="motion-feedback inline-flex size-8 shrink-0 items-center justify-center rounded-buttons text-pure-white hover:bg-smoke"
       >
         <Settings aria-hidden="true" className="size-4" />
       </Link>

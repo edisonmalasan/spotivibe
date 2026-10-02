@@ -345,7 +345,7 @@ export const CASES = [
     file: "src/features/home/TimeShelf.tsx",
     from: '          className="w-full justify-start"',
     to: '          className="w-full justify-start transition-colors"',
-    test: "tests/home-m17-no-motion.test.ts",
+    test: "tests/motion-scope.test.ts",
     why: "A hover transition on a new control is the piece of motion M19 is most likely to inherit, and it is invisible in review because one transition utility among a dozen classes reads as house style. Design decision 6 exists so M19 can standardise one vocabulary rather than four.",
   },
 
@@ -605,5 +605,62 @@ export const CASES = [
     to: "  // a spinbutton is not a text field",
     test: "tests/shortcut-local-meaning.test.ts",
     why: "Same shape, different selector: no spinbutton exists in the application yet either, which is precisely why a reviewer would not notice it being removed. Arrow keys on a spinbutton belong to the spinbutton, and the guard exists so a global volume or seek binding never takes them.",
+  },
+
+  // ---------------------------------------------------------------- M19 ---------
+  // Motion and interaction polish. The milestone's claims are all about *declarations*:
+  // one vocabulary, one reduced-motion floor, motion on a named set of surfaces and
+  // nowhere else, and a client bundle that does not grow. A declaration is invisible in
+  // review — one `137ms` among a dozen classes, or a fourth transition utility in a
+  // control that already had one, reads as house style — so each case below removes the
+  // declaration a milestone rule depends on and requires that rule to notice.
+
+  {
+    name: "a motion declares a duration of its own",
+    file: "src/styles/motion.css",
+    from: "  .motion-feedback {\n    transition:\n      transform var(--motion-feedback) var(--motion-ease-out),\n      opacity var(--motion-feedback) var(--motion-ease-out);\n  }",
+    to: "  .motion-feedback {\n    transition:\n      transform 137ms linear,\n      opacity 137ms linear;\n  }",
+    test: "tests/motion-vocabulary.test.ts",
+    why: "The whole point of the vocabulary is that a component cannot choose its own number. This is the shape such a choice takes — `137ms` reads as a deliberate decision by someone who wants a control to feel slightly crisper than the 120 ms the system uses, and nothing about it looks like a second system until every surface has drifted.",
+  },
+  {
+    name: "motion appears outside the named surfaces",
+    file: "src/features/sharing/ShareButton.tsx",
+    from: '    <div className="flex shrink-0 flex-col items-end gap-1">',
+    to: '    <div className="motion-feedback flex shrink-0 flex-col items-end gap-1">',
+    test: "tests/motion-scope.test.ts",
+    why: "M18's verification found that the no-motion guard covered only `features/home`, and this is the same hole arriving again in the feature M18 added: one transition utility on a share control, in a directory the old guard never walked. The milestone's own non-goal is animating everything, so this is the case most worth keeping.",
+  },
+  {
+    name: "a component gates its motion on the reduced-motion preference",
+    file: "src/components/design-system/IconButton.tsx",
+    from: "      className={`motion-feedback inline-flex items-center justify-center rounded-buttons disabled:pointer-events-none",
+    to: '      className={`motion-feedback ${reducedMotion ? "opacity-90" : ""} inline-flex items-center justify-center rounded-buttons disabled:pointer-events-none',
+    test: "tests/motion-vocabulary.test.ts",
+    why: "A second mechanism, written out of good intentions: the global floor already collapses every declared duration, so a per-component gate can only be narrower, and once one exists the next component copies it. This is also the shape a future author reaches for when a motion 'looks wrong' for one person.",
+  },
+  {
+    name: "a motion transitions a layout property",
+    file: "src/styles/motion.css",
+    from: "    transition:\n      transform var(--motion-reveal) var(--motion-ease-out),\n      opacity var(--motion-reveal) var(--motion-ease-out);",
+    to: "    transition:\n      height var(--motion-reveal) var(--motion-ease-out),\n      opacity var(--motion-reveal) var(--motion-ease-out);",
+    test: "tests/motion-vocabulary.test.ts",
+    why: "The one thing this milestone cannot measure for itself — a transition on `height` or `top` is how motion starts costing a layout pass on every frame, and no test here can see a frame. Animating a card's height open instead of its opacity is also the most natural-looking request anyone can make, which is exactly why the rule has to be structural.",
+  },
+  {
+    name: "the dialog's exit never runs",
+    file: "src/components/design-system/Dialog.tsx",
+    from: "      data-motion-state={phase}",
+    to: '      data-motion-state="open"',
+    test: "tests/motion-surfaces.test.tsx",
+    why: "The exit is the whole argument for not taking a 41 kB dependency, so losing it is losing the milestone's central decision. It is also invisible: a dialog that never leaves is not a crash, it is a dialog that pops out of existence instead of fading — and it is a *reduction*, so every check that only tests the enter still passes.",
+  },
+  {
+    name: "an animation library is added to the manifest",
+    file: "package.json",
+    from: '    "vitest": "^5.0.2"',
+    to: '    "framer-motion": "^12.0.0",\n    "vitest": "^5.0.2"',
+    test: "tests/motion-budget.test.ts",
+    why: "The dependency decision has to be reversible only on evidence, and this is what reversibility without evidence looks like: a line in a manifest, committed alongside an unrelated change, costing +41.4 kB on the first screen. The measured ceiling would catch it too, but only after a build — this rule fires on every run.",
   },
 ];

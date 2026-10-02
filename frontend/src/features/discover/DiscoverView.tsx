@@ -141,7 +141,7 @@ export function DiscoverView() {
         </p>
         <Link
           href="/settings"
-          className="mt-2 inline-block text-label font-bold text-mist transition hover:text-pure-white"
+          className="motion-feedback mt-2 inline-block text-label font-bold text-mist hover:text-pure-white"
         >
           Change languages
         </Link>

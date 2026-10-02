@@ -40,7 +40,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       disabled={disabled}
-      className={`inline-flex items-center justify-center rounded-buttons transition disabled:pointer-events-none ${sizeClassName[size]} ${toneClassName[tone]} ${className}`}
+      className={`motion-feedback inline-flex items-center justify-center rounded-buttons disabled:pointer-events-none ${sizeClassName[size]} ${toneClassName[tone]} ${className}`}
       {...rest}
     >
       {children}

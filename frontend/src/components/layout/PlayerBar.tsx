@@ -51,10 +51,15 @@ export function PlayerBar() {
       data-testid="player-bar"
       className="hidden h-18 shrink-0 items-center gap-6 bg-void-black px-4 lg:flex"
     >
+      {/* M19: the track cluster is keyed on the track, so a new track remounts it and
+          the vocabulary's entrance plays for the new artwork and title. Keying rather
+          than watching for a change is deliberate — `@starting-style` fires on
+          *rendering*, and a re-render that only swapped text would animate nothing. */}
       <Link
+        key={currentTrack?.id ?? "player-bar-idle"}
         href="/now-playing"
         aria-label="Open Now Playing"
-        className="flex w-1/3 min-w-0 items-center gap-3"
+        className="motion-reveal flex w-1/3 min-w-0 items-center gap-3"
       >
         <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-images bg-graphite">
           {artworkUrl ? (

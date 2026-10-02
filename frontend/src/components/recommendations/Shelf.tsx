@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/design-system/Skeleton";
  * would otherwise be clipped by the scroll container.
  */
 const railClassName =
-  "grid auto-cols-[46%] grid-flow-col grid-rows-1 gap-4 overflow-x-auto pb-2 pt-1 sm:auto-cols-[30%] lg:auto-cols-[18%]";
+  "motion-reveal grid auto-cols-[46%] grid-flow-col grid-rows-1 gap-4 overflow-x-auto pb-2 pt-1 sm:auto-cols-[30%] lg:auto-cols-[18%]";
 
 /** Default placeholder count — one desktop row plus a peeking card. */
 const DEFAULT_SKELETON_COUNT = 6;

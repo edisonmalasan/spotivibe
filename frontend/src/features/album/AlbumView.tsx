@@ -498,7 +498,7 @@ export function AlbumView({ albumKey }: AlbumViewProps) {
             <Link
               href={artistHref(album.artistName)}
               data-testid="album-artist-link"
-              className="text-body-lg font-bold text-mist transition hover:text-pure-white"
+              className="motion-feedback text-body-lg font-bold text-mist hover:text-pure-white"
             >
               {album.artistName}
             </Link>

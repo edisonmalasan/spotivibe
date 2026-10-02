@@ -196,7 +196,7 @@ export default function NowPlayingPage() {
         <Link
           href="/"
           aria-label="Close Now Playing"
-          className="inline-flex size-8 items-center justify-center rounded-buttons text-pure-white transition hover:bg-smoke"
+          className="motion-feedback inline-flex size-8 items-center justify-center rounded-buttons text-pure-white hover:bg-smoke"
         >
           <ChevronDown className="size-5" aria-hidden="true" />
         </Link>
@@ -205,8 +205,14 @@ export default function NowPlayingPage() {
       </div>
 
       <div className="flex w-full max-w-md flex-col items-center gap-6">
+        {/* M19: keyed on the track, so a new track remounts the tile and the
+            vocabulary's entrance plays. `@starting-style` fires on rendering, so
+            without the key a track change would repaint the same element and nothing
+            would animate. The class is on the tile rather than on the image so it
+            cannot collide with the `object-cover` sizing on the image itself. */}
         <div
-          className="grid aspect-square w-full place-items-center overflow-hidden rounded-images bg-graphite"
+          key={currentTrack?.id ?? "now-playing-artwork-idle"}
+          className="motion-reveal grid aspect-square w-full place-items-center overflow-hidden rounded-images bg-graphite"
           // The *visible* cover, as distinct from the blurred backdrop above. A test has to be able
           // to tell the two apart, and `now-playing-background` is the backdrop: asserting on it
           // would pass with the artwork image deleted and a listener looking at an empty grey box.
@@ -364,7 +370,7 @@ export default function NowPlayingPage() {
                 target="_blank"
                 rel="noopener"
                 data-testid="now-playing-attribution"
-                className="text-body font-regular text-mist underline-offset-2 transition-colors hover:text-pure-white hover:underline"
+                className="motion-feedback text-body font-regular text-mist underline-offset-2 hover:text-pure-white hover:underline"
               >
                 Watch on YouTube
               </a>

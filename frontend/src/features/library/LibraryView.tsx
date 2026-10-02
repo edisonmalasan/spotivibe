@@ -114,7 +114,7 @@ export function LibraryView() {
               <li>
                 <Link
                   href="/library/liked"
-                  className="group flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 transition-colors hover:bg-graphite"
+                  className="motion-reveal motion-feedback group flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 hover:bg-graphite"
                 >
                   <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-images bg-spotify-green">
                     <Heart className="size-10 fill-pure-white text-pure-white" aria-hidden="true" />
@@ -136,7 +136,7 @@ export function LibraryView() {
                 <li key={playlist.id}>
                   <Link
                     href={playlistHref(playlist.id)}
-                    className="group flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 transition-colors hover:bg-graphite"
+                    className="motion-reveal motion-feedback group flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 hover:bg-graphite"
                   >
                     <PlaylistCover
                       urls={derivePlaylistArtwork(playlist)}

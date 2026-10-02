@@ -9,9 +9,9 @@ import { CASES } from "../scripts/lyrics-induced-violations.cases.mjs";
  *
  * `scripts/lyrics-induced-violations.mjs` proves the tests written for the lyrics capability can
  * actually fail: it breaks one production behaviour at a time, runs the test named for that
- * behaviour, and requires it to fail. The cases now span five milestones — M16's lyrics work,
- * M17's home-discovery work, M18's keyboard shortcuts, and M18's search suggestions and sharing —
- * and the harness's own printed count is the authority for how many were caught.
+ * behaviour, and requires it to fail. The cases now span six milestones — M16's lyrics work,
+ * M17's home-discovery work, M18's keyboard shortcuts, M18's search suggestions and sharing, and
+ * M19's motion work — and the harness's own printed count is the authority for how many were caught.
  *
  * The number in this sentence has gone stale twice — once when cases were added and the docstring was
  * not, and once when pass 4 fixed a stale "Eighteen" here and added a case in the same commit. It is
@@ -41,7 +41,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const frontend = join(here, "..");
 
 describe("the M16 induced-violation harness (spec lyrics)", () => {
-  it("carries the sixty cases the evidence records", () => {
+  it("carries the seventy cases the evidence records", () => {
     // A floor rather than an exact count: adding a case is the expected way to grow this, but a
     // harness that has lost its cases must fail rather than report a vacuous pass.
     //
@@ -88,7 +88,18 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
     // so removing it alone leaves every test green. A case that cannot fail would be a case
     // claiming coverage it does not have, which is the exact failure this harness exists to
     // prevent, so it was deleted and the reason recorded in `useSearchSuggestions.ts` instead.
-    expect(CASES.length).toBeGreaterThanOrEqual(64);
+    // The M19 motion change added **six**, taking it to seventy: a motion declaring a
+    // duration of its own; motion appearing outside the named surfaces (in the feature M18
+    // added, which is the hole M18's own verification found); a component gating its motion
+    // on the reduced-motion preference; a motion on a layout property; the dialog's exit
+    // never running; and an animation library added to the manifest. Each removes a
+    // *declaration* — which is exactly the kind of change review does not read, since a
+    // literal duration or a fourth transition utility in a control that already had one
+    // looks like house style.
+    //
+    // As with every number in this file, it is stated here to be checked against the
+    // harness's own output rather than trusted.
+    expect(CASES.length).toBeGreaterThanOrEqual(70);
   });
 
   it("gives every case a distinct name, so a result identifies which behaviour it broke", () => {

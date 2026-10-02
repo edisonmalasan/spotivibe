@@ -71,7 +71,7 @@ function MixRow({ mix, busy }: { mix: MixRecord; busy: boolean }) {
 
   return (
     <li
-      className="flex items-center gap-3 rounded-cards bg-carbon p-3"
+      className="motion-feedback flex items-center gap-3 rounded-cards bg-carbon p-3"
       data-testid={`mix-row-${mix.id}`}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-1">

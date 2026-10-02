@@ -21,7 +21,7 @@ interface ResultMenuProps {
 }
 
 const itemClassName =
-  "flex w-full items-center rounded-buttons px-3 py-2 text-left text-body-lg text-pure-white transition hover:bg-graphite";
+  "motion-feedback flex w-full items-center rounded-buttons px-3 py-2 text-left text-body-lg text-pure-white hover:bg-graphite";
 
 /**
  * A metadata field that carries identity, or `undefined` when it carries none.

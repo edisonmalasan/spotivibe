@@ -74,7 +74,7 @@ export function RecentSearches({ onSelect }: { onSelect(query: string): void }) 
           >
             <button
               type="button"
-              className="min-w-0 flex-1 truncate text-left text-body-lg font-regular text-pure-white transition hover:text-mist"
+              className="motion-feedback min-w-0 flex-1 truncate text-left text-body-lg font-regular text-pure-white hover:text-mist"
               onClick={() => onSelect(entry.query)}
             >
               {entry.query}

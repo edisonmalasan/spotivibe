@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../styles/tokens.css";
+@import "../styles/motion.css";
 
 @layer base {
   html {
@@ -34,13 +35,24 @@
     outline-offset: 2px;
   }
 
+  /*
+   * The accessibility floor every motion inherits (M19; spec `motion` — "Every
+   * motion has a reduced-motion path"; design decision 2).
+   *
+   * This is load-bearing for the whole motion system and it is why motion costs
+   * nothing to make reduced-motion-safe here: every duration the vocabulary declares
+   * is written *into* a `transition` or `animation` declaration, so this rule collapses
+   * all of them application-wide, with no per-component gate and nothing for a
+   * component to forget. `--motion-floor` is declared in `styles/motion.css`, which is
+   * therefore the only place in the application that holds a time value at all.
+   */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
-      animation-duration: 0.01ms !important;
+      animation-duration: var(--motion-floor) !important;
       animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
+      transition-duration: var(--motion-floor) !important;
       scroll-behavior: auto !important;
     }
 
@@ -59,25 +71,13 @@
 }
 
 /*
- * Now Playing's long-title treatment (M9; spec: `catalog` — "Now Playing
- * presentation of the current track"; design decision 7).
+ * Now Playing's long-title treatment moved to `styles/motion.css` (M19).
  *
- * CSS-only and conditional by construction: the markup is a fixed-width
- * overflow box holding a track of two copies of the title, and the animation is
- * applied **only** when the component measured that the title overflows. A
- * title that fits therefore never animates and is never duplicated — there is no
- * JavaScript measuring loop, no per-frame work, and no dependency.
+ * It used to live here, with a `14s` duration written into its own `animation`
+ * shorthand, which made this file the one place in the application holding a time
+ * value the motion vocabulary did not own. The treatment itself is unchanged — M9's
+ * design decision 7: a fixed-width overflow box holding a track of two copies of the
+ * title, animated **only** when the component measured that the title overflows, so a
+ * title that fits never animates and is never duplicated. Only its duration now comes
+ * from the vocabulary.
  */
-@keyframes spotivibe-marquee {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.now-playing-marquee {
-  animation: spotivibe-marquee 14s linear infinite;
-}

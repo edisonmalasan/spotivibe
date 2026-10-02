@@ -66,7 +66,7 @@ import { useMixStore } from "@/stores/mixStore";
  * Motion: none of this module's own (design decision 6 — M19 owns the vocabulary).
  * The action reuses the design system's Ghost Text Button, so the rendered control
  * carries the primitive's own `transition` exactly as `HomeFilterBar` does; no
- * motion utility is declared here, and `tests/home-m17-no-motion.test.ts` enforces
+ * motion utility is declared here, and `tests/motion-scope.test.ts` enforces
  * that over the milestone's whole source surface rather than over a written list.
  */
 

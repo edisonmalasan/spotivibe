@@ -62,7 +62,7 @@ export function ShelfTrackCard({ track, context, className = "" }: ShelfTrackCar
       onClick={() => {
         playFromShelf(track, context);
       }}
-      className={`flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 text-left transition-colors hover:bg-graphite ${className}`}
+      className={`motion-reveal motion-feedback flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 text-left hover:bg-graphite ${className}`}
     >
       <span className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-cards bg-graphite">
         {artwork === undefined ? (

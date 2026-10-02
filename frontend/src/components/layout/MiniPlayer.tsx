@@ -25,10 +25,13 @@ export function MiniPlayer() {
       data-testid="mini-player"
       className="flex h-14 shrink-0 items-center gap-3 bg-void-black px-3"
     >
+      {/* M19: keyed on the track for the same reason as the desktop player bar — the
+          entrance is a rendering event, so the element has to be a new one. */}
       <Link
+        key={currentTrack?.id ?? "mini-player-idle"}
         href="/now-playing"
         aria-label="Open Now Playing"
-        className="flex min-w-0 flex-1 items-center gap-3"
+        className="motion-reveal flex min-w-0 flex-1 items-center gap-3"
       >
         <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-images bg-graphite">
           {artworkUrl ? (

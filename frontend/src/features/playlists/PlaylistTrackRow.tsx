@@ -62,7 +62,7 @@ export function PlaylistTrackRow({
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      className={`group flex items-center gap-3 rounded-cards bg-smoke px-3 py-2 transition-colors hover:bg-graphite${
+      className={`motion-feedback group flex items-center gap-3 rounded-cards bg-smoke px-3 py-2 hover:bg-graphite${
         isDropTarget ? " outline-2 outline-offset-2 outline-pure-white" : ""
       }`}
     >
@@ -97,7 +97,7 @@ export function PlaylistTrackRow({
         )}
       </button>
 
-      <span className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      <span className="motion-feedback flex shrink-0 items-center gap-1 opacity-0 focus-within:opacity-100 group-hover:opacity-100">
         <IconButton label="Move up" disabled={!canMoveUp} onClick={onMoveUp}>
           <ChevronUp className="size-4" aria-hidden="true" />
         </IconButton>

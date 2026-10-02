@@ -17,7 +17,7 @@ export function SectionHeader({ title, action, className = "" }: SectionHeaderPr
       {action && (
         <Link
           href={action.href}
-          className="text-label font-bold text-mist transition hover:text-pure-white"
+          className="motion-feedback text-label font-bold text-mist hover:text-pure-white"
         >
           {action.label}
         </Link>
