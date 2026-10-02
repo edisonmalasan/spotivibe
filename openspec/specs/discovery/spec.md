@@ -10,6 +10,10 @@ The discovery layer that makes Spotivibe feel alive without accounts: a DESIGN.m
 
 The application SHALL replace the placeholder Home route with a discovery feed composed of named sections rendered per `frontend/docs/DESIGN.md`: horizontal card shelves of square track cards, at most one circular artist section, a section header per shelf, and compact vertical section spacing. The baseline feed SHALL include Trending Now, Made For You, Smart Mixes, Popular Artists, genre discovery, a podcast preview, and curated collections; Continue/Recently Played SHALL appear only when local listening history exists, and the Smart Mixes section SHALL appear only when at least one locally generated mix exists, listing those mixes by their generated names. The Smart Mixes section is the one exception to the card-shelf shape: a mix is a named *collection* rather than a single track, so that section renders its header (title plus the authored description) followed by the mixes as a named list with their track counts, and it SHALL NOT offer a generation action or start playback. The circular artist section SHALL never be adjacent to another circular section, and it SHALL interrupt the square shelves within the first four sections rather than trailing the feed. The feed SHALL render skeleton placeholders while a shelf loads, an explanatory empty state when a shelf has no content, and a retryable error state for that shelf alone; one failing shelf SHALL NOT prevent other shelves from rendering. The feed SHALL NOT start playback by itself and every card SHALL be keyboard operable with a visible focus state and an accessible name.
 
+The feed SHALL remain a **single section model**: an `All`/`Music`/`Podcasts` filter SHALL *select* from that one list at render rather than forking it into three divergent copies, an unrecognised filter value SHALL present the whole list rather than none, and no filter SHALL introduce a section the list does not contain. The feed SHALL additionally present named mix cards that start playback of a mix on activation, a Quick Picks shelf whose every entry navigates to a surface that already exists, and a time-of-day shelf whose content follows the listener's local band. These are *additional* sections beside the baseline feed: the Smart Mixes section remains the one that offers no generation action and starts no playback, and the filter narrows the one list rather than adding to it.
+
+Home SHALL remain readable and operable at a compact viewport, with its sections a scrolling region and the persistent player region unmoved.
+
 #### Scenario: Fresh user sees non-personalized discovery
 
 - **WHEN** a user with no likes, playlists, or listening history opens Home
@@ -49,6 +53,37 @@ The application SHALL replace the placeholder Home route with a discovery feed c
 
 - **WHEN** the local profile holds no taste signal and no mix has been generated
 - **THEN** the Smart Mixes section is absent from the feed rather than showing an empty rail
+
+#### Scenario: The filter presents a subset of the one section model
+
+- **WHEN** a filter is applied
+- **THEN** the presented shelves are a selection from the single section list, and no shelf appears
+  that the list does not contain
+
+#### Scenario: An unrecognised filter presents everything
+
+- **WHEN** the filter value is not one the surface recognises
+- **THEN** every shelf is presented, rather than an empty Home
+
+#### Scenario: Mix cards start playback rather than navigating away
+
+- **WHEN** the listener activates a mix card on Home
+- **THEN** a mix starts playing, and the listener stays on Home
+
+#### Scenario: Quick Picks navigate to existing surfaces
+
+- **WHEN** the listener activates a Quick Pick
+- **THEN** the application navigates to the artist, album, or search surface that entry names
+
+#### Scenario: The time-aware shelf is seeded by the current band
+
+- **WHEN** Home renders at a given local hour
+- **THEN** the time-aware shelf offers material appropriate to that hour's band
+
+#### Scenario: Home stays compact-viewport usable
+
+- **WHEN** Home is presented at a compact viewport width
+- **THEN** its sections remain reachable by scrolling and the persistent player region is unmoved
 ### Requirement: Curated query-driven discovery shelves
 
 Trending, genre, podcast, and curated collection shelves SHALL be produced from a curated catalog of static seed queries executed against the music provider API; the application SHALL NOT claim that these shelves are an official YouTube or Spotify chart, ranking, or editorial selection, and its copy SHALL NOT attribute the content to those services. Shells SHALL require no account, no provider credential, and no user data. The podcast preview SHALL be presented as podcasts and SHALL prefer long-form results when a duration is known. Feed and shelf content SHALL be served with a short-lived cache so repeated visits do not re-query providers unnecessarily.
@@ -101,6 +136,8 @@ The application SHALL offer a catalog of at least 37 selectable languages, each 
 
 Language selections, liked tracks, playlists, listening history, and any taste signal derived from them SHALL remain on the device. Discovery requests MAY carry the selected language codes and short seed terms derived from local taste, but the server SHALL NOT persist a user profile, SHALL NOT receive liked-track or history datasets, and SHALL NOT correlate requests into a stored identity. Clearing local history SHALL change what locally informed sections show, and no discovery request SHALL carry identifiable user data beyond the selected languages and the seed terms needed to fulfill it.
 
+The time-of-day band SHALL be treated like any other local signal: it may select seed terms and the queries built from them, and SHALL NOT be sent to a service, written to any store, or combined with stored listening data into a profile.
+
 #### Scenario: Discovery requests carry only languages and seeds
 
 - **WHEN** a discovery request is issued
@@ -116,6 +153,10 @@ Language selections, liked tracks, playlists, listening history, and any taste s
 - **WHEN** the user clears listening history and reopens Home
 - **THEN** the recently played section disappears and locally informed shelves fall back to the non-personalized baseline
 
+#### Scenario: The time band is not sent and not stored
+
+- **WHEN** a time-aware shelf issues a request or composes a mix
+- **THEN** the request carries no time value, and no band is written to any store
 ### Requirement: Language mixing in multi-language feeds
 
 When more than one language is selected, multi-language shelves SHALL interleave their results so that no single language dominates the rendered order, using a deterministic round-robin over the results attributed to each selected language. With a single selected language the shelf SHALL present that language's results in the order the provider chain returned them. Results whose language cannot be attributed SHALL still be shown and SHALL be ordered deterministically, and interleaving SHALL NOT drop or duplicate tracks.
