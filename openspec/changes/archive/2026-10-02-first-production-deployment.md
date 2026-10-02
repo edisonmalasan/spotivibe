@@ -89,7 +89,7 @@ leaves the browser-only list open — which is where it has been since M4.
 | --- | --- |
 | Vercel's native GitHub integration is the deployment mechanism | Deployments are authored by `vercel[bot]` in this repository's deployment history. |
 | a merge to `main` triggers Production | The Production deployment recorded at sha `2ceac9c` is the M18 archive merge. One deployment, created by the merge. |
-| PR / feature branches receive Preview deployments | **Not yet observed.** Verified against the M19 PR; see the note below. |
+| PR / feature branches receive Preview deployments | **Observed.** Opening PR #90 produced a Vercel check, a `Vercel Preview Comments` check, and a deployment in the `Preview` environment, state `success`. |
 | Root Directory is `frontend` | **Inferred from success.** The repository root declares no dependencies and has no lockfile and no `build` script, so `npm ci` and `npm run build` cannot succeed there. The deployment built, so both ran in `frontend/`. This is inference from the build succeeding, not a read of the project settings. |
 | Install is `npm ci`, build is `npm run build` | Same inference, and both are what `frontend/package.json` defines. `package-lock.json` is `lockfileVersion` 3. |
 | Node runtime is 24.x | `frontend/package.json` declares `engines.node: "24.x"`, and `tests/deployment-contract.test.ts` checks that pin against Vercel's documented runtimes. The live function's Node version cannot be read without account access, so this is **declared and enforced by test, not observed**. |
@@ -101,3 +101,19 @@ which is behind Vercel Deployment Protection — every path on it answers `302` 
 `vercel.com/sso-api`. The canonical origin above is the open one. Verification used only the
 canonical origin; no protected or generated deployment URL was used, and no authentication was
 circumvented.
+
+## Deployment Protection covers Preview deployments too
+
+PR #90 produced a Preview deployment at `spotivibe-6opvoz49e-edisons-projects-3fc2eda8.vercel.app`,
+state `success`. **That URL is behind Deployment Protection as well**: it answers `302` to
+`vercel.com/sso-api`, exactly as the production per-commit URL does — and the project alias
+`spotivibe-e0t3xtazw.vercel.app` answers `x-vercel-error: DEPLOYMENT_NOT_FOUND`.
+
+So the topology is confirmed: feature branches **do** receive Preview deployments. But a Preview is
+not an open origin either, and therefore **cannot be used for automated visual verification**.
+
+That matters for **M19**, which is a motion milestone whose correctness is largely a visual
+judgement. Its desktop and compact-viewport checks, its transitions, its hover and tap feedback,
+and its `prefers-reduced-motion` behaviour cannot be confirmed against a protected Preview from
+here, and will be recorded as unverified rather than asserted. The one Preview-derived fact
+available from a terminal is that the build succeeds, which is the part a terminal can establish.
