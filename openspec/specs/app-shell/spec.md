@@ -77,26 +77,11 @@ behind the interface rather than displayed in the region.
 
 ### Requirement: Now Playing surface
 
-The shell SHALL provide an expanded Now Playing surface as a dedicated route, reachable from the
-player region, rendered full-screen/expanded on compact viewports and presented as an expanded
-view on desktop. The surface SHALL present the current track's artwork, title and artists, like
-state, progress and seek, the full transport and volume controls, and access to the queue, all
-bound to the same store and player state the player region uses, so that any change made anywhere
-is reflected in both without a reload. It SHALL render the current artwork as a background behind
-the content when artwork exists and the plain surface when it does not, SHALL present an
-over-long title so it stays readable — animating only when the title overflows, and never
-animating when the user prefers reduced motion — and SHALL offer a More Like This shelf for the
-current track that never starts playback on its own. It SHALL offer a radio action that starts a
-track radio from the current track, SHALL omit that action when there is no current track to seed
-it from, and SHALL label a playing radio as such. The surface SHALL NOT autoplay anything by
-itself.
+The shell SHALL provide an expanded Now Playing surface as a dedicated route, reachable from the player region, rendered full-screen/expanded on compact viewports and presented as an expanded view on desktop. The surface SHALL present the current track's artwork, title and artists, like state, progress and seek, the full transport and volume controls, and access to the queue, all bound to the same store and player state the player region uses, so that any change made anywhere is reflected in both without a reload. It SHALL render the current artwork as a background behind the content when artwork exists and the plain surface when it does not, SHALL present an over-long title so it stays readable — animating only when the title overflows, and never animating when the user prefers reduced motion — and SHALL offer a More Like This shelf for the current track that never starts playback on its own. It SHALL offer a radio action that starts a track radio from the current track, SHALL omit that action when there is no current track to seed it from, and SHALL label a playing radio as such. The surface SHALL NOT autoplay anything by itself.
 
-The surface SHALL offer an explicit video-mode control that reveals the existing playback surface
-as a visible video at a usable size, and SHALL omit that control when there is no current track
-to show. Video mode SHALL default to off on every visit, SHALL NOT be persisted to session or
-preference state, and SHALL be resettable without affecting playback. Revealing the video SHALL
-reuse the application's existing single player rather than creating a second one, and the
-surface's own controls SHALL remain operable in both video and non-video modes.
+The surface SHALL offer an explicit video-mode control that reveals the existing playback surface as a visible video at a usable size, and SHALL omit that control when there is no current track to show. Video mode SHALL default to off on every visit, SHALL NOT be persisted to session or preference state, and SHALL be resettable without affecting playback. Revealing the video SHALL reuse the application's existing single player rather than creating a second one, and the surface's own controls SHALL remain operable in both video and non-video modes.
+
+The surface SHALL present a lyrics area for the current track, and every other element of the surface SHALL remain present, operable, and correctly laid out when the lyrics area is loading, populated, unavailable, or failed. The lyrics area SHALL NOT overlay or obscure the player region, and SHALL NOT delay or gate the surface's own controls, artwork, transport, or related content.
 
 #### Scenario: Opening Now Playing from the player region
 
@@ -161,6 +146,11 @@ surface's own controls SHALL remain operable in both video and non-video modes.
 - **THEN** the session restores cued and paused and video mode is off, so the player never
   starts a visit in a visible state
 
+#### Scenario: Lyrics never displace or delay the rest of the surface
+
+- **WHEN** the lyrics area is loading, populated, unavailable, or failed
+- **THEN** the surface's artwork, title, transport, volume, queue access, and related content are
+  all still present and operable, and the lyrics area does not overlay the player region
 ### Requirement: Primitive interaction states
 
 Design-system primitives (buttons, cards, inputs, navigation items) SHALL implement hover, focus-visible, disabled, and loading treatments: card hover shifts surface `#121212` → `#1f1f1f`/`#292929` per placement, interactive controls show a visible focus indicator for keyboard focus, disabled controls are visually muted and non-interactive, and loading content renders as skeleton placeholders matching the layout it replaces.
