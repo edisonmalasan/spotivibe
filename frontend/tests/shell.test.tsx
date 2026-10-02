@@ -110,7 +110,10 @@ describe("TopBar", () => {
     expect(screen.getByRole("link", { name: "Spotivibe" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("button", { name: "Go back" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Go forward" })).toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: "Search" })).toBeInTheDocument();
+    // M18 (design decision 6): the top-bar field is the application's only
+    // combobox, so it announces that role rather than `searchbox`. The three
+    // filter fields elsewhere still announce `searchbox`.
+    expect(screen.getByRole("combobox", { name: "Search" })).toBeInTheDocument();
   });
 
   it("wires the navigation arrows to browser history", () => {

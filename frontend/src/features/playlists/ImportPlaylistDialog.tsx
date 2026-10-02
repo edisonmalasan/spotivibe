@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { Button } from "@/components/design-system/Button";
 import { IconButton } from "@/components/design-system/IconButton";
 import type { PlaylistRecord } from "@/data/repositories";
+import { playlistHref } from "@/features/playlists/playlistKeys";
 import {
   PlaylistImportError,
   fetchPlaylist,
@@ -166,7 +167,7 @@ export function ImportPlaylistDialog({ onClose }: ImportPlaylistDialogProps) {
     setPhase("success");
     navTimerRef.current = setTimeout(() => {
       navTimerRef.current = null;
-      router.push(`/playlist/${playlist.id}`);
+      router.push(playlistHref(playlist.id));
       onClose();
     }, SUCCESS_NAVIGATION_DELAY_MS);
   }

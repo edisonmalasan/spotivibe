@@ -26,6 +26,21 @@ select, a `contenteditable` element, a slider, a spinbutton, a dialog subtree, a
 - **WHEN** a global key is pressed while a `contenteditable` element has focus
 - **THEN** no global shortcut fires, and the editable content receives the key
 
+#### Scenario: Read-only editable content does not suppress shortcuts
+
+- **WHEN** an element carries `contenteditable="false"`
+- **THEN** it is treated as not editable, and shortcuts are not suppressed by it
+
+#### Scenario: A modified key never fires a shortcut
+
+- **WHEN** a global key is pressed together with the control, command, or alt modifier
+- **THEN** no global shortcut fires, because that chord belongs to the browser or the operating system
+
+#### Scenario: A shifted key still fires its shortcut
+
+- **WHEN** a global key is pressed with the shift modifier held
+- **THEN** the shortcut fires, because the help key is itself a shifted character
+
 #### Scenario: A slider keeps its own arrow keys
 
 - **WHEN** an arrow key is pressed while a slider has focus
@@ -50,8 +65,9 @@ select, a `contenteditable` element, a slider, a spinbutton, a dialog subtree, a
 
 The application SHALL provide application-level bindings for play/pause, seeking, volume, mute,
 liking the now-playing track, and opening help. Playback bindings SHALL act through the player's own
-store actions rather than by writing state directly. Raising the volume of a muted player SHALL unmute
-it, so that no binding appears to do nothing. Seeking SHALL be bounded to the current track.
+store actions rather than by writing state directly. A binding SHALL fire only when no control, command,
+or alt modifier is held, and SHALL fire when shift is held. Raising the volume of a muted player SHALL
+unmute it, so that no binding appears to do nothing. Seeking SHALL be bounded to the current track.
 
 #### Scenario: Play and pause toggle
 

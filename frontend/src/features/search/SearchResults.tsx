@@ -1,5 +1,7 @@
 import { SectionHeader } from "@/components/design-system/SectionHeader";
 import type { Track } from "@/data/repositories";
+import { ShareButton } from "@/features/sharing/ShareButton";
+import { trackSharePayload } from "@/features/sharing/trackShare";
 import { AlbumTile } from "@/features/search/AlbumTile";
 import { ArtistTile } from "@/features/search/ArtistTile";
 import { deriveResults } from "@/features/search/derive";
@@ -65,6 +67,25 @@ export function SearchResults({
     );
   }
 
+  /**
+   * A result row's trailing controls: share, then the context menu.
+   *
+   * `SongRow` already has a `trailing` slot and the menu already lives in it, so
+   * sharing is placed beside it rather than inside the menu — the menu is a
+   * `role="menu"` of *track actions* whose labels are imperative ("Play", "Add to
+   * queue"), and the share action is the one control in this row that is about
+   * the row's own identity. The row's share link is a search URL built from the
+   * track, which is recorded as lossy in `features/sharing/trackShare.ts`.
+   */
+  function rowTrailing(track: Track, context: Track[]) {
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        <ShareButton name={track.title} {...trackSharePayload(track)} />
+        {menuFor(track, context)}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-6">
       <div className="flex min-w-0 flex-1 flex-col gap-8">
@@ -87,7 +108,7 @@ export function SearchResults({
                 key={track.id}
                 track={track}
                 onPlay={() => onPlay(track, songs)}
-                trailing={menuFor(track, songs)}
+                trailing={rowTrailing(track, songs)}
               />
             ))}
           </ul>

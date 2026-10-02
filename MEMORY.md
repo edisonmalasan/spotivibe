@@ -553,3 +553,16 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     delta contain every requirement reports phantom problems on a correct delta. **Prove every
     verification tool against a mutated copy, include a control that must still pass, and read a FAIL
     as "my probe is wrong" before concluding the code is.**
+43. **A negative asynchronous assertion cannot use `waitFor`.** `await waitFor(async () =>
+    expect(await repo.list()).toEqual([]))` passes on the *first* poll — before the async write it is
+    meant to catch has landed — so it cannot prove a negative. It made an induced-violation case that
+    had already passed appear to escape, and the harness was right while my manual verification was
+    misleading. For "nothing was written", spy on the repository method or wait a deliberate window,
+    and say why in a comment. The tell is a case that passes once by hand and then fails under the
+    harness: that is the assertion being weak, not the code.
+44. **Listeners on the same node fire in registration order, not document order.** The M18 design
+    document claimed a global `Escape` handler ran *after* a menu's handler because the menu's handler
+    was "inner". It does not: the global listener registered at page load fires *first*, and the menu's
+    later `stopPropagation()` is beside the point. The conclusion was still right, but it held because
+    of a focus guard, not the ordering asserted. Assert the **outcome** in a test, never the mechanism —
+    an ordering assertion would have been asserting when effects happen to run.

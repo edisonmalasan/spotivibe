@@ -18,9 +18,11 @@ import {
   type AlbumApiErrorCode,
   type AlbumDetail,
 } from "@/features/album/albumApi";
+import { albumHref } from "@/features/album/albumKeys";
 import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
 import { playFromShelf } from "@/features/home/browsePlayback";
 import { useLibraryReady } from "@/features/library/useLibraryReady";
+import { ShareButton } from "@/features/sharing/ShareButton";
 import { PlaylistPicker } from "@/features/search/PlaylistPicker";
 import { songCountLabel } from "@/lib/playlistPresentation";
 import { useLibraryStore } from "@/stores/libraryStore";
@@ -516,6 +518,10 @@ export function AlbumView({ albumKey }: AlbumViewProps) {
               <Shuffle className="size-4" aria-hidden="true" />
               Shuffle
             </Button>
+            {/* M18: the release's own page URL, built by the same `albumHref`
+                every album link uses — the route key this page resolved is the
+                key that is guaranteed to resolve back to *this* page. */}
+            <ShareButton name={heading} url={albumHref(albumKey)} title={heading} />
           </div>
         </div>
       </div>

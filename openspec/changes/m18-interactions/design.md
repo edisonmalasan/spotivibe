@@ -63,10 +63,49 @@ Five dialogs call `event.stopPropagation()` on `Escape`, which means a bubble-ph
 while a modal owns the keyboard" requires comes for free, from code that already exists and is already
 tested. A capture-phase listener would invert that and would have to re-implement the precedence.
 
-`ResultMenu` does **not** stop propagation, so its own `Escape` handler runs first and closes the
-menu; the global handler must then decline to act again. That is handled by the global handler not
-owning `Escape` dismissal at all — it owns `Escape` only to close the help surface, which is the one
-thing that must always respond.
+`ResultMenu` does **not** stop propagation, and its own `Escape` handler therefore does **not** run
+first. Listeners on the same node fire in registration order, `AppShell` mounts at page load, and
+`ResultMenu` registers when it opens — so the global listener normally runs **first**, and the menu's
+later `stopPropagation()` is beside the point. An earlier draft of this decision asserted the opposite:
+it was wrong about the mechanism, though the outcome it predicted is the right one.
+
+The outcome holds because of the **guard**, not the order. When the menu is open, focus is on a
+`role="menuitem"`, so `keyHasLocalMeaning` declines and the global handler does nothing at all. That is
+why the precedence test asserts the *outcome* and not the ordering — an ordering assertion would be
+asserting an accident of when effects happen to run.
+
+The global handler does not own `Escape` dismissal. It owns `Escape` only to close the help surface,
+and even that is a **backstop** rather than the dismissal path: while help is open, focus is inside the
+dialog, `Dialog` stops propagation, and the guard would decline anyway. It exists for the case where
+focus has been stolen from the dialog by something else.
+
+This was previously written as two consecutive sentences that contradicted each other — "does not own
+`Escape` dismissal at all" followed by "it owns `Escape` only to close the help surface". An
+independent review caught the contradiction. The correction is not that the handler does not own it;
+it is that owning it is a *fallback* rather than the mechanism, which is a different claim.
+
+One consequence is user-visible and was fixed: the help row for `Escape` read "Closes the shortcut list
+and nothing else", which reads as though that binding is what closes it — and it is not, because the
+row is printed inside the very dialog whose own handler does the closing. The row now says what is true
+from the listener's side: Escape closes this list, and an open menu or dialog keeps its own dismissal.
+
+### 2a. Modified keys decline; `Shift` does not
+
+A binding fires only when `Ctrl`, `Meta`, and `Alt` are all absent. Without that rule `Cmd+M` toggles
+mute and `Ctrl+L` likes the track — both are browser and OS chords the application would be stealing.
+`Shift` is deliberately **not** in the rule, because `?` is `Shift+/` and the letter bindings are
+readable with a shift held.
+
+This is behaviour the spec did not state, and it was added during Apply rather than left implicit: a
+global handler that answers chords is a bug a user discovers by pressing a key they meant for another
+application.
+
+### 2b. `contenteditable="false"` is not editable
+
+`[contenteditable]` matches an element whose attribute is present but `"false"`, and the platform says
+such an element is *not* editable. The guard follows the platform and returns `false` there. Treating a
+read-only block as a guard would disable every shortcut anywhere a read-only region happened to be on
+screen — a much worse failure than the one the rule prevents.
 
 ### 3. `M` uses the real `toggleMute`, and raising volume unmutes
 

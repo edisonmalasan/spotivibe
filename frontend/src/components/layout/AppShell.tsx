@@ -13,6 +13,7 @@ import { StorageNotice } from "@/features/storage/StorageNotice";
 import { attachServiceWorker } from "@/features/pwa/serviceWorker";
 import { RadioStartedTracker } from "@/features/personalization/RadioStartedTracker";
 import { RefillAgent } from "@/features/personalization/RefillAgent";
+import { GlobalShortcuts } from "@/features/shortcuts/GlobalShortcuts";
 import { useEffect, type ReactNode } from "react";
 
 /**
@@ -37,6 +38,14 @@ import { useEffect, type ReactNode } from "react";
  * set — which is what every later refill excludes — current. Both render nothing
  * into the layout; this is wiring, not presentation, and it keeps the
  * cross-store knowledge in the feature that owns it rather than here.
+ *
+ * **M18 mounts its global shortcut listener here for the same reason** (design
+ * decision 2). There is no provider tree in this application and Zustand is read
+ * directly, so a binding needs no context threaded through to reach a store, and
+ * the one listener has to outlive route changes - a shortcut that only worked on
+ * the page it was mounted from would be worse than no shortcut. It attaches in
+ * the bubble phase on `document` precisely so the five dialogs that already call
+ * `stopPropagation()` on `Escape` keep their own dismissal.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   useListeningRecorder();
@@ -68,6 +77,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Radio/autofill observers, mounted with the persistent player. */}
       <RefillAgent />
       <RadioStartedTracker />
+      {/* Global keyboard shortcuts + the help dialog that lists them (M18). */}
+      <GlobalShortcuts />
       <PlayerHost />
     </div>
   );

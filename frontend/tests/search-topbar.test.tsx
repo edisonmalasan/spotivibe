@@ -36,8 +36,17 @@ vi.mock("next/navigation", () => ({
 // Only the debounce timers are faked so promise/microtask work stays native.
 const FAKED_TIMERS = ["setTimeout", "clearTimeout"] as const;
 
+/**
+ * The top-bar search field.
+ *
+ * M18 made it a combobox (design decision 6) — it is the one field in the
+ * application with a suggestion popup — so the role queried here is `combobox`
+ * rather than the `searchbox` its `type="search"` would otherwise imply. The
+ * accessible name is unchanged, which is what keeps this a change of role and not
+ * of identity.
+ */
 function searchbox(): HTMLInputElement {
-  return screen.getByRole("searchbox", { name: "Search" });
+  return screen.getByRole("combobox", { name: "Search" });
 }
 
 beforeEach(() => {
