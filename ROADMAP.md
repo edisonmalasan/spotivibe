@@ -135,7 +135,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M16** | Lyrics and Now Playing enrichment | `DONE` | M9, M12 |
 | **M17** | Home discovery enrichment | `DONE` | M11, M8 |
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
-| **M19** | Motion and interaction polish | `APPROVED` | M18 |
+| **M19** | Motion and interaction polish | `PROPOSED` | M18 |
 | **M20** | Personal-use media downloading | `APPROVED` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
 
@@ -2075,7 +2075,9 @@ test, not by inspection.
 **Objective.** Motion that improves the product, and an explicit, evidence-backed decision on
 whether `framer-motion` is justified.
 
-**Depends on.** M16, M17, M18 — motion is judged against surfaces that exist.
+**Depends on.** M18 — motion is judged against surfaces that exist. (This originally read
+"M16, M17, M18", inheriting an M16 motion vocabulary that M16 never shipped; corrected when
+M17's archive found the dependency chain asserted a milestone that had nothing to give.)
 
 **In scope.** Shelf and card entrance transitions; hover/tap feedback; player transitions; dialog
 and sheet motion; Now Playing transitions; mix/Home content transitions. Every one gated on
@@ -2092,6 +2094,15 @@ exit animations specifically, against bundle cost and measured frame behaviour. 
 expectation is **(a)**; adding the dependency requires evidence that (a) cannot express what is
 needed. "Lyrix uses it" is not evidence — the question is what Spotivibe needs, and the project
 has a rule against unexamined dependencies.
+
+**Measured 2026-10-03, in M19's proposal.** A spike installed `framer-motion`, imported `motion`
+and `AnimatePresence`, and rendered it from `HomeView` so the library was not tree-shaken away. The
+emitted chunks grew from **375.8 kB to 417.2 kB gzipped** in total, and Home's first load from
+**221.9 kB to 263.4 kB — +41.5 kB, or +18.7%** — while the other ten routes were byte-identical.
+Everything in scope is opacity and transform, and exits are now expressible with
+`@starting-style` and `transition-behavior: allow-discrete`, both Baseline since 2024. The decision
+is therefore **no `framer-motion`**, recorded with the measurements, and reversed only on evidence:
+an interruptible spring or a gesture-following drag would need re-measuring.
 
 **Automated verification.** Every motion is behind a reduced-motion check, asserted by test, so a
 component cannot animate under `prefers-reduced-motion` by accident.
