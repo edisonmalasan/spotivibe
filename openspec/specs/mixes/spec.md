@@ -49,6 +49,8 @@ The application SHALL generate Smart Mixes from the local taste profile and the 
 
 A generated mix SHALL have a stable identity and a name, both persistent across reloads and across the period it was generated in, so the listener can recognize and re-enter it. The name SHALL be derived from the mix's strongest local signal — its top artist where one is present, otherwise its leading genre, otherwise a neutral local label — and SHALL NOT claim a ranking, an editorial selection, or any status beyond what this device derived. The period in which a mix was generated SHALL be recorded with it.
 
+Named mix cards offered on Home SHALL select a mix's seeds rather than composing it, and every card name SHALL satisfy the same honest-naming rule, falling back to the neutral name where no signal supports a specific one. A card's name SHALL reflect a **taste** claim, not a clock claim: naming a mix for the hour it was made would assert something the mix cannot support. A card's identity SHALL be separate from its display name, so an identity may be named for what it asks for while the name it shows remains within what its evidence supports.
+
 #### Scenario: A mix keeps its identity and name
 
 - **WHEN** a mix is revisited after a reload
@@ -64,6 +66,20 @@ A generated mix SHALL have a stable identity and a name, both persistent across 
 - **WHEN** a mix is generated
 - **THEN** the mix records the period it was generated in, and a later regeneration within that period is a refresh rather than a new identity
 
+#### Scenario: A name is never more specific than the evidence
+
+- **WHEN** no local signal supports a specific name
+- **THEN** the neutral fallback name is used rather than an invented one
+
+#### Scenario: A card's identity selects seeds without composing
+
+- **WHEN** a named mix card is presented
+- **THEN** the card exposes an identity and its seeds are selected, but no mix has been composed yet
+
+#### Scenario: A card name is a taste claim, not a clock claim
+
+- **WHEN** a named mix card is named
+- **THEN** the name describes a taste or mood and does not assert the time of day it was made
 ### Requirement: Mix refresh
 
 A mix SHALL be refreshable: refreshing re-derives its contents from the current local profile and the feed, keeps the mix's identity and name, adds no duplicate, and respects the same played-track exclusion. A refresh SHALL be an explicit user action or the result of the mix's own staleness rule, SHALL NOT silently discard a mix the user can still open, and SHALL be bounded like initial generation.
