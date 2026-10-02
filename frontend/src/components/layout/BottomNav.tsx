@@ -40,7 +40,7 @@ export function BottomNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+            className={`motion-feedback flex flex-1 flex-col items-center justify-center gap-1 py-2 ${
               active ? "text-pure-white" : "text-fog hover:text-mist"
             }`}
           >

@@ -37,7 +37,7 @@ export function PodcastCategoryList({ className = "" }: { className?: string }) 
               <Link
                 href={`/search?q=${encodeURIComponent(query)}&mode=podcast`}
                 data-testid={`podcast-category-${category.id}`}
-                className="flex w-full items-center gap-3 rounded-cards bg-carbon p-3 text-left transition-colors hover:bg-graphite"
+                className="motion-feedback flex w-full items-center gap-3 rounded-cards bg-carbon p-3 text-left hover:bg-graphite"
               >
                 <span className="grid size-9 shrink-0 place-items-center rounded-cards bg-graphite">
                   <Mic className="size-5 text-fog" aria-hidden="true" />

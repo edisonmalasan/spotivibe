@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { IconButton } from "@/components/design-system/IconButton";
 import { X } from "lucide-react";
 
 /**
- * The modal dialog primitive (M18 design decision 4).
+ * The modal dialog primitive (M18 design decision 4; motion in M19).
  *
  * **There was no focus-trapping dialog in this repository before it.** Five
  * components hand-rolled the same pattern — `DeletePlaylistDialog`,
@@ -36,8 +44,25 @@ import { X } from "lucide-react";
  *   panel's own press handler cannot produce two `onClose` calls, and a dialog
  *   that is somehow re-entered cannot either.
  *
- * **No motion.** M19 owns one transition vocabulary, and this milestone adds
- * none: the panel appears, it is not animated.
+ * **Motion (M19, task 3.3): the enter and the exit, both CSS.**
+ *
+ * M18 shipped this primitive with no motion and said so on the record. The exit is
+ * the honest test of whether a library is needed, so it is expressed with what CSS
+ * actually gained: `@starting-style` supplies the "from" state for the arrival, and
+ * `transition-behavior: allow-discrete` keeps a leaving element transitionable while
+ * its `display` flips. Both are Baseline since 2024, so a 41 kB dependency is not
+ * needed to animate this dialog.
+ *
+ * What that costs is one extra render pass, and it is deliberately the cheapest one
+ * available: when `open` goes false the primitive re-renders as `closing` — the
+ * dialog is still in the DOM, still painted, and no longer interactive — and the
+ * browser tears it down when the transition ends. **Nothing waits on it.** The
+ * caller's state has already changed, `onClose` has already run exactly once, focus
+ * has already been restored, and the leaving backdrop is `pointer-events: none` from
+ * its first frame, so a motion can never sit between a listener and a click. The
+ * `setTimeout` below is a *safety net* for a browser with no `allow-discrete` support,
+ * which would never fire `transitionend`; it is not the mechanism, and it can never
+ * make an action wait for it.
  */
 
 /**
@@ -46,8 +71,8 @@ import { X } from "lucide-react";
  * Deliberately *not* filtered by layout (`offsetParent`, `checkVisibility`): both
  * answer "is this painted", and a DOM with no layout answers no for everything,
  * so a trap built on either would find nothing to cycle between under test — and a
- * trap that finds nothing is exactly the trap that fails silently. What is
- * filtered is declaration: an element the markup marks as not exposed.
+ * trap that finds nothing is exactly the trap that fails silently. What
+ * is filtered is declaration: an element the markup marks as not exposed.
  */
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -61,11 +86,43 @@ const FOCUSABLE_SELECTOR = [
 function isExposed(element: HTMLElement): boolean {
   if (element.hidden) return false;
   if (element.closest("[hidden]")) return false;
-  return element.getAttribute("aria-hidden") !== "true";
+  // M19: a dialog on its way out is `inert`, and an inert subtree is exactly as
+  // unreachable as a hidden one. Without this, `Tab` could still cycle through the
+  // panel's own controls while it faded out.
+  if (element.closest("[inert]")) return false;
+  if (element.getAttribute("aria-hidden") === "true") return false;
+  return true;
 }
 
 function focusableWithin(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isExposed);
+}
+
+/**
+ * The dialog's own lifecycle, which is now three states rather than two.
+ *
+ * `closed` renders nothing at all, which is the M18 contract. `closing` exists only
+ * so that a dismissed dialog has something left to transition — and it is derived
+ * during render from the caller's `open`, so no effect, timer, or caller
+ * cooperation is involved in starting it.
+ */
+type DialogPhase = "closed" | "open" | "closing";
+
+/**
+ * How long to wait before tearing the panel down if the browser never reports the
+ * end of its leave transition.
+ *
+ * **Read from the element's own computed `transition-duration`, not written here**,
+ * so this safety net cannot drift from the vocabulary: a browser that supports
+ * `allow-discrete` reports the real figure and the real `transitionend` normally
+ * wins, and a browser without the support reports `0s` and is torn down at once —
+ * which is the right answer there, because there is no transition to wait for. This
+ * is the one place the primitive reads a duration, and it reads the same one the
+ * stylesheet declared.
+ */
+function leaveSafetyMs(node: HTMLElement): number {
+  const declared = Number.parseFloat(getComputedStyle(node).transitionDuration);
+  return Number.isFinite(declared) && declared > 0 ? declared * 1000 : 0;
 }
 
 interface DialogProps {
@@ -85,6 +142,15 @@ export function Dialog({ open, onClose, title, className = "", children }: Dialo
   const panelRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const dismissedRef = useRef(false);
+  const [phase, setPhase] = useState<DialogPhase>(open ? "open" : "closed");
+
+  // Adjusting state during render when a prop changes — React's documented pattern,
+  // and the cheapest of the alternatives here. An effect would let the browser paint
+  // a frame with the dialog still open after the caller had already dismissed it; a
+  // timer would make the dismissal wait. This way `open` and the phase never
+  // disagree for a rendered frame.
+  if (open && phase !== "open") setPhase("open");
+  else if (!open && phase === "open") setPhase("closing");
 
   const dismiss = useCallback(() => {
     if (dismissedRef.current) return;
@@ -105,6 +171,36 @@ export function Dialog({ open, onClose, title, className = "", children }: Dialo
       if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, [open]);
+
+  // Leaving: watch for the transition's own end, and fall back to the computed
+  // duration if the browser never reports one.
+  useEffect(() => {
+    if (phase !== "closing") return;
+    const node = backdropRef.current;
+    if (!node) {
+      setPhase("closed");
+      return;
+    }
+    const teardown = () => setPhase("closed");
+    // `event.target === node` because `transitionend` bubbles: a transition on any
+    // descendant must not end the dialog's own leave early. `opacity` because it is
+    // the last of the backdrop's own properties to finish, and because it is the one
+    // the leave actually animates — a browser without `allow-discrete` simply never
+    // gets here, which is what the fallback below is for.
+    const onEnd = (event: TransitionEvent) => {
+      if (event.target !== node) return;
+      if (event.propertyName !== "opacity") return;
+      teardown();
+    };
+    node.addEventListener("transitionend", onEnd);
+    node.addEventListener("transitioncancel", onEnd);
+    const safety = setTimeout(teardown, leaveSafetyMs(node));
+    return () => {
+      node.removeEventListener("transitionend", onEnd);
+      node.removeEventListener("transitioncancel", onEnd);
+      clearTimeout(safety);
+    };
+  }, [phase]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Escape") {
@@ -150,13 +246,23 @@ export function Dialog({ open, onClose, title, className = "", children }: Dialo
     }
   };
 
-  if (!open) return null;
+  if (phase === "closed") return null;
+
+  const closing = phase === "closing";
 
   return (
     <div
       ref={backdropRef}
       data-testid="dialog-backdrop"
-      className="fixed inset-0 z-40 flex items-center justify-center bg-void-black/70 p-4"
+      // M19: the state is in the DOM, not only in a class, so the leave transition
+      // has an unambiguous target and a test has something to read.
+      data-motion-state={phase}
+      // Out of the accessibility tree and out of the tab order from the first frame
+      // of the leave — a dismissed dialog is gone the moment it is dismissed, and
+      // only its pixels are still travelling.
+      aria-hidden={closing || undefined}
+      inert={closing || undefined}
+      className="motion-surface fixed inset-0 z-40 items-center justify-center bg-void-black/70 p-4"
       onMouseDown={(event) => {
         // The backdrop only: a press that began on the panel bubbles here, and
         // dismissing on that would close a dialog the listener is using.

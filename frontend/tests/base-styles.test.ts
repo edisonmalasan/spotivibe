@@ -9,9 +9,13 @@ const globalsCss = read("../src/app/globals.css");
 const tokensCss = read("../src/styles/tokens.css");
 
 describe("base styles (globals.css)", () => {
-  it("imports the token layer into the Tailwind entry", () => {
+  it("imports the token layer and the motion vocabulary into the Tailwind entry", () => {
     expect(globalsCss).toMatch(/@import\s+"tailwindcss"/);
     expect(globalsCss).toMatch(/@import\s+"\.\.\/styles\/tokens\.css"/);
+    // M19: without this import the vocabulary's classes reach no DOM at all, and every
+    // motion in the application silently stops existing while every source-level check
+    // stays green.
+    expect(globalsCss).toMatch(/@import\s+"\.\.\/styles\/motion\.css"/);
   });
 
   it("applies DESIGN.md canvas, colors, and default typography to the document", () => {
@@ -29,8 +33,15 @@ describe("base styles (globals.css)", () => {
 
   it("respects prefers-reduced-motion", () => {
     expect(globalsCss).toContain("prefers-reduced-motion: reduce");
-    expect(globalsCss).toMatch(/animation-duration:\s*0\.01ms\s*!important/);
-    expect(globalsCss).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
+    // M19: the collapsed duration is now a declared vocabulary step rather than a literal,
+    // so the floor's own value is asserted where it is *declared*. The claim this test
+    // makes is unchanged — the rule still overrides `transition-duration` and
+    // `animation-duration` with `!important`, application-wide — and it is now a claim
+    // about a step that cannot drift, rather than about two copies of a number.
+    expect(globalsCss).toMatch(/animation-duration:\s*var\(--motion-floor\)\s*!important/);
+    expect(globalsCss).toMatch(/transition-duration:\s*var\(--motion-floor\)\s*!important/);
+    const motionCss = read("../src/styles/motion.css");
+    expect(motionCss).toMatch(/--motion-floor:\s*0\.01ms/);
   });
 
   it("documents and pins the breakpoint contract", () => {

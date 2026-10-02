@@ -177,7 +177,7 @@ export function LikedSongsView() {
                     <button
                       type="button"
                       onClick={() => play(track)}
-                      className="group flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 text-left transition-colors hover:bg-graphite"
+                      className="motion-reveal motion-feedback group flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 text-left hover:bg-graphite"
                     >
                       <PlaylistCover urls={cover ? [cover] : []} className="aspect-square w-full" />
                       <span className="truncate text-body-lg font-semibold text-pure-white">

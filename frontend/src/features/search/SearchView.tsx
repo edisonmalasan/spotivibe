@@ -150,7 +150,7 @@ function SearchModeSwitch({
           aria-checked={mode === option.mode}
           data-testid={`search-mode-${option.mode}`}
           onClick={() => onSelect(option.mode)}
-          className={`rounded-buttons px-3 py-2 text-body-lg font-bold transition ${
+          className={`motion-feedback rounded-buttons px-3 py-2 text-body-lg font-bold ${
             mode === option.mode
               ? "bg-pure-white text-void-black"
               : "bg-carbon text-mist hover:bg-graphite hover:text-pure-white"

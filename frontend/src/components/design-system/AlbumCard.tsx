@@ -27,7 +27,7 @@ interface AlbumCardProps {
 export function AlbumCard({ title, artist, artworkUrl, className = "" }: AlbumCardProps) {
   return (
     <article
-      className={`flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 transition-colors hover:bg-graphite ${className}`}
+      className={`motion-reveal motion-feedback flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 hover:bg-graphite ${className}`}
     >
       <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-images bg-graphite">
         {artworkUrl === undefined ? (

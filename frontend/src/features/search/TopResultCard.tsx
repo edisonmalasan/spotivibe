@@ -25,7 +25,7 @@ export function TopResultCard({ top, onSelect, onPlay, menu }: TopResultCardProp
     return (
       <div
         data-testid="top-result"
-        className="rounded-cards bg-carbon p-5 transition-colors hover:bg-graphite"
+        className="motion-reveal motion-feedback rounded-cards bg-carbon p-5 hover:bg-graphite"
       >
         <span className="grid size-24 place-items-center overflow-hidden rounded-images bg-graphite">
           {track.artwork[0] ? (
@@ -46,7 +46,7 @@ export function TopResultCard({ top, onSelect, onPlay, menu }: TopResultCardProp
                 type="button"
                 aria-label={`Play ${track.title}`}
                 onClick={onPlay}
-                className="grid size-10 place-items-center rounded-full bg-spotify-green text-void-black transition hover:scale-105"
+                className="motion-feedback grid size-10 place-items-center rounded-full bg-spotify-green text-void-black"
               >
                 <Play className="size-5 fill-current" aria-hidden="true" />
               </button>
@@ -71,7 +71,7 @@ export function TopResultCard({ top, onSelect, onPlay, menu }: TopResultCardProp
     <button
       type="button"
       data-testid="top-result"
-      className="block w-full rounded-cards bg-carbon p-5 text-left transition-colors hover:bg-graphite"
+      className="motion-reveal motion-feedback block w-full rounded-cards bg-carbon p-5 text-left hover:bg-graphite"
       onClick={() => onSelect(name)}
     >
       <span className="grid size-24 place-items-center overflow-hidden rounded-full bg-graphite">

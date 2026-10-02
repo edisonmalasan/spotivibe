@@ -1,0 +1,192 @@
+/*
+ * The motion vocabulary (M19; spec `motion` — "One motion vocabulary, declared
+ * once"; design decisions 2, 3, and 6).
+ *
+ * Every duration, easing, and travel distance the application animates with is
+ * declared here, once. A component never writes one of its own — not because that
+ * would be unusual, but because `tests/motion-vocabulary.test.ts` walks the source
+ * tree and fails on any duration literal that is not one of these steps, naming the
+ * file. That test is what makes the vocabulary a rule rather than a convention.
+ *
+ * **CSS custom properties, not JavaScript** (design decision 2). This is the whole
+ * reason the "no animation library" decision is true rather than approximately true:
+ * a JavaScript motion system needs a runtime to read the viewer's motion
+ * preference, and the natural home for that runtime is a library worth 41 kB.
+ *
+ * **The accessibility floor is inherited, not repeated.** `globals.css` collapses
+ * `transition-duration` and `animation-duration` application-wide under
+ * `prefers-reduced-motion: reduce` with `!important`. Because every duration below
+ * is written *into* a `transition` declaration, the global rule collapses it for
+ * free — which is why no component declares its own gate, and why the vocabulary and
+ * the floor cannot drift apart. (`tests/motion-vocabulary.test.ts` asserts this.)
+ *
+ * **Only `opacity` and `transform`** (design decision 6). Neither triggers layout and
+ * both are compositor-friendly, so no motion in this file can cost a layout pass. A
+ * `transition` on `height`, `width`, `top`, or `margin` is the ordinary way motion
+ * gets expensive, and it has nowhere to come from: each duration below is paired with
+ * the properties it may be used on, and those sets contain nothing else.
+ *
+ * **Exits are here too** (design decision 3). `@starting-style` supplies the "from"
+ * state for an arrival, and `transition-behavior: allow-discrete` keeps a leaving
+ * element transitionable while its `display` flips. Both are Baseline since 2024, so
+ * a library is not needed to express an exit — and both collapse under the global
+ * reduced-motion rule exactly as an entrance does.
+ *
+ * The steps are named for **what they are for**, never for how long they are:
+ * `--motion-feedback` is a response, and if its number changes tomorrow the name
+ * still says what the motion is doing.
+ */
+
+:root {
+  /* Durations — how long a motion takes. Four, because the application has four
+     jobs: answer a pointer, arrive, enter or leave a surface, and scroll a title
+     that is too long to fit. */
+  --motion-feedback: 120ms;
+  --motion-reveal: 180ms;
+  --motion-surface: 220ms;
+  --motion-marquee: 14s;
+
+  /* Easings — how a motion moves through its duration, named for the direction it is
+     travelling. Arriving decelerates into rest; leaving accelerates away from it. */
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Travel — how far something moves, named for what moves. */
+  --motion-travel-press: 2px;
+  --motion-travel-surface: 12px;
+
+  /* The floor — what every duration above collapses to when the listener has asked
+     for reduced motion. Declared here rather than written into `globals.css` so that
+     this file is the *only* place in the application holding a time value, which is
+     what lets the vocabulary test state that rule without an exemption list. */
+  --motion-floor: 0.01ms;
+}
+
+/*
+ * The Now Playing long-title scroll.
+ *
+ * Kept beside the vocabulary rather than in `globals.css` because its duration is a
+ * duration, and the only duration a component is allowed to write is one this file
+ * declares. It is the one indefinite motion in the application that is not a state
+ * indicator, so it earns two conditions: the component applies it **only** when it
+ * measured that the title overflows, and `globals.css` cancels it outright under
+ * `prefers-reduced-motion`.
+ */
+@keyframes spotivibe-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@layer components {
+  .now-playing-marquee {
+    animation: spotivibe-marquee var(--motion-marquee) linear infinite;
+  }
+
+  /*
+   * Hover and tap feedback (spec `motion` — "The named surfaces carry motion").
+   *
+   * Scoped to `:hover` and `:active` on purpose. Hover feedback is never the only
+   * affordance: every control it decorates is reachable by keyboard, and the
+   * application's `:focus-visible` outline is global, so a control's focus ring is
+   * untouched by anything in this file. `:active` settles the lift again, which is
+   * what makes a press read as a press rather than as a hover that never ended.
+   */
+  .motion-feedback {
+    transition:
+      transform var(--motion-feedback) var(--motion-ease-out),
+      opacity var(--motion-feedback) var(--motion-ease-out);
+  }
+
+  .motion-feedback:hover {
+    transform: translateY(calc(-1 * var(--motion-travel-press)));
+  }
+
+  .motion-feedback:active {
+    transform: translateY(0);
+  }
+
+  /*
+   * An arrival (spec `motion` — "The named surfaces carry motion").
+   *
+   * For shelves, cards, and the player's artwork: an element that appears rises a
+   * little and fades in. `@starting-style` is what makes it an *arrival* rather than a
+   * static style — the browser uses it as the "before" state the first time the
+   * element is rendered, and a later mount (a shelf resolving, a track changing)
+   * gets the same treatment for free. Without `@starting-style` support the element
+   * simply appears: degraded, never broken.
+   *
+   * The base rule deliberately declares no `transform`. A card that already carries a
+   * Tailwind transform utility keeps it, so this can be added to an element that has
+   * one without silently replacing it.
+   */
+  .motion-reveal {
+    transition:
+      transform var(--motion-reveal) var(--motion-ease-out),
+      opacity var(--motion-reveal) var(--motion-ease-out);
+  }
+
+  @starting-style {
+    .motion-reveal {
+      opacity: 0;
+      transform: translateY(var(--motion-travel-press));
+    }
+  }
+
+  /*
+   * A surface entering **and leaving** — a dialog, a sheet, and a block of content
+   * that swaps (spec `motion` — "The named surfaces carry motion"; design decision 3).
+   *
+   * Three pieces, and all three are load-bearing:
+   *
+   * - the base rule is the *closed* state, so removing `[data-motion-state="open"]`
+   *   is what dismisses it;
+   * - `display` is in the transition list **with `allow-discrete`**, which is the
+   *   whole reason a dismissal can fade out at all: without it the element would stop
+   *   being painted the instant `display` flipped, and the leave would be abrupt;
+   * - `@starting-style` supplies the "from" state for the arrival.
+   *
+   * A surface that is leaving stops taking input immediately
+   * (`pointer-events: none`), so a motion can never sit between a listener and a
+   * click — which is the spec's "input is never blocked by motion", enforced here
+   * rather than asserted about.
+   *
+   * The enter uses the decelerating easing and the leave the accelerating one: a
+   * surface should arrive gently and leave decisively.
+   */
+  .motion-surface {
+    display: none;
+    opacity: 0;
+    transform: translateY(var(--motion-travel-surface));
+    transition:
+      opacity var(--motion-surface) var(--motion-ease-out) allow-discrete,
+      transform var(--motion-surface) var(--motion-ease-out) allow-discrete,
+      display var(--motion-surface) allow-discrete;
+  }
+
+  .motion-surface[data-motion-state="open"] {
+    display: flex;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Leaving: the open state is withdrawn, and the base rule becomes the target. */
+  .motion-surface[data-motion-state="closing"] {
+    pointer-events: none;
+    transition:
+      opacity var(--motion-surface) var(--motion-ease-in) allow-discrete,
+      transform var(--motion-surface) var(--motion-ease-in) allow-discrete,
+      display var(--motion-surface) allow-discrete;
+  }
+
+  @starting-style {
+    .motion-surface[data-motion-state="open"] {
+      opacity: 0;
+      transform: translateY(var(--motion-travel-surface));
+    }
+  }
+}

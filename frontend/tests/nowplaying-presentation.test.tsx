@@ -330,23 +330,36 @@ describe("Now Playing: the long-title treatment", () => {
   });
 
   it("declares the marquee's motion — and cancels it under reduced motion", () => {
-    // The stylesheet half of design decision 7, asserted against the real file
+    // The stylesheet half of design decision 7, asserted against the real files
     // because jsdom resolves no cascade: the animation is a single named
     // keyframe rule, and the project's existing reduced-motion block switches it
     // off rather than merely shortening it.
+    //
+    // M19 moved the declaration into the motion vocabulary — a keyframes rule with a
+    // duration written into its own shorthand was the one place in the application
+    // holding a time value the vocabulary did not own — while the reduced-motion carve-out
+    // stayed in `globals.css`, because that block *is* the application-level floor. Both
+    // halves of the requirement are asserted against both files.
     const globalsCss = readStylesheet("../src/app/globals.css");
+    const motionCss = readStylesheet("../src/styles/motion.css");
 
-    expect(globalsCss).toMatch(/@keyframes\s+spotivibe-marquee\s*\{/);
-    expect(globalsCss).toMatch(/animation:\s*spotivibe-marquee\s/);
+    expect(motionCss).toMatch(/@keyframes\s+spotivibe-marquee\s*\{/);
+    expect(motionCss).toMatch(
+      /animation:\s*spotivibe-marquee\s+var\(--motion-marquee\)\s+linear\s+infinite/,
+    );
+    expect(motionCss).toMatch(/--motion-marquee:\s*14s/);
     // One copy's width per cycle: the seamless -50% over a two-copy track.
-    expect(globalsCss).toMatch(/translateX\(-50%\)/);
+    expect(motionCss).toMatch(/translateX\(-50%\)/);
 
-    // Everything after the media query is inside it — it is the last block in
-    // the file, so the slice is the reduced-motion rule set verbatim.
+    // Everything after the media query is inside it, so the slice is the
+    // reduced-motion rule set verbatim.
     const reducedMotion = globalsCss.slice(
       globalsCss.indexOf("@media (prefers-reduced-motion: reduce)"),
     );
     expect(reducedMotion).toMatch(/\.now-playing-marquee\s*\{[^}]*animation:\s*none\s*!important/);
+    // And the file that applies it really does import the vocabulary, so the keyframes
+    // above are not declared in a stylesheet nothing loads.
+    expect(globalsCss).toMatch(/@import\s+"\.\.\/styles\/motion\.css"/);
   });
 });
 

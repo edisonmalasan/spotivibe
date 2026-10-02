@@ -143,7 +143,7 @@ export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
               <li key={playlist.id}>
                 <button
                   type="button"
-                  className="w-full rounded-buttons px-3 py-2 text-left text-body-lg text-pure-white transition hover:bg-graphite"
+                  className="motion-feedback w-full rounded-buttons px-3 py-2 text-left text-body-lg text-pure-white hover:bg-graphite"
                   disabled={busy}
                   onClick={() => addTo(playlist.id)}
                 >

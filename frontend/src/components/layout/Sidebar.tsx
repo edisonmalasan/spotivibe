@@ -74,7 +74,7 @@ export function Sidebar() {
           libraryPrompts.map((prompt) => (
             <div
               key={prompt.title}
-              className="flex flex-col gap-2 rounded-cards bg-graphite p-3 transition-colors hover:bg-smoke"
+              className="motion-feedback flex flex-col gap-2 rounded-cards bg-graphite p-3 hover:bg-smoke"
             >
               <h3 className="text-body-lg font-bold text-pure-white">{prompt.title}</h3>
               <p className="text-body-lg font-regular text-mist">{prompt.description}</p>
@@ -87,7 +87,7 @@ export function Sidebar() {
           <>
             <Link
               href="/library/liked"
-              className="flex items-center gap-3 rounded-cards px-2 py-2 transition-colors hover:bg-graphite"
+              className="motion-feedback flex items-center gap-3 rounded-cards px-2 py-2 hover:bg-graphite"
             >
               <span
                 className="grid size-10 shrink-0 place-items-center rounded-images bg-spotify-green"
@@ -106,7 +106,7 @@ export function Sidebar() {
                 <Link
                   key={playlist.id}
                   href={playlistHref(playlist.id)}
-                  className="flex items-center gap-3 rounded-cards px-2 py-2 transition-colors hover:bg-graphite"
+                  className="motion-feedback flex items-center gap-3 rounded-cards px-2 py-2 hover:bg-graphite"
                 >
                   <PlaylistCover urls={coverUrls} className="size-10 shrink-0" />
                   <span className="truncate text-body-lg font-regular text-pure-white">

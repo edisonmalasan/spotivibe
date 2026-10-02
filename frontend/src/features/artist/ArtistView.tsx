@@ -258,7 +258,7 @@ function ReleaseCard({ release }: { release: ArtistRelease }) {
     <Link
       href={albumHrefFromRelease(release)}
       data-testid="artist-release"
-      className="flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 text-left transition-colors hover:bg-graphite"
+      className="motion-reveal motion-feedback flex w-full flex-col gap-2 rounded-cards bg-carbon p-3 text-left hover:bg-graphite"
     >
       <span className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-cards bg-graphite">
         {release.artworkUrl === undefined ? (

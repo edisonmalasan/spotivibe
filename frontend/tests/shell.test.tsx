@@ -168,7 +168,10 @@ describe("Sidebar", () => {
     const card = screen.getByRole("heading", { name: "Start your library" }).parentElement!;
 
     expect(card.className).toContain("bg-graphite");
-    expect(card.className).toContain("transition-colors");
+    // M19 replaced the raw `transition-colors` with the vocabulary's hover feedback. The
+    // assertion is kept rather than dropped: a card that stopped responding to a pointer
+    // would otherwise look identical here.
+    expect(card.className).toContain("motion-feedback");
     expect(card.className).toContain("hover:bg-smoke");
   });
 

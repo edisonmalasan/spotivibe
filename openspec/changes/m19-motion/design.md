@@ -62,6 +62,16 @@ The roadmap names six places. They are enumerated in `motionTokens` as the allow
 test asserts that a duration is either one of the declared steps or is not in the file at all. That is
 what makes "one vocabulary" checkable rather than aspirational: a component that invents `220ms` fails.
 
+**Amended during Apply.** "One module" is two files, deliberately: `styles/motion.css` is the
+declaration — what the requirement means by "declared once, in one module" — and
+`styles/motionTokens.ts` is its machine-readable contract, without which "every duration is a declared
+step" is a sentence rather than a check. A test asserts the two agree in both directions, so neither
+can drift alone.
+
+The context table above also understated the drift this milestone absorbed: it said primitives carry
+`transition` and `hover:scale-105`, when bare `transition` appeared in ten places and the scale in
+two. Twenty-four modules were normalised onto the vocabulary.
+
 ### 5. The detector learns the whole source surface
 
 M17's guard had to be told the module list, and M18's verification found a module it did not cover. The
