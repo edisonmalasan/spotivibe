@@ -134,7 +134,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 |---|---|---|---|
 | **M16** | Lyrics and Now Playing enrichment | `DONE` | M9, M12 |
 | **M17** | Home discovery enrichment | `DONE` | M11, M8 |
-| **M18** | Keyboard shortcuts, search suggestions, sharing | `APPROVED` | M5, M7, M9 |
+| **M18** | Keyboard shortcuts, search suggestions, sharing | `PROPOSED` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `APPROVED` | M18 |
 | **M20** | Personal-use media downloading | `APPROVED` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
