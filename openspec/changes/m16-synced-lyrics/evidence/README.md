@@ -17,8 +17,8 @@ implied by a green check elsewhere.
 | Build | `npm run build` | exit `0` |
 | Tests, repeated | `npx vitest run` ×8 after the final fixes | **2496 passed, 0 failed** each run |
 | Induced violations | `node scripts/lyrics-induced-violations.mjs` (from `frontend/`) | **22/22 caught**, exit `0` |
-| Change validation | `openspec validate m16-synced-lyrics --strict` | valid |
-| Spec validation | `openspec validate --specs --strict` | 20 passed, 0 failed |
+| Change validation | `openspec validate m16-synced-lyrics --strict` | valid, exit `0` |
+| Spec validation | `openspec validate --specs --strict` | 20 passed, 0 failed, exit `0` |
 | **Release gate** | M15's archived `evidence/release-gate.mjs` | **exit `1`, and not usable as a comparison — see below.** |
 
 **Full suite: 2496 tests** (2356 before this change, so +140), across 150 files.
@@ -50,11 +50,11 @@ The suite was run repeatedly rather than once, because a single green run is not
 which is exactly how a cross-test contamination bug in this change's own panel test was found. Run
 counts are itemised in the checks table above; any count here is a sample, not a proof.
 
-## The four verification passes
+## The five verification passes
 
-Four independent read-only verification agents reviewed this change in sequence, each reviewing the
-previous one's fixes. **All four returned `NOT MERGEABLE`**, and every CRITICAL in every pass was
-real:
+Five independent read-only verification agents reviewed this change in sequence, each reviewing the
+previous one's fixes. **The first four returned `NOT MERGEABLE`** — ten CRITICALs between them — and
+the fifth returned **`MERGEABLE`** with three WARNINGs, all of which are fixed here.
 
 | Pass | CRITICALs | What they were about |
 |---|---|---|
@@ -62,15 +62,33 @@ real:
 | 2 | 2 | volume not verified; an arithmetically impossible tick-state claim |
 | 3 | 3 | artwork verified via the *decorative backdrop*; a fabricated test count; a code fix shipped with no test able to catch its removal |
 | 4 | 1 | the "different message" claim compared *containers*, never *words* |
+| 5 | 0 | `MERGEABLE`, after 48 behavioural mutations of which 45 were caught, the other 3 being the pass's own malformed edits |
 
 That the **fixes** were what passes 2, 3 and 4 failed is the most useful fact here. Ten CRITICALs
 were found across four reviews of one change, and every one of them was a statement that outran its
-evidence — not a behavioural defect in the lyrics code, which has survived four attempts to break it.
-Three of the CRITICALs were *caused by an earlier pass's fix*: the artwork assertion was added next to
-the volume assertion pass 2 had just fixed and repeated its mistake one line later; the
-`transition-colors` change was made to satisfy a task clause with no test added to keep it true; and
-the `text-body` figure "corrected" in pass 3 was the *previous commit's* total, so the correction
-was itself a wrong number.
+evidence — not a behavioural defect in the lyrics code, which has survived four attempts to break it
+and 45 of 48 mutations in the fifth. Four of the CRITICALs were *caused by an earlier pass's own fix*:
+the artwork assertion was added next to the volume assertion pass 2 had just fixed and repeated its
+mistake one line later; the `transition-colors` change was made to satisfy a task clause with no test
+added to keep it true; the `text-body` figure "corrected" in pass 3 was the *previous commit's*
+total, so the correction was itself a wrong number; and the guard docstring's stale count was fixed
+and re-staled in the same commit.
+
+### The fifth pass's three WARNINGs, fixed here
+
+- **The guard's docstring said "Twenty-one of twenty-one"** while the harness printed `22/22` — pass 4
+  had corrected a stale "Eighteen" in that exact sentence and then added a case in the same commit.
+  Corrected to 22, and the sentence now says outright that it is a claim about a number to be checked
+  against the harness's output rather than trusted, because it has now been stale twice.
+- **The `METADATA_TAG` guard in `parseLrc` is not load-bearing**, and the fifth pass measured that
+  deleting it leaves all 23 tests green. Task 1.1's clause and the constant's comment now say the
+  timestamp pattern carries the guarantee, that broadening either pattern is what is pinned, and that
+  the guard is defence-in-depth for a future laxer timestamp pattern. See the note under the task→file
+  map.
+- **`layoutRestore` was dead** — a leftover from pass 4's refactor, assigned `null` and never read,
+  with a comment that still claimed the restore was keyed off it, and the repository's only lint
+  warning. The declaration and the two comments are gone; the restore is unconditional from
+  `PRISTINE`, which is what it already did.
 
 ### What all three passes confirmed clean
 
@@ -112,14 +130,16 @@ replacements**, because only `pure-white`, `mist` and `spotify-green` are declar
 `text-body-xs` is not in the type scale. The clearest argument in the change for not trusting a
 review: the reviewer suggested colours, and the detector still rejected them.
 
-**C3 — the provider bypassed the shared outbound limiter while two artifacts claimed otherwise.**
-`design.md` and the service header both said this milestone inherits M3's limiter "through
-`fetchJson`". `fetchJson` has a timeout and no limiter; `outboundLimiter` was acquired only by
-`chain.ts`, so `/api/lyrics` was the one provider call in the application with no outbound ceiling —
-and the inbound guard cannot substitute, since `throttle.ts` itself records that a caller rotating
-`x-forwarded-for` gets a fresh budget each time. Fixed by acquiring and releasing the same semaphore,
-with tests for hold-and-release, release-on-failure, waiting when the cap is exhausted, and both abort
-paths.
+**C3 — the provider bypassed the shared outbound limiter while an artifact claimed otherwise.**
+The service's own header said this milestone inherits M3's limiter "through `fetchJson`" — and
+`fetchJson` has a timeout and **no limiter**; `outboundLimiter` was acquired only by `chain.ts`, so
+`/api/lyrics` was the one provider call in the application with no outbound ceiling, and the inbound
+guard cannot substitute, since `throttle.ts` itself records that a caller rotating `x-forwarded-for`
+gets a fresh budget each time. (`design.md` said only that this milestone "inherits rather than
+bypasses" both, which was the right claim about the wrong code; it is now true. A fifth pass caught
+that this record had attributed the `fetchJson` wording to `design.md` as well.) Fixed by acquiring
+and releasing the same semaphore, with tests for hold-and-release, release-on-failure, waiting when the
+cap is exhausted, and both abort paths.
 
 ### Pass 2 — CRITICALs, both about claims rather than behaviour
 
@@ -305,6 +325,25 @@ scrolling, so `scrollBy` is stubbed and the position is not observable. What is 
 the **mechanism** — induced case 8 removes the `key={providerId}` remount, and the stale-response
 test fails. A hand-rolled reset that forgot the scroll would not be caught, which is a real limit and
 is recorded rather than papered over.
+
+**Two further behaviours rest on proxies, found by the fifth pass.**
+
+- *"The lookup is bounded"* is asserted by checking that `timeoutMs` is handed to the transport and
+  that the constant is a real bound. No test observes a timeout actually firing, because doing so
+  means waiting on one. The bound is therefore proven at the point it is applied rather than at the
+  point it takes effect.
+- The `app-shell` scenario's *"related content … operable"* is asserted as the **presence** of the
+  More Like This heading. It is not asserted that the shelf is operable, because it is a server-fed
+  region whose contents are covered by their own tests. The word "operable" in the scenario is
+  therefore narrower than the scenario is worded.
+
+**One branch is defence-in-depth and says so.** The separate `METADATA_TAG` guard in `parseLrc` can
+be deleted with every test in the file still green, because no metadata tag matches the timestamp
+pattern in the first place — the fifth pass measured exactly that. Task 1.1's clause and the
+constant's comment now state that the *timestamp pattern* carries the guarantee, that broadening
+either pattern is what is pinned, and that the guard exists only so that a future laxer timestamp
+pattern cannot silently start parsing `[ar:…]` as a lyric. Recording that is better than deleting it
+or inventing a fixture to make it look load-bearing.
 
 ## Defects found and fixed during this change
 

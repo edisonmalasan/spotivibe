@@ -15,7 +15,7 @@ import { useLyricsForTrack } from "./useLyricsPanel";
  * `caption | label | body-lg | link | heading`, and **`text-body` emits no rule at all** — the
  * undeclared token makes the utility invalid, so it silently fell back to the inherited 14px.
  *
- * There are **52 uses across 22 other files** under `src` (counted 2026-10-03 by matching the word
+ * There are **52 uses across 22 other files** under `src` (counted 2026-10-02 by matching the word
  * `text-body` not followed by a hyphen, across every `.tsx` file under `src` except this one), so
  * this panel deliberately matches the surrounding convention rather than diverging from it. The dead
  * utility is a repository-wide finding, not one to fix piecemeal inside a lyrics feature; fixing it

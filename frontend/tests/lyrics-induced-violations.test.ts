@@ -9,8 +9,13 @@ import { CASES } from "../scripts/lyrics-induced-violations.cases.mjs";
  *
  * `scripts/lyrics-induced-violations.mjs` proves the tests written for the lyrics capability can
  * actually fail: it breaks one production behaviour at a time, runs the test named for that
- * behaviour, and requires it to fail. Twenty-one of twenty-one were caught; that result is recorded
+ * behaviour, and requires it to fail. Twenty-two of twenty-two were caught; that result is recorded
  * in this change's evidence README.
+ *
+ * The number in this sentence has gone stale twice — once when cases were added and the docstring was
+ * not, and once when pass 4 fixed a stale "Eighteen" here and added a case in the same commit. It is
+ * a claim about a number, and the fifth verification pass caught the second instance, so it is stated
+ * here to be checked against the harness's own output rather than trusted.
  *
  * **Why the harness is a script and not a test.** It spawns vitest, so running it from inside vitest
  * would nest a test runner inside a test runner, and its several-minute cost is not something to add

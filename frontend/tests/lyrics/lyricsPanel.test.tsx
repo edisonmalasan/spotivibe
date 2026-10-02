@@ -85,12 +85,10 @@ const ACTIVE_LINE_ABOVE_THE_BAND = { top: 4 };
 const BELOW_LINE = { top: 340 };
 const ACTIVE_LINE_BELOW_CENTRE = BELOW_LINE;
 
-let layoutRestore: (() => void) | null = null;
-
 /**
  * The pristine prototypes, captured **once at module load**.
  *
- * The previous version captured them inside `layout()`, so a test that called `layout()` twice saved
+ * The first version captured them inside `layout()`, so a test that called `layout()` twice saved
  * the *first stub* as its "original" and overwrote `layoutRestore`. `afterEach` then restored the
  * stub instead of the real method, leaving it installed for the rest of the file — proved by
  * experiment, not by reading. Harmless at the time only because every later geometry-dependent test
@@ -143,14 +141,15 @@ function layout(activeLine: { top: number }) {
 }
 
 afterEach(() => {
-  // Restore the pristine prototypes unconditionally, and only once. Keyed off `layoutRestore` for the
-  // `scrollCalls` reset alone, because the restore must happen even if `layout()` was never called.
+  // Restore the pristine prototypes from `PRISTINE`, unconditionally — including when `layout()`
+  // was never called, which is why this is not keyed off anything. The prototypes are captured at
+  // module load rather than per `layout()` call, so a test that installs the geometry twice still
+  // restores the real methods rather than its own first stub.
   Element.prototype.getBoundingClientRect = PRISTINE.rect;
   if (PRISTINE.clientHeight) {
     Object.defineProperty(Element.prototype, "clientHeight", PRISTINE.clientHeight);
   }
   Element.prototype.scrollBy = PRISTINE.scrollBy;
-  layoutRestore = null;
   scrollCalls = [];
   // `window.matchMedia` is redefined wholesale rather than spied on, so `vi.restoreAllMocks()` does
   // not put it back: every test after the first one that set a reduced-motion preference ran under

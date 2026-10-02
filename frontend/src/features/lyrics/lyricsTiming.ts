@@ -35,9 +35,16 @@ const TIMESTAMP = /^\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/;
 /**
  * A metadata tag carrying no lyric text: `[ar:...]`, `[ti:...]`, `[al:...]`, `[length:...]`.
  *
- * These are matched explicitly rather than relying on the absence of a timestamp. `[length:03:21]`
- * contains something that *looks* like a timestamp to a loose reader, so a metadata line is dropped
- * rather than parsed.
+ * **This guard is defence-in-depth, not the mechanism.** No metadata tag matches {@link TIMESTAMP}
+ * either — `[ar:Artist]` and `[length:03:21]` both begin with letters, and the timestamp pattern
+ * demands digits — so removing this test entirely changes no behaviour, and a verification pass proved
+ * exactly that: every test in the file stayed green with the guard deleted. The spec scenario is met
+ * by `TIMESTAMP` alone, and it is *broadening* this pattern that is observable (a fifth pass measured
+ * ten failures when it over-matched).
+ *
+ * It is kept because it is cheap, it documents the intent, and a future `TIMESTAMP` that grew laxer
+ * would otherwise silently start parsing `[ar:…]` as a lyric. What it is not is a testable guarantee,
+ * and nothing in this file claims it is one.
  *
  * `[offset:...]` is deliberately **dropped and not applied**, and that is a stated limit rather than
  * an oversight. The field shifts every line, and applying it wrongly is worse than not applying it:
