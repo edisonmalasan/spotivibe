@@ -15,22 +15,29 @@ implied by a green check elsewhere.
 | Types | `npm run typecheck` (`next typegen && tsc --noEmit`) | exit `0` |
 | Tests | `npm test` (`vitest run`) | exit `0` |
 | Build | `npm run build` | exit `0` |
-| Tests, repeated | `npx vitest run` ×10 after the final fixes | **2495 passed, 0 failed** each run |
-| Induced violations | `node scripts/lyrics-induced-violations.mjs` (from `frontend/`) | **21/21 caught**, exit `0` |
+| Tests, repeated | `npx vitest run` ×8 after the final fixes | **2496 passed, 0 failed** each run |
+| Induced violations | `node scripts/lyrics-induced-violations.mjs` (from `frontend/`) | **22/22 caught**, exit `0` |
 | Change validation | `openspec validate m16-synced-lyrics --strict` | valid |
 | Spec validation | `openspec validate --specs --strict` | 20 passed, 0 failed |
 | **Release gate** | M15's archived `evidence/release-gate.mjs` | **exit `1`, and not usable as a comparison — see below.** |
 
-**Full suite: 2495 tests** (2356 before this change, so +139), across 150 files.
+**Full suite: 2496 tests** (2356 before this change, so +140), across 150 files.
 
 **On the earlier counts, and the flake.** Intermediate drafts of this file recorded 2491, then 2493,
-then 2494. Only the last of those was ever observed, and it went stale by one the moment a test was
-added; the third verification pass caught it disagreeing with the line below it. The figure above is
-the one every run reported. While measuring, the **pre-existing**
-`tests/podcast-playback-history.test.ts` flake — the wall-clock budget already recorded in
-`ROADMAP.md` — was observed failing in roughly one full-suite run in three, consistent with its
-documented rate. It is not caused by this change: that file is untouched, and the M16 suites were green
-in every run.
+then 2494, then 2495. Only the last of those was ever observed at the time it was written, and each
+went stale the moment a test was added; the third verification pass caught one disagreeing with the
+line below it. The figure above is the one every run reported. Recording four successive wrong
+numbers in a file whose first line is "Everything below was actually run" is itself the argument for
+the rule being enforced.
+
+**Two different run sets, and what each covers.** The suite was run **4 times** before the
+cross-test-contamination fix, **10 times** after it, and **8 times** again after the fourth pass's
+fixes. The ×8 row is the final set: 8 consecutive green runs at 2496. Separately, while measuring,
+the **pre-existing** `tests/podcast-playback-history.test.ts` flake — the wall-clock budget already
+recorded in `ROADMAP.md` — was observed failing in roughly one full-suite run in three. It is not
+caused by this change: that file is untouched by this diff, and the M16 suites were green in every run.
+So the honest reading of the ×8 row is "8 clean runs of the M16 code and everything else, in an
+environment where one unrelated file is known to flake" — not "the suite is deterministic".
 
 ### What the counts do and do not prove
 
@@ -38,14 +45,15 @@ They prove the five gates pass on this machine under Node 24, and that the lyric
 behavioural tests pass. They do **not** prove the lyrics panel follows a real YouTube playback
 position in a real browser — see "Not verified".
 
-The suite was run four times rather than once because a single green run is not evidence against an
-*intermittent* defect, which is the whole lesson of the known `podcast-playback-history` flake. Four
-consecutive clean runs is a sample, not a proof, and is labelled as such.
+The suite was run repeatedly rather than once, because a single green run is not evidence against an
+*intermittent* defect — which is the whole lesson of the known `podcast-playback-history` flake, and
+which is exactly how a cross-test contamination bug in this change's own panel test was found. Run
+counts are itemised in the checks table above; any count here is a sample, not a proof.
 
-## The three verification passes
+## The four verification passes
 
-Three independent read-only verification agents reviewed this change, in sequence, each reviewing the
-previous one's fixes. **All three returned `NOT MERGEABLE`**, and every CRITICAL in every pass was
+Four independent read-only verification agents reviewed this change in sequence, each reviewing the
+previous one's fixes. **All four returned `NOT MERGEABLE`**, and every CRITICAL in every pass was
 real:
 
 | Pass | CRITICALs | What they were about |
@@ -53,14 +61,16 @@ real:
 | 1 | 3 | claims the suite did not support; two dead CSS utilities; a bypassed outbound limiter |
 | 2 | 2 | volume not verified; an arithmetically impossible tick-state claim |
 | 3 | 3 | artwork verified via the *decorative backdrop*; a fabricated test count; a code fix shipped with no test able to catch its removal |
+| 4 | 1 | the "different message" claim compared *containers*, never *words* |
 
-That the **fixes** were what passes 2 and 3 failed is the most useful fact here. Nine CRITICALs were
-found across three reviews of one change, and every one of them was a statement that outran its
-evidence — not a behavioural defect in the lyrics code, which has now survived three attempts to
-break it. Two of the pass-3 CRITICALs were *caused by pass 1 and pass 2's fixes*: the artwork
-assertion was added next to the volume assertion that pass 2 had just fixed, and repeated its mistake
-one line later; the `transition-colors` change was made to satisfy a task clause, and no test was
-added to keep it true. Both are the harness's own standard turned against it.
+That the **fixes** were what passes 2, 3 and 4 failed is the most useful fact here. Ten CRITICALs
+were found across four reviews of one change, and every one of them was a statement that outran its
+evidence — not a behavioural defect in the lyrics code, which has survived four attempts to break it.
+Three of the CRITICALs were *caused by an earlier pass's fix*: the artwork assertion was added next to
+the volume assertion pass 2 had just fixed and repeated its mistake one line later; the
+`transition-colors` change was made to satisfy a task clause with no test added to keep it true; and
+the `text-body` figure "corrected" in pass 3 was the *previous commit's* total, so the correction
+was itself a wrong number.
 
 ### What all three passes confirmed clean
 
@@ -144,6 +154,43 @@ now asserts both branches carry it and that the two branches differ in colour, a
 19. The same pass added induced cases 20 and 21 for the artwork testid and the volume control, so the
 two failures pass 3 found by experiment are now permanent.
 
+### Pass 4 — the one remaining ticked clause the suite did not satisfy
+
+**Task 4.1 claimed "unavailable and error are different *text*", and nothing ever asserted the
+error state's text.** The two states are separate *containers*, so `queryByTestId("lyrics-error")`
+being present while `lyrics-unavailable` is absent cannot see the words. Proven by experiment: setting
+the error state's title to the unavailable string verbatim — the exact situation the spec forbids —
+left **all 2495 tests in all 150 files green**.
+
+The panel suite now asserts the error surface's rendered text (`couldn't be loaded`, `playback is
+unaffected`) and its *absence* of the unavailable wording, plus a test that renders each state,
+captures its message, and compares the two directly. Induced case 22 rewrites the error title to the
+unavailable string, so the harness catches it too.
+
+### Warnings fixed in pass 4
+
+- **The `text-body` figure was wrong twice.** Pass 3 "corrected" 56 to 55 across 23 files; the real
+  count is **52 across 22 other files** (the panel's own four mentions are all inside its comment).
+  The parenthetical explaining the correction was also false — 55 was the *previous* commit's total
+  including the panel, and 56 is the *current* total. Recounted by a script whose procedure is
+  recorded, and the figure now appears in the panel comment and here with the same number.
+- **`lyricsPanel.test.tsx` leaked global state by two routes**, both found by experiment rather than
+  reading. `layout()` captured the prototype methods *inside itself*, so a test calling it twice saved
+  the first stub as its "original" and `afterEach` then restored the stub instead of the real method.
+  The originals are now captured once at module load. And `window.matchMedia` was redefined wholesale
+  and never restored — `vi.restoreAllMocks()` does not undo a `defineProperty` — so every test after
+  the first reduced-motion test ran under the previous test's answer. Both are closed.
+- **A stale "Eighteen of eighteen"** in the guard's own docstring, four lines from where pass 3 had
+  just written "twenty-one". Corrected.
+
+### Nits fixed in pass 4
+
+The evidence's two run-set figures are now itemised so "×8" and "the run counts" no longer read as
+contradictory; the two documents' lists of "cases mapping to no ticked task" agreed on the count and
+the retry-label case but named a different second entry, and now name the same two; and the one leg of
+task 4.6's scenario that rests on a proxy — scroll position, which jsdom cannot model — is now noted
+in the task→file map rather than left implicit.
+
 ### Warnings fixed in passes 2 and 3
 
 - **The harness counted `pending`/`skipped` as failed.** vitest's status set is
@@ -155,7 +202,7 @@ two failures pass 3 found by experiment are now permanent.
   hand-copied duplicate, which the file now says plainly: editing the harness does not fail the
   check, and a shared exported predicate is the proper fix.
 - **`text-body` is a dead size utility.** The declared scale is `caption | label | body-lg | link |
-  heading`. The panel uses `text-body-lg`. There are **55 uses across 23 other files** under `src`
+  heading`. The panel uses `text-body-lg`. There are **52 uses across 22 other files** under `src`
   (counted 2026-10-02; an earlier draft of this file said 56, which counted the panel's own mentions
   and went stale when they were removed), so it is recorded as a repository-wide finding rather than
   fixed piecemeal inside a lyrics feature.
@@ -199,7 +246,7 @@ This repository has paid four separate times for a green check sitting on top of
 test never observed to fail is a claim rather than evidence. The harness breaks one production
 behaviour at a time, runs the test named for it, and requires it to fail.
 
-**21/21 caught.** Getting to a trustworthy number took three attempts, and the failures are the most
+**22/22 caught.** Getting to a trustworthy number took three attempts, and the failures are the most
 useful part of this record — because every one of them failed in the direction that looks like "your
 tests are dead", which is the direction that gets a correct suite deleted. Three further cases were
 added by the third verification pass after it found, by experiment, that deleting the artwork image or
@@ -238,8 +285,9 @@ over synthetic reports, so the central judgement is falsifiable rather than mere
 ## Task → test file map
 
 This maps tasks to test **files**, and is deliberately not one-to-one in either direction: 17 ticked
-tasks, 21 induced cases, no case covering task 6.1, and two cases (the retry-label collision, the
-limiter) mapping to no ticked task by number.
+tasks, 22 induced cases, no case covering task 6.1, and two cases mapping to no ticked task by
+number — the retry-label collision (found by an existing test, and assigned to no task) and the
+outbound-limiter bypass (task 2.4's clause names the timeout, not the limiter).
 
 | Task | Test file |
 |---|---|
@@ -249,6 +297,14 @@ limiter) mapping to no ticked task by number.
 | 4.1–4.6 | `tests/lyrics/lyricsPanel.test.tsx` |
 | 5.1, 5.2 | `tests/nowplaying-lyrics.test.tsx` |
 | — (harness guard) | `tests/lyrics-induced-violations.test.ts` |
+
+**One leg of 4.6 rests on a proxy, deliberately.** The spec scenario "A track change resets the panel
+completely" names the *scroll position* among the discarded state. Lyrics, the active line, and a
+late stale response are each asserted directly, but scroll position cannot be: jsdom does not model
+scrolling, so `scrollBy` is stubbed and the position is not observable. What is verified instead is
+the **mechanism** — induced case 8 removes the `key={providerId}` remount, and the stale-response
+test fails. A hand-rolled reset that forgot the scroll would not be caught, which is a real limit and
+is recorded rather than papered over.
 
 ## Defects found and fixed during this change
 

@@ -15,12 +15,13 @@ import { useLyricsForTrack } from "./useLyricsPanel";
  * `caption | label | body-lg | link | heading`, and **`text-body` emits no rule at all** — the
  * undeclared token makes the utility invalid, so it silently fell back to the inherited 14px.
  *
- * There are 55 uses of `text-body` across 23 *other* files under `src` (counted 2026-10-02), so this
- * panel deliberately matches the surrounding convention rather than diverging from it. The dead
+ * There are **52 uses across 22 other files** under `src` (counted 2026-10-03 by matching the word
+ * `text-body` not followed by a hyphen, across every `.tsx` file under `src` except this one), so
+ * this panel deliberately matches the surrounding convention rather than diverging from it. The dead
  * utility is a repository-wide finding, not one to fix piecemeal inside a lyrics feature; fixing it
- * properly means either declaring `--text-body` in the token layer or replacing all 55 uses, and both
- * are separate changes. Until then the count in this comment will drift, which is the honest cost of
- * recording it here rather than in a detector.
+ * properly means either declaring `--text-body` in the token layer or replacing all 52 uses, and both
+ * are separate changes. Until one of those happens this count will drift, which is the honest cost
+ * of recording it here rather than in a detector.
  *
  * Only `pure-white`, `mist` and `spotify-green` are declared *text* tokens, and
  * `tests/token-contrast.test.ts` enforces that. The first attempt used `text-fog` and `text-steel`,

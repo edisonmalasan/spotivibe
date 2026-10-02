@@ -44,14 +44,17 @@
   every one was corrected, and two real tests were added because of the first pass. A **third** pass
   found four more, all of the same kind — including one where the previous pass's own fix asserted the
   decorative backdrop instead of the artwork, and one where a code fix shipped with no test able to
-  catch its removal. 17 of 19 ticked; nothing here is ticked on the strength of a green suite alone.
+  catch its removal. A **fourth** found one more: task 4.1's clause below claimed the two messages
+  were different *text* when only the two containers had ever been compared. 17 of 19 ticked; nothing
+  here is ticked on the strength of a green suite alone.
 
   The relationship to the induced-violation evidence is deliberately NOT one-to-one, and stating it
-  accurately matters more than making it tidy: there are **17 ticked tasks and 18 induced cases**,
+  accurately matters more than making it tidy: there are **17 ticked tasks and 22 induced cases**,
   each case names a test *file* rather than an individual test, no case covers task 6.1, and two cases
-  (the taste-profile parameter, the retry-label collision) map to no ticked task. The table in
-  evidence/README.md is a task-to-file map. An earlier version of this comment claimed “19 load-bearing
-  ones”, a number that cannot refer to anything, and a 1:1 mapping the table did not support.
+  map to no ticked task by number (the retry-label collision, and the outbound-limiter bypass — task
+  2.4's clause names the timeout, not the limiter). The table in evidence/README.md is a task-to-file
+  map. An earlier version of this comment claimed “19 load-bearing ones”, a number that cannot refer
+  to anything, and a 1:1 mapping the table did not support.
 
   The four clauses were corrected rather than the ticks being justified: 1.3, 2.4, 4.4 and 5.2 each
   named a verification the suite did not perform. Two real tests were added because of that (the

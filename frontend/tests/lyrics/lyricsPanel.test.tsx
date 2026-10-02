@@ -88,6 +88,22 @@ const ACTIVE_LINE_BELOW_CENTRE = BELOW_LINE;
 let layoutRestore: (() => void) | null = null;
 
 /**
+ * The pristine prototypes, captured **once at module load**.
+ *
+ * The previous version captured them inside `layout()`, so a test that called `layout()` twice saved
+ * the *first stub* as its "original" and overwrote `layoutRestore`. `afterEach` then restored the
+ * stub instead of the real method, leaving it installed for the rest of the file — proved by
+ * experiment, not by reading. Harmless at the time only because every later geometry-dependent test
+ * re-stubbed; a new test that forgot to would have run against another test's geometry.
+ */
+const PRISTINE = {
+  rect: Element.prototype.getBoundingClientRect,
+  clientHeight: Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight"),
+  scrollBy: Element.prototype.scrollBy,
+  matchMedia: window.matchMedia,
+} as const;
+
+/**
  * Install the geometry stubs, positioning the *active* line at `activeLine.top`.
  *
  * `scrollBy` is replaced as well as the rects: once the rects are real the panel's effect computes
@@ -95,13 +111,6 @@ let layoutRestore: (() => void) | null = null;
  * later test in the file with it.
  */
 function layout(activeLine: { top: number }) {
-  const originalRect = Element.prototype.getBoundingClientRect;
-  const originalClientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight");
-  const originalScrollBy = Element.prototype.scrollBy;
-
-  // `dataset` lives on `HTMLElement`, not `Element`, and the overrides are installed on
-  // `Element.prototype` because that is where the DOM declares them. The cast is the seam between
-  // those two facts; `next typegen && tsc` is what surfaces it, plain `tsc` does not.
   Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
     const element = this as HTMLElement;
     // The scroller's own height matters, not just its position: the live band is the middle half of
@@ -125,14 +134,6 @@ function layout(activeLine: { top: number }) {
     scrollCalls.push({ top: options?.top ?? 0, behavior: options?.behavior });
   } as Element["scrollBy"];
 
-  layoutRestore = () => {
-    Element.prototype.getBoundingClientRect = originalRect;
-    if (originalClientHeight) {
-      Object.defineProperty(Element.prototype, "clientHeight", originalClientHeight);
-    }
-    Element.prototype.scrollBy = originalScrollBy;
-  };
-
   // Clear the recorder when the geometry is installed, not only in `afterEach`. A scroll issued by a
   // previous test's component can land after that test's teardown, so relying on the reset alone left
   // the array holding a call from a test with different configuration — which failed a later
@@ -142,9 +143,23 @@ function layout(activeLine: { top: number }) {
 }
 
 afterEach(() => {
-  layoutRestore?.();
+  // Restore the pristine prototypes unconditionally, and only once. Keyed off `layoutRestore` for the
+  // `scrollCalls` reset alone, because the restore must happen even if `layout()` was never called.
+  Element.prototype.getBoundingClientRect = PRISTINE.rect;
+  if (PRISTINE.clientHeight) {
+    Object.defineProperty(Element.prototype, "clientHeight", PRISTINE.clientHeight);
+  }
+  Element.prototype.scrollBy = PRISTINE.scrollBy;
   layoutRestore = null;
   scrollCalls = [];
+  // `window.matchMedia` is redefined wholesale rather than spied on, so `vi.restoreAllMocks()` does
+  // not put it back: every test after the first one that set a reduced-motion preference ran under
+  // the previous test's answer. Restoring the original here closes that.
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: PRISTINE.matchMedia,
+  });
   vi.restoreAllMocks();
 });
 
@@ -166,6 +181,38 @@ function play(positionSeconds: number, providerId = "aaaaaaaaaaa") {
 }
 
 const lines = () => screen.queryAllByTestId("lyrics-line");
+
+/**
+ * The rendered text of the unavailable state's message.
+ *
+ * Each capture renders in its own view and unmounts it, so the two states are never on screen at
+ * once. The comparison they feed is the point: two *containers* differing says nothing about whether
+ * the messages a listener reads differ, and setting one state's copy to the other's left every test
+ * green until this existed.
+ */
+async function captureUnavailableMessage(): Promise<string> {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify({ status: "unavailable" }), { status: 200 }),
+  );
+  const view = render(<LyricsPanel />);
+  await screen.findByTestId("lyrics-unavailable");
+  const text = screen.getByTestId("lyrics-unavailable").textContent ?? "";
+  view.unmount();
+  return text;
+}
+
+/** The rendered text of the error state's whole surface, title and description together. */
+async function captureErrorMessage(): Promise<string> {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () =>
+      new Response(JSON.stringify({ error: { code: "upstream_unavailable" } }), { status: 503 }),
+  );
+  const view = render(<LyricsPanel />);
+  await screen.findByTestId("lyrics-error");
+  const text = screen.getByTestId("lyrics-error").textContent ?? "";
+  view.unmount();
+  return text;
+}
 
 describe("LyricsPanel — the four designed states", () => {
   it("renders nothing at all with no current track", () => {
@@ -227,10 +274,37 @@ describe("LyricsPanel — the four designed states", () => {
     play(0);
     render(<LyricsPanel />);
 
-    expect(await screen.findByTestId("lyrics-error")).toBeInTheDocument();
+    const error = await screen.findByTestId("lyrics-error");
+    expect(error).toBeInTheDocument();
     // The unavailable message must be absent. A 503 is a failure to reach the provider, and saying
     // "no lyrics for this track" there would be a claim about the track that is not true.
     expect(screen.queryByTestId("lyrics-unavailable")).toBeNull();
+
+    // **The words, not just the container.** A previous version of this test asserted the two states
+    // were different *elements* and never their text, so setting the error copy to the unavailable
+    // string — making the two messages identical, which is precisely what the spec forbids — left
+    // all 2495 tests green. Separate containers cannot fail this; only these assertions can.
+    expect(error).toHaveTextContent(/couldn't be loaded/i);
+    expect(error).toHaveTextContent(/playback is unaffected/i);
+    expect(error).not.toHaveTextContent(/no lyrics available/i);
+  });
+
+  it("uses two genuinely different messages for the two different facts", async () => {
+    // The same guarantee stated as the spec states it: "two distinguishable messages, not one".
+    // Both are captured from a render of each state, then compared. `play()` is called before each
+    // capture because the store is reset per test, and the panel renders nothing without a track.
+    play(0);
+    const unavailableCopy = await captureUnavailableMessage();
+    play(0);
+    const errorCopy = await captureErrorMessage();
+
+    expect(unavailableCopy).toMatch(/no lyrics available/i);
+    expect(errorCopy.length).toBeGreaterThan(0);
+    expect(errorCopy.toLowerCase()).not.toBe(unavailableCopy.toLowerCase());
+    // And neither borrows the other's wording, which is what "distinguishable" has to mean when a
+    // listener is reading rather than a machine matching testids.
+    expect(errorCopy.toLowerCase()).not.toContain("no lyrics available");
+    expect(unavailableCopy.toLowerCase()).not.toContain("couldn't be loaded");
   });
 
   it("re-requests when the error state is retried", async () => {

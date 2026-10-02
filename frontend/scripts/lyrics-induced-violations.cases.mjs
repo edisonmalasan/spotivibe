@@ -147,6 +147,17 @@ export const CASES = [
     why: "The design document claimed this milestone inherited M3's shared outbound limiter; `fetchJson` supplies a timeout and an abort, and nothing else had ever acquired `outboundLimiter`, so lyrics was the one provider call with no concurrency ceiling.",
   },
   {
+    // Found by the fourth verification pass: task 4.1 claimed "unavailable and error are different
+    // text", and setting the error copy to the unavailable string left all 2495 tests green — the two
+    // states were separate *containers*, and a container difference cannot fail a check on *words*.
+    name: "the error message repeats the unavailable message",
+    file: "src/features/lyrics/LyricsPanel.tsx",
+    from: 'title="Lyrics couldn\'t be loaded"',
+    to: 'title="No lyrics available for this track."',
+    test: "tests/lyrics/lyricsPanel.test.tsx",
+    why: "The spec requires two distinguishable messages, not one. Telling a listener a track has no lyrics when the provider was unreachable is a false claim about the track, and the retry action makes no sense with it.",
+  },
+  {
     name: "the route reads a taste-profile parameter",
     file: "src/app/api/lyrics/route.ts",
     from: '    videoId: params.get("videoId") ?? undefined,',

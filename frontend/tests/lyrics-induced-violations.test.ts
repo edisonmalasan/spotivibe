@@ -9,8 +9,8 @@ import { CASES } from "../scripts/lyrics-induced-violations.cases.mjs";
  *
  * `scripts/lyrics-induced-violations.mjs` proves the tests written for the lyrics capability can
  * actually fail: it breaks one production behaviour at a time, runs the test named for that
- * behaviour, and requires it to fail. Eighteen of eighteen were caught; that result is recorded in
- * this change's evidence README.
+ * behaviour, and requires it to fail. Twenty-one of twenty-one were caught; that result is recorded
+ * in this change's evidence README.
  *
  * **Why the harness is a script and not a test.** It spawns vitest, so running it from inside vitest
  * would nest a test runner inside a test runner, and its several-minute cost is not something to add
@@ -35,10 +35,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const frontend = join(here, "..");
 
 describe("the M16 induced-violation harness (spec lyrics)", () => {
-  it("carries the twenty-one cases the evidence records", () => {
+  it("carries the twenty-two cases the evidence records", () => {
     // A floor rather than an exact count: adding a case is the expected way to grow this, but a
     // harness that has lost its cases must fail rather than report a vacuous pass.
-    expect(CASES.length).toBeGreaterThanOrEqual(21);
+    expect(CASES.length).toBeGreaterThanOrEqual(22);
   });
 
   it("gives every case a distinct name, so a result identifies which behaviour it broke", () => {
