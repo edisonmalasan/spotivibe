@@ -213,4 +213,139 @@ export const CASES = [
     test: "tests/nowplaying-lyrics.test.tsx",
     why: 'Volume is named in the same scenario. `getAllByRole("slider").length >= 1` is satisfied by the progress slider alone, so the volume control could vanish without a single test failing.',
   },
+
+  // ---------------------------------------------------------------- M17 ---------
+  // Home discovery enrichment. Each case below breaks one of the properties the
+  // milestone's design decisions are load-bearing for, and names the test that must
+  // notice. The two easiest ones to fake coverage for are here on purpose: a mix
+  // card that quietly stops composing, and a Quick Pick whose target no longer
+  // resolves — either renders a perfectly plausible card.
+
+  {
+    // The band's whole effect is the terms it selects. With the mood word trailing
+    // instead of leading, a listener whose taste already fills the term bound trims
+    // the band's own word away and the band does nothing — while every case that
+    // only looks at a lightly-seeded listener still passes.
+    name: "the band's mood word is dropped instead of leading the seeds",
+    file: "src/features/home/timeBands.ts",
+    from: "  const terms: string[] = [mood];",
+    to: "  const terms: string[] = [];",
+    test: "tests/home-time-bands.test.ts",
+    why: "`seedTermsForBand` leads with the band's mood word precisely so the band always has an effect. Emptying the list first makes every band ask for the same terms, so 'the band influences only seed selection' quietly becomes 'the band influences nothing'.",
+  },
+  {
+    name: "a card activation composes nothing",
+    file: "src/features/home/mixes/MixCards.tsx",
+    from: "        onClick={() => {\n          onPlay(plan);\n        }}",
+    to: "        onClick={() => {\n          void plan;\n        }}",
+    test: "tests/home-mix-cards.test.tsx",
+    why: "A card whose button never calls the generator still renders a cover, a name, and a hover state, and still satisfies every assertion about the row being present. The composition path is the only thing that separates a card from a tile.",
+  },
+  {
+    name: "the mix feed is reached from beside the card, not through the generator",
+    file: "src/features/home/mixes/MixCards.tsx",
+    from: 'import { deriveMixCollage, type MixCollage } from "@/features/home/mixes/collage";',
+    to: 'import { fetchDiscoveryFeed } from "@/features/home/discoveryApi";\nimport { deriveMixCollage, type MixCollage } from "@/features/home/mixes/collage";\nvoid fetchDiscoveryFeed;',
+    test: "tests/home-mix-cards.test.tsx",
+    why: "A card-specific composer would have to reach the mix feed itself, because that is the only thing that builds a mix. Design decision 1 exists so there is exactly one composition path; naming the transport beside the cards is the second one, whatever it is called.",
+  },
+  {
+    name: "a card composes its mix while Home renders",
+    file: "src/features/home/mixes/MixCards.tsx",
+    from: "  const plans = useMemo(() => mixCardPlans({ profile, languages }), [profile, languages]);",
+    to: "  const plans = useMemo(() => { void generateMix({ profile, languages, now }); return mixCardPlans({ profile, languages }); }, [profile, languages, now]);",
+    test: "tests/home-mix-cards.test.tsx",
+    why: "'Cards are not composed on render' is the reason Home's request count does not grow with the number of cards. Six cards each firing a mix feed on mount is the exact regression the requirement names, and the row still looks identical afterwards.",
+  },
+  {
+    name: "a card name skips the honest-naming check",
+    file: "src/features/home/mixes/namedMixes.ts",
+    from: "  return isHonestMixName(name) ? name : NEUTRAL_MIX_NAME;",
+    to: "  return name;",
+    test: "tests/home-named-mixes.test.ts",
+    why: 'A leading term like "Topshelf" becomes "Topshelf mix", which claims a ranking the mix cannot support. Without the check the card renders a name its own seeds do not justify, and every case using an innocuous artist name still passes.',
+  },
+  {
+    name: "a filter presents a shelf it was not asked for",
+    file: "src/features/home/homeFilter.ts",
+    from: "  return filters.includes(filter);",
+    to: "  return true;",
+    test: "tests/home-filter.test.ts",
+    why: "The filter is a *selection* over one section model. A predicate that always answers true is not a filter, and the drift it hides is a shelf appearing under the wrong filter — invisible until a listener sees it.",
+  },
+  {
+    name: "an unrecognised filter presents nothing",
+    file: "src/features/home/homeFilter.ts",
+    from: "  if (!isHomeFilter(filter)) return true;",
+    to: "  if (!isHomeFilter(filter)) return false;",
+    test: "tests/home-filter.test.ts",
+    why: "The spec asks for an unrecognised value to present everything rather than nothing. Failing closed renders an empty Home because of a bad value, which is a worse failure than ignoring it — and no case that uses only real filter values can see it.",
+  },
+  {
+    name: "a Quick Pick with an unresolvable target is still derived",
+    file: "src/features/home/quickPicks.ts",
+    from: "  if (quickPickHref(pick) === null) return;",
+    to: "",
+    test: "tests/home-quick-picks.test.tsx",
+    why: "Design decision 5 exists so nothing in this shelf is a dead end. Without the resolvability gate an entry whose target resolves to nothing is still derived, and a shelf that looks like it recommends things it cannot deliver is worse than no shelf.",
+  },
+
+  // ------------------------------------------------------ M17: the time shelf's action --
+  // `ROADMAP.md` scopes the band to "a seed set and query construction only", so the
+  // time-aware shelf grew a play action that composes through the one shared
+  // generator. Each case below breaks one of the things that makes that honest, and
+  // all six are shapes a plausible refactor takes that no review catches: a memo
+  // that starts composing, an onClick that quietly stops calling through, a spread
+  // that flattens the band back onto the base profile, a convenience that rides a
+  // label along in the request, an attribute that never reaches the DOM, and a hover
+  // class nobody remembers is motion.
+
+  {
+    name: "the time shelf composes its mix while the page renders",
+    file: "src/features/home/TimeShelf.tsx",
+    from: "  const tracks = useMemo(\n    () => selectBandTracks(band, [...likedTracks, ...events.map((event) => event.track)]),\n    [band, events, likedTracks],\n  );",
+    to: "  const tracks = useMemo(() => {\n    void generateMix({ profile, languages, now });\n    return selectBandTracks(band, [...likedTracks, ...events.map((event) => event.track)]);\n  }, [band, events, languages, likedTracks, now, profile]);",
+    test: "tests/home-time-shelf.test.tsx",
+    why: "'Cards are not composed on render' is the reason Home's request count does not grow with its surfaces, and the time shelf inherited that rule when it gained its action. Composing inside a memo is the natural-looking place to put work that reads as 'obviously cheap', and the rendered shelf is identical afterwards — only the request log changes.",
+  },
+  {
+    name: "the time shelf's activation composes nothing",
+    file: "src/features/home/TimeShelf.tsx",
+    from: "          onClick={() => {\n            void play();\n          }}",
+    to: "          onClick={() => {\n            void TIME_SHELF_ACTION_LABEL;\n          }}",
+    test: "tests/home-time-shelf.test.tsx",
+    why: "A control that renders, is focusable, has an accessible name and a hover state, and then does nothing still satisfies every assertion that the shelf is present and interactive. Composition is the only thing that separates the action from a decorative button.",
+  },
+  {
+    name: "the band's seeds are dropped from the composed profile",
+    file: "src/features/home/timeBands.ts",
+    from: "{ ...base, seedTerms: seedTermsForBand(band, input).slice(0, MAX_BAND_QUERY_SEEDS) }",
+    to: "{ ...base, seedTerms: base.seedTerms }",
+    test: "tests/home-time-bands.test.ts",
+    why: "Spreading the base profile and *then* overwriting the seeds is a shape that reads like 'use the band's terms' — so flattening it back onto the base's own terms compiles, keeps every other field identical, and reduces the band to a label. The shelf still selects the right local tracks and still names the right band; only the composed query changes.",
+  },
+  {
+    name: "the band's label rides along in the request",
+    file: "src/features/home/TimeShelf.tsx",
+    from: "profile, languages, now: clock() }",
+    to: "profile: { ...profile, seedTerms: [...profile.seedTerms, TIME_BAND_LABELS[band]] }, languages, now: clock() }",
+    test: "tests/home-time-shelf.test.tsx",
+    why: "Appending the band's display name to the seed terms is the obvious 'helpful' shortcut: the provider now knows what the mix is for. It is also exactly what the `discovery` scenario forbids — a request that names a part of the day — and it puts a local-time fact on the wire permanently.",
+  },
+  {
+    name: "the band's data-band attribute never reaches the DOM",
+    file: "src/components/recommendations/Shelf.tsx",
+    from: "data-band={band}\n    ",
+    to: "",
+    test: "tests/home-time-shelf.test.tsx",
+    why: "This is the defect as it shipped: the attribute was passed, type-checked cleanly, and never rendered, because a hyphenated JSX attribute name is invisible to TypeScript and the primitive rendered a fixed set. Only a rendered assertion can see it, and once it is gone there is no evidence hook left for band verification at all.",
+  },
+  {
+    name: "the time shelf's action carries a motion utility",
+    file: "src/features/home/TimeShelf.tsx",
+    from: '          className="w-full justify-start"',
+    to: '          className="w-full justify-start transition-colors"',
+    test: "tests/home-m17-no-motion.test.ts",
+    why: "A hover transition on a new control is the piece of motion M19 is most likely to inherit, and it is invisible in review because one transition utility among a dozen classes reads as house style. Design decision 6 exists so M19 can standardise one vocabulary rather than four.",
+  },
 ];
