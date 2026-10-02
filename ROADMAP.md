@@ -133,15 +133,18 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | Milestone | Objective | Status | Depends on |
 |---|---|---|---|
 | **M16** | Lyrics and Now Playing enrichment | `DONE` | M9, M12 |
-| **M17** | Home discovery enrichment | `APPROVED` | M11, M8, M16 |
+| **M17** | Home discovery enrichment | `DONE` | M11, M8 |
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `APPROVED` | M5, M7, M9 |
-| **M19** | Motion and interaction polish | `APPROVED` | M16, M17, M18 |
+| **M19** | Motion and interaction polish | `APPROVED` | M18 |
 | **M20** | Personal-use media downloading | `APPROVED` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
 
 **Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external
 provider, a parser, a playback-position binding) and it proves the Now Playing surface can grow.
-M17 depends on M11's local Smart Mix system and reuses M16's motion vocabulary. M18 is three
+M17 depends on M11's local Smart Mix system and **introduces no motion of its own** — the M16 motion
+vocabulary it originally reused was later found not to exist (M16 shipped none), and M17's decision was
+to add none, so that M19 can establish one vocabulary deliberately rather than standardising several.
+M18 is three
 independent interaction features grouped because they share the "global input handling" problem
 and are individually small. M19 is last among features because it must be judged against surfaces
 that exist, and adding motion to a surface that is about to change is wasted work. M20 is
@@ -156,8 +159,9 @@ distinguishable panel states, and a duration-aware LRCLIB lookup cached without 
 Three things M16 established that the rest of the post-v1 work inherits:
 
 - **The induced-violation harness** (`frontend/scripts/lyrics-induced-violations.mjs`) and its guard
-  are now the repository's way of showing a check can fail. 22 cases, all caught. M17–M20 should add
-  cases for their own load-bearing behaviour rather than trusting a green suite.
+  are now the repository's way of showing a check can fail. **36 cases, all caught** (22 from M16, 8
+  from M17's first pass, 6 more once the time band's seed set was wired to a real query). M18–M20
+  should add cases for their own load-bearing behaviour rather than trusting a green suite.
 - **Five independent verification passes** on one change found ten CRITICALs, every one a claim that
   outran its evidence and none a behavioural defect — and four of them introduced by an earlier pass's
   own fix. A ticked task clause is a contract about what a test does, and reviewing those clauses is
@@ -213,6 +217,10 @@ The work after that was a **deliberate reversal of M4's visible-player decision*
 | `tests/podcast-playback-history.test.ts` flake | A pre-existing 2-second wall-clock budget standing in for synchronization; roughly 1 run in 3 under load. Found during the runtime correction, deliberately not fixed there. | `2026-10-01-align-vercel-runtime-and-root-commands` evidence README |
 | A flaky release gate | M15's end-to-end suite fails intermittently on a CDP race in its own fixture router, reproduced on the commit before the runtime correction. The gate's credibility rests on green meaning something. | Found during the runtime correction; not yet fixed |
 | **The release gate destroys `node_modules` when its install step fails** | Discovered by running it during M16. `gates-install` runs `npm ci`, which deletes `node_modules` *before* installing; when it aborts — e.g. `EPERM` on a native `.node` file held by a running production server — it leaves **19 top-level packages, no `node_modules/.bin`, and `next` without its `package.json`**. Every later gate item then fails in under a second for a reason that is not the code. This is a hazard to any developer's working tree, not only a red gate. | M16's evidence README, "The release gate could not be used as a comparison"; `node_modules` restored there with `npm ci` (445 packages, 0 vulnerabilities) |
+| **Repository-root `scripts/` is outside every quality gate** | Found during M17. CI runs with `working-directory: frontend`, so `scripts/sync-m16-lyrics.mjs` and `scripts/sync-m17-home.mjs` — the two guards that protect the *specs of record* from a silently lossy merge — are never linted, formatted, type-checked, or tested. The M16 script does not currently pass Prettier's check. Closing this means changing CI, which is repository governance and therefore out of scope for a feature milestone; until then each sync script must be run and its output recorded by hand. | M17's evidence README; `scripts/sync-m17-home.prove.mjs` exists precisely because the M16 guard was never shown failing |
+| `tests/settings-ui.test.tsx` flake | A pre-existing load-sensitivity flake, roughly 1 run in 7: the file's `waitFor` for the local-data connection to open exceeds its 5s `asyncUtilTimeout` when the suite is loaded. The file already sets that timeout, so raising it further would mask a genuine hang rather than fix anything. Observed independently during M17; whether M17's added tests made it more likely is **unproven**. | M17's evidence README, "Suite"; `2026-10-02-m17-home-discovery` archived `tasks.md` 8.2 |
+| **No browser verification of M17's Home** | Home was never opened at 1280×900 or 390×844, the filter was never switched by hand, and no card was ever pressed in a real browser. The time shelf's layout is reasoned from the existing `mb-8`/`gap-8` rhythm, not seen, and the hydration fix rests on `renderToStaticMarkup` plus `useSyncExternalStore` rather than on a console free of mismatch warnings. | M17's evidence README, "Not verified" |
+| **M17's "no motion" is about vocabulary, not the rendered DOM** | The time shelf's action reuses the design system's Ghost Text Button, which DESIGN.md defines *with* a `transition`, so the rendered control fades on hover — and `HomeFilterBar` in the same milestone already used `variant="ghost"`. This is reuse of a documented primitive, not a new vocabulary, but a reader who takes "M17 adds no motion" as a claim about the DOM will be wrong. The guard's documentation states the distinction explicitly. | M17's evidence README, "Scoped claims"; `frontend/tests/home-m17-no-motion.test.ts` |
 
 **Three of the above are prerequisites for post-v1 work and are scheduled inside it**: the flaky
 release gate is fixed in **M21** (post-v1 work must be gated by a gate that means something), the
@@ -1971,20 +1979,28 @@ states reachable and distinct. No regression to existing Now Playing tests.
 no cloud, no profile service, no new data models.
 
 **Depends on.** M11 (Smart Mixes: `generateMix`, `mixNaming`, `MixList`), M8 (Home: `HomeView`,
-`homeSections`, `localSeeds`, `useDiscoveryShelf`, `genreCatalog`), M16 (motion vocabulary).
+`homeSections`, `localSeeds`, `useDiscoveryShelf`, `genreCatalog`).
 
 **In scope.**
 
-- **Daily mix cards** built on the existing mix generator and naming: Top Mix, Discovery Mix,
-  Chill Mix, Night Mix, and language-aware mixes derived from `preferences.languages`. Each is a
+- **Daily mix cards** built on the existing mix generator and naming: the identities Top,
+  Discovery, Chill, Night, and language-aware mixes derived from `preferences.languages`. Each is a
   card that starts playback, not a new page. Multi-artwork collages where the mix has several
   tracks.
+  **Identity is not display name.** The identity may be `top`; the name it *shows* is its own leading
+  taste word, gated by `isHonestMixName`, falling back to a neutral local label. `isHonestMixName`
+  rejects `"top"` by construction — "top" is a ranking word — so a card may claim the taste it can
+  support and nothing more. The original wording here named the cards "Top Mix, Discovery Mix, …";
+  that is the identity list, not a promise of those literal strings, and it could not have been the
+  display list.
 - **Quick Picks**: a compact artist/content shelf derived from selected languages, the local
   listening profile, liked artists/tracks, and existing provider results. Every card leads to an
   existing artist, album, or search surface — no dead ends.
 - **Time-aware shelf**: morning / afternoon / evening / late night, where local time selects a
   **seed set and query construction only**. The listener's clock is the input; their history is
-  never sent anywhere.
+  never sent anywhere. The shelf selects local material *and* carries one action that composes a
+  mix from the band's seed set through the shared generator — on activation only, so Home's
+  render-time request count is unchanged.
 - **Home filters**: `All` / `Music` / `Podcasts`, selecting which shelves are presented. One data
   model, three presentations — explicitly **not** three duplicated models.
 
