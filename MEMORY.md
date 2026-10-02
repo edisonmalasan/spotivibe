@@ -519,3 +519,37 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     running server left 19 packages, no `.bin`, and a `next` without its `package.json`, after
     which all sixteen later items fail for a reason that is not the code. It also overwrites
     archived M15 evidence. Restored with a path-scoped `git checkout`. Scheduled for M21.
+38. **A name-preserving guard passes straight over a reworded body.** M17's own proposal delta kept
+    every scenario *name* while rewriting all fourteen existing scenario bodies and shortening both
+    requirement prose blocks, so the M16 sync guard — which compares names — approved it. Syncing it
+    would have deleted five requirements that passing tests enforce today: the discovery request's
+    bound against liked-track/playlist/history payloads, the shaped-like-the-cards placeholder
+    contract, the circular-section-within-the-first-four rhythm rule, the Smart Mixes rendering
+    contract, and the keyboard/focus/accessible-name clause. `openspec validate` cannot see this.
+    **Guard on scenario bodies and on requirement prose, not only on names** — a dropped constraint
+    inside a kept heading is invisible to any name comparison. The strongest proof is to run the new
+    guard against the *old* delta and require it to refuse.
+39. **TypeScript silently drops hyphenated JSX attribute names, so a dead data hook passes
+    `typecheck`.** `TimeShelf` passed `data-band` to `Shelf`, which declares only `data-testid` and
+    renders a fixed attribute set with no spread. The attribute never reached the DOM, nothing failed,
+    and the build artifact proved it. This is the same shape as M16's dead `text-body` utility: the
+    code *reads* as if the evidence exists. Assert the attribute in the DOM, not just that the prop
+    typechecks.
+40. **A statically prerendered page computes client-only values at BUILD time.** `/` is `○ (Static)`,
+    so `useState(() => clock())` ran once when the build was made — the shipped `index.html` carried
+    `<section aria-label="Afternoon">` to every visitor, who then hydrated against text that was not
+    theirs. Gate on `useSyncExternalStore` (server snapshot `false`) rather than a `mounted` flag set
+    by an effect; `react-hooks/set-state-in-effect` rejects the flag here anyway. Verify against the
+    real `.next/server/app/index.html`, at two different build times.
+41. **An untracked directory is ONE path to git, so a file list built from `git status` skips its
+    contents.** My constraint audit walked `git status --porcelain`, saw
+    `?? frontend/src/features/home/mixes/`, and never opened the three files inside — so it reported
+    "0 problems" partly on modules it had not read. Use `-uall`, or walk the filesystem.
+42. **A probe whose anchor does not exist proves nothing, and its FAIL looks like a finding.** Two
+    separate harnesses of mine reported `anchor not found` for strings that were not in the files, and
+    one of them I first read as "the guard failed". Also: a regex that consumes its own delimiter
+    makes the inner loop unreachable (my colour check re-matched `"…"` inside a group that had already
+    eaten the quotes, so it checked nothing). And a checker that walks the *record* and demands the
+    delta contain every requirement reports phantom problems on a correct delta. **Prove every
+    verification tool against a mutated copy, include a control that must still pass, and read a FAIL
+    as "my probe is wrong" before concluding the code is.**
