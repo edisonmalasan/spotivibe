@@ -132,7 +132,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 
 | Milestone | Objective | Status | Depends on |
 |---|---|---|---|
-| **M16** | Lyrics and Now Playing enrichment | `APPROVED` | M9, M12 |
+| **M16** | Lyrics and Now Playing enrichment | `DONE` | M9, M12 |
 | **M17** | Home discovery enrichment | `APPROVED` | M11, M8, M16 |
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `APPROVED` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `APPROVED` | M16, M17, M18 |
@@ -148,6 +148,27 @@ that exist, and adding motion to a surface that is about to change is wasted wor
 independent of M16–M19 and is placed after them because it is the only milestone carrying a
 deployment risk, and it should not be able to block the rest. M21 exists because the release gate
 is currently intermittently red and post-v1 work must not ship on a gate that lies.
+
+**M16 is `DONE` as of 2026-10-02** (proposal #78, apply #79, sync #80, archive this branch). Timed
+lyrics with active-line highlighting, auto-scroll that yields to a manual scroll, four
+distinguishable panel states, and a duration-aware LRCLIB lookup cached without a database.
+
+Three things M16 established that the rest of the post-v1 work inherits:
+
+- **The induced-violation harness** (`frontend/scripts/lyrics-induced-violations.mjs`) and its guard
+  are now the repository's way of showing a check can fail. 22 cases, all caught. M17–M20 should add
+  cases for their own load-bearing behaviour rather than trusting a green suite.
+- **Five independent verification passes** on one change found ten CRITICALs, every one a claim that
+  outran its evidence and none a behavioural defect — and four of them introduced by an earlier pass's
+  own fix. A ticked task clause is a contract about what a test does, and reviewing those clauses is
+  cheap relative to the alternative.
+- **The sync script** (`scripts/sync-m16-lyrics.mjs`) states the invariant a name-matched spec merge
+  must preserve, so no future sync can delete a scenario silently.
+
+**M16's two open items carry forward.** The active line's following is verified in jsdom but **not
+observed in a real browser** — the YouTube IFrame API is blocked by CSP in this environment — and the
+M16 release gate could not be used as a comparison, which is how the destructive-install finding below
+was found. Both are in M21's scope.
 
 The work that followed M15 was not a milestone. It was the one defect M15's own release
 process was built to find, found before the first deploy rather than during it:

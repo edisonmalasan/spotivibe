@@ -471,3 +471,51 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     Apply the rename explicitly, and make the retained-name check compare against the
     *expected* set so a rename does not read as a loss. A scenario name is a handle, not a
     label: `validate --strict` refused a delta that renamed one, and correctly so.
+
+## M16 highlights worth remembering
+
+30. **A MODIFIED block replaces the requirement, so a hand-applied spec merge can delete a
+    scenario and `validate --strict` will not notice.** A spec with fewer scenarios is still a
+    valid spec. M16's sync is a script (`scripts/sync-m16-lyrics.mjs`) that reads the requirement
+    and scenario **names** from both sides and refuses on a dropped scenario, a renamed
+    requirement, more than one modified requirement, or an ADDED block with no scenarios — then
+    re-reads what it wrote and checks again. The parked-player sync needed a hand edit plus a
+    post-hoc check for exactly this.
+31. **Five verification passes on one change; ten CRITICALs; not one was a behavioural
+    defect.** Every CRITICAL was a *claim that outran its evidence* — a ticked task clause naming
+    a check the suite did not perform, a test count no run could produce, an assertion pointed at
+    the wrong element. **Four were introduced by an earlier pass's own fix**: an artwork
+    assertion added one line below the volume assertion just fixed, repeating its mistake; a
+    `transition-colors` change made to satisfy a clause with no test able to catch its removal; a
+    "corrected" count that was the *previous commit's* number; and a stale docstring count fixed
+    and re-staled in the same commit. **Fixing a false claim is where a new one is introduced —
+    so re-review the fix, not just the finding.**
+32. **Separate containers are not different messages.** Task 4.1 claimed the "no lyrics" and
+    "couldn't load" states differed in *text* while the tests only compared *elements*; setting
+    the error copy to the unavailable string left all 2495 tests green. When a requirement is
+    about what a person reads, assert the words.
+33. **`npx.cmd` on Windows returns empty stdout and stderr to a piped parent.** A harness
+    inspecting a subprocess's output therefore sees nothing — which is how the induced-violation
+    harness reported "0 of 18 caught" on a suite where all 18 were caught. Invoke
+    `node node_modules/vitest/vitest.mjs` directly. Three more of its failures had the same
+    shape: the `dot` reporter prints no `FAIL <file>` line, and this vitest version ignores
+    `--outputFile` for the json reporter and writes `.vitest/json/output.json` instead.
+34. **`status !== "passed"` counts `pending`, `queued`, `skipped` and `todo` as failed.** An
+    interrupted or timed-out run was therefore reported as *coverage*. Use `=== "failed"`, and
+    treat "the file ran zero assertions" as its own outcome — otherwise a parse error in the
+    mutated file is reported as a dead test suite.
+35. **A decorative env override is worse than none.** The `SPOTIVIBE_REPO` redirect used to
+    prove the sync guard could refuse was applied to two of three paths, so every "refusal" run
+    read the real, unmutated file and reported success. When adding an override, make sure *every*
+    path goes through it, and include a control case that must still pass.
+36. **Cross-test contamination is still cross-test contamination.** The panel test read a
+    scroll-recorder shared across the file, and a scroll from an earlier test's component landed
+    in it after teardown — a flake I introduced while writing an elaborate warning about a
+    wall-clock flake elsewhere in this repository. Capture prototype/`window` originals at module
+    load (not per setup call, or a second setup saves the first stub as the "original"), and have
+    each assertion read only what its own action produced.
+37. **The release gate's install step destroys `node_modules` on failure.** `gates-install` runs
+    `npm ci`, which deletes the tree *before* installing; an `EPERM` on a native module held by a
+    running server left 19 packages, no `.bin`, and a `next` without its `package.json`, after
+    which all sixteen later items fail for a reason that is not the code. It also overwrites
+    archived M15 evidence. Restored with a path-scoped `git checkout`. Scheduled for M21.
