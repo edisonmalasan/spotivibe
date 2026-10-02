@@ -209,7 +209,7 @@ The work after that was a **deliberate reversal of M4's visible-player decision*
 
 | Item | Why it is not a milestone | Where it is recorded |
 |---|---|---|
-| The Vercel deployment itself | Needs account credentials this project does not have. External user-only input. | `frontend/docs/DEPLOYMENT.md`, including five post-deploy verification steps |
+| ~~The Vercel deployment itself~~ — **CLOSED 2026-10-02** | Deployed to `https://spotivibe-web.vercel.app` and verified: 8 automated checks green against the live origin (headers present through the CDN, `sw.js` updateable, manifest and its four icons valid, `/api/search` returning real provider results, rate limiting answering `429` with `Retry-After`, all eleven routes answering). The browser-only list — offline reload, live playback, the parked player, console errors, layout — is **still open** and was never claimed as passing. | `openspec/changes/archive/2026-10-02-first-production-deployment.md`; `frontend/docs/DEPLOYMENT.md` |
 | Whether a parked 1×1 iframe keeps advancing in a live browser | The IFrame API is blocked by CSP in this environment, so no browser run can confirm it. The largest open item in the parked-player change. | `2026-10-02-lyrix-style-hidden-player` evidence README, "Not verified" |
 | Reverting the parked player before any public deployment | The parked configuration is right for a personal instance and wrong for a public one. | `frontend/docs/DEPLOYMENT.md`; the `playback` spec's departure requirement |
 | Real multi-instance rate limiting | The limiter is per-instance in memory, so its effective ceiling multiplies by instance count on serverless. Never observed under load. | M15's archived `tasks.md`, "permanently unverified" |
