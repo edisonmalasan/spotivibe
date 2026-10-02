@@ -297,6 +297,69 @@ describe("the shared outbound limiter (spec security — bounded provider fan-ou
     expect(limiter.activeCount).toBe(0);
   });
 
+  it("releases the slot when the transport observes an abort after the grant", async () => {
+    // The abort *after* the slot is granted is the path that leaks capacity if `release()` is not in
+    // a `finally`. A leaked slot is a permanent loss for the whole process, and the existing
+    // mid-flight abort test runs against the shared 4-slot limiter, so a leak there is invisible.
+    const limiter = createSemaphore(1);
+    const controller = new AbortController();
+    const abort = new DOMException("aborted", "AbortError");
+
+    await expect(
+      resolveLyrics({
+        ...TRACK,
+        limiter,
+        signal: controller.signal,
+        fetchJson: asTransport(
+          vi.fn(async () => {
+            controller.abort();
+            throw abort;
+          }),
+        ),
+      }),
+    ).rejects.toBe(abort);
+
+    expect(limiter.activeCount, "an aborted request must not hold a slot").toBe(0);
+    expect(limiter.pendingCount).toBe(0);
+  });
+
+  it("grants nothing to a request that is aborted while queued", async () => {
+    // The second abort path: the limiter splices a queued waiter out and rejects it. Asserted against
+    // the observable counts, because "the promise rejected" alone is also true of a slot that was
+    // granted and then leaked.
+    const limiter = createSemaphore(1);
+    const held = await limiter.acquire();
+    const controller = new AbortController();
+
+    const pending = resolveLyrics({
+      ...TRACK,
+      videoId: "queued-then-abandoned",
+      limiter,
+      signal: controller.signal,
+      fetchJson: asTransport(
+        vi.fn(async () => {
+          throw new Error("the transport must not run for an abandoned waiter");
+        }),
+      ),
+    });
+
+    // It is queued; abandon it.
+    for (let flush = 0; flush < 5; flush += 1) await Promise.resolve();
+    expect(limiter.pendingCount).toBe(1);
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(/abort/i);
+    expect(limiter.pendingCount, "an abandoned waiter must be spliced out of the queue").toBe(0);
+
+    // The only active slot is the one this test deliberately holds, so the abandoned request granted
+    // nothing. Releasing the hold and then checking the count is what actually proves that: asserting
+    // `activeCount` to be 0 *before* releasing would have been asserting the opposite of what this
+    // test exists to show.
+    expect(limiter.activeCount, "the abandoned request must not hold a slot").toBe(1);
+    held();
+    expect(limiter.activeCount, "nothing may be left active once the hold is released").toBe(0);
+  });
+
   it("waits for a slot rather than exceeding the cap", async () => {
     // The cap is what bounds the fan-out, so exceeding it is the failure being prevented.
     //
@@ -494,21 +557,36 @@ describe("caching (spec lyrics — de-duplication and negative caching)", () => 
   });
 
   it("proves the TTL asymmetry behaviourally with an injected clock", async () => {
-    // Comparing the two constants only proves they are numbers. Moving a fake clock past the miss
-    // TTL but not the hit TTL proves the *caches* differ, which is what the requirement names.
+    // Comparing the two constants only proves they are numbers. Advancing a fake clock past the miss
+    // TTL but not past the hit TTL proves the *caches* differ, which is what the requirement names.
+    //
+    // Two tracks, one clock, one elapsed duration chosen to sit exactly between the two TTLs. A
+    // first draft advanced and then un-advanced the clock (`now -= X; now += X;`), which is a
+    // no-op: the hit was re-read at the instant it was written, so the test proved nothing about the
+    // hit cache at all.
     let now = 1_000;
     resetLyricsCaches(() => now);
     try {
+      // Seed a miss and a hit, both at t0.
       const missImpl = fetcher([]);
       await resolveLyrics({ ...TRACK, fetchJson: asTransport(missImpl) });
-      now += LYRICS_MISS_TTL_MS + 1;
+      const hitImpl = fetcher([timedCandidate]);
+      await resolveLyrics({ ...TRACK, videoId: "other", fetchJson: asTransport(hitImpl) });
+      expect(missImpl).toHaveBeenCalledTimes(1);
+      expect(hitImpl).toHaveBeenCalledTimes(1);
+
+      // Move to a point past the miss TTL and short of the hit TTL.
+      const elapsed = LYRICS_MISS_TTL_MS + 1;
+      expect(elapsed, "the chosen elapsed time must be shorter than the hit TTL").toBeLessThan(
+        LYRICS_HIT_TTL_MS,
+      );
+      now += elapsed;
+
+      // The miss expired and was re-queried...
       await resolveLyrics({ ...TRACK, fetchJson: asTransport(missImpl) });
       expect(missImpl, "the miss should have expired and been re-queried").toHaveBeenCalledTimes(2);
 
-      const hitImpl = fetcher([timedCandidate]);
-      await resolveLyrics({ ...TRACK, videoId: "other", fetchJson: asTransport(hitImpl) });
-      now -= LYRICS_MISS_TTL_MS + 1;
-      now += LYRICS_MISS_TTL_MS + 1;
+      // ...while the hit, at the same instant, is still cached.
       expect(
         (await resolveLyrics({ ...TRACK, videoId: "other", fetchJson: asTransport(hitImpl) })).kind,
       ).toBe("hit");

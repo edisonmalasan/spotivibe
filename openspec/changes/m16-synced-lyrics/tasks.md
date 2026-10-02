@@ -3,8 +3,8 @@
 ## 1. The parser and the active line, before any UI
 
 - [x] 1.1 Implement the LRC parser producing time-ordered non-empty lines, handling `[mm:ss]`, `[mm:ss.xx]`, `[mm:ss.xxx]`, ignoring metadata tags, sorting by time, and dropping empty timed lines — verify: unit tests over real LRC fixtures, including all three timestamp precisions, metadata tags, unparsable lines, and out-of-order source (spec: `lyrics` — "Timed lyrics are parsed into ordered lines" and its four siblings).
-- [x] 1.2 Implement `activeLineIndex(lines, positionSeconds)` as a pure binary search returning the last line at or before the position, or `-1` before the first — verify: tests at every boundary (exactly on a timestamp, between, before the first, beyond the last, duplicate timestamps, empty input), and a test asserting two identical calls give the same answer (spec: `lyrics` — "The active line is selected from playback position").
-- [x] 1.3 Prove both modules are pure and clock-free — verify: a test shows the answer is unchanged by elapsed wall-clock time, and that the two functions take only the lines and the position — so there is no input that can advance except the position. Stated as a **behavioural** check, not a source scan: a source scan for `Date.now` is the fragile detector this repository has been bitten by, and the check is only worth what it can actually detect. The reason it matters is that `podcast-playback-history` is a flake caused by a wall-clock budget standing in for synchronization, and repeating that here would repeat the defect.
+- [x] 1.2 Implement `activeLineIndex(lines, positionSeconds)` as a pure binary search returning the last line at or before the position, or `-1` before the first — verify: tests at every boundary — exactly on a timestamp, between timestamps, before the first, beyond the last, two lines sharing a timestamp (asserting **which** of the pair is chosen — the later one, since the selector returns the last line at or before the position — which pins the comparator direction), and empty input — plus a test that two identical calls separated by elapsed time give the same answer (spec: `lyrics` — "The active line is selected from playback position").
+- [x] 1.3 Prove the selector is pure and clock-free — verify: a test shows the answer is unchanged by elapsed wall-clock time. The second half of the claim — that the functions take only the lines and the position, so nothing but the position can advance — is a **type-signature** argument, not a test, and is stated here as reasoning rather than as verification. Stated as a **behavioural** check, not a source scan: a source scan for `Date.now` is the fragile detector this repository has been bitten by, and the check is only worth what it can actually detect. The reason it matters is that `podcast-playback-history` is a flake caused by a wall-clock budget standing in for synchronization, and repeating that here would repeat the defect.
 
 ## 2. The provider and its cache
 
@@ -29,19 +29,27 @@
 ## 5. Wiring into Now Playing
 
 - [x] 5.1 Host the panel in the Now Playing column, respecting the existing bottom padding, and never overlaying the player region — verify: layout assertions plus the existing Now Playing suites staying green (spec: `app-shell` — "Lyrics never displace or delay the rest of the surface").
-- [x] 5.2 Confirm artwork, title, transport, volume, queue, radio, video mode, and More Like This all remain operable in every lyrics state — verify: a test per state asserting the transport, queue, and volume controls are present **and enabled**, and that More Like This is still rendered. Presence alone is not enough: disabling the transport while lyrics load would pass a presence check, and that is a plausible thing to build, since “lyrics must not interfere with playback” invites a guard that is too broad (spec: `app-shell` — "Lyrics never displace or delay the rest of the surface").
+- [x] 5.2 Confirm artwork, title, transport, volume, queue, radio, video mode, and More Like This all remain operable in every lyrics state — verify: a test per state asserting the transport, previous, next, queue and **volume** controls are present **and enabled**, that the **artwork** is still rendered, and that More Like This is still rendered. Each is located by name: a `getAllByRole("slider").length >= 1` assertion is satisfied by the progress slider alone, so it cannot see the volume control go missing — which is exactly what the first fix of this clause got wrong. Presence alone is also not enough: disabling the transport while lyrics load would pass a presence check, and that is a plausible thing to build, since “lyrics must not interfere with playback” invites a guard that is too broad (spec: `app-shell` — "Lyrics never displace or delay the rest of the surface").
 
 ## 6. Verification
 
-- [x] 6.1 Run the six quality gates from the repository root under Node 24 — verify: each exits `0`, with the interpreter version recorded.
+- [x] 6.1 Run the quality gates from the repository root under Node 24 — verify: each exits `0`, with the interpreter version recorded.
 - [ ] 6.2 Run the release gate and confirm no existing item regressed — verify: the gate's pass/fail/not-run counts are recorded and compared against the pre-change baseline.
 - [ ] 6.3 State plainly what could not be verified here: the YouTube IFrame API is blocked by CSP in this environment, so **the position plumbing is verified but the following is not observed in a real browser** — verify: the claim is recorded as a limit in the change's evidence, not as a pass.
 
 <!--
-  Tick state, recorded 2026-10-02 on Node v24.21.0, revised after an independent verification pass
-  found four of these clauses overstated what the suite asserts. 17 of 19 ticked; each maps to a
-  named test in evidence/README.md's task-to-test table, and the 19 load-bearing ones were shown to
-  FAIL under an induced violation.
+  Tick state, recorded 2026-10-02 on Node v24.21.0. 17 of 19 ticked.
+
+  Two independent verification passes found seven of these clauses overstated what the suite asserts;
+  every one was corrected, and two real tests were added because of the first pass. Nothing here is
+  ticked on the strength of a green suite alone.
+
+  The relationship to the induced-violation evidence is deliberately NOT one-to-one, and stating it
+  accurately matters more than making it tidy: there are **17 ticked tasks and 18 induced cases**,
+  each case names a test *file* rather than an individual test, no case covers task 6.1, and two cases
+  (the taste-profile parameter, the retry-label collision) map to no ticked task. The table in
+  evidence/README.md is a task-to-file map. An earlier version of this comment claimed “19 load-bearing
+  ones”, a number that cannot refer to anything, and a 1:1 mapping the table did not support.
 
   The four clauses were corrected rather than the ticks being justified: 1.3, 2.4, 4.4 and 5.2 each
   named a verification the suite did not perform. Two real tests were added because of that (the

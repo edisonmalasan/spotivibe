@@ -86,28 +86,38 @@ function stallLyrics() {
 /**
  * Everything on the surface that must survive whatever the lyrics are doing.
  *
- * The transport button is matched by `/Play|Pause/` rather than by one name, because the control is
- * a toggle and the test arranges a *playing* track. Asserting the literal "Play" here would fail for
- * a reason that has nothing to do with lyrics, which is how a genuine regression gets dismissed as a
- * test bug.
+ * Called once per lyrics state, which is the point: a panel that pushed the transport off-screen, or
+ * that disabled it while its own request was in flight, would pass a presence-only check and fail
+ * this one. The second is plausible to build, since "lyrics must not interfere with playback" invites
+ * a guard that is too broad.
  *
- * **Enabled, not merely present.** A lyrics panel that rendered over the surface, or that disabled
- * the transport while its own request was in flight, would satisfy a presence-only assertion — and
- * the second is a plausible thing for someone to build, since "don't let lyrics interfere with
- * playback" invites a guard that is too broad.
+ * **Named, not positional.** The first version asserted `getAllByRole("slider").length >= 1`, with a
+ * comment explaining that progress and volume are both sliders. That is satisfied by `ProgressSlider`
+ * alone, so deleting `VolumeControls` from the page would have left every state green while the task
+ * claimed volume was verified. Each control is now located by name and asserted enabled.
  */
 function expectSurfaceIntact() {
   expect(screen.getByRole("heading", { level: 1, name: "Now Playing" })).toBeInTheDocument();
   expect(screen.getByTestId("now-playing-title")).toBeInTheDocument();
+
+  // The transport is a toggle, and the test arranges a playing track, so the label is matched by
+  // pattern rather than pinned to "Play".
   const transport = screen.getByRole("button", { name: /^(Play|Pause)$/ });
   expect(transport).toBeInTheDocument();
   expect(transport).toBeEnabled();
   for (const name of ["Previous track", "Next track", "Queue"]) {
     expect(screen.getByRole("button", { name })).toBeEnabled();
   }
-  // Progress and volume are both sliders; asserting one exists rather than which, because their
-  // order is not a promise this milestone makes.
-  expect(screen.getAllByRole("slider").length).toBeGreaterThanOrEqual(1);
+
+  // Volume, by name. `getByLabelText("Volume")` is what the pre-existing Now Playing suite uses, so
+  // the two agree on which element this is rather than each guessing.
+  const volume = screen.getByLabelText("Volume");
+  expect(volume).toBeInTheDocument();
+  expect(volume).toBeEnabled();
+
+  // The artwork, which the `app-shell` scenario names first among the things that must survive.
+  expect(screen.getByTestId("now-playing-background")).toBeInTheDocument();
+
   expect(screen.getByRole("link", { name: "Close Now Playing" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { level: 2, name: "More Like This" })).toBeInTheDocument();
 }

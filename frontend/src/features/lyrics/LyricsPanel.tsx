@@ -9,6 +9,23 @@ import { scrollBehaviorFor, usePrefersReducedMotion } from "@/hooks/usePrefersRe
 import { useLyricsForTrack } from "./useLyricsPanel";
 
 /**
+ * One size, one colour pair, for every line of text in this panel.
+ *
+ * `text-body-lg` (14px) rather than `text-body`: the declared type scale in `styles/tokens.css` is
+ * `caption | label | body-lg | link | heading`, and **`text-body` emits no rule at all** — the
+ * undeclared token makes the utility invalid, so it silently fell back to the inherited 14px. The
+ * repo has 56 uses of `text-body` across 22 *pre-existing* files, so this panel deliberately matches
+ * the convention rather than diverging from it; the dead utility itself is a separate, repo-wide
+ * finding and is recorded as one rather than fixed piecemeal here.
+ *
+ * Only `pure-white`, `mist` and `spotify-green` are declared *text* tokens, and
+ * `tests/token-contrast.test.ts` enforces that. The first attempt used `text-fog` and `text-steel`,
+ * which look right and are violations.
+ */
+const LINE_CLASSES = "text-body-lg text-mist";
+const ACTIVE_LINE_CLASSES = "text-body-lg font-semibold text-pure-white";
+
+/**
  * The Now Playing lyrics panel (ROADMAP M16, spec `lyrics`).
  *
  * A sibling in the existing Now Playing column — not an overlay, and not a tab. A tab was
@@ -109,7 +126,7 @@ function LyricsForTrack({ track }: { track: Track }) {
       {state.kind === "loading" ? <LoadingState /> : null}
 
       {state.kind === "unavailable" ? (
-        <p data-testid="lyrics-unavailable" className="px-1 py-2 text-body text-mist">
+        <p data-testid="lyrics-unavailable" className="px-1 py-2 text-body-lg text-mist">
           No lyrics available for this track.
         </p>
       ) : null}
@@ -132,7 +149,7 @@ function LyricsForTrack({ track }: { track: Track }) {
       {state.kind === "plain" ? (
         <div
           data-testid="lyrics-plain"
-          className="max-h-64 overflow-y-auto whitespace-pre-wrap px-1 py-2 text-body leading-7 text-mist"
+          className="max-h-64 overflow-y-auto whitespace-pre-wrap px-1 py-2 text-body-lg leading-7 text-mist"
         >
           {state.text}
         </div>
@@ -160,15 +177,13 @@ function LyricsForTrack({ track }: { track: Track }) {
                     data-testid="lyrics-line"
                     data-active={isActive}
                     aria-current={isActive ? "true" : undefined}
-                    // Only `pure-white`, `mist` and `spotify-green` are declared *text* tokens, and
-                    // `tests/token-contrast.test.ts` enforces it. `text-neutral-500` looked right and
-                    // was wrong twice over: `neutral-*` is neither a theme token nor a Tailwind default
-                    // here, so it compiled to nothing and the styling came from inheritance.
-                    className={
-                      isActive
-                        ? "text-heading font-semibold text-pure-white"
-                        : "text-body text-mist transition-colors"
-                    }
+                    // `transition-colors` is on **both** branches, not just the inactive one. A
+                    // transition class added in the same commit as the colour change — which is what
+                    // having it only on the inactive branch meant — generates no transition at all,
+                    // because the element never carries the property before the change. The global
+                    // `prefers-reduced-motion` rule is what neutralises this, and task 4.4's clause
+                    // claims that rule matters; that claim is only true while the transition exists.
+                    className={`${isActive ? ACTIVE_LINE_CLASSES : LINE_CLASSES} transition-colors`}
                   >
                     {line.text}
                   </li>
@@ -182,9 +197,9 @@ function LyricsForTrack({ track }: { track: Track }) {
               onClick={resumeFollowing}
               data-testid="lyrics-back-to-live"
               // `text-caption`, not `text-body-xs`: the declared type scale is
-              // `text-caption | text-body | text-body-lg | text-label | text-title-lg | text-h1`, and
-              // `text-body-xs` compiles to nothing. `tests/token-contrast.test.ts` caught it —
-              // which is the detector doing exactly the job it was built for.
+              // `caption | label | body-lg | link | heading`, and `text-body-xs` emits no rule.
+              // `tests/token-contrast.test.ts` caught it — the detector doing exactly the job it was
+              // built for.
               className="self-start rounded-full bg-graphite px-3 py-1 text-caption font-semibold text-pure-white transition-colors hover:bg-smoke"
             >
               Back to live

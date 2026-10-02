@@ -20,8 +20,9 @@ import { CASES } from "../scripts/lyrics-induced-violations.cases.mjs";
  * in `scripts/lyrics-induced-violations.cases.mjs` — imported here rather than parsed out of the
  * harness's source, because the first version of this guard did exactly that with a regex, matched 4
  * of the 11 cases, and reported "4 of 11" instead of reporting that its own parser was broken. What
- * it must still guarantee is that every anchor resolves, because an unresolved anchor makes a case
- * skip, and a skipped case is counted as neither a pass nor a failure unless someone checks.
+ * it must still guarantee is that every anchor resolves — an unresolved anchor makes a case *skip*,
+ * and the harness now reports a skip as a failure with its own exit-code contribution, because a skip
+ * that is counted as neither a pass nor a failure is how a harness starts lying quietly.
  *
  * **This harness has already earned its keep twice.** It reported 18/18 while its classifier was
  * reading the `dot` reporter's output, which contains no `FAIL <file>` line at all; and it reported
@@ -65,7 +66,9 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
   });
 
   it("resolves every anchor, so no case can silently skip", () => {
-    // The one condition the harness cannot check about itself.
+    // The one condition the harness cannot check about itself. An unresolved anchor means the case
+    // breaks nothing, so it can never be caught — and a case that cannot be caught must not be
+    // counted as one that was.
     for (const entry of CASES) {
       const source = readFileSync(join(frontend, entry.file), "utf8");
       expect(
@@ -73,6 +76,15 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
         `${entry.name}: anchor not found in ${entry.file}. The harness would skip this case.`,
       ).toBe(true);
     }
+  });
+
+  it("reports an unresolved anchor as a failure, not a skip", () => {
+    const harness = readFileSync(
+      join(frontend, "scripts", "lyrics-induced-violations.mjs"),
+      "utf8",
+    );
+    expect(harness).toContain('"ANCHOR NOT FOUND"');
+    expect(harness).toContain("skipped.length === 0");
   });
 
   it("changes the source for every case, so no case is a no-op", () => {
@@ -115,14 +127,6 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
     expect(squeezed).toContain(
       "process.exit(escaped.length === 0 && skipped.length === 0 && broken.length === 0 ? 0 : 1);",
     );
-  });
-
-  it("treats an unresolved anchor as a failure rather than a skip", () => {
-    const harness = readFileSync(
-      join(frontend, "scripts", "lyrics-induced-violations.mjs"),
-      "utf8",
-    );
-    expect(harness).toContain('"ANCHOR NOT FOUND"');
   });
 
   it("distinguishes a failing test from a broken runner", () => {
@@ -182,15 +186,16 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
    * The one behavioural check, and the reason the string assertions above are not the whole story.
    *
    * Those read the harness's source, which is the pattern this file's own header calls fragile. This
-   * instead *runs* the classifier's decision rule over a synthetic report: a suite that ran and passed
-   * everything must be reported as "not caught", because no assertion failed. A no-op violation is the
-   * cheapest way to make the harness's central judgement falsifiable, and it is the judgement
-   * everything else rests on.
+   * instead *runs* the classifier's decision rule — including the file-scoping step, which is what
+   * stops a failure in some *other* test file counting as coverage.
+   *
+   * A previous version of this check omitted the scoping step, so it pinned a different rule from the
+   * one the harness actually runs, and it had already drifted on the status comparison. That is the
+   * risk of keeping a copy, and the copy exists here only to make the central judgement falsifiable —
+   * not to be the implementation.
    */
-  it("reports a violation that breaks nothing as escaped, not caught", () => {
-    // The classifier's rule, reproduced rather than restated — the point is to pin the *decision*,
-    // and a copy of the rule in the harness would be a second implementation to keep in step.
-    const classify = (report: string): string => {
+  it("classifies a run the way the harness does, including scoping and interrupted runs", () => {
+    const classify = (report: string, testFile: string): string => {
       let failedAssertions = 0;
       let ranAssertions = 0;
       let sawReport = false;
@@ -198,9 +203,11 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
         const parsed = JSON.parse(report);
         sawReport = true;
         for (const result of parsed.testResults ?? []) {
+          const reported = (result.name ?? "").replace(/\\/g, "/");
+          if (!reported.endsWith(testFile.replace(/\\/g, "/"))) continue;
           for (const assertion of result.assertionResults ?? []) {
             ranAssertions += 1;
-            if (assertion.status !== "passed") failedAssertions += 1;
+            if (assertion.status === "failed") failedAssertions += 1;
           }
         }
       } catch {
@@ -210,30 +217,44 @@ describe("the M16 induced-violation harness (spec lyrics)", () => {
       return failedAssertions > 0 ? "caught" : "NOT CAUGHT";
     };
 
-    // A suite that ran and passed: nothing was caught.
-    expect(
-      classify(
-        JSON.stringify({
-          testResults: [{ name: "/x/tests/a.test.ts", assertionResults: [{ status: "passed" }] }],
-        }),
-      ),
-    ).toBe("NOT CAUGHT");
+    const suite = (name: string, statuses: string[]) =>
+      JSON.stringify({
+        testResults: [
+          { name: "/x/" + name, assertionResults: statuses.map((status) => ({ status })) },
+        ],
+      });
 
-    // A suite that ran and failed: caught.
-    expect(
-      classify(
-        JSON.stringify({
-          testResults: [{ name: "/x/tests/a.test.ts", assertionResults: [{ status: "failed" }] }],
-        }),
-      ),
-    ).toBe("caught");
+    // A suite that ran and passed: nothing was caught.
+    expect(classify(suite("tests/a.test.ts", ["passed", "passed"]), "tests/a.test.ts")).toBe(
+      "NOT CAUGHT",
+    );
+
+    // A suite that ran and genuinely failed: caught.
+    expect(classify(suite("tests/a.test.ts", ["passed", "failed"]), "tests/a.test.ts")).toBe(
+      "caught",
+    );
 
     // A suite that never ran: the runner broke, which is not an escape.
-    expect(classify(JSON.stringify({ testResults: [{ name: "/x/tests/a.test.ts" }] }))).toBe(
+    expect(classify(suite("tests/a.test.ts", []), "tests/a.test.ts")).toBe("RUNNER BROKE");
+
+    // No report at all: also a broken runner.
+    expect(classify("not json", "tests/a.test.ts")).toBe("RUNNER BROKE");
+
+    // **Scoping.** A failure in a *different* file must not count as coverage for this one. Without
+    // the scoping step this returns "caught" for a case whose named test never ran.
+    expect(classify(suite("tests/other.test.ts", ["failed"]), "tests/a.test.ts")).toBe(
       "RUNNER BROKE",
     );
 
-    // No report at all: also a broken runner.
-    expect(classify("not json")).toBe("RUNNER BROKE");
+    // An interrupted or timed-out run leaves "pending"/"queued", not "failed", and must not be
+    // counted as caught.
+    expect(classify(suite("tests/a.test.ts", ["pending", "queued"]), "tests/a.test.ts")).toBe(
+      "NOT CAUGHT",
+    );
+
+    // A skipped test is not a failure either.
+    expect(classify(suite("tests/a.test.ts", ["passed", "skipped"]), "tests/a.test.ts")).toBe(
+      "NOT CAUGHT",
+    );
   });
 });

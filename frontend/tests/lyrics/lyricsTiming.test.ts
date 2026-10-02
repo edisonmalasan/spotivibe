@@ -20,6 +20,9 @@ const REAL_LRC = [
 
 const at = (time: number, text: string): LyricLine => ({ time, text });
 
+/** The text of each line, for asserting *which* line a selector chose. */
+const textOf = (parsed: readonly LyricLine[]): string[] => parsed.map((line) => line.text);
+
 describe("parseLrc (spec lyrics — Timed lyrics are parsed into ordered lines)", () => {
   it("parses all three timestamp precisions to the right seconds", () => {
     // The precision rule is the whole reason a fraction is captured rather than coerced: a naive
@@ -139,6 +142,22 @@ describe("activeLineIndex (spec lyrics — The active line is selected from play
 
   it("has no active line for an empty list", () => {
     expect(activeLineIndex([], 10)).toBe(-1);
+  });
+
+  it("activates the later of two lines that share a timestamp", () => {
+    // The boundary `design.md` names explicitly, and the semantics are "the last line at or before the
+    // position", so for two lines at the same time the *second* wins. A first draft of this test
+    // asserted the opposite — the earlier one — and was wrong: the implementation returns the last
+    // index whose time is `<= position`, which is also the behaviour a listener expects when two
+    // lines share a start time, since the later line is the one being sung.
+    //
+    // Asserting the specific index (not merely "one of them") is what pins the comparator direction.
+    const duplicates = [at(10, "first"), at(10, "second"), at(20, "third")];
+    expect(activeLineIndex(duplicates, 10)).toBe(1);
+    expect(textOf(duplicates)[activeLineIndex(duplicates, 10)]).toBe("second");
+
+    // And just below the shared time, neither duplicate has started.
+    expect(activeLineIndex(duplicates, 9.9)).toBe(-1);
   });
 
   it("activates the first line at its own timestamp", () => {

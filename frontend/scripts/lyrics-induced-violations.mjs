@@ -88,7 +88,13 @@ for (const testCase of CASES) {
         if (!reported.endsWith(testCase.test.replace(/\\/g, "/"))) continue;
         for (const assertion of result.assertionResults ?? []) {
           ranAssertions += 1;
-          if (assertion.status !== "passed") failedAssertions += 1;
+          // `=== "failed"`, not `!== "passed"`. vitest's status set is
+          // { pass, fail, only, run, skip, todo, queued } and everything except `pass` and `skip`
+          // maps onto a non-"passed" label: an **interrupted or timed-out** run leaves tests as
+          // `pending`/`queued`, so `!== "passed"` counted a run that never executed as a caught
+          // violation. The looser comparison failed toward "your tests are broken", which is the
+          // direction that deletes a correct suite.
+          if (assertion.status === "failed") failedAssertions += 1;
         }
       }
     } catch {

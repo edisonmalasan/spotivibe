@@ -9,18 +9,19 @@ implied by a green check elsewhere.
 
 | Check | Command | Result |
 |---|---|---|
+| Install | `npm run setup` (`cd frontend && npm ci`) | exit `0` — 445 packages, 446 audited, 0 vulnerabilities |
 | Lint | `npm run lint` (root → `frontend`) | exit `0` |
 | Format | `npm run format:check` | exit `0` |
 | Types | `npm run typecheck` (`next typegen && tsc --noEmit`) | exit `0` |
 | Tests | `npm test` (`vitest run`) | exit `0` |
 | Build | `npm run build` | exit `0` |
-| Tests, repeated | `npx vitest run` ×4 | **2491 passed, 0 failed** each run |
+| Tests, repeated | `npx vitest run` ×4 | **2493 passed, 0 failed** each run |
 | Induced violations | `node scripts/lyrics-induced-violations.mjs` (from `frontend/`) | **18/18 caught**, exit `0` |
 | Change validation | `openspec validate m16-synced-lyrics --strict` | valid |
 | Spec validation | `openspec validate --specs --strict` | 20 passed, 0 failed |
 | **Release gate** | M15's archived `evidence/release-gate.mjs` | **exit `1`, and not usable as a comparison — see below.** |
 
-**Full suite: 2491 tests** (2356 before this change, so +135).
+**Full suite: 2494 tests** (2356 before this change, so +138).
 
 ### What the counts do and do not prove
 
@@ -32,87 +33,109 @@ The suite was run four times rather than once because a single green run is not 
 *intermittent* defect, which is the whole lesson of the known `podcast-playback-history` flake. Four
 consecutive clean runs is a sample, not a proof, and is labelled as such.
 
-## The independent verification pass
+## The two verification passes
 
-An independent read-only verification agent reviewed this change against the artifacts and returned
-**`NOT MERGEABLE`**: 3 CRITICALs, 6 WARNINGs, 9 NITs. All three CRITICALs were real and all were
-fixed. It also confirmed several things were clean, and those confirmations are as load-bearing as
-the findings:
+Two independent read-only verification agents reviewed this change. The first returned
+**`NOT MERGEABLE`** (3 CRITICALs, 6 WARNINGs, 9 NITs); the second, reviewing the fixes, returned
+**`NOT MERGEABLE`** again (2 CRITICALs, 6 WARNINGs, 7 NITs). Every CRITICAL in both passes was real.
+That the *fixes* were the thing that failed the second time is the most useful fact here, and it is
+why this section exists at all.
 
-- **Spec preservation: clean.** The `app-shell` MODIFIED block was compared programmatically against
-  the existing spec — 12 scenarios in, 13 out, **zero dropped**, and every preserved WHEN/THEN body
-  byte-identical. Nothing was silently weakened.
-- **Local-first boundary: clean.** Nothing sends taste, history, likes or playlists. `/api/lyrics`
-  reads only `videoId`/`title`/`artist`/`channel`/`duration` and forwards only `track_name`/
-  `artist_name` to the provider. No store, no schema change, no persisted state, no profile.
-- **Untouched areas: clean.** `openspec/specs/` and `openspec/changes/archive/` are untouched, and
-  the two `ROADMAP.md` hunks are confined to the post-v1 open-items table and §21.6. No M0–M15
-  milestone record was altered.
+### What both passes confirmed clean
 
-### C1 — four ticked tasks named verifications the suite did not perform
+- **Spec preservation.** Compared programmatically: 12 scenarios in, 13 out, **zero dropped**, every
+  preserved WHEN/THEN body byte-identical, one added ("Lyrics never displace or delay the rest of
+  the surface"). Nothing was silently weakened.
+- **Local-first boundary.** Nothing sends taste, history, likes or playlists. `/api/lyrics` reads only
+  `videoId`/`title`/`artist`/`channel`/`duration` and forwards only `track_name`/`artist_name`. No
+  store, no schema change, no persisted state, no new dependency. `LrcLibCandidate` is confined to
+  the service; the panel sees two strings.
+- **Untouched areas.** No changes under `openspec/specs/` or `openspec/changes/archive/`, and no
+  M0–M15 milestone record in `ROADMAP.md` altered.
+- **The limiter fix is not testing a double.** The test injects the *real* `createSemaphore` and reads
+  `activeCount` from inside the transport, so it observes production behaviour; and induced case 15
+  proves it fails when production stops acquiring.
+- **The harness's honesty**, verified by running it (18/18, exit 0, tree left clean), and the guard's
+  anchor, distinct-anchor and non-empty-`to` assertions.
 
-Fixed by **correcting the clauses and adding the two missing tests**, not by justifying the ticks.
+### Pass 1 — CRITICALs
 
-| Task | Claimed | Actually | Fix |
-|---|---|---|---|
-| 1.3 | a test asserts no clock is read | a behavioural proxy (same answer after 5 ms) | clause reworded to state the check is behavioural and why a source scan is the wrong instrument |
-| 2.4 | tests for timeout and non-OK response | a *pre-built* timeout error was classified; no non-OK test | **two tests added** — `timeoutMs` is asserted on the value handed to the transport, and a non-OK response is asserted to be `unreachable` |
-| 4.4 | scroll behaviour **and** transition | only the scroll | clause reworded to the actual split, **plus a test** asserting the global `prefers-reduced-motion` block in `globals.css` still collapses transitions — the line transition is CSS, so the stylesheet is part of the requirement |
-| 5.2 | controls present **and enabled** | presence only | `toBeEnabled()` added for transport, previous, next and queue |
+**C1 — four ticked tasks named verifications the suite did not perform.** Task 1.3 claimed a test
+asserts no clock is read when it is a behavioural proxy; 2.4 claimed timeout and non-OK tests that did
+not exist; 4.4 claimed the transition was asserted when only the scroll was; 5.2 claimed "present and
+enabled" when it asserted presence only. A fifth claim — that each tick maps to a test named in this
+README — was simply false, because there was no such mapping.
 
-A fifth claim — that each tick maps to a test "named in evidence/README.md" — was simply false: the
-README had no such mapping. The table below is that mapping.
+Fixed by **correcting the clauses and adding the two missing tests**: `timeoutMs` is now asserted on
+the value handed to the transport, a non-OK response is asserted to be `unreachable` rather than
+`unavailable`, the global `prefers-reduced-motion` block in `globals.css` is asserted by name (the
+line transition is CSS, so the stylesheet is part of the requirement), and the transport controls are
+asserted enabled. The mapping table below is that map.
 
-### C2 — the panel shipped two CSS utilities that do not exist
+**C2 — two dead CSS utilities shipped.** `bg-base-surface` and `text-base-content` are neither theme
+tokens nor valid utilities, so they emitted no rule: the "Back to live" button had no background and
+the active line's colour came from inheritance. Fixed to real tokens — and the repository's own
+`token-contrast.test.ts` then **rejected the replacements**, because only `pure-white`, `mist` and
+`spotify-green` are declared text tokens and `text-body-xs` is not in the type scale at all. The
+clearest argument in the change for not trusting a review: the reviewer suggested colours, and the
+detector still rejected them.
 
-`bg-base-surface` and `text-base-content` are neither theme tokens nor Tailwind defaults, so they
-compiled to nothing: the "Back to live" button had no background and the active line's colour class
-was dead, with the styling coming from inheritance.
+**C3 — the provider bypassed the shared outbound limiter while two artifacts claimed otherwise.**
+`design.md` and the service header both said this milestone inherits M3's limiter "through
+`fetchJson`". `fetchJson` has a timeout and no limiter; `outboundLimiter` was acquired only by
+`chain.ts`, so `/api/lyrics` was the one provider call in the application with no outbound ceiling —
+and the inbound guard cannot substitute, since `throttle.ts` itself records that a caller rotating
+`x-forwarded-for` gets a fresh budget each time. Fixed by acquiring and releasing the same semaphore,
+with tests for hold-and-release, release-on-failure, waiting when the cap is exhausted, and both abort
+paths.
 
-Fixed to real tokens. **The repository's own `token-contrast.test.ts` then caught the first
-replacement**: only `pure-white`, `mist` and `spotify-green` are declared *text* tokens, so the
-`text-fog`/`text-steel` I had reached for were themselves violations, and `text-body-xs` was not in
-the declared type scale at all. The final values are `text-mist`, `text-pure-white`, and
-`text-caption`. Every colour and size used was cross-checked against other `src` usage.
+### Pass 2 — CRITICALs, both about claims rather than behaviour
 
-This is the clearest argument in the change for not trusting a review: the reviewer suggested
-colours, and the repository's detector still rejected the suggestion.
+**C1 — task 5.2 named volume, and volume was not verified in any lyrics state.** `expectSurfaceIntact`
+asserted `getAllByRole("slider").length >= 1` with a comment explaining that progress and volume are
+both sliders. That is satisfied by `ProgressSlider` alone: deleting `VolumeControls` would have left
+all four state tests green. Volume is now located by name (`getByLabelText("Volume")`, matching the
+pre-existing Now Playing suite) and asserted enabled, the **artwork** the `app-shell` scenario names
+first is asserted, and each control is named rather than counted.
 
-### C3 — the lyrics provider bypassed the shared outbound limiter, and two artifacts claimed otherwise
+**C2 — the tick-state comment was still false, in an arithmetically impossible form.** It claimed "the
+19 load-bearing ones were shown to FAIL" when there are 17 ticked tasks and 18 induced cases — 19
+cannot refer to anything — and it claimed a task-to-test mapping the table did not support (the table
+maps tasks to test *files*, no case covers task 6.1, and two cases map to no ticked task). The C1
+pattern, restated. Replaced with the actual relationship, which is deliberately not one-to-one.
 
-`design.md` and the service's own header both stated that this milestone "inherits both" M3's shared
-limiter and per-attempt timeout "through `fetchJson`". `fetchJson` has a timeout and **no limiter**;
-`outboundLimiter` was acquired only by `chain.ts`, so `/api/lyrics` was the one provider call in the
-application with no outbound concurrency ceiling. The inbound guard cannot substitute —
-`throttle.ts` itself records that a caller rotating `x-forwarded-for` gets a fresh budget each time.
+### Warnings fixed in pass 2
 
-Fixed by acquiring and releasing `outboundLimiter` around the request, exactly as the chain does,
-with an injectable semaphore for tests. Three tests cover it: a slot is held *during* the request and
-released after, a failure releases it, and an exhausted limiter makes the request **wait** rather
-than exceed the cap.
+- **The harness counted `pending`/`skipped`/`todo` as failed.** vitest's status set is
+  `{ pass, fail, only, run, skip, todo, queued }`, so `!== "passed"` meant an **interrupted or
+  timed-out** run left tests as `pending` and was reported as a caught violation. Now `=== "failed"`.
+- **The guard's behavioural check pinned a different rule than the harness runs** — it omitted the
+  file-scoping step and had already drifted on the status comparison. It now mirrors the harness,
+  including scoping, and has cases for a failure in a *different* file and for an interrupted run.
+- **`text-body` is a dead size utility.** The declared scale is `caption | label | body-lg | link |
+  heading`; `text-body` emits no rule. The panel now uses `text-body-lg`. **The repo has 56 uses
+  across 22 pre-existing files**, so this is a wider finding that is recorded rather than fixed
+  piecemeal; the earlier claim that "every colour and size used was cross-checked" was a *consistency*
+  claim presented as a *validity* one.
+- **The `transition-colors` class was on only the inactive branch**, so the colour change and the
+  transition were applied in the same commit and no transition was generated. Task 4.4's clause claims
+  the global reduced-motion rule neutralises a transition that did not exist. The class is now on both
+  branches, so the claim is true.
+- **The TTL asymmetry test's clock did not move** — it advanced then un-advanced by the same amount, a
+  no-op, so the hit was re-read at the instant it was written. Rewritten as two tracks seeded at `t0`
+  and one elapsed duration chosen to sit between the two TTLs, with an assertion that the duration is
+  in fact shorter than the hit TTL.
+- **Two limiter exit paths were unasserted**: an abort *after* the grant and an abort *while queued*.
+  Both are now asserted against observable counts, because a leaked slot is a permanent loss for the
+  process and the existing mid-flight test runs against the shared 4-slot limiter where a leak is
+  invisible.
 
-### Warnings fixed
+### A test I wrote, and got wrong
 
-- **W1 — the bounded-height claim was false.** The wrapper had no height, so an eighty-line track
-  pushed More Like This off screen. The wrapper is now `max-h-[40vh]`, with a test. The overlay
-  assertion was also reading the *inner* element's className while positioning comes from the
-  wrapper — so a `fixed` wrapper in `page.tsx` would have passed it. It now checks the wrapper, and
-  the induced case breaks the wrapper.
-- **W2 — two spec scenarios had no end-to-end coverage.** "Timed beats untimed" and "closest duration
-  wins" were asserted only against `scoreCandidate`, leaving the resolution step itself (map, filter,
-  sort, take first) unpinned: reversing the comparator would have left everything green. Four tests
-  now drive `resolveLyrics` with **two candidates, wrong-answer-first**.
-- **W3 — the harness could not tell "the test failed" from "the runner broke".** A non-zero exit was
-  recorded as "caught". See the harness section below for what that cost.
-- **W5 — the count was a single run.** Now four.
-- **W6 — the file list omitted `ROADMAP.md` and `tasks.md`.** Both are now listed.
-
-### Nits fixed
-
-Unused `resolve` import (the repository's only lint warning); a tautological ternary in
-`parseLyricsPayload`; a comment claiming an `[offset:]` tag "is reported rather than silently
-applied" when the code silently drops it (reworded to state the limit honestly); `.cjs` filenames in
-the guard's docstring; and a `ROADMAP.md` cell that read as if the release gate had been repaired.
+The new duplicate-timestamp test asserted that the **earlier** of two lines sharing a timestamp is
+selected. It failed, and it was the test that was wrong: the selector returns the *last* line at or
+before the position, so the later one wins — which is also what a listener expects when two lines
+share a start time. The test now asserts the real semantics, and `tasks.md` states it.
 
 ## The induced-violation harness, and three ways it lied
 
@@ -154,17 +177,20 @@ unresolved anchor makes a case skip, and a skip counted as neither pass nor fail
 starts lying. It also includes one **behavioural** check: the classifier's decision rule is executed
 over synthetic reports, so the central judgement is falsifiable rather than merely asserted in prose.
 
-## Task → test map
+## Task → test file map
 
-| Task | Test(s) |
+This maps tasks to test **files**, and is deliberately not one-to-one in either direction: 17 ticked
+tasks, 18 induced cases, no case covering task 6.1, and two cases (the taste-profile parameter, the
+retry-label collision) mapping to no ticked task.
+
+| Task | Test file |
 |---|---|
 | 1.1, 1.2, 1.3 | `tests/lyrics/lyricsTiming.test.ts` |
-| 2.1, 2.2 | `lyricsService.test.ts` ("cleanTitle / splitArtistTitle", "scoreCandidate", "candidate resolution") |
-| 2.3, 2.4 | `lyricsService.test.ts` ("caching", "the lookup is bounded") |
+| 2.1, 2.2, 2.3, 2.4 | `tests/lyrics/lyricsService.test.ts` |
 | 3.1 | `tests/lyrics-route.test.ts` |
 | 4.1–4.6 | `tests/lyrics/lyricsPanel.test.tsx` |
 | 5.1, 5.2 | `tests/nowplaying-lyrics.test.tsx` |
-| harness guard | `tests/lyrics-induced-violations.test.ts` |
+| — (harness guard) | `tests/lyrics-induced-violations.test.ts` |
 
 ## Defects found and fixed during this change
 
