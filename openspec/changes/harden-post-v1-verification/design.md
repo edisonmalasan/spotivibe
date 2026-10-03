@@ -197,6 +197,12 @@ fixing three tests precisely because one green run meant nothing.
 
 - No shipped behaviour changes. `src/` is touched only if a test-only defect and a product defect
   prove indistinguishable, and that is recorded as a finding rather than slipped in.
+  **One export was added and it is on the record:** `flushListeningRecorder()` in
+  `src/features/history/useListeningRecorder.ts`. Task 4.1 replaced a fixed 2000 ms poll with an
+  await on the recorder's serialized write chain, and that chain was module-global and unexported, so
+  the test had no way to await it without one. It is a flush over state the module already owns, it
+  adds no capability, and the only caller in the repository is the test. A "no shipped behaviour
+  changes" promise that omits a `src/` export is not checkable by the reader it is written for.
 - No new product features, no public deployment.
 - The coarse §2.7 clause is **kept**, narrowed if the origin judgement supports it. It is a false
   positive on the approved M20 shape *and* the only clause catching the caller-path-segment

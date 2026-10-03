@@ -121,6 +121,13 @@ alters tests, CI ordering, the gate, and documentation, and nothing a user can s
 
 - **No shipped behaviour changes.** `src/` is untouched except where a test-only bug and a real bug
   are indistinguishable and the investigation proves they are the latter.
+- **`src/` does gain one export, and it is not a behaviour change.** Task 4.1 removed a fixed
+  2000 ms poll from `tests/podcast-playback-history.test.ts` by awaiting the recorder's write chain
+  instead, which is impossible from outside the module: the chain was module-global and unexported.
+  `flushListeningRecorder()` is now exported from `src/features/history/useListeningRecorder.ts`.
+  It is a `flush` over state the module already owns, it adds no capability, and nothing in the
+  application calls it — the sole caller is the test. This was left unrecorded here, which made
+  "no shipped behaviour changes" a claim a reader could not check; it is now the one place to check.
 - **CI ordering changes** in `.github/workflows/ci.yml` — the one edit that affects every future run.
 - **The release gate changes**, and becomes safe to run. It is currently invoked only by hand and by
   no manifest, which is why its `npm ci` has gone unnoticed since M15.

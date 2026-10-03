@@ -83,16 +83,21 @@ beforeEach(() => {
  * The wait is now bounded by the work rather than by a budget, which is the difference between a
  * deterministic wait and a hopeful one.
  *
- * `count` is still asserted, because a flush that silently returned nothing would otherwise make
- * this pass — the assertion is what keeps the change honest.
+ * `count` is asserted **exactly**, and this was the last thing here still describing a polling
+ * world. It read `toBeGreaterThanOrEqual`, which is the shape a bounded poll needs — you cannot know
+ * whether the thing you are waiting for has arrived or is merely outnumbered, so "at least" is the
+ * only honest bound. Once the chain has settled there is nothing in flight, so "at least" stopped
+ * being honesty and became slack: an extra event written by the same step, a duplicate write, or a
+ * second recording of the same episode all passed, while the surrounding comments described an exact
+ * count the assertion never required. The claim and the check have to be the same claim.
  */
 async function waitForEvents(count: number): Promise<ListeningEventRecord[]> {
   await flushListeningRecorder();
   const events = await (await getLocalData()).listeningHistory.list();
   expect(
     events.length,
-    `expected ${count} committed event(s); the recorder's chain settled with ${events.length}`,
-  ).toBeGreaterThanOrEqual(count);
+    `expected exactly ${count} committed event(s); the recorder's chain settled with ${events.length}`,
+  ).toBe(count);
   return events;
 }
 
@@ -184,7 +189,8 @@ describe("a played podcast episode is recorded in the existing dataset", () => {
     // The step's measurements land when the step ends — here, by advancing to the
     // next episode — and they are what make the play countable rather than a
     // zero-second touch. Advancing also records the *second* episode, so the
-    // dataset holds two events by the time the patch has been applied.
+    // dataset holds exactly two events once the chain settles — `waitForEvents`
+    // asserts that count exactly, not as a lower bound.
     usePlayerStore.getState()._setDuration(3 * HOUR);
     usePlayerStore.getState()._setPosition(120);
     usePlayerStore.getState().next();
