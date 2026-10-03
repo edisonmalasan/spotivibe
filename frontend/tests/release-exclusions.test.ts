@@ -424,8 +424,23 @@ const EXCLUSIONS: Exclusion[] = [
     // or `Content-Disposition` that *contains a literal extension* rather than a variable.
     // `filename="${name}"` is the approved shape and does not match; `filename="track.mp3"`
     // is the lie and does.
+    //
+    // The three `download`-shaped arms are deliberately **broader than the exclusion's name**, which
+    // is "no MP3 faking". They also fire on `<a download="Track.webm">`. That is intended, and the
+    // reasoning is the one property this module has always asserted: the extension must come from
+    // the server's `Content-Disposition`, because the server is the only place that knows whether
+    // the bytes are Opus in WebM or MP3. A client that asserts *any* extension is second-guessing
+    // the server, so a confidently-wrong `.webm` deserves the same scrutiny as a `.mp3` — and
+    // distinguishing "probably lying" from "lying" inside a regex is not a distinction worth having,
+    // because the approved shape (`anchor.download = filename`, a variable) is the only one that
+    // should survive and it does not match at all.
+    //
+    // The arms cover three spellings, because a narrowing fix that only patches the shape it was
+    // shown is not a fix: the imperative assignment, the declarative JSX attribute (with or without
+    // its expression container), `setAttribute("download", …)`, and the concatenation
+    // `download = name + ".mp3"`. Each has its own fixture below.
     pattern:
-      /\b(?:youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl|videotube|ffmpeg(?:\.exe)?|fluent-ffmpeg|avconv|\bsox\b|\blame\b)\b|streamingData|signatureCipher|decipherFunction|\bdecipher\b|player_ias|\/base\.js|n-parameter|new\s+Function\s*\(|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus|webm|flac|aac)|writeFile\w*\([^)]*\.(?:m4a|mp3|opus|webm|flac|aac)|\.(?:toFormat|convert|remux|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac)["'`]|filename\w*\s*[:=][^\n]{0,80}["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b|\bdownload\s*=\s*\{?\s*["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b/i,
+      /\b(?:youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl|videotube|ffmpeg(?:\.exe)?|fluent-ffmpeg|avconv|\bsox\b|\blame\b)\b|streamingData|signatureCipher|decipherFunction|\bdecipher\b|player_ias|\/base\.js|n-parameter|new\s+Function\s*\(|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus|webm|flac|aac)|writeFile\w*\([^)]*\.(?:m4a|mp3|opus|webm|flac|aac)|\.(?:toFormat|convert|remux|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac)["'`]|filename\w*\s*[:=][^\n]{0,80}["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b|\bdownload\s*=\s*\{?\s*["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b|setAttribute\(\s*["'`]download["'`]\s*,|\bdownload\s*=\s*\{?\s*[^;\n]{0,48}[+`]\s*["'`]\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b/i,
     violations: [
       {
         label: "a second, unapproved downloader as a dependency",
@@ -516,6 +531,34 @@ const EXCLUSIONS: Exclusion[] = [
             const anchor = document.createElement("a");
             anchor.href = URL.createObjectURL(blob);
             anchor.download = \`\${title}.mp3\`;
+            anchor.click();
+          }
+        `,
+      },
+      {
+        label: "a download attribute set through setAttribute",
+        // The third spelling. The first fix for CRITICAL A added the JSX attribute and the
+        // imperative assignment; `setAttribute("download", …)` has no `=` after the word `download`
+        // at all, so it was still invisible. A narrowing fix that only patches the shape it was
+        // shown is not a fix.
+        code: `
+          export function save(el: HTMLAnchorElement, url: string, title: string) {
+            el.href = url;
+            el.setAttribute("download", title + ".mp3");
+            el.click();
+          }
+        `,
+      },
+      {
+        label: "a download name assembled by concatenation",
+        // And the fourth: no literal extension *next to* `download`, only a `+` and then one. This
+        // is the shape a developer reaches for precisely because they think it is more dynamic than
+        // a literal — so the literal is exactly what they would have got wrong.
+        code: `
+          export function saveAs(blob: Blob, name: string) {
+            const anchor = document.createElement("a");
+            anchor.href = URL.createObjectURL(blob);
+            anchor.download = name + ".mp3";
             anchor.click();
           }
         `,
@@ -1783,6 +1826,60 @@ describe("every download the application initiates is classified, and named hone
     return "neither";
   }
 
+  /**
+   * What counts as the application *initiating* a download, rather than merely mentioning one.
+   *
+   * Three revisions, each of which had to be corrected by running it:
+   *
+   *   - `/\.download\s*=|createObjectURL\(/` — required a dot before `download`, so it found
+   *     `anchor.download = x` and missed a **declarative** JSX attribute, which has no dot and
+   *     calls no `createObjectURL`. Property 2 of the check was therefore unenforced for the most
+   *     natural way to write one.
+   *   - `/\bdownload\s*=/` — over-corrected into `const download = useCallback(…)`, an ordinary
+   *     local in the approved hook. Every file it swept in had to classify as a download, so the fix
+   *     broke the check it was meant to strengthen. An over-broad filter is as wrong as a narrow one:
+   *     enumeration is only useful if what it enumerates is what it claims.
+   *   - this — the attribute is *located* rather than the word: property access, a JSX tag
+   *     attribute scoped to inside the tag, and `setAttribute("download", …)`.
+   *
+   * `@param code` one source file
+   * @returns whether the file initiates a download
+   */
+  const DOWNLOAD_INITIATION =
+    /\.\s*download\s*=|createObjectURL\(|<[A-Za-z][^>]*\sdownload\s*=|setAttribute\(\s*["'`]download["'`]/;
+
+  /**
+   * The filter this one replaced, kept so the change above can be *justified* rather than asserted.
+   *
+   * A detector that is quietly loosened is indistinguishable from one that was always right, and
+   * "the new filter finds more" is only a claim in favour of the new filter if the old one is
+   * shown to have found less. Written out rather than imported, because importing the old version
+   * would leave two filters in the file with no indication which one is live.
+   *
+   * @param code one source file
+   * @returns whether the *previous* filter counted it as initiating a download
+   */
+  const DOWNLOAD_INITIATION_BEFORE = /\.\s*download\s*=|createObjectURL\(/;
+
+  /**
+   * The name a download offers, in both spellings.
+   *
+   * The brace form is captured whole — `\{[^>\n]*\}` — up to the last `}` before the tag closes. A
+   * lazier `\{?([^}\n>]+)` stops at the first `}`, which for `<a download={`${title}.mp3`} …>`
+   * truncates the value at ``  `${title `` and the extension sits after the truncated point, so the
+   * name looks honest. Over-reading rather than under-reading is the right direction here: the
+   * capture may swallow a neighbouring attribute's value, which can only make the check stricter.
+   *
+   * @param code one source file
+   * @returns every filename the file offers a download under
+   */
+  function downloadNamesOffered(code: string): string[] {
+    return [
+      ...[...code.matchAll(/\.\s*download\s*=\s*([^;]+);/g)].map((m) => m[1].trim()),
+      ...[...code.matchAll(/\bdownload\s*=\s*(\{[^>\n]*\}|[^>\n]+)/g)].map((m) => m[1].trim()),
+    ];
+  }
+
   it("finds every download initiation and classifies it", () => {
     // A positive check, and the reason it exists. The negative pattern cannot say
     // `createObjectURL` is wrong, because the backup export *is* a file download and the
@@ -1800,8 +1897,25 @@ describe("every download the application initiates is classified, and named hone
     //      be the exact lie ROADMAP §2.5 clause 1 forbids, and it would be invisible from here.
     //   2. **No `<a download>` points at a remote origin**, which would be a download the
     //      application did not produce.
+    //
+    // The filter below is what makes both of those claims about *this* codebase rather than about a
+    // subset of it. It used to be `/\.download\s*=|createObjectURL\(/`, which requires a dot before
+    // `download` — so it matched `anchor.download = x` and nothing else. A **declarative** JSX
+    // attribute, `<a download={name} href="https://…">`, contains no dot and calls no
+    // `createObjectURL`, so such a file never entered the set and property 2 was silently unenforced
+    // for the most natural way to write one.
+    //
+    // It then became `\bdownload\s*=`, which over-corrected: that also matches
+    // `const download = useCallback(…)` — an ordinary local variable in the approved hook — and every
+    // file it swept in had to classify as a download, so the fix broke the check it was meant to
+    // strengthen. An over-broad *filter* is as wrong as a narrow one, because enumeration is only
+    // useful if what it enumerates is what it claims.
+    //
+    // So the attribute is located rather than the word. Three spellings: property access
+    // (`anchor.download = …`), a JSX tag attribute (`<a download=…>`, scoped to inside the tag so a
+    // local variable cannot reach it), and `setAttribute("download", …)`.
     const initiations = applicationSources().filter((entry) =>
-      /\.download\s*=|createObjectURL\(/.test(entry.code),
+      DOWNLOAD_INITIATION.test(entry.code),
     );
     expect(
       initiations.length,
@@ -1821,9 +1935,13 @@ describe("every download the application initiates is classified, and named hone
       // so asserting the assigned value is a `.json` literal was asserting something the
       // code does not do, and the first version of this check failed on it. What matters is
       // that no download is *named* like media by the client.
-      const assigned = [...entry.code.matchAll(/\.download\s*=\s*([^;]+);/g)].map((m) =>
-        m[1].trim(),
-      );
+      //
+      // Both spellings are collected, because the filter above admits both: a declarative JSX
+      // attribute that names the file no more than a property assignment does. Collecting only
+      // `.download =` would have meant a file using the declarative form entered the sweep and
+      // then failed "must name the file it offers" — a check contradicting the check that let it
+      // in, which is worse than either being consistent.
+      const assigned = downloadNamesOffered(entry.code);
       expect(assigned.length, `${entry.file} must name the file it offers`).toBeGreaterThan(0);
       for (const value of assigned) {
         expect(value, `${entry.file}: ${value}`).not.toMatch(
@@ -1878,6 +1996,118 @@ describe("every download the application initiates is classified, and named hone
     // the media branch untested. Both are silent failures otherwise.
     expect(kinds, "the backup download must still be classified as one").toContain("backup");
     expect(kinds, "the approved media download must be classified as one").toContain("media");
+  });
+
+  it("can still see a declarative download, and can still tell a local variable from one", () => {
+    // The filter is what makes the properties above claims about *this* codebase rather than about
+    // whichever subset of it a regex happened to match. A filter is not a detector — nothing fails
+    // when it is too narrow — so it needs its own table, in both directions: it must find the
+    // shapes that are downloads, must not sweep in a file that merely has a variable named
+    // `download`, and must not have narrowed so far that the second property is unenforced.
+    //
+    // Every row states what the *previous* filter did, because "the new one is right" and "the old
+    // one was wrong" are different claims and only the second justifies the change.
+    const cases: ReadonlyArray<{
+      label: string;
+      code: string;
+      initiated: boolean;
+      initiatedBefore: boolean;
+      honestName: boolean;
+    }> = [
+      {
+        label: "the approved shape: a variable the server named",
+        code: [
+          'const anchor = document.createElement("a");',
+          "anchor.download = filename;",
+          "anchor.click();",
+        ].join("\n"),
+        initiated: true,
+        initiatedBefore: true,
+        honestName: true,
+      },
+      {
+        label: "the approved declarative shape: a variable the server named",
+        code: [
+          "export function Save({ url, filename }: { url: string; filename: string }) {",
+          "  return <a download={filename} href={url}>Save</a>;",
+          "}",
+        ].join("\n"),
+        // Found now, missed before — this row is the whole reason the filter changed.
+        initiated: true,
+        initiatedBefore: false,
+        honestName: true,
+      },
+      {
+        label: "a declarative attribute naming an MP3",
+        code: [
+          "export function Save({ url, title }: { url: string; title: string }) {",
+          "  return <a download={`${title}.mp3`} href={url}>Save</a>;",
+          "}",
+        ].join("\n"),
+        initiated: true,
+        initiatedBefore: false,
+        // And the offered name is caught as dishonest. The brace capture has to reach the
+        // extension: `${title}` contains a `}`, so a capture that stopped at the first one would
+        // read `` `${title ``, see no extension, and pass this shape.
+        honestName: false,
+      },
+      {
+        label: "not a download: an ordinary local variable named download",
+        code: [
+          "export function useThing() {",
+          "  const download = useCallback(async () => {});",
+          "  return download;",
+          "}",
+        ].join("\n"),
+        // The shape that broke the over-broad `\bdownload\s*=` attempt, and the reason the filter
+        // locates the attribute instead of the word.
+        initiated: false,
+        initiatedBefore: false,
+        honestName: true,
+      },
+      {
+        label: "not a download: a prop named onDownload",
+        code: [
+          "export function Row({ onDownload }: { onDownload: () => void }) {",
+          "  return <button onClick={onDownload}>Save</button>;",
+          "}",
+        ].join("\n"),
+        initiated: false,
+        initiatedBefore: false,
+        honestName: true,
+      },
+    ];
+
+    for (const testCase of cases) {
+      expect(
+        DOWNLOAD_INITIATION.test(testCase.code),
+        `${testCase.label}: must${testCase.initiated ? "" : " not"} count as initiating a download`,
+      ).toBe(testCase.initiated);
+      expect(
+        DOWNLOAD_INITIATION_BEFORE.test(testCase.code),
+        `${testCase.label}: the filter this change replaced${testCase.initiatedBefore ? " found" : " missed"} it`,
+      ).toBe(testCase.initiatedBefore);
+
+      const names = downloadNamesOffered(testCase.code);
+      if (!testCase.initiated) {
+        // Deliberately not asserted to be empty. `downloadNamesOffered` is only ever consulted for a
+        // file the filter has *already* identified as initiating a download, and it over-reads on
+        // purpose: run against `const download = useCallback(async () => {})` it reports the
+        // fragment `useCallback(async () =`, which is nonsense. Asserting that an uninitiated file
+        // offers no filename would demand the helper be precise about a distinction it has no reason
+        // to draw, and precision in the wrong direction — stopping at the first `>`, or requiring a
+        // tag — is how the extension in `<a download={`${title}.mp3`}>` went missing in the first
+        // place.
+        continue;
+      }
+      expect(names.length, `${testCase.label}: must name the file it offers`).toBeGreaterThan(0);
+      for (const name of names) {
+        expect(
+          /\.(mp3|m4a|aac|opus|ogg|flac|wav|webm|mp4|mkv)\b/i.test(name),
+          `${testCase.label}: offers "${name}"`,
+        ).toBe(!testCase.honestName);
+      }
+    }
   });
 
   it("classifies the two known initiations correctly, so the classifier can be wrong", () => {
@@ -2003,30 +2233,90 @@ describe("every clause this change removed is published, not quietly dropped", (
   //
   // This is a list of *fingerprints*, not of prose, so a reworded row still satisfies it and a
   // deleted row does not.
-  const REMOVED_CLAUSES: ReadonlyArray<readonly [fingerprint: string, why: string]> = [
-    [
-      String.raw`\bytdl\b|\bytdl-core\b`,
-      "the roadmap names @distube/ytdl-core, so forbidding the package name forbade a required dependency",
-    ],
-    [
-      String.raw`\badaptiveFormats\b`,
-      "the approved Invidious fallback must read this documented field",
-    ],
-    [
-      "downloadAudio|downloadTrack|downloadVideo|extractAudio|audioExtract|extractAudioBuffer",
-      "the approved feature has functions by these names",
-    ],
-    ["audio/", "container.ts must be able to say audio/webm and audio/mpeg"],
-    ["m4a|mp3|opus|flac|aac|webm", "container.ts holds these extensions as data"],
-    [
-      "captureStream|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource",
-      "moved, not removed: these are clause 2's evidence and have their own detector",
-    ],
-    ["getAudioData", "moved, not removed, same reason"],
-    [
-      String.raw`player\.js`,
-      "found by independent review: removed and published nowhere. Redundant rather than wrong — a hand-rolled manifest reader still trips player_ias, /base.js and new Function(.",
-    ],
+  //
+  // Publishing a removal is only half of it, and the other half is the half the first version did
+  // not have. The original entries were a fingerprint and a sentence of justification, so the table
+  // proved only that the *document* mentioned a clause — never that the clause actually left the
+  // pattern. A row could name a clause, the clause could still be sitting in `no MP3 faking`, and
+  // every test would pass. Which is exactly the failure it was written to prevent, one layer up.
+  //
+  // So each entry now also carries a `sample` — a snippet the removed clause used to catch — and a
+  // `survivesIn`. `null` means the clause is genuinely gone from every live pattern and the sample
+  // must match none of them. A label means the clause was *moved*, not removed, and the named
+  // detector must still catch it. That second direction is what makes "moved, not removed" true
+  // rather than aspirational: without it, the clause could vanish from the whole suite and the
+  // publication check would still pass.
+  //
+  // The assignments were not reasoned out — they were read off a diagnostic run over the live
+  // patterns, and that run is what this replaced. See the git history for `REMOVED-TERM-PROBE`.
+  interface RemovedClause {
+    /** The alternation, as published in `exclusions-diff.md`. */
+    readonly fingerprint: string;
+    /** Why the clause was removed. */
+    readonly why: string;
+    /** A snippet the removed clause used to catch. */
+    readonly sample: string;
+    /** The detector the clause moved to, or `null` when it is gone from all of them. */
+    readonly survivesIn: string | null;
+  }
+
+  const REMOVED_CLAUSES: ReadonlyArray<RemovedClause> = [
+    {
+      fingerprint: String.raw`\bytdl\b|\bytdl-core\b`,
+      why: "the roadmap names @distube/ytdl-core, so forbidding the package name forbade a required dependency",
+      sample: `import ytdl from "@distube/ytdl-core";`,
+      survivesIn: null,
+    },
+    {
+      fingerprint: String.raw`\badaptiveFormats\b`,
+      why: "the approved Invidious fallback must read this documented field",
+      sample: `const formats = data.adaptiveFormats;`,
+      survivesIn: null,
+    },
+    {
+      fingerprint:
+        "downloadAudio|downloadTrack|downloadVideo|extractAudio|audioExtract|extractAudioBuffer",
+      why: "the approved feature has functions by these names",
+      sample:
+        'export async function downloadAudio(track: Track) {\n  return { kind: "audio", url: "https://x" };\n}',
+      survivesIn: null,
+    },
+    {
+      fingerprint: "audio/",
+      why: "container.ts must be able to say audio/webm and audio/mpeg",
+      sample: `const type = "audio/webm";`,
+      survivesIn: null,
+    },
+    {
+      fingerprint: "m4a|mp3|opus|flac|aac|webm",
+      why: "container.ts holds these extensions as data",
+      sample: `const ext = "m4a";`,
+      survivesIn: null,
+    },
+    {
+      fingerprint:
+        "captureStream|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource",
+      why: "moved, not removed: these are clause 2's evidence and have their own detector",
+      sample:
+        "const s = media.captureStream();\nconst ctx = new AudioContext();\nconst src = ctx.createMediaElementSource(el);",
+      survivesIn: "no media cached for offline playback",
+    },
+    {
+      fingerprint: "getAudioData",
+      why: "moved, not removed, same reason",
+      // Precisely `getAudioData`, with no `captureStream` alongside it — otherwise the sample would
+      // also trip the neighbouring arm and the row would keep passing after `getAudioData` itself
+      // had been dropped. A sample that exercises two clauses at once cannot tell you which one is
+      // missing, which is the same mistake as calibrating a detector on one observed failure.
+      sample: "const chunks = stream.getAudioData();",
+      survivesIn: "no media cached for offline playback",
+    },
+    {
+      fingerprint: String.raw`player\.js`,
+      why: "found by independent review: removed and published nowhere. Redundant rather than wrong — a hand-rolled manifest reader still trips player_ias, /base.js and new Function(.",
+      sample: `const player = await fetch("/player.js").then((r) => r.json());`,
+      survivesIn: null,
+    },
   ];
 
   const diffPath = join(
@@ -2045,12 +2335,42 @@ describe("every clause this change removed is published, not quietly dropped", (
   // escaping rather than on whether a clause was published.
   const normalized = diff.replace(/\\\|/g, "|");
 
-  it.each(REMOVED_CLAUSES)("publishes the removal of %s", (fingerprint, why) => {
+  it.each(REMOVED_CLAUSES)("publishes the removal of $fingerprint", ({ fingerprint, why }) => {
     expect(
       normalized.includes(fingerprint),
       `the removal table must name this clause: ${fingerprint} (${why})`,
     ).toBe(true);
   });
+
+  it.each(REMOVED_CLAUSES.filter((clause) => clause.survivesIn === null))(
+    "no live pattern still catches what $fingerprint used to catch",
+    ({ fingerprint, why, sample }) => {
+      const catching = EXCLUSIONS.filter((exclusion) => exclusion.pattern.test(sample)).map(
+        (exclusion) => exclusion.label,
+      );
+      expect(
+        catching,
+        `the removal table says ${fingerprint} left the detectors (${why}), but ${catching.join(", ")} still catches:\n${sample}`,
+      ).toHaveLength(0);
+    },
+  );
+
+  it.each(REMOVED_CLAUSES.filter((clause) => clause.survivesIn !== null))(
+    "$fingerprint moved to $survivesIn, and that detector still catches it",
+    ({ fingerprint, why, sample, survivesIn }) => {
+      const moved = EXCLUSIONS.find((exclusion) => exclusion.label === survivesIn);
+      // A label that names no detector is worse than no label: the row would read as evidence while
+      // checking nothing. So its existence is asserted before its behaviour.
+      expect(
+        moved,
+        `the removal table claims ${fingerprint} moved to "${survivesIn}", which is not a detector (${why})`,
+      ).toBeDefined();
+      expect(
+        moved!.pattern.test(sample),
+        `"moved, not removed" is not a removal: ${survivesIn} no longer catches what ${fingerprint} used to catch (${why})\n${sample}`,
+      ).toBe(true);
+    },
+  );
 
   it("records the correction rather than leaving the earlier, stronger claim standing", () => {
     // The table first described the media-extension clause as "replaced by a stronger, positive
