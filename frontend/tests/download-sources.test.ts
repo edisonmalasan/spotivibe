@@ -339,9 +339,23 @@ describe("createInvidiousAudioSource", () => {
   it.each([
     ["a real media CDN host", "https://rr3---sn-test.googlevideo.com/videoplayback?expire=1"],
     ["a secondary CDN host", "https://rr1---sn-xyz.lh3.googleusercontent.com/x"],
-    ["the instance's own host", "https://one.example/media/140"],
+    ["the instance's own origin", "https://one.example/media/140"],
+    [
+      "the instance's own origin with an explicit default port",
+      "https://one.example:443/media/140",
+    ],
   ])("accepts a legitimate media URL: %s", (_label, raw) => {
     expect(classifyMediaUrl(raw, "https://one.example").ok).toBe(true);
+  });
+
+  it("refuses the instance's own host on a different port", () => {
+    // The instance list is an operator-chosen hostname, so this cannot reach anything the operator did
+    // not already point us at. It is refused anyway, because the first version compared the port on
+    // its plain-HTTP branch and not on its HTTPS branch — and an allowlist whose two branches
+    // disagree about what "the same instance" means is one nobody can reason about. Consistency is
+    // the point; the exposure was small and "small" is not a standard.
+    expect(classifyMediaUrl("https://one.example:8443/x", "https://one.example").ok).toBe(false);
+    expect(classifyMediaUrl("http://one.example:8080/x", "http://one.example:8080").ok).toBe(true);
   });
 
   it("never follows a redirect when opening the media URL", async () => {

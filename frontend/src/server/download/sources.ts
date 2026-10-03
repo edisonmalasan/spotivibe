@@ -455,15 +455,24 @@ export function classifyMediaUrl(raw: string, instance: string): MediaUrlVerdict
     return { ok: false, reason: "the media URL carried credentials" };
   }
 
-  const sameHost = url.hostname === instanceUrl.hostname;
   const sameOrigin =
-    sameHost && url.port === instanceUrl.port && url.protocol === instanceUrl.protocol;
+    url.hostname === instanceUrl.hostname &&
+    url.port === instanceUrl.port &&
+    url.protocol === instanceUrl.protocol;
 
   if (url.protocol !== "https:" && !sameOrigin) {
     return { ok: false, reason: `the media URL was ${url.protocol}// rather than https:` };
   }
 
-  if (sameHost) return { ok: true, url };
+  // The instance's own origin, or the instance's own *host and port*. Comparing the port here as
+  // well as in `sameOrigin` is deliberate and was not in the first version: that version let
+  // `https://instance.example:8443/x` through on a `https://instance.example` instance, because the
+  // scheme gate had already been passed and `sameHost` short-circuited before any port comparison.
+  // The asymmetry was unintentional — the plain-HTTP exception compared ports while the HTTPS path
+  // did not — and an allowlist whose two branches disagree about what "the same instance" means is
+  // one nobody can reason about. The exposure was small: it stayed on an operator-chosen hostname and
+  // could not reach loopback or the metadata service. Small is not the standard; consistent is.
+  if (sameOrigin) return { ok: true, url };
   const host = url.hostname.toLowerCase();
   if (MEDIA_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))) {
     return { ok: true, url };
