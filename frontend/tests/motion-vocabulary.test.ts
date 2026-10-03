@@ -658,9 +658,26 @@ describe("the motion surface is finite and self-limiting (tasks 3.6 and 4.1)", (
       const file = files.find((entry) => entry.path === path);
       expect(file, `${path} must be readable`).toBeTruthy();
       const found = new Set(motionUtilities(file!.source).map((utility) => utility.marker));
+      // A marker may be satisfied by the module's own source or by the shared shell it renders
+      // through (`delegatesTo`), which `tests/motion-scope.test.ts` proves really carries it. Both
+      // routes put motion on a row a listener can see; what is forbidden is an allowance whose
+      // markers reach nothing.
+      const delegatedFile =
+        allowance.delegatesTo === undefined
+          ? undefined
+          : files.find((entry) => entry.path === allowance.delegatesTo);
+      if (allowance.delegatesTo !== undefined) {
+        expect(delegatedFile, `${path} delegates to a module that must be readable`).toBeTruthy();
+      }
+      const delegated = new Set(
+        delegatedFile ? motionUtilities(delegatedFile.source).map((utility) => utility.marker) : [],
+      );
 
       for (const marker of allowance.markers) {
-        expect([...found], `${path} must carry ${marker}`).toContain(marker);
+        expect(
+          [...found].includes(marker) || delegated.has(marker),
+          `${path} must carry ${marker}`,
+        ).toBe(true);
       }
       for (const marker of found) {
         const raw = /^transition-|^animate-/.test(marker);

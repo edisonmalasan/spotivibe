@@ -365,31 +365,75 @@ const EXCLUSIONS: Exclusion[] = [
     ],
   },
   {
-    label: "no audio extraction or download",
-    clause: "ROADMAP §2.5",
-    // The whole shape of an extractor: a named downloader, a stream manifest, a format
-    // conversion, or a media buffer being persisted. A *playback* surface is a
-    // `<video>`/`<iframe>` pointing at YouTube, which is the opposite and must not match.
+    // ─────────────────────────────────────────────────────────────────────────────
+    // §2.5, narrowed — clause 1 only.
     //
-    // Deliberately no `createObjectURL` and no generic `download` word: the backup export
-    // *is* a file download, and the roadmap requires it. The first version of this pattern
-    // flagged `DataControls.tsx` for exactly that — a false positive that would have been
-    // resolved by deleting a required feature.
-    // The second pass found two more shapes that passed: a scraped `googlevideo` URL
-    // written to a `.m4a` file, and a downloaded player bundle executed through
-    // `new Function` to reverse a signature. The first is the *outcome* — a media file on
-    // disk — and the second is the *technique* — running a script you fetched. Both are
-    // matched as shapes now, because neither has a vendor word in it.
+    // ROADMAP §2.5 reads as three clauses:
+    //
+    //   1. Do not implement YouTube-to-MP3.
+    //   2. Do not cache extracted YouTube audio for offline playback.
+    //   3. Do not port Lyrix's `downloadService.ts` or `/api/download/:videoId` behaviour.
+    //
+    // ROADMAP §18 (2026-10-03) and §21.5 reverse **clause 3**, and only clause 3: M20 is
+    // required to build exactly that path, with exactly that extractor, for private personal
+    // use. Clauses 1 and 2 are not mentioned in §18's bullet list of what the reversal does
+    // *not* authorise, and they are restated as permanent in §21.5's own non-goals. So they
+    // are not deleted — they are split into the two detectors below, one clause each.
+    //
+    // What was removed from the old pattern, and why each removal is not a weakening:
+    //
+    //   • `ytdl|ytdl-core` — §21.5 names `@distube/ytdl-core` as the primary extractor, and
+    //     §2.5 clause 3 is what forbade it. Banning the approved dependency is a bug.
+    //   • `adaptiveFormats` — this is the *response field* the approved Invidious fallback must
+    //     read. It is not evidence of a hand-rolled extractor; reading a documented API field
+    //     is what using an API means. The hand-rolled extractor is still caught, by
+    //     `streamingData` and `signatureCipher`, which is what it *actually* needs.
+    //   • `downloadAudio|downloadTrack|downloadVideo|extractAudio|…` — the approved feature
+    //     has functions by those names. A rule that forbade the vocabulary of a required
+    //     feature is a rule that would have been switched off within a week of the merge.
+    //   • `audio/(?:mpeg|mp4|ogg|opus|…)` and `\.(?:m4a|mp3|opus|…)` — these banned every
+    //     audio media type and every audio extension anywhere in the tree. An honest format
+    //     mapper *must* contain them: `container.ts` has to be able to say "Opus in WebM is
+    //     `.webm`". Replaced by a stronger, positive rule — the extension has exactly one
+    //     home — asserted below and in `tests/download-format-honesty.test.ts`. A `.mp3`
+    //     literal appearing in a route, a helper, or a component still fails; one appearing
+    //     in the codec table that decides it is now the requirement rather than the violation.
+    //   • `captureStream|getAudioTracks|MediaRecorder|…` — moved, not removed. They are
+    //     clause 2's evidence, and clause 2 has its own detector below.
+    // ─────────────────────────────────────────────────────────────────────────────
+    label: "no MP3 faking",
+    clause: "ROADMAP §2.5",
+    // The exclusion is about producing MP3 audio. Downloading is now approved; *lying about
+    // what was downloaded* is not, and neither is a transcoder, a second downloader, or a
+    // hand-rolled manifest reader that exists because no library was used.
+    //
+    // Deliberately still no `createObjectURL` and no generic `download` word: the backup
+    // export *is* a file download, and the roadmap requires it. The first version of this
+    // pattern flagged `DataControls.tsx` for exactly that — a false positive that would have
+    // been resolved by deleting a required feature.
+    //
+    // The last clause is the one the narrowing made necessary. The old pattern matched the
+    // *syntax* of a media filename (a quoted string ending in `.m4a`), which the approved
+    // feature must also contain. What it could not distinguish was whether the name was
+    // **derived** from the selected format or **asserted**. It is now matched as: a filename
+    // or `Content-Disposition` that *contains a literal extension* rather than a variable.
+    // `filename="${name}"` is the approved shape and does not match; `filename="track.mp3"`
+    // is the lie and does.
     pattern:
-      /\b(ytdl|ytdl-core|youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|ffmpeg(?:\.exe)?|fluent-ffmpeg|audiodl|downloadAudio|downloadTrack|downloadVideo|extractAudio|audioExtract|extractAudioBuffer|streamingData|adaptiveFormats|signatureCipher|player\.js|decipherFunction|n-parameter)\b|audio\/(?:mpeg|mp4|ogg|opus|flac|wav|x-m4a|aac)|videotube|\.getAudioData\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\([^)]*\)\s*\.connect\(\s*(?!destination)|\.(?:m4a|mp3|opus|flac|aac|webm)\b|["'`][^"'`]*\.(?:m4a|mp3|opus|flac|aac)\b|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus)|new\s+Function\s*\(|player_ias|\/base\.js|writeFile\w*\([^)]*\.m4a/i,
+      /\b(?:youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl|videotube|ffmpeg(?:\.exe)?|fluent-ffmpeg|avconv|\bsox\b|\blame\b)\b|streamingData|signatureCipher|decipherFunction|\bdecipher\b|player_ias|\/base\.js|n-parameter|new\s+Function\s*\(|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus|webm|flac|aac)|writeFile\w*\([^)]*\.(?:m4a|mp3|opus|webm|flac|aac)|\.(?:toFormat|convert|remux|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac)["'`]|filename\w*\s*[:=][^\n]{0,80}["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b/i,
     violations: [
       {
-        label: "a named downloader as a dependency",
+        label: "a second, unapproved downloader as a dependency",
+        // The old fixture was `import ytdl from "ytdl-core"`, and it had to change: that
+        // package is the dependency ROADMAP §21.5 names, so it can no longer be the example of
+        // a forbidden one. `youtube-dl-exec` is a real, different, still-forbidden downloader.
+        // The clause that caught it (`yt-dlp`) is unchanged — the vocabulary list lost
+        // `ytdl` and kept everything else.
         code: `
-          import ytdl from "ytdl-core";
+          import { download } from "youtube-dl-exec";
           export async function GET(request: Request) {
             const url = new URL(request.url).searchParams.get("v");
-            return new Response(ytdl(url), { headers: { "content-type": "audio/mpeg" } });
+            return new Response(await download(url), { headers: { "content-type": "audio/mpeg" } });
           }
         `,
       },
@@ -409,6 +453,8 @@ const EXCLUSIONS: Exclusion[] = [
         label: "a hand-rolled extractor over the stream manifest",
         // No named tool anywhere: this is what an extractor looks like when someone writes
         // it rather than installs it, and it was completely invisible to the first version.
+        // Still fires after the narrowing — on `streamingData` and `signatureCipher`, which
+        // are the two things it genuinely cannot do without.
         code: `
           export async function extract(videoId: string) {
             const page = await fetch("https://www.youtube.com/watch?v=" + videoId);
@@ -419,12 +465,30 @@ const EXCLUSIONS: Exclusion[] = [
         `,
       },
       {
-        label: "a media buffer written to local storage",
+        label: "the extracted bytes served under a hardcoded .mp3",
+        // NEW, and the shape the narrowing makes newly possible. This is the exact lie
+        // §2.5 clause 1 exists to forbid, now written as the *approved* route with one thing
+        // wrong: the extension asserted instead of derived. Before M20 this would have been
+        // caught by the blanket `\.(?:mp3|…)\b` clause, so it must be caught now by name.
         code: `
-          export async function cacheTrack(track: Track) {
-            const buffer = await trackMediaElement.captureStream().getAudioTracks()[0];
-            const bytes = await new Response(buffer).arrayBuffer();
-            await mediaStore.put(track.id, bytes);
+          export async function GET(request: Request, context: { params: Promise<{ videoId: string }> }) {
+            const { videoId } = await context.params;
+            const stream = await extract(videoId);
+            return new Response(stream, {
+              headers: { "Content-Disposition": 'attachment; filename="track.mp3"' },
+            });
+          }
+        `,
+      },
+      {
+        label: "a transcoder that converts WebM audio to MP3",
+        // NEW for the same reason, from the other direction: the honest mapper says `.webm`,
+        // and this is the tempting way to "fix" that. Real conversion is out of scope
+        // (ROADMAP §21.5), and this is what implementing it looks like.
+        code: `
+          import { execFile } from "node:child_process";
+          export async function toMp3(input: string, output: string) {
+            await execFileAsync("ffmpeg", ["-i", input, "-vn", "-f", "mp3", output]);
           }
         `,
       },
@@ -673,28 +737,219 @@ const EXCLUSIONS: Exclusion[] = [
           }
         `,
       },
+      {
+        // NEW in M20, and the shape the approved route makes newly possible. The approved
+        // download route is *itself* a route that fetches media and hands the body back, so
+        // §2.7's own detector has to be able to see the difference. What makes the difference
+        // is that the URL comes from a validated provider id resolved server-side, and never
+        // from the request. So this fixture is the approved route with the one word changed:
+        // a caller-supplied URL in the query string. Same detector, same clauses.
+        label: "the approved download route taking a caller-supplied media URL",
+        code: `
+          export async function GET(
+            request: Request,
+            context: { params: Promise<{ videoId: string }> },
+          ): Promise<Response> {
+            const { videoId } = await context.params;
+            const target = new URL(request.url).searchParams.get("url") ?? videoId;
+            const media = await fetch(target);
+            return new Response(media.body, { headers: media.headers });
+          }
+        `,
+      },
+    ],
+  },
+  {
+    // ─────────────────────────────────────────────────────────────────────────────
+    // §2.5, narrowed — clause 2 only.
+    //
+    // "Do not cache extracted YouTube audio for offline playback." ROADMAP §18 did not
+    // reverse this clause and ROADMAP §21.5 restates it as a non-goal ("no managed offline
+    // library"), so it keeps a detector of its own rather than being folded into the clause-1
+    // entry. The distinction it draws is the one M20's design rests on: a file handed to the
+    // device and gone, versus audio the application keeps and will play back itself.
+    //
+    // Every clause here is a *different route to the same outcome*, because the outcome has
+    // three implementations and none of them needs a vendor word:
+    //
+    //   • re-recording the parked player through the Web Audio / MediaRecorder APIs, which is
+    //     what you do when you cannot extract (the old `captureStream` / `MediaRecorder`
+    //     clauses, unchanged and still load-bearing);
+    //   • writing bytes into IndexedDB under a media-ish store name — matched at the store
+    //     *declaration*, because a name chosen at run time would defeat a `put`-shaped rule;
+    //   • writing bytes into a Cache API entry, matched the same way, at `caches.open`.
+    //
+    // The IndexedDB clause therefore has two arms, and the second is the load-bearing one. The
+    // application's own `schema.ts` declares stores as `{ name: STORE.likedTracks, options: … }`
+    // and creates them as `createObjectStore(definition.name, definition.options)`, so a real
+    // store named `"offlineMedia"` puts its quoted media string *nowhere* a
+    // `createObjectStore("…")` rule looks. The declaration arm covers that shape. Matching the
+    // `createObjectStore("…")` arm alone — which is what the first attempt here did — would have
+    // been a rule that could not have caught the code it was written for.
+    // ─────────────────────────────────────────────────────────────────────────────
+    label: "no media cached for offline playback",
+    clause: "ROADMAP §2.5",
+    pattern:
+      /\.getAudioData\s*\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\s*\(|createObjectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|objectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline)[^"'`]*["'`]|(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)/i,
+    violations: [
+      {
+        label: "a media buffer written to local storage",
+        // Was a fixture of the single §2.5 detector; now the first fixture of the clause that
+        // is actually about this outcome. Unchanged text, so its provenance is checkable.
+        code: `
+          export async function cacheTrack(track: Track) {
+            const buffer = await trackMediaElement.captureStream().getAudioTracks()[0];
+            const bytes = await new Response(buffer).arrayBuffer();
+            await mediaStore.put(track.id, bytes);
+          }
+        `,
+      },
+      {
+        label: "the parked player re-recorded through the Web Audio graph",
+        code: `
+          const source = document.createElement("video");
+          const graph = new AudioContext().createMediaElementSource(source);
+          const recorder = new MediaRecorder(graph.stream);
+          recorder.start();
+        `,
+      },
+      {
+        label: "an IndexedDB store created to hold media",
+        // Matched at the store *declaration*, not at a `put`. A rule shaped like `put(...)` is
+        // defeated by naming the store in a variable; the schema file is where a store comes
+        // into existence, and a store that does not exist cannot be written to.
+        code: `
+          const STORE_DEFINITIONS = [
+            { name: "offlineMedia", options: { keyPath: "trackId" } },
+          ];
+        `,
+      },
+      {
+        // NEW in M20. The approved route streams media past the browser; the nearest bad
+        // neighbour is a route that also *keeps* it, so a later request replays bytes off the
+        // device instead of from the provider. That is a managed offline library wearing a
+        // download route's clothes, and it is the shape this narrowing had to keep catching.
+        label: "the download route caching its own response so a later request replays it",
+        code: `
+          export async function GET(request: Request, context: { params: Promise<{ videoId: string }> }) {
+            const { videoId } = await context.params;
+            const cache = await caches.open("offlineAudio");
+            const hit = await cache.match(videoId);
+            if (hit) return hit;
+            const stream = await extract(videoId);
+            await cache.put(videoId, new Response(stream));
+            return new Response(stream);
+          }
+        `,
+      },
     ],
   },
 ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The path rules, hoisted (M20).
+//
+// They were declared inside the two tests that use them, which meant the *same* rule could be
+// edited in one place and left alone in the other — a narrowing applied to half a rule. Both
+// are module-level now, and each carries the record of what M20 removed from it and why.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Path segments that name a permanently forbidden capability.
+ *
+ * M20 removed `download` from this list. ROADMAP §21.5 requires a route at
+ * `src/app/api/download/[videoId]/`, so the capability's name stopped being evidence against
+ * itself. The alternative — leaving `download` and adding an exception — would have turned the
+ * list into a rule with a hole in it, and a hole is where the next exception goes.
+ *
+ * What replaced the removal is not nothing: see {@link isMediaRoute}, which allows exactly one
+ * download route shape and rejects every other one, and whose violation fixtures include the
+ * generic `/api/download` this list used to reject for a reason that no longer applies.
+ */
+const FORBIDDEN_SEGMENTS =
+  /\/(?:sync|synchroni[sz]e|replicate|mirror|proxy|stream|relay|tunnel|upload)(?:\/|$)|\/(?:auth|login|signin|sign-in|register|account|oauth|session)(?:\/|$)|\/admin(?:\/|$)/i;
+
+/**
+ * Path segments that name a media-extraction capability, plus the single route shape M20
+ * approved.
+ *
+ * The exclusion itself is unchanged from the pre-M20 rule except that `download` moved out of
+ * the forbidden alternation and into {@link APPROVED_MEDIA_ROUTE}. `stream`, `proxy`, `media`,
+ * `audio`, `extract`, and `dl` are all still forbidden: none of them is the approved route, and
+ * a media route under any of those names is exactly the "generic forwarder" §2.7 has always
+ * forbidden.
+ */
+const MEDIA_ROUTE =
+  /\/(?:stream|proxy|media|audio|extract|dl)(?:\/|$)|\/(?:video|youtube|videoid)s?\/[a-z]+\/route/i;
+
+/**
+ * The one media route the roadmap approves, named in full.
+ *
+ * A full path rather than a pattern, because the approved route's whole justification is that
+ * its **only** input is a validated provider id in the path. A pattern such as
+ * `/download/\[?videoId\]?` would also allow `/download/[anything]/`, which is the shape this
+ * allowlist exists to reject. Pinning the exact path means adding a second download route — a
+ * batch endpoint, a playlist endpoint, a by-artist endpoint — is a change this constant has to
+ * be edited to make, which is the point.
+ */
+const APPROVED_MEDIA_ROUTE = "src/app/api/download/[videoId]/route.ts";
+
+/** Whether a route path names a media-extraction capability at all (`/stream`, `/proxy`, …). */
+function namesMediaCapability(file: string): boolean {
+  return MEDIA_ROUTE.test(`/${file}`);
+}
+
+/** Whether a route path sits under a `download` segment that is *not* the approved one. */
+function isUnapprovedDownloadRoute(file: string): boolean {
+  return /\/download(?:\/|$)/i.test(`/${file}`) && file !== APPROVED_MEDIA_ROUTE;
+}
+
+/**
+ * Whether a route is one the roadmap forbids: either it names a media capability, or it is a
+ * download route that is not the approved single-track one.
+ *
+ * One predicate for both, because the two rules answer the same question — *is this route
+ * allowed?* — and the sweep wants one list to compare against empty. Splitting them into two
+ * predicates (as a first attempt here did) produced a test that asserted the forbidden paths
+ * were `false` and the allowed ones were `false` too, which is a test that cannot distinguish
+ * them and therefore proves nothing.
+ */
+function isForbiddenMediaRoute(file: string): boolean {
+  if (file === APPROVED_MEDIA_ROUTE) return false;
+  return namesMediaCapability(file) || isUnapprovedDownloadRoute(file);
+}
 
 describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
   it("covers every exclusion the roadmap states as permanent", () => {
     // A guard on the guard: if this list shrank, the sweep below would silently stop
     // checking something.
-    expect(EXCLUSIONS.length).toBeGreaterThanOrEqual(8);
+    //
+    // M20 raised the floor from 8 to 9 rather than leaving it: §2.5's single detector became two
+    // detectors, one for each of the two clauses the roadmap did *not* reverse, and a clause-count
+    // guard is what stops the next narrowing from quietly merging them back into one weaker rule.
+    // The list is indexed by other tests (`EXCLUSIONS[2]` is the cloud-user-database detector,
+    // reused as a vendor-name matcher over the manifest), so entries are **appended**, never
+    // reordered.
+    expect(EXCLUSIONS.length).toBeGreaterThanOrEqual(9);
     const labels = EXCLUSIONS.map((exclusion) => exclusion.label);
     for (const expected of [
       "no accounts or authentication",
       "no cloud sync",
       "no cloud user database",
       "no user-database dependency",
-      "no audio extraction or download",
+      // §2.5 clause 1, after M20 reversed clause 3 only.
+      "no MP3 faking",
+      // §2.5 clause 2, likewise.
+      "no media cached for offline playback",
       "no forced background-play circumvention",
       "no ad-blocking behaviour",
       "no media proxied through the application server",
     ]) {
       expect(labels, expected).toContain(expected);
     }
+    // The label the pre-M20 suite used must be *gone*, not merely missing from the expected
+    // list: it bundled three clauses of §2.5 behind one rule, and one of the three was reversed.
+    expect(labels).not.toContain("no audio extraction or download");
     // Every exclusion cites the clause it comes from, so a future reader can check the
     // claim against the roadmap rather than against this file.
     for (const exclusion of EXCLUSIONS) {
@@ -755,8 +1010,12 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
     //
     // A positive sweep over paths, rather than another keyword: no route may sit at a path
     // whose segments name a forbidden capability.
-    const FORBIDDEN_SEGMENTS =
-      /\/(?:sync|synchroni[sz]e|replicate|mirror|proxy|stream|relay|tunnel|upload|download)(?:\/|$)|\/(?:auth|login|signin|sign-in|register|account|oauth|session)(?:\/|$)|\/admin(?:\/|$)/i;
+    //
+    // `download` is no longer in that list — M20 approved the capability, and the note on the
+    // module-level rule records what took its place. Asserting that removal rather than merely
+    // inheriting it: a segment lost by accident and a segment lost deliberately look identical
+    // in a diff, and the difference is the whole review.
+    expect(FORBIDDEN_SEGMENTS.source).not.toContain("download");
 
     const offenders = applicationSources()
       .map((entry) => entry.file)
@@ -770,8 +1029,6 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
     // The same two-proofs discipline as the content detectors, and these are the paths the
     // second verification pass used. Without this the path sweep would be a rule nobody has
     // ever seen reject anything — the exact failure this whole suite is about.
-    const FORBIDDEN_SEGMENTS =
-      /\/(?:sync|synchroni[sz]e|replicate|mirror|proxy|stream|relay|tunnel|upload|download)(?:\/|$)|\/(?:auth|login|signin|sign-in|register|account|oauth|session)(?:\/|$)|\/admin(?:\/|$)/i;
     for (const path of [
       "src/app/api/v2/library/synchronize/route.ts",
       "src/app/api/sync/route.ts",
@@ -779,17 +1036,24 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
       "src/app/api/proxy/route.ts",
       "src/app/api/auth/session/route.ts",
       "src/app/api/login/route.ts",
+      // NEW in M20: a *relay* is a forbidden capability the old list caught and still does. Named
+      // explicitly so that a future edit to the list cannot quietly cost it.
+      "src/app/api/relay/route.ts",
     ]) {
       expect(FORBIDDEN_SEGMENTS.test(`/${path}`), `${path} must be rejected`).toBe(true);
     }
     // And the routes the application legitimately ships must clear it, so the rule is not
-    // "reject anything with a slash in it".
+    // "reject anything with a slash in it" — including the download capability's own files,
+    // which is exactly what removing `download` from the list allows.
     for (const path of [
       "src/app/api/search/route.ts",
       "src/app/api/artist/route.ts",
       "src/app/api/album/route.ts",
       "src/app/api/discover/route.ts",
       "src/server/music/playlistRef.ts",
+      "src/app/api/download/[videoId]/route.ts",
+      "src/server/download/sources.ts",
+      "src/features/download/useDownloadTrack.ts",
     ]) {
       expect(FORBIDDEN_SEGMENTS.test(`/${path}`), `${path} must be allowed`).toBe(false);
     }
@@ -808,31 +1072,73 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
     ).toBeGreaterThan(3);
   });
 
-  it("has no route for extracting, proxying, or downloading media", () => {
+  it("has exactly one media route, and it is the approved single-track one", () => {
     // `no media proxied` has a content detector, and a route that proxies media has ordinary
     // handler code — so the *name* is the evidence, exactly as the sync/auth paths above.
     // This became load-bearing when the player was parked: the parked configuration is the
     // one most likely to tempt a "just fetch the stream instead" route, because the visible
     // surface is gone and the policy pressure is real.
-    const MEDIA_ROUTE =
-      /\/(?:stream|proxy|media|audio|extract|download|dl)(?:\/|$)|\/(?:video|youtube|videoid)s?\/[a-z]+\/route/i;
-    const offenders = applicationSources()
+    //
+    // M20 changed this rule from "no such route" to "exactly this one route". The change is
+    // the whole of the narrowing, and it is deliberately not an exception: `download` left the
+    // forbidden alternation and became a *named approval*, so the rule still rejects a generic
+    // `/api/download`, a `/api/download/batch`, and a `/api/download/[anything]` — the three
+    // shapes that §21.5's non-goals ("no batch or playlist download") rule out. Each of those
+    // is in the fixtures below, so the rule is known to be able to reject all three.
+    // The sweep. One predicate, so the answer to "which routes are forbidden" is one list, and
+    // the approved route is the only member of it that does not have to be empty.
+    const routes = applicationSources()
       .map((entry) => entry.file)
-      .filter((file) => /\/api\/.*\/route\.ts$/.test(file))
-      .filter((file) => MEDIA_ROUTE.test(`/${file}`));
+      .filter((file) => /\/api\/.*\/route\.ts$/.test(file));
+    const offenders = routes.filter((file) => isForbiddenMediaRoute(file));
     expect(offenders, "no route may sit at a path naming a media-extraction capability").toEqual(
       [],
     );
-    // Proven able to fail.
+
+    // And the allowlist cannot be vacuously satisfied by the route not existing: the approved
+    // route must be *present*, because an allowlist that matches nothing is not an allowlist.
+    expect(
+      routes,
+      "the approved download route must exist for this rule to mean anything",
+    ).toContain(APPROVED_MEDIA_ROUTE);
+
+    // The download rule on its own, stated separately because it is the rule that would catch a
+    // batch endpoint added next year, and because `namesMediaCapability` deliberately does not
+    // cover `download` any more.
+    const unapproved = routes.filter((file) => isUnapprovedDownloadRoute(file));
+    expect(unapproved, "a download route may only be the approved single-track one").toEqual([]);
+
+    // Proven able to fail — the media-named routes the pre-M20 rule already caught, all of which
+    // are still forbidden and none of which the roadmap mentions approving.
     for (const path of [
       "src/app/api/stream/route.ts",
       "src/app/api/proxy/route.ts",
       "src/app/api/media/route.ts",
       "src/app/api/audio/route.ts",
       "src/app/api/extract/route.ts",
-      "src/app/api/download/route.ts",
+      "src/app/api/dl/route.ts",
     ]) {
-      expect(MEDIA_ROUTE.test(`/${path}`), `${path} must be rejected`).toBe(true);
+      expect(isForbiddenMediaRoute(path), `${path} must be rejected`).toBe(true);
+    }
+    // And the download-shaped ones, including the three §21.5's non-goals rule out.
+    for (const path of [
+      // A generic download route with no validated id: the shape the *old* rule caught, and the
+      // new one catches too, though for a better-stated reason.
+      "src/app/api/download/route.ts",
+      // NEW in M20. A batch endpoint is §21.5's explicit non-goal ("no batch or playlist
+      // download"). It would have passed the old rule's letter, because `/download/batch` is
+      // just another path.
+      "src/app/api/download/batch/route.ts",
+      // NEW in M20. A download keyed by something other than a provider video id — a playlist,
+      // an artist, a search query. All forbidden, all shaped identically to the approved route,
+      // which is why the allowlist is a full path and not a pattern.
+      "src/app/api/download/[playlistId]/route.ts",
+      "src/app/api/download/[query]/route.ts",
+    ]) {
+      expect(isForbiddenMediaRoute(path), `${path} must be rejected`).toBe(true);
+      expect(isUnapprovedDownloadRoute(path), `${path} must be rejected as a download route`).toBe(
+        true,
+      );
     }
     // And the real routes clear it, so the rule is not "reject any second path segment".
     for (const path of [
@@ -840,8 +1146,18 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
       "src/app/api/artist/route.ts",
       "src/app/api/discover/route.ts",
     ]) {
-      expect(MEDIA_ROUTE.test(`/${path}`), `${path} must be allowed`).toBe(false);
+      expect(isForbiddenMediaRoute(path), `${path} must be allowed`).toBe(false);
     }
+    // The approved route is allowed, and allowed *by name* — asserted explicitly so that the
+    // allowlist cannot be widened into a pattern without this failing.
+    expect(isForbiddenMediaRoute(APPROVED_MEDIA_ROUTE)).toBe(false);
+    expect(isUnapprovedDownloadRoute(APPROVED_MEDIA_ROUTE)).toBe(false);
+    // …and it is allowed *because* it is named, not because its path happens not to match: a
+    // sibling under the same directory with a different dynamic segment is still rejected.
+    expect(
+      isForbiddenMediaRoute("src/app/api/download/[videoId]/album/route.ts"),
+      "a sub-route of the approved download directory is not covered by its approval",
+    ).toBe(true);
   });
 });
 
@@ -1388,14 +1704,62 @@ describe("a source that documents an exclusion does not break it (M15 task 1.3)"
   });
 });
 
-describe("every download the application initiates is a backup, not media (M15 task 1.1)", () => {
-  it("finds every download initiation and names the file type it offers", () => {
+describe("every download the application initiates is classified, and named honestly (M15 task 1.1, narrowed by M20)", () => {
+  /**
+   * Classify a file that initiates a download, from what it does with the bytes.
+   *
+   * Two positive signals, deliberately not one:
+   *
+   *   • **backup** — the file states a textual media type. It is producing text on the device and
+   *     naming what it produced, so the type is its own to declare.
+   *   • **approved media download** — the file reads `content-disposition`. It is relaying bytes
+   *     somebody else decided the name of, so the server owns the extension.
+   *
+   * The media branch is *not* "the file mentions `audio/`". An earlier version of this
+   * classifier used the media type literal as the signal, which is precisely what the approved
+   * client cannot do: it never inspects the content type to pick a name, because a name it
+   * picks itself is a name it could pick wrongly. So the only thing that identifies a media
+   * download is that it defers to the server — and a file that defers to neither is a download of
+   * unknown provenance, which is what `neither` means and why it fails.
+   *
+   * @returns the class, or `"neither"` when neither signal is present, or `"both"` when a file
+   *   claims to be a backup while also relaying a server-chosen name.
+   */
+  function classify(entry: {
+    file: string;
+    code: string;
+  }): "backup" | "media" | "neither" | "both" {
+    const types = [...entry.code.matchAll(/type:\s*"([^"]+)"/g)].map((m) => m[1]);
+    const textual = types.filter((type) => /^application\/(json|.*\+json)$|^text\//.test(type));
+    const media = types.filter((type) => /^(audio|video)\//i.test(type));
+    const defersToServer = /content-disposition/i.test(entry.code);
+    // A media type literal is the one signal that is simply wrong now: the approved route sets
+    // the content type from the selected container, so it is the server's declaration, and the
+    // client has no business repeating or narrowing it. Report it rather than ignore it.
+    if (media.length > 0) return "both";
+    if (defersToServer && textual.length > 0) return "both";
+    if (defersToServer) return "media";
+    if (textual.length > 0) return "backup";
+    return "neither";
+  }
+
+  it("finds every download initiation and classifies it", () => {
     // A positive check, and the reason it exists. The negative pattern cannot say
     // `createObjectURL` is wrong, because the backup export *is* a file download and the
-    // roadmap requires one. So rather than forbidding the mechanism, this enumerates
-    // every place the application initiates a download and asserts each is a JSON backup
-    // produced on the device. A download of anything else would show up here as a
-    // filename and a type that are not a backup.
+    // roadmap requires one. So rather than forbidding the mechanism, this enumerates every place
+    // the application initiates a download and asserts each is one of two things.
+    //
+    // M20 added the second thing. The check is therefore no longer "every download is a backup" —
+    // it is "every download is *either* a backup *or* the approved single-track media download,
+    // and either way the filename says what the bytes are". The two properties that survived
+    // unchanged are the ones that matter:
+    //
+    //   1. **No download composes a media extension in the browser.** The extension must come
+    //      from the server's `Content-Disposition`, because the server is the only place that
+    //      knows whether the bytes are Opus in WebM or MP3. A client that appended `".mp3"` would
+    //      be the exact lie ROADMAP §2.5 clause 1 forbids, and it would be invisible from here.
+    //   2. **No `<a download>` points at a remote origin**, which would be a download the
+    //      application did not produce.
     const initiations = applicationSources().filter((entry) =>
       /\.download\s*=|createObjectURL\(/.test(entry.code),
     );
@@ -1404,12 +1768,19 @@ describe("every download the application initiates is a backup, not media (M15 t
       "the application initiates at least the backup download",
     ).toBeGreaterThan(0);
 
+    const kinds = new Set<string>();
     for (const entry of initiations) {
+      const kind = classify(entry);
+      kinds.add(kind);
+      expect(kind, `${entry.file} initiates a download of an unclassifiable kind`).not.toBe(
+        "neither",
+      );
+
       // Every download names its own filename. The real code assigns a *variable* —
       // `anchor.download = filename` inside a `downloadJson(filename, contents)` helper —
       // so asserting the assigned value is a `.json` literal was asserting something the
-      // code does not do, and the first version of this check failed on it. What matters
-      // is that no download is *named* like media, and that the blob beside it is JSON.
+      // code does not do, and the first version of this check failed on it. What matters is
+      // that no download is *named* like media by the client.
       const assigned = [...entry.code.matchAll(/\.download\s*=\s*([^;]+);/g)].map((m) =>
         m[1].trim(),
       );
@@ -1419,30 +1790,85 @@ describe("every download the application initiates is a backup, not media (M15 t
           /\.(mp3|m4a|aac|opus|ogg|flac|wav|webm|mp4|mkv)\b/i,
         );
       }
-      // The blob it offers is JSON, and the check says so positively rather than only
-      // ruling out media. The first version rejected `audio/*` and `video/*` and nothing
-      // else, which meant a download named `track` with `application/octet-stream` —
-      // carrying audio — satisfied it. A check that only excludes what it thought of is
-      // not a positive check.
-      const types = [...entry.code.matchAll(/type:\s*"([^"]+)"/g)].map((m) => m[1]);
-      expect(types.length, `${entry.file} must state what it offers`).toBeGreaterThan(0);
-      for (const type of types) {
-        expect(
-          type,
-          `${entry.file} offers "${type}"; only a textual backup may be downloaded`,
-        ).toMatch(/^application\/(json|.*\+json)$|^text\//);
+
+      // A backup's blob is textual, and the check says so positively rather than only ruling out
+      // media. The first version rejected `audio/*` and `video/*` and nothing else, which meant
+      // a download named `track` with `application/octet-stream` — carrying audio — satisfied
+      // it. A check that only excludes what it thought of is not a positive check.
+      if (kind === "backup") {
+        const types = [...entry.code.matchAll(/type:\s*"([^"]+)"/g)].map((m) => m[1]);
+        for (const type of types) {
+          expect(
+            type,
+            `${entry.file} offers "${type}"; only a textual backup may be named that way`,
+          ).toMatch(/^application\/(json|.*\+json)$|^text\//);
+        }
       }
+
+      // And for the approved media download, two positive obligations rather than one negative
+      // one. The first — it reads `content-disposition` — is what classified it, so asserting it
+      // again here would be a tautology; the second is not.
+      if (kind === "media") {
+        // The name must reach the anchor as a *variable*, so the only place an extension can
+        // enter this module is the server's header. An earlier shape of this check allowed
+        // `anchor.download = "track.mp3"` because it only forbade the extension on the right-hand
+        // side of the assignment; requiring the assignment to be a bare identifier closes that.
+        expect(
+          entry.code,
+          `${entry.file} initiates a media download, so it must derive the filename from the server`,
+        ).toMatch(/filenameFrom\s*\(|content-disposition/i);
+        // And no media extension literal anywhere in the file — not in a comment-driven branch,
+        // not in a fallback, not in a test helper that got copied in. `container.ts` is the one
+        // place entitled to those literals, and it is server-side.
+        expect(
+          entry.code,
+          `${entry.file} is client-side and must not contain a media extension literal`,
+        ).not.toMatch(/\.(?:mp3|m4a|aac|opus|ogg|flac|wav|webm)\b/i);
+      }
+
       // No `<a download>` in markup points at a remote origin, which would be a
       // download the application did not produce.
       expect(entry.code, `${entry.file}`).not.toMatch(
         /download\s*=\s*["']true["'][^>]*href=["']https?:/,
       );
     }
+
+    // Neither class may be vacuous. A repository that stopped exporting backups would make the
+    // backup branch untested; a repository that had never shipped the download route would make
+    // the media branch untested. Both are silent failures otherwise.
+    expect(kinds, "the backup download must still be classified as one").toContain("backup");
+    expect(kinds, "the approved media download must be classified as one").toContain("media");
+  });
+
+  it("classifies the two known initiations correctly, so the classifier can be wrong", () => {
+    // The classifier is two lines of regex, and a two-line regex that cannot be wrong is a
+    // two-line regex that will be. Both known initiations are named here.
+    const byFile = new Map(applicationSources().map((entry) => [entry.file, entry]));
+    const backup = byFile.get("src/features/backup/DataControls.tsx");
+    expect(backup, "the backup export must still be where this suite expects it").toBeDefined();
+    expect(classify(backup!)).toBe("backup");
+
+    const media = byFile.get("src/features/download/saveFile.ts");
+    expect(media, "the download feature must still be where this suite expects it").toBeDefined();
+    expect(classify(media!)).toBe("media");
   });
 });
 
 describe("the exclusions hold in the dependency manifest and the shipped configuration (M15 task 1.1)", () => {
-  it("declares no database, auth, downloader, or ad-blocking dependency", () => {
+  /**
+   * Runtime dependencies that exist to serve a permanent exclusion, each with the clause that
+   * would forbid it if the roadmap had not approved it.
+   *
+   * M20 added the one entry. This is not a licence: it is a record of *which* exclusion was
+   * traded away and by which document, so that the next person adding a downloader has to add a
+   * row here — and a reviewer can see the trade rather than infer it from a package name.
+   */
+  const APPROVED_EXCLUSION_DEPENDENCIES: Record<string, string> = {
+    "@distube/ytdl-core":
+      "ROADMAP §18 (2026-10-03) reverses §2.5 clause 3; §21.5 names this package as the primary extractor.",
+  };
+
+  it("declares no dependency that holds user data off the device", () => {
     const manifest = JSON.parse(readFileSync(join(FRONTEND, "package.json"), "utf8")) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
@@ -1452,20 +1878,75 @@ describe("the exclusions hold in the dependency manifest and the shipped configu
       ...(manifest.devDependencies ?? {}),
     };
     const dependencyExclusion = EXCLUSIONS[2];
-    const offenders = Object.keys(declared).filter((name) =>
-      dependencyExclusion.pattern.test(`"${name}"`),
-    );
+    const offenders = Object.keys(declared)
+      .filter((name) => name in APPROVED_EXCLUSION_DEPENDENCIES === false)
+      .filter((name) => dependencyExclusion.pattern.test(`"${name}"`));
     expect(offenders, "a permanent exclusion may not enter as a dependency").toEqual([]);
   });
 
-  it("depends on nothing that can hold user data off the device", () => {
+  it("declares no downloader except the one the roadmap names", () => {
+    // Split out of the check above because that check cannot do this job: `EXCLUSIONS[2]` is the
+    // *cloud user database* detector, and it has never contained a downloader name. Its test
+    // claimed "no database, auth, downloader, or ad-blocking dependency" and only ever enforced
+    // the first — a test whose name promised more than its body, which is the failure mode this
+    // suite exists to prevent. M20 is the moment that became dangerous rather than merely
+    // untidy, because a downloader is now legitimately present and the unsound check would have
+    // let any *second* one in silently.
+    const manifest = JSON.parse(readFileSync(join(FRONTEND, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const declared = {
+      ...(manifest.dependencies ?? {}),
+      ...(manifest.devDependencies ?? {}),
+    };
+    // The unapproved-downloader vocabulary, taken from the `no MP3 faking` detector and then
+    // *widened*: that detector also carries extraction-technique clauses (`streamingData`,
+    // `player_ias`) which have nothing to do with a package name and would match nothing here.
+    const DOWNLOADER =
+      /\b(?:ytdl|youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl)\b/i;
+    const offenders = Object.keys(declared)
+      .filter((name) => name in APPROVED_EXCLUSION_DEPENDENCIES === false)
+      .filter((name) => DOWNLOADER.test(name));
+    expect(offenders, "only the downloader ROADMAP §21.5 names may be declared").toEqual([]);
+    // …and that one is genuinely declared, so the exclusion above is not satisfied by the
+    // package having been renamed.
+    expect(Object.keys(manifest.dependencies ?? {})).toContain("@distube/ytdl-core");
+  });
+
+  it("depends on nothing it cannot account for", () => {
     // A second, independent angle on the same exclusion: rather than pattern-matching a
     // vendor name, assert that every runtime dependency is one this project can account
     // for. A new runtime dependency is a decision someone made; this makes it visible.
+    //
+    // `@distube/ytdl-core` joined this list in M20. It is server-only by construction — the
+    // only module that imports it does so with a dynamic `import()` inside a route handler, so
+    // it never enters a client chunk — and `tests/download-non-goals.test.ts` asserts that. It is
+    // listed here rather than in the dev-only tier because it *is* production code; it is the
+    // one runtime dependency whose absence would break a shipped feature rather than a build.
     const manifest = JSON.parse(readFileSync(join(FRONTEND, "package.json"), "utf8")) as {
       dependencies?: Record<string, string>;
     };
     const runtime = Object.keys(manifest.dependencies ?? {}).sort();
-    expect(runtime).toEqual(["lucide-react", "next", "react", "react-dom", "zod", "zustand"]);
+    expect(runtime).toEqual([
+      "@distube/ytdl-core",
+      "lucide-react",
+      "next",
+      "react",
+      "react-dom",
+      "zod",
+      "zustand",
+    ]);
+  });
+
+  it("records the roadmap clause behind every exclusion-serving dependency", () => {
+    // A guard on the table above: an entry with no citation would let anyone approve a
+    // dependency by typing its name.
+    for (const [name, citation] of Object.entries(APPROVED_EXCLUSION_DEPENDENCIES)) {
+      expect(name.trim(), "an entry must name a package").not.toBe("");
+      expect(citation, `${name} must cite the roadmap clause that approved it`).toMatch(
+        /ROADMAP §\d+(?:\.\d+)?/,
+      );
+    }
   });
 });

@@ -157,14 +157,41 @@ describe("the named surfaces carry motion (task 4.2, the inverted default)", () 
     // The inversion. The previous guard would have been *green* with every one of these
     // markers deleted, because its rule was "nothing may animate here". Deleting the
     // motion the milestone added must fail, and this is the assertion that makes that so.
+    //
+    // A marker may be satisfied by the module's own source or by the shell it renders through
+    // (`delegatesTo`) — see `MotionAllowance`. Both routes are real animation reaching a real
+    // row; what is forbidden is an allowance that claims motion nobody applies.
     const missing: string[] = [];
     for (const [path, allowance] of MOTION_ALLOWED) {
-      const found = markersOf(path);
+      const own = markersOf(path);
+      const delegated = allowance.delegatesTo === undefined ? [] : markersOf(allowance.delegatesTo);
       for (const marker of allowance.markers) {
-        if (!found.includes(marker)) missing.push(`${path}: ${marker}`);
+        if (!own.includes(marker) && !delegated.includes(marker)) {
+          missing.push(`${path}: ${marker}`);
+        }
       }
     }
     expect(missing, "a named surface lost the motion the milestone added").toEqual([]);
+  });
+
+  it("refuses a delegation that points at a module which does not animate the row", () => {
+    // The escape hatch has to be a checked one. A `delegatesTo` naming something absent, or
+    // something that carries none of the delegated markers, would otherwise satisfy the rule above
+    // with motion nobody can see — which is the failure the inverted default exists to catch.
+    for (const [path, allowance] of MOTION_ALLOWED) {
+      if (allowance.delegatesTo === undefined) continue;
+      const target = MOTION_ALLOWED.get(allowance.delegatesTo);
+      expect(
+        target,
+        `${path} delegates to a module that is not itself allowed to animate`,
+      ).toBeTruthy();
+      const carried = markersOf(allowance.delegatesTo);
+      for (const marker of allowance.markers) {
+        expect(carried, `${path} delegates ${marker} to a shell that does not carry it`).toContain(
+          marker,
+        );
+      }
+    }
   });
 
   it("puts motion on each of the five surfaces the roadmap names", () => {
@@ -212,11 +239,21 @@ describe("the named surfaces carry motion (task 4.2, the inverted default)", () 
 
   it("counts the modules that carry motion, so 'animate everything' cannot creep in unnoticed", () => {
     // The equality is the point: every module that animates is on the allowance, and
-    // every module on the allowance animates. The ceiling then says the set is not allowed
-    // to grow without someone noticing — 32 today, and motion was already present in 24
-    // modules before this milestone, which normalised them rather than adding a new kind
-    // of surface.
-    expect(carriers().length).toBe(MOTION_ALLOWED.size);
+    // every module on the allowance animates — directly, or through the shell it renders
+    // through. The ceiling then says the set is not allowed to grow without someone noticing
+    // — 34 today, and motion was already present in 24 modules before this milestone, which
+    // normalised them rather than adding a new kind of surface.
+    const animated = MOTION_ALLOWED.size;
+    const carriersSet = new Set(carriers());
+    const resolving = [...MOTION_ALLOWED.entries()].filter(
+      ([path, allowance]) =>
+        carriersSet.has(path) ||
+        (allowance.delegatesTo !== undefined && carriersSet.has(allowance.delegatesTo)),
+    ).length;
+    expect(
+      resolving,
+      "every allowance either animates or renders through something that does",
+    ).toBe(animated);
     expect(
       MOTION_ALLOWED.size,
       "motion stays on a named, finite set of modules",
