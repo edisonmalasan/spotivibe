@@ -3,6 +3,7 @@ import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import manifestRoute from "@/app/manifest";
+import { readTree as readTreeShared } from "./helpers/sourceTree";
 
 /**
  * Static architecture invariants checked against the real source files
@@ -68,13 +69,33 @@ function walk(dir: string): string[] {
  * Directory reads, memoized per directory for the same reason as
  * {@link uiSourceFiles}: the coverage proofs read their own subtree inside every
  * assertion, and re-walking it each time is pure repeated I/O.
+ *
+ * The listing and the read go through `helpers/sourceTree` rather than through a local
+ * `walk().map(readFileSync)`. The original was a time-of-check/time-of-use gap: another
+ * worker can create or delete a file between the two halves — `motion-scope.test.ts`
+ * writes a probe module into `src/features/sharing/` and deletes it again — and the
+ * result was `ENOENT` in a suite with nothing to say about the architecture,
+ * presenting as an intermittent failure in whichever file happened to be running.
+ * Vitest's isolation separates VM state and not the filesystem, so `isolate: true`
+ * cannot prevent it. See that helper for why moving the probe out of `src/` was
+ * rejected: it would have removed the race by making the probe test prove nothing.
  */
 const readTreeCache = new Map<string, Array<{ file: string; source: string }>>();
+
+/**
+ * Files that vanished between being listed and being read.
+ *
+ * Recorded rather than swallowed. A tolerated race is only acceptable if it is visible: a tree
+ * being mutated under a test is worth knowing about, and a silently dropped file is the shape of
+ * bug this whole change is about. Asserted to be empty at the end of the suite, so a real
+ * collision fails rather than passing quietly.
+ */
+const racedFiles = new Set<string>();
 
 function readTree(dir: string): Array<{ file: string; source: string }> {
   const cached = readTreeCache.get(dir);
   if (cached) return cached;
-  const files = walk(dir).map((file) => ({ file, source: readFileSync(file, "utf8") }));
+  const files = readTreeShared(dir, { onRace: (file) => racedFiles.add(file) });
   readTreeCache.set(dir, files);
   return files;
 }
@@ -3492,5 +3513,21 @@ describe("architecture: the M14 resilience items stay implemented (M14 task 2.5)
     );
     expect(worker).toContain("readUsable");
     expect(worker).toContain("isIntactResponse");
+  });
+});
+
+describe("the source tree was not mutated while this suite read it", () => {
+  it("no file vanished between being listed and being read", () => {
+    // The tolerance in `readTree` is only acceptable because it is visible. A file that appeared
+    // or disappeared under this suite means another worker is writing into `src` while this one
+    // reads it, which is the defect M21 fixed rather than the one it recorded: previously the
+    // behaviour was to throw `ENOENT` from whichever worker lost the race, so the failure surfaced
+    // in this file and nowhere near the cause.
+    //
+    // Asserted rather than logged. A logged race is a race that ships.
+    expect(
+      [...racedFiles],
+      "a file moved under this suite; the tree is being mutated by another worker",
+    ).toEqual([]);
   });
 });
