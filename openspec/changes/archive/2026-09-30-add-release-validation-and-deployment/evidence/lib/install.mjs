@@ -227,6 +227,39 @@ export function isShortCircuited(item, environmentBroken) {
   return item.how !== "install";
 }
 
+/**
+ * The reason every later item is short-circuited, given the install's outcome.
+ *
+ * ## Why this exists, given `isShortCircuited` is already extracted
+ *
+ * Extracting the *condition* was not enough, because the cascade has two halves and only one of them
+ * lived in a testable function. The other half is the value: `environmentBroken = prepared.detail`.
+ * Independent verification replaced that line's right-hand side with the literal
+ * `"install reported success"` and the whole suite stayed green, because the only assertion touching
+ * it was `expect(gate).toMatch(/environmentBroken/)` — a check that the *spelling* appears somewhere
+ * in the file. Renaming every occurrence of the identifier was equally invisible.
+ *
+ * That check could not fail for a reason worth the name: it never looked at what the variable was
+ * assigned. It would have passed just as happily if the cascade were wired to nothing at all.
+ *
+ * ## What this buys
+ *
+ * The mapping from an install outcome to the reason string is now a returned value with its own tests:
+ * success yields `null` — which is what `isShortCircuited` reads as "nothing is broken" — and failure
+ * yields the install's own detail, so the first line of output still names the real cause.
+ *
+ * The gate's remaining use of it is one call, and asserting *that call* is a narrow structural check
+ * rather than the whole claim. If the gate stops calling this, the behaviour tests here still pass and
+ * the structural assertion is what notices — which is the correct division of labour, and the reverse
+ * of the previous arrangement where nothing but the spelling check existed.
+ *
+ * @param {{ok: boolean, detail?: string}} prepared the install outcome
+ * @returns {string | null} the cascade reason, or null when the install worked
+ */
+export function cascadeReason(prepared) {
+  return prepared.ok ? null : prepared.detail;
+}
+
 /** The real `run`, used when the caller does not inject one. */
 export function spawnRunner(command, args, cwd) {
   const outcome = spawnSync(command, args, {

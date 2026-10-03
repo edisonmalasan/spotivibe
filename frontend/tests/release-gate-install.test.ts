@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  cascadeReason,
   dependencyTreeState,
   isShortCircuited,
   prepareDependencies,
@@ -27,6 +28,12 @@ import {
   pausedAction,
   PAUSED_ACTION,
 } from "../../openspec/changes/archive/2026-09-30-add-release-validation-and-deployment/evidence/lib/router.mjs";
+import {
+  classifyPausedRequest,
+  pausedRequestHandlers,
+  PAUSED_OUTCOME,
+  resolvePausedRequest,
+} from "../../openspec/changes/archive/2026-09-30-add-release-validation-and-deployment/evidence/lib/harness.mjs";
 
 /**
  * The release gate's dependency preparation.
@@ -464,9 +471,47 @@ describe("the gate script itself", () => {
   });
 
   it("reports a broken environment once rather than as a failure per item", () => {
-    // The cascade is the diagnostic half of this fix, and it is invisible in a test of
-    // `prepareDependencies` alone.
-    expect(gate).toMatch(/environmentBroken/);
+    // ## What this replaced, and why it was not a check
+    //
+    // The three lines below used to be:
+    //
+    //     expect(gate).toMatch(/environmentBroken/);
+    //     expect(gate).toMatch(/NOT RUN/);
+    //     expect(gate).toContain("the environment is broken");
+    //
+    // Independent verification showed that replacing the cascade's *assignment* —
+    // `environmentBroken = prepared.detail` → `environmentBroken = 'install reported success'` —
+    // left all 39 tests green, and so did renaming every occurrence of the identifier. Those lines
+    // could not fail for a reason worth the name: they never looked at what the variable was
+    // assigned, only at whether its spelling appeared somewhere in the file. A cascade wired to
+    // nothing at all would have satisfied them.
+    //
+    // The cascade has two halves and only one of them was in a testable function. Both are now.
+
+    // **Half one, behaviourally.** What the cascade reason is, given an install outcome. This is the
+    // half the old check was blind to: `ok: false` must yield the install's own detail, because that
+    // string is what the first line of output shows, and `ok: true` must yield exactly `null` — which
+    // is the value `isShortCircuited` reads as "nothing is broken". A reason of `undefined` would make
+    // `environmentBroken === null` false and short-circuit *every* item, including the install itself.
+    expect(cascadeReason({ ok: false, detail: "node_modules/.bin is empty" })).toBe(
+      "node_modules/.bin is empty",
+    );
+    expect(cascadeReason({ ok: true, detail: "installed" })).toBeNull();
+
+    // The falsy-shape cases, because `null` and `undefined` are not interchangeable here and only one
+    // of them means "the environment is fine".
+    expect(cascadeReason({ ok: true })).toBeNull();
+    expect(cascadeReason({ ok: false, detail: "" })).not.toBeNull();
+
+    // **Half two, structurally.** The gate must actually *call* it. Narrow on purpose: the behaviour
+    // lives in the function and is pinned above, so this only has to notice the gate stopping the
+    // call — which is the one thing the unit tests cannot see, because they do not run the gate.
+    expect(gate).toContain("environmentBroken = cascadeReason(prepared);");
+    expect(gate).not.toMatch(/environmentBroken\s*=\s*(?!cascadeReason)["'`]/);
+
+    // And the presentation, which is the half a reader sees. `NOT RUN` rather than `FAIL`, because a
+    // missing `tsc` is not a finding about the code and recording it as one would put a defect in the
+    // tally that does not exist.
     expect(gate).toMatch(/NOT RUN/);
     expect(gate).toContain("the environment is broken");
   });
@@ -581,11 +626,300 @@ describe("the end-to-end fixture router's readiness", () => {
     // One guard, on the fact that the extracted decision is actually the one in use. Without it the
     // extraction could be inert — the functions tested above real, and the hang still present.
     const harness = code(readFileSync(join(EVIDENCE, "lib", "harness.mjs"), "utf8"));
-    const handler = /on\("Fetch\.requestPaused"[\s\S]*?const \{ requestId/.exec(harness)?.[0] ?? "";
+    const handler = /on\("Fetch\.requestPaused"[\s\S]*?\n {4}\}\);/.exec(harness)?.[0] ?? "";
     expect(handler).toContain("pausedAction(readiness, sessionId === pageSession())");
-    expect(handler).toContain("PAUSED_ACTION.CONTINUE");
+    expect(handler).toContain("classifyPausedRequest(");
+    // The dispatch itself, not just the classification. Mutation verification found the previous
+    // version of this guard was satisfied by a handler that classified and then did nothing with
+    // the plan: the library was real, the hang was still in the file, and the suite was green.
+    // So the call, and the context it is handed, are both asserted — an extraction that is not
+    // the one in use is inert, and inertness is the failure mode a source check cannot see.
+    expect(handler).toContain("await resolvePausedRequest(plan, context);");
+    // Each context method must actually reach the browser. The unit tests above pin what each
+    // outcome *sends*; these three pin that the CDP handler hands it something that sends.
+    expect(handler).toMatch(/continueRequest: \(\) =>[\s\S]*?"Fetch\.continueRequest"/);
+    expect(handler).toMatch(/failRequest: \(errorReason\) =>[\s\S]*?"Fetch\.failRequest"/);
+    expect(handler).toMatch(
+      /fulfillRequest: \(responseCode, body\) =>[\s\S]*?"Fetch\.fulfillRequest"/,
+    );
     // And the bare-drop guard must be gone from executable text, not merely from the comments.
     expect(handler).not.toMatch(/!routerPaused/);
+  });
+});
+
+/**
+ * The fixture router's dispatch.
+ *
+ * ## What was wrong here, in one sentence
+ *
+ * Independent verification reduced the not-ready branch of `Fetch.requestPaused` to a bare
+ * `return`, and all 39 tests stayed green — restoring the silent request drop that the branch's
+ * own comment claimed was impossible.
+ *
+ * ## Why a green suite was the correct outcome for that mutation
+ *
+ * A dropped CDP request does not fail; it hangs. The browser waits for a response that never
+ * comes, the run takes longer, and the gate's exit code is still 0. There was no assertion that
+ * could have caught it, because the branch was seven lines of inline `sendTo` guarded by a source
+ * check that its identifier appeared in the file.
+ *
+ * So the fix is not a better assertion about the old shape — it is a shape in which the mistake
+ * cannot be written. Deciding is separated from sending, and every send is a one-line named
+ * handler that a test invokes directly against a stub context.
+ */
+describe("classifyPausedRequest", () => {
+  const request = (url: string) => ({ url, requestId: "1", method: "GET" });
+
+  it("ignores a request the router does not own", () => {
+    expect(
+      classifyPausedRequest({
+        action: PAUSED_ACTION.IGNORE,
+        request: request("https://example.test/api/x"),
+        routes: [{ path: "/api/x", body: {} }],
+      }),
+    ).toEqual({ outcome: PAUSED_OUTCOME.IGNORE });
+  });
+
+  it("continues a not-ready request without consulting any route", () => {
+    // A matcher that throws must not be able to strand a request the router was not ready for.
+    // The throw case is covered below; what matters here is that routes are never read, which is
+    // proved by a route whose own `match` would explode if it were evaluated.
+    const exploding = {
+      path: "/never",
+      match: {
+        test() {
+          throw new Error("a not-ready request must not consult routes");
+        },
+      },
+    };
+    expect(
+      classifyPausedRequest({
+        action: PAUSED_ACTION.CONTINUE,
+        request: request("https://example.test/never"),
+        routes: [exploding],
+      }),
+    ).toEqual({ outcome: PAUSED_OUTCOME.CONTINUE });
+  });
+
+  it("continues a ready request that matches no route", () => {
+    expect(
+      classifyPausedRequest({
+        action: PAUSED_ACTION.ROUTE,
+        request: request("https://example.test/assets/app.css"),
+        routes: [{ path: "/api/x", body: {} }],
+      }),
+    ).toEqual({ outcome: PAUSED_OUTCOME.CONTINUE });
+  });
+
+  it("fails a route that declares a transport failure, and carries its reason", () => {
+    expect(
+      classifyPausedRequest({
+        action: PAUSED_ACTION.ROUTE,
+        request: request("https://example.test/api/x"),
+        routes: [{ path: "/api/x", transport: "failed", errorReason: "ConnectionRefused" }],
+      }),
+    ).toEqual({ outcome: PAUSED_OUTCOME.FAIL, errorReason: "ConnectionRefused" });
+  });
+
+  it("defaults a transport failure's reason rather than sending undefined", () => {
+    const plan = classifyPausedRequest({
+      action: PAUSED_ACTION.ROUTE,
+      request: request("https://example.test/api/x"),
+      routes: [{ path: "/api/x", transport: "failed" }],
+    });
+    expect(plan.errorReason).toBe("Failed");
+  });
+
+  it("fulfils a matched route with its declared status", () => {
+    const plan = classifyPausedRequest({
+      action: PAUSED_ACTION.ROUTE,
+      request: request("https://example.test/api/x"),
+      routes: [{ path: "/api/x", status: 503, body: { error: "unavailable" } }],
+    });
+    expect(plan.outcome).toBe(PAUSED_OUTCOME.FULFILL);
+    // A non-2xx body is *not* a transport failure — modelling that distinction is the reason
+    // `transport: "failed"` exists separately, and conflating them again would make the
+    // `ok: false` fixtures dead data.
+    expect(plan.responseCode).toBe(503);
+    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe('{"error":"unavailable"}');
+  });
+
+  it("defaults a route's status to 200", () => {
+    const plan = classifyPausedRequest({
+      action: PAUSED_ACTION.ROUTE,
+      request: request("https://example.test/api/x"),
+      routes: [{ path: "/api/x", body: { ok: true } }],
+    });
+    expect(plan.responseCode).toBe(200);
+  });
+
+  it("evaluates regex routes against the path, and the first match wins", () => {
+    // `find` returns the first match, so a scenario cannot override a route registered earlier.
+    // The harness's own doc comment claimed the opposite — "Later routes win" — and no test
+    // contradicted it, because nothing tested it. The comment was the only statement of intent
+    // and it was false; it has been corrected to match the code rather than the code changed to
+    // match the comment, because nothing here demonstrates which order a scenario needs.
+    const plan = classifyPausedRequest({
+      action: PAUSED_ACTION.ROUTE,
+      request: request("https://example.test/api/search?q=a"),
+      routes: [
+        { match: /^\/api\//, body: { from: "first" } },
+        { match: /^\/api\/search/, body: { from: "second" } },
+      ],
+    });
+    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe('{"from":"first"}');
+  });
+
+  it("gives a body function the URL and serializes its return value", () => {
+    // Returning an object used to throw a `TypeError` that the handler's outer catch turned into
+    // a continue-to-the-network: a fixture that looked installed and was silently not. A plain
+    // body object was stringified, so the two paths disagreed.
+    const plan = classifyPausedRequest({
+      action: PAUSED_ACTION.ROUTE,
+      request: request("https://example.test/api/search?q=b"),
+      routes: [{ path: "/api/search", body: (url: URL) => ({ q: url.searchParams.get("q") }) }],
+    });
+    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe('{"q":"b"}');
+  });
+
+  it("sends a string body verbatim, from either a value or a function", () => {
+    // The one case where JSON-encoding would be wrong: a body that is already a document.
+    for (const body of ["<html>ok</html>", () => "<html>ok</html>"]) {
+      const plan = classifyPausedRequest({
+        action: PAUSED_ACTION.ROUTE,
+        request: request("https://example.test/page"),
+        routes: [{ path: "/page", body }],
+      });
+      expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe("<html>ok</html>");
+    }
+  });
+
+  it("fulfils an absent body as an empty document rather than failing", () => {
+    const plan = classifyPausedRequest({
+      action: PAUSED_ACTION.ROUTE,
+      request: request("https://example.test/api/empty"),
+      routes: [{ path: "/api/empty" }],
+    });
+    expect(plan.outcome).toBe(PAUSED_OUTCOME.FULFILL);
+    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe("");
+  });
+});
+
+describe("resolvePausedRequest", () => {
+  function stub() {
+    const calls: string[] = [];
+    return {
+      calls,
+      context: {
+        continueRequest: async () => {
+          calls.push("continue");
+        },
+        failRequest: async (errorReason: string) => {
+          calls.push(`fail:${errorReason}`);
+        },
+        fulfillRequest: async (responseCode: number, body: string) => {
+          calls.push(`fulfill:${responseCode}:${Buffer.from(body, "base64").toString("utf8")}`);
+        },
+      },
+    };
+  }
+
+  it("continues the request — this is the assertion the mutation defeated", async () => {
+    // This one line is the whole point. The mutation verification applied — reducing the not-ready
+    // branch to a bare `return` — left 39 tests green because nothing here existed. Now the arm
+    // that forgets to send is a failing test rather than a stalled browser.
+    const { calls, context } = stub();
+    await resolvePausedRequest({ outcome: PAUSED_OUTCOME.CONTINUE }, context);
+    expect(calls).toEqual(["continue"]);
+  });
+
+  it("fails the request with the planned reason", async () => {
+    const { calls, context } = stub();
+    await resolvePausedRequest(
+      { outcome: PAUSED_OUTCOME.FAIL, errorReason: "ConnectionRefused" },
+      context,
+    );
+    expect(calls).toEqual(["fail:ConnectionRefused"]);
+  });
+
+  it("fulfils the request with the planned status and body", async () => {
+    const { calls, context } = stub();
+    const body = Buffer.from('{"ok":true}', "utf8").toString("base64");
+    await resolvePausedRequest(
+      { outcome: PAUSED_OUTCOME.FULFILL, responseCode: 503, body },
+      context,
+    );
+    expect(calls).toEqual(['fulfill:503:{"ok":true}']);
+  });
+
+  it("sends nothing at all for an ignored request, and does not throw", async () => {
+    // The one arm where sending nothing is correct. It is asserted rather than left implicit, so
+    // that "ignore" cannot later be spelled as "continue".
+    const { calls, context } = stub();
+    await resolvePausedRequest({ outcome: PAUSED_OUTCOME.IGNORE }, context);
+    expect(calls).toEqual([]);
+  });
+
+  it("throws on an outcome it has no handler for, rather than continuing", async () => {
+    // Falling through to the network here would reinstate the exact failure this refactor
+    // removes: a typo becomes a hang instead of a stack trace.
+    const { calls, context } = stub();
+    await expect(resolvePausedRequest({ outcome: "continute" }, context)).rejects.toThrow(
+      'no handler for paused request outcome "continute"',
+    );
+    expect(calls).toEqual([]);
+  });
+
+  it("has a handler for every outcome it can be given", async () => {
+    // Derived, not enumerated: the set of outcomes comes from running the classifier over
+    // inputs that reach every branch, so adding a branch without a handler fails here without
+    // anyone editing this list.
+    const request = { url: "https://example.test/api/x", requestId: "1" };
+    const produced = new Set<string>();
+    // Each route set is separate rather than one list, because `find` takes the first match: a
+    // list holding both a body route and a transport-failure route for the same path would never
+    // reach the failure branch, and this test would report coverage it does not have.
+    const routeSets: { path: string; body?: unknown; transport?: string }[][] = [
+      [],
+      [{ path: "/api/x", body: { ok: true } }],
+      [{ path: "/api/x", transport: "failed" }],
+    ];
+    for (const action of Object.values(PAUSED_ACTION)) {
+      for (const routes of routeSets) {
+        produced.add(classifyPausedRequest({ action, request, routes }).outcome);
+      }
+    }
+
+    expect([...produced].sort()).toEqual(
+      [...new Set([...produced, ...Object.values(PAUSED_OUTCOME)])].sort(),
+    );
+    for (const outcome of produced) {
+      expect(Object.keys(pausedRequestHandlers)).toContain(outcome);
+    }
+  });
+
+  it("resolves every outcome the classifier can produce, by running them all", async () => {
+    // Belt and braces on the set above: rather than trusting that a handler *exists*, drive it
+    // and observe what it sent. A handler reduced to a bare `return` sends nothing, and only
+    // `ignore` is allowed to send nothing.
+    const request = { url: "https://example.test/api/x", requestId: "1" };
+    const matrix = [
+      { action: PAUSED_ACTION.IGNORE, routes: [{ path: "/api/x", body: {} }] },
+      { action: PAUSED_ACTION.CONTINUE, routes: [{ path: "/api/x", body: {} }] },
+      { action: PAUSED_ACTION.ROUTE, routes: [] },
+      { action: PAUSED_ACTION.ROUTE, routes: [{ path: "/api/x", body: { ok: true } }] },
+      { action: PAUSED_ACTION.ROUTE, routes: [{ path: "/api/x", transport: "failed" }] },
+    ];
+    for (const { action, routes } of matrix) {
+      const plan = classifyPausedRequest({ action, request, routes });
+      const { calls, context } = stub();
+      await resolvePausedRequest(plan, context);
+      if (plan.outcome === PAUSED_OUTCOME.IGNORE) {
+        expect(calls, `outcome ${plan.outcome}`).toEqual([]);
+      } else {
+        expect(calls.length, `outcome ${plan.outcome} sent nothing`).toBe(1);
+      }
+    }
   });
 });
 

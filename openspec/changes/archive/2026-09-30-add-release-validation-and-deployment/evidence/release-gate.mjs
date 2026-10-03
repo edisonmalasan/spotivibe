@@ -33,7 +33,7 @@
 
 import { spawnSync } from "node:child_process";
 import { availableEngines, defaultEngine } from "./lib/harness.mjs";
-import { prepareDependencies, isShortCircuited } from "./lib/install.mjs";
+import { prepareDependencies, isShortCircuited, cascadeReason } from "./lib/install.mjs";
 import {
   existsSync,
   mkdirSync,
@@ -461,7 +461,10 @@ for (const item of ITEMS) {
     if (prepared.ok) {
       results.push({ item, status: "PASS", detail: prepared.detail, output: prepared.output });
     } else {
-      environmentBroken = prepared.detail;
+      // The cascade's value comes from a tested function rather than being spelled here, so the
+      // mapping from an install outcome to the reason string is pinned by behaviour instead of by a
+      // check that the identifier appears in this file.
+      environmentBroken = cascadeReason(prepared);
       results.push({ item, status: "FAIL", detail: prepared.detail, output: prepared.output });
     }
     continue;
