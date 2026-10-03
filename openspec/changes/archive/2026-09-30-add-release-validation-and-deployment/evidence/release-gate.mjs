@@ -105,18 +105,27 @@ const ITEMS = [
     args: ["run", "typecheck"],
   },
   {
-    id: "gates-tests",
-    requirement: "`npm test` passes",
-    how: "command",
-    command: "npm",
-    args: ["test"],
-  },
-  {
     id: "gates-build",
     requirement: "`npm run build` produces a production build",
     how: "command",
     command: "npm",
     args: ["run", "build"],
+  },
+  // **Build before test, deliberately.** `motion-budget.test.ts` has two halves: its manifest and
+  // import rules run unconditionally, and its *size* rules need a build report and skip without one.
+  // With the tests first those six size assertions skipped on every run and the gate reported green for
+  // a file whose headline is a budget. Measured both ways by moving `.next` aside: 21 passed with a
+  // build, 15 passed and 6 skipped without.
+  //
+  // The ordering was fixed in `.github/workflows/ci.yml` and asserted there by `ci-workflow.test.ts`,
+  // which read only the workflow file - so this gate kept the defect while the check sat next to it
+  // looking as though it covered it. `tests/ci-workflow.test.ts` now reads this file too.
+  {
+    id: "gates-tests",
+    requirement: "`npm test` passes",
+    how: "command",
+    command: "npm",
+    args: ["test"],
   },
   {
     id: "icons-drift",

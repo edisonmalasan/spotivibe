@@ -107,6 +107,67 @@ const steps = readSteps(workflow);
 const indexOfStep = (needle: string): number =>
   steps.findIndex((step) => (step.run ?? "").includes(needle));
 
+describe("every gate that runs these steps builds before it tests", () => {
+  // ## Why the release gate is in this file
+  //
+  // M21 moved the build ahead of the tests in `.github/workflows/ci.yml` and added this suite to
+  // assert it. The suite read **only the workflow file**. The release gate — the artifact this whole
+  // change exists to harden — ran `npm test` at line 108 and `npm run build` at line 115, so it kept
+  // the defect the change was about while a passing check sat next to it looking as though it covered
+  // it. Independent verification caught this; it is the same lesson as §1's cascade guard, and the
+  // same as the arm scraper: **a check pointed at one file says nothing about the other file that does
+  // the same work.**
+  //
+  // The gate's items are read structurally — `id:` keys in source order — rather than by searching for
+  // `npm test` text, so a comment mentioning the order cannot satisfy the assertion.
+
+  const gate = readFileSync(
+    join(
+      REPO,
+      "openspec",
+      "changes",
+      "archive",
+      "2026-09-30-add-release-validation-and-deployment",
+      "evidence",
+      "release-gate.mjs",
+    ),
+    "utf8",
+  );
+
+  /** The `id:` of every gate item, in the order the array declares them. */
+  const gateItemIds = [...gate.matchAll(/^\s{4}id: "([^"]+)",$/gm)].map((match) => match[1]!);
+
+  it("reads every gate item the file declares", () => {
+    // The same anti-vacuity guard as the workflow reader above. If the scan matched nothing, both
+    // indexes would be -1 and `-1 < -1` is false... which would fail here rather than pass, but only
+    // by accident. Stated explicitly so the guard does not depend on that accident.
+    expect(gateItemIds.length, "the gate's items must have been found").toBeGreaterThan(20);
+    // M21 task 1.1 recorded "24 items"; the file declares 26. The count is asserted rather than
+    // restated so the two cannot disagree again.
+    expect(gateItemIds).toHaveLength(26);
+  });
+
+  it("produces the production build before running the tests", () => {
+    const build = gateItemIds.indexOf("gates-build");
+    const test = gateItemIds.indexOf("gates-tests");
+    expect(build).toBeGreaterThan(-1);
+    expect(test).toBeGreaterThan(-1);
+    expect(
+      build,
+      "the gate must build before it tests, or the size budget silently skips",
+    ).toBeLessThan(test);
+  });
+
+  it("runs the static checks before the build", () => {
+    const build = gateItemIds.indexOf("gates-build");
+    for (const item of ["gates-lint", "gates-format", "gates-typecheck"]) {
+      const at = gateItemIds.indexOf(item);
+      expect(at, `${item} must be a declared gate item`).toBeGreaterThan(-1);
+      expect(at, `${item} must precede the build`).toBeLessThan(build);
+    }
+  });
+});
+
 describe("the CI workflow's steps", () => {
   it("reads every step the file declares", () => {
     // The reader is load-bearing for all four ordering assertions below, so it is checked first.
