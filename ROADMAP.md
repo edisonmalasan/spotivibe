@@ -136,8 +136,20 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M17** | Home discovery enrichment | `DONE` | M11, M8 |
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `DONE` | M18 |
-| **M20** | Personal-use media downloading | `IMPLEMENTING` | M3, M4 |
-| **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
+| **M20** | Personal-use media downloading | `DONE` | M3, M4 |
+| **M21** | Post-v1 integration, regression validation, documentation | `NEXT` | M16–M20 |
+
+**M20 outcome, 2026-10-03.** Proposal merged as `eb76cfc`; Apply as PR #96 / `9b61e72`; spec sync as
+PR #97 / `91f47a1`. The `download` capability is 8 requirements and 31 scenarios, and
+`release-validation` gained the narrowing discipline plus two scenarios. Five independent reviews
+ran; the first four returned REJECT and the fifth returned ACCEPT. What the reviews found is
+recorded rather than smoothed over, because it is the most useful thing the change produced: three
+detectors whose clauses could each be deleted with the whole suite green (27 of 35), one CI-workflow
+file that had never been inside the encoding scan because `\.git` also matched `.github`, and two
+arms that matched the token as documented rather than as it appears in code. None was a defect in
+shipped behaviour; all were rules that said less than they appeared to. M21 inherits the rest —
+including 47 of 52 deletable clauses in `download-non-goals.test.ts`, whose scan covers none of
+M20's new server files.
 
 **Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external
 provider, a parser, a playback-position binding) and it proves the Now Playing surface can grow.
