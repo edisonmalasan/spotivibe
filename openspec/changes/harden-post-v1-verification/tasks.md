@@ -140,10 +140,31 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   five detectors, C6 falsifiable scopes, C7 the reversed probe decision, C8 the gate's build-before-test
   order. Each with a mutation proof; several required two attempts, and the attempts that stayed green
   are named as such.)
-- [ ] 8.3 **Six consecutive green full gate runs.** One green run is not evidence against an intermittent defect.
-  **Outstanding, and this is the gate on merging.** An earlier batch gave runs 2–5 green and run 6 red on
-  `format:1` because files were being edited mid-run. All five predate every fix in this branch, so none
-  of them count and the count starts again from the first run made after the tree stops moving.
+- [x] 8.3 **Six consecutive green full gate runs.** One green run is not evidence against an intermittent defect.
+  **Met**, at `bdb0dba` with the tree committed and unmodified for the whole batch:
+
+  | run | exit | seconds | run | exit | seconds |
+  |---|---|---|---|---|---|
+  | 1 | 0 | 164 | 4 | 0 | 114 |
+  | 2 | 0 | 135 | 5 | 0 | 129 |
+  | 3 | 0 | 115 | 6 | 0 | 250 |
+
+  Each run is the root `npm run gate` — lint, `format:check`, typecheck, build, test — and each reports
+  **181 test files and 3278 tests passing**. Two things make these runs evidence rather than six green
+  lights, and both are checked rather than assumed:
+
+  - `tests/motion-budget.test.ts` ran **21 tests in every run**. That is the "with a build" figure;
+    the "without a build" figure is 15 passed and 6 skipped. A green run in which those six rules
+    skipped would look identical from the exit code, which is why the count is recorded per run.
+  - The batch started only after the tree was committed, because the earlier batch's run 6 went red on
+    `format:1` *because files were being edited while the runs were in progress*. Those runs are not
+    counted here and neither are the five earlier ones, which predate every fix on this branch.
+
+  **This criterion found a defect that review had not.** The first attempt at this batch failed at
+  `typecheck`, and the second failed because the root `gate` script still tested before it built —
+  C8's exact finding, in the one script `AGENTS.md` names as the gate. A completion criterion measured
+  by the thing under test is only as good as that thing, and the thing under test was quietly skipping
+  six assertions and would have said so on its own if asked.
 - [x] 8.4 Record browser-dependent and deployment-dependent checks as manual/unverified. Never as passes.
   (Real production streaming, the 300 s duration, the 120 s proxy timeout, `@distube/ytdl-core` on a real
   function, and any real browser download are all recorded **unverified**, with the reason.)
