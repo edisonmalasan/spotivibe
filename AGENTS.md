@@ -234,10 +234,29 @@ npm run format:check # prettier --check .
 npm run typecheck    # next typegen && tsc --noEmit
 npm test             # vitest run
 npm run build        # next build
+npm run icons:check  # node scripts/generate-icons.mjs --check
 npm run dev          # next dev (dev server; verified serving HTTP 200)
 ```
 
-Exit codes: `npm run setup` (install), `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, and `npm run build` each exited `0`; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `.github/workflows/ci.yml` runs the install, `lint`, `format:check`, `typecheck`, `test`, and `build` steps in `frontend/` on push/PR to `main`, on Node 24.
+`icons:check` is a **build-input** check, not a formatting one: it verifies the checked-in
+`public/icons/*.png` match what `scripts/generate-icons.mjs` would produce, so a change to the icon
+script cannot ship without the regenerated files. It is item 7 of the release gate. It was absent
+from this list until M21, which is the same defect the whole milestone is about: a command that
+exists, runs, and gates releases, documented nowhere.
+
+**Order matters, and one of the orderings is load-bearing.** In CI the production build runs
+**before** `npm test`. `tests/motion-budget.test.ts` has two halves: its manifest and import rules
+run unconditionally, and its **size** rules need a build report and skip without one. With the tests
+first, those size rules skipped on every CI run and the job reported green for a file whose headline
+is a budget. Measured both ways by moving `.next` aside: **21 passed with a build, 15 passed and 6
+skipped without one.** `tests/ci-workflow.test.ts` asserts the ordering so it cannot silently
+regress.
+
+The cost of that ordering is real and is not hidden: a red pull request now spends a few minutes of
+CI on a build whose result nobody reads, because the build runs before a failing test can stop the
+job.
+
+Exit codes: `npm run setup` (install), `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run icons:check` ("icons match the generator") each exited `0`; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `.github/workflows/ci.yml` runs the install, `lint`, `format:check`, `typecheck`, `build`, and `test` steps in `frontend/` on push/PR to `main`, on Node 24. The build precedes the tests deliberately; see above for why, and for what it costs.
 
 These commands establish `that dependencies install from the lockfile, ESLint reports no errors, formatting is consistent, strict TypeScript compiles, the current unit tests pass, a production Next.js build succeeds, and the dev server starts and serves the app`.
 

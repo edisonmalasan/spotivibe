@@ -607,3 +607,58 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     commit**, so the commit lands on the branch by construction rather than by decision; and after any
     merge, run `git branch --show-current` and expect `main`, which is the state to leave. Not
     reverted, because reverting a merged push is the more destructive operation; recorded here instead.
+53. **A source assertion that has to be kept from matching a comment is one edit away from matching
+    it again.** Three of M21's own new assertions failed against *unmodified* code, all the same way:
+    they matched the explanatory comment describing the bug rather than the code. One compared the
+    index of `routerPaused = true` against the index of `Fetch.enable` — and the comment written to
+    describe that exact bug mentions `Fetch.enable` first, so the check was reading the prose. Another
+    matched the old broken guard, which its comment quotes verbatim. **Fix this by stripping comments
+    before asserting, and better, by extracting the decision into a function and asserting on what it
+    returns.** A returned value cannot be satisfied by a sentence; a string index can. This is the
+    seventh time this repository has produced the same defect, which is why it is worth memorising as
+    a reflex rather than a lesson.
+54. **A check that asserts an identifier *appears somewhere* is not a check.** M21's cascade guard
+    asserted the name `environmentBroken` was in the gate's source. Replacing the condition with
+    `false` left it green while the gate went back to reporting sixteen failures where there is one.
+    Only the mutation proof found it, and only because the mutation was written to delete the
+    *condition* rather than the word. **Write the mutation against the decision, not the spelling.**
+55. **Measure an inherited claim before repeating it.** M21 set out to correct two M20 records and
+    found three claims false in the process: that the coarse §2.7 clause "flags the approved M20
+    shape as a false positive" (it matches 0 of 233 real files — the approved route streams
+    `payload.stream`, not `.body`); that `download-non-goals`' `applicationSources()` "covers none of
+    M20's new server files" (it walks all of `src/`, so it covered every one); and my *own*
+    exploration's claim that `exclusions-diff.md` carried stale `77` counts (both occurrences are
+    correct history — I had the wrong current value in mind). **A correction can be as false as the
+    claim it replaces**, so correcting a claim into a *different* false claim sends the next reader
+    to fix the wrong thing. Check the direction of the error, not just its existence.
+56. **`W4` is cited in M20's carried-forward list and defined nowhere in the repository.** A carried-
+    forward item that names a defect nobody can look up is not a task, it is a rumour with a number
+    on it. Do not invent the definition to make the list resolve — that manufactures a finding
+    instead of recording one.
+57. **Widening a scan's roots re-scopes everything that consumes it.** Adding `public/`, `scripts/`
+    and `next.config.ts` to `download-non-goals` immediately failed two *other* assertions in the
+    same file — legitimately: a fixture case names `offlineDownload` because it is a case about it,
+    and `scripts/measure-client-bundle.mjs` names the extractor because reporting whether it reached a
+    client bundle is its purpose. The repair was to scope those two assertions to *shipped code*
+    through a fixed root list, not to delete either file. **Exclude by an asserted literal list, never
+    by `startsWith("scripts/")`**, which silently grows to cover any future sibling — and assert the
+    exclusion is a strict subset, or an exclusion that covers everything leaves the assertions
+    passing vacuously.
+58. **A gate whose first step can destroy the working tree cannot be the thing that validates one.**
+    The release gate ran `npm ci`, which deletes `node_modules` before installing, so a failed
+    install (an `EPERM` on a native module held by a running dev server) left 19 packages, no `.bin`,
+    and a `next` without its `package.json` — and then every later item failed for a reason that was
+    not the code. **`npm ci --dry-run` would not have caught it**: the failure was filesystem
+    contention over files a dry run never opens, so it would have reproduced the absence of the
+    incident rather than its cause. Completeness must also not be read off the exit code — that
+    incident exited `0` while leaving `.bin` empty.
+59. **A paused request that is never continued hangs rather than errors, so the failure surfaces far
+    from its cause.** The end-to-end router awaited `Fetch.enable` and only then set its ready flag,
+    and the handler returned without continuing anything that arrived in the window. Every such
+    request hung, the caller waited out its own timeout, and the run failed somewhere downstream of
+    the real cause — which is why it read as an intermittent failure rather than a bug. **When a
+    browser-driven harness is flaky, suspect a dropped request before suspecting the application.**
+60. **`format:check` was skipped in the same command block that ran the other three gates.** M21
+    committed a file Prettier would reject, because the block ran lint and committed without
+    formatting first. Running three of four gates is not running the gate. **Run the formatter before
+    committing, not after.**
