@@ -146,11 +146,30 @@ export async function GET(
     // lookups* while the multi-megabyte bodies streamed unbounded afterwards, the opposite of what
     // `server/download/limiter.ts` documents. `holdUntilSettled` releases on close, on error, and on
     // a client that walks away, exactly once.
+    // The `Response` is constructed inside its own `try`, and the flag is set only *afterwards*.
+    //
+    // This is a second fix for the same boundary, and it was found by reviewing the first fix rather
+    // than by a test. An earlier version set `handedOff = true` on the line before `new Response(...)`,
+    // which left a window: `new Response` can itself throw — header values are coerced to `ByteString`,
+    // so any character above U+00FF in a header value is a `TypeError` — and on that path the `finally`
+    // below saw a permit that had been handed off and released nothing. Four such requests permanently
+    // consumed all four instance semaphore slots and wedged downloading for every address on the
+    // instance. Unauthenticated, remote, and one header wide.
+    //
+    // So the ordering is now the safe one in both directions: if construction throws, the permit is
+    // released here and rethrown; if it succeeds, the stream owns the permit and the flag is set.
+    let response: Response;
+    try {
+      response = new Response(holdUntilSettled(payload.stream, permit.release), {
+        status: 200,
+        headers: payload.headers,
+      });
+    } catch (error) {
+      permit.release();
+      throw error;
+    }
     handedOff = true;
-    return new Response(holdUntilSettled(payload.stream, permit.release), {
-      status: 200,
-      headers: payload.headers,
-    });
+    return response;
   } catch (error) {
     if (request.signal.aborted) {
       // Caller disconnected mid-flight — nothing left to deliver.

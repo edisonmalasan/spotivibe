@@ -248,6 +248,39 @@ describe("GET /api/download/[videoId] — success", () => {
     expect(released, "a permit left held would eventually refuse every download").toBe(true);
   });
 
+  it("releases the permit even when the response body cannot be constructed", async () => {
+    // Found by reviewing the fix for the concurrency defect rather than by a test. `new Response`
+    // coerces header values to `ByteString` and throws on any character above U+00FF — so it can
+    // fail. An earlier version of the route set `handedOff = true` on the line *before* that
+    // constructor, which meant a construction failure released nothing: four such requests consumed
+    // all four instance semaphore slots and wedged downloading for every address on the instance.
+    // Unauthenticated, remote, and one header wide.
+    //
+    // The trigger was a real one too — a Greek, Cyrillic or CJK title put a character above U+00FF
+    // into the latin1 `filename` slot — and it is fixed at the source in `downloadHeaders`. This
+    // test does not rely on that fix: it injects an unconstructable header directly, so the window
+    // stays closed even if some *other* module ever produces a bad header.
+    let released = false;
+    permitFor.mockReturnValue({
+      allowed: true,
+      limit: DOWNLOAD_LIMIT,
+      retryAfterSeconds: 1,
+      release() {
+        released = true;
+      },
+    });
+    resolveTrackDownload.mockResolvedValue({
+      // Ω is U+03A9, well above U+00FF.
+      headers: { "Content-Disposition": 'attachment; filename="Ωmega.webm"' },
+    });
+
+    await expect(call()).rejects.toThrow();
+    expect(
+      released,
+      "a permit that construction consumed must be returned, or four failures wedge the instance",
+    ).toBe(true);
+  });
+
   it("releases its permit even when the resolver fails", async () => {
     let released = false;
     permitFor.mockReturnValue({
