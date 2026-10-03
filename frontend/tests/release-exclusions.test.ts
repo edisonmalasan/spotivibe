@@ -99,6 +99,14 @@ function applicationSources(): Array<{ file: string; code: string; raw: string }
   });
 }
 
+/** One clause of a detector, named so a test can talk about it. */
+interface DetectorArm {
+  /** What the clause is for, in words. */
+  name: string;
+  /** The clause's own regular expression source, without flags. */
+  source: string;
+}
+
 interface Exclusion {
   /** What the roadmap forbids, quoted closely enough to be checkable. */
   label: string;
@@ -114,6 +122,25 @@ interface Exclusion {
    */
   pattern: RegExp;
   /**
+   * The detector's clauses, when they are enumerable.
+   *
+   * Present or absent is itself a claim, so it is asserted: a detector that stops being
+   * enumerable must delete this, and deleting it is visible in the diff.
+   *
+   * When present, a meta-test **deletes each clause in turn** and requires at least one
+   * fixture to stop matching. That is the only version of "every surviving clause is proven
+   * able to fail" that cannot be satisfied by hand-declaration, because there is nothing to
+   * declare: the fixtures are re-run against the reduced pattern and the arithmetic decides.
+   *
+   * This replaced a `caughtBy` field on each fixture, which was the previous answer to the
+   * same problem and which failed in three ways the fourth review demonstrated: deleting every
+   * `caughtBy` left the suite green, setting them all to `^` left it green, and re-filing a
+   * header fixture under the query arm left it green — because `HEADER_URL`'s source is a
+   * subset of `QUERY_PARAM_URL`'s, so nothing could notice. A field an author writes by hand
+   * about their own detector is evidence only of what the author believed.
+   */
+  arms?: ReadonlyArray<DetectorArm>;
+  /**
    * Snippets that violate this exclusion, each of which the detector must flag.
    *
    * More than one on purpose, and the set is adversarial by construction: the second
@@ -121,14 +148,8 @@ interface Exclusion {
    * seventeen of them passed undetected. Every one of those is now a fixture here. The
    * evidence is therefore about the *class* of shape rather than one author's phrasing, and
    * it is the only reason to believe these patterns catch what they name.
-   *
-   * `caughtBy` names the *individual arm* that must match. It is not redundant with
-   * `pattern`: a fixture that the whole pattern catches proves the exclusion is enforced, but
-   * not that the clause it is filed under does any work. A dead arm and a fixture that passes
-   * for an unrelated reason look identical from the outside — both green — and that is exactly
-   * how §2.7's two query-parameter arms survived three reviews while matching nothing.
    */
-  violations: Array<{ label: string; code: string; caughtBy?: string }>;
+  violations: Array<{ label: string; code: string }>;
 }
 
 /**
@@ -140,8 +161,19 @@ interface Exclusion {
  */
 const URL_KEY = "[\\w-]*(?:url|uri|href|src|source|target|media|resource|link)[\\w-]*";
 
-/** The read itself: `searchParams.get("…")` or `headers.get("…")`. */
-const ENVELOPE_READ = `(?:searchParams|searchparams|params|query|headers)\\s*\\.\\s*get\\s*\\(\\s*["'\`](?:${URL_KEY})["'\`]`;
+/**
+ * The *query* envelope read: `searchParams.get("…")` and its aliases.
+ *
+ * `headers` is deliberately **not** in this list, though it was. It used to be, which made this arm
+ * a strict superset of {@link HEADER_URL}, and a strict superset has two consequences that the
+ * fourth review demonstrated: the header clause could never be load-bearing (any fixture proving
+ * the header clause also proved this one, so deleting the header clause lost nothing), and
+ * re-filing a header fixture under the query clause was undetectable for the same reason. The
+ * fourth review listed that as one of four ways to defeat the previous `caughtBy` mechanism.
+ *
+ * The two envelopes are now disjoint, which is what makes each one's fixtures mean something.
+ */
+const QUERY_ENVELOPE_READ = `(?:searchParams|searchparams|params|query)\\s*\\.\\s*get\\s*\\(\\s*["'\`](?:${URL_KEY})["'\`]`;
 
 const THEN_FETCH = "[\\s\\S]{0,240}?\\bfetch\\s*\\(";
 
@@ -164,7 +196,7 @@ function callerSuppliedUrlArm(read: RegExp): RegExp {
 }
 
 /** A URL read out of the query string, then opened. */
-const QUERY_PARAM_URL = callerSuppliedUrlArm(new RegExp(ENVELOPE_READ, "i"));
+const QUERY_PARAM_URL = callerSuppliedUrlArm(new RegExp(QUERY_ENVELOPE_READ, "i"));
 
 /** A URL read out of a request header, then opened. */
 const HEADER_URL = callerSuppliedUrlArm(
@@ -176,8 +208,10 @@ const HEADER_URL = callerSuppliedUrlArm(
  *
  * The window is 480 characters, widened from 240 by the third review. A body that is validated,
  * logged and reshaped before the fetch is the *ordinary* shape, not an evasion, and 240 was simply
- * too short to see it: the fixture filed against this arm puts 310 characters between the read and
- * the fetch.
+ * too short to see it: the fixture filed against this arm puts **344 characters** between the end
+ * of the body read and the `fetch` (358 from the start of `request.json()`), measured in this file
+ * rather than in a scratch copy — an earlier draft of this comment quoted 310, which came from a
+ * probe whose copy of the fixture was indented differently and so was shorter.
  *
  * A second arm was tried here and deleted rather than kept: one that additionally required a
  * URL-ish *field* off the parsed body (`b.mediaUrl`, `body.href`, `data.source`), on the theory
@@ -195,24 +229,160 @@ const HEADER_URL = callerSuppliedUrlArm(
 const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
 
 /**
+ * §2.5 clause 2's detector, as named clauses. Split for the same reason as the other two: the
+ * fourth review deleted four of the ten with the suite green.
+ */
+const NO_OFFLINE_MEDIA_ARMS: ReadonlyArray<DetectorArm> = [
+  { name: "an AudioBuffer read back out", source: String.raw`\.getAudioData\s*\(` },
+  { name: "a media element re-recorded", source: String.raw`captureStream\s*\(` },
+  { name: "a media stream's audio tracks read", source: String.raw`getAudioTracks` },
+  { name: "a MediaRecorder capturing", source: String.raw`MediaRecorder` },
+  {
+    name: "a MediaElementAudioSourceNode constructed",
+    source: String.raw`MediaElementAudioSourceNode`,
+  },
+  {
+    name: "an element routed into an AudioContext",
+    source: String.raw`createMediaElementSource\s*\(`,
+  },
+  {
+    name: "an IndexedDB store created under a media-ish name",
+    source: String.raw`createObjectStore\s*\(\s*["'\`][^"'\`]*(?:media|audio|offline|download)[^"'\`]*["'\`]`,
+  },
+  {
+    name: "an existing IndexedDB store opened under a media-ish name",
+    // The `\b` is load-bearing and was added by the clause-isolation check, which found this
+    // clause redundant: without it, `objectStore(` matches *inside* `createObjectStore(`, so every
+    // fixture for the clause above also satisfied this one and deleting either lost nothing.
+    //
+    // `\b` is what separates them, because in `createObjectStore` the `O` is preceded by the `e` of
+    // `create` — two word characters — so there is no boundary there, while in `.objectStore(` and
+    // `db.objectStore(` the `.` provides one. Two clauses that are subsets of each other are one
+    // clause wearing two names, and only one of them is a guard.
+    source: String.raw`\bobjectStore\s*\(\s*["'\`][^"'\`]*(?:media|audio|offline)[^"'\`]*["'\`]`,
+  },
+  {
+    name: "a store declaration naming media, audio or offline",
+    source: String.raw`(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'\`][^"'\`]*(?:media|audio|offline|download)[^"'\`]*["'\`]`,
+  },
+  {
+    name: "a Cache Storage bucket opened for media",
+    source: String.raw`caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)`,
+  },
+];
+
+const NO_OFFLINE_MEDIA_PATTERN = new RegExp(
+  NO_OFFLINE_MEDIA_ARMS.map((arm) => arm.source).join("|"),
+  "i",
+);
+
+/**
  * §2.7's detector, assembled from named arms rather than one opaque alternation.
  *
  * Naming them is what makes them checkable. Written as a single literal, an arm that cannot
  * match is indistinguishable from one that can — and this detector shipped two that could not,
  * with a fixture filed under each, passing for an unrelated reason.
  */
+const NO_MEDIA_PROXY_ARMS: ReadonlyArray<DetectorArm> = [
+  {
+    name: "a googlevideo URL fetched by literal name",
+    source: String.raw`fetch\s*\(\s*["'\`][^)]*googlevideo`,
+  },
+  { name: "a hand-rolled proxy stream helper", source: String.raw`proxyStream` },
+  { name: "a hand-rolled stream proxy helper", source: String.raw`streamProxy` },
+  {
+    name: "a proxy/stream/media route path",
+    source: String.raw`\/api\/(proxy|stream|media)\b`,
+  },
+  { name: "a URL read out of the query string, then opened", source: QUERY_PARAM_URL.source },
+  { name: "a URL read out of a request header, then opened", source: HEADER_URL.source },
+  { name: "a request body read whole, then a URL opened", source: BODY_JSON_FETCH.source },
+  {
+    name: "a fetched body handed straight back as the response body",
+    source: String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
+  },
+  {
+    name: "a buffered response handed back as a new Response",
+    source: String.raw`arrayBuffer\s*\(\s*\)[\s\S]{0,200}?new\s+Response`,
+  },
+];
+
 const NO_MEDIA_PROXY_PATTERN = new RegExp(
-  [
-    String.raw`fetch\s*\(\s*["'\`][^)]*googlevideo`,
-    String.raw`proxyStream`,
-    String.raw`streamProxy`,
-    String.raw`\/api\/(proxy|stream|media)\b`,
-    QUERY_PARAM_URL.source,
-    HEADER_URL.source,
-    BODY_JSON_FETCH.source,
-    String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
-    String.raw`arrayBuffer\s*\(\s*\)[\s\S]{0,200}?new\s+Response`,
-  ].join("|"),
+  NO_MEDIA_PROXY_ARMS.map((arm) => arm.source).join("|"),
+  "i",
+);
+
+/**
+ * §2.5's detector, as named clauses.
+ *
+ * Split out of one 700-character literal because a single alternation is unreviewable: the
+ * fourth review deleted 14 of these clauses one at a time and the exclusion suite stayed green
+ * for every one, so most of them had no fixture that depended on them and were only ever
+ * "covered" by a neighbouring clause catching the same snippet. Naming them lets
+ * `every surviving clause is load-bearing` be *computed* instead of claimed.
+ */
+const NO_MP3_FAKING_ARMS: ReadonlyArray<DetectorArm> = [
+  {
+    name: "a downloader or transcoder binary invoked by name",
+    source: String.raw`\b(?:youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl|videotube|ffmpeg(?:\.exe)?|fluent-ffmpeg|avconv|\bsox\b|\blame\b)\b`,
+  },
+  {
+    name: "a hand-rolled Innertube reader naming the manifest field",
+    source: String.raw`streamingData`,
+  },
+  {
+    name: "a hand-rolled decipher, naming the cipher field",
+    source: String.raw`signatureCipher`,
+  },
+  {
+    name: "a hand-rolled decipher, naming the decipher routine",
+    source: String.raw`decipherFunction`,
+  },
+  { name: "a decipher call", source: String.raw`\bdecipher\b` },
+  { name: "the player manifest read by hand", source: String.raw`player_ias` },
+  { name: "the player base script fetched by hand", source: String.raw`\/base\.js` },
+  {
+    name: "the player's n parameter mined out of its source",
+    // This clause was `n-parameter`, a literal hyphenated token. It is replaced rather than kept
+    // because nothing writes that token: the parameter appears in the player source as `"n":"…"`,
+    // and a detector keyed on the token it *documents* rather than the text it *appears in*
+    // matches nothing — the same defect as §2.7's `searchParams.get)` arm, found here by the
+    // load-bearing check on its first run.
+    source: String.raw`["']n["']\s*:\s*["'][^"'\n]{2,}["']`,
+  },
+  { name: "a decipher routine built as dynamic code", source: String.raw`new\s+Function\s*\(` },
+  {
+    name: "a CDN host named together with an audio extension",
+    source: String.raw`googlevideo\.com[^"'\`]*\.(?:m4a|mp3|opus|webm|flac|aac)`,
+  },
+  {
+    name: "a media file written out under an audio extension",
+    source: String.raw`writeFile\w*\([^)]*\.(?:m4a|mp3|opus|webm|flac|aac)`,
+  },
+  {
+    name: "a transcoder call naming a target audio format",
+    source: String.raw`\.(?:toFormat|convert|remux|encode)\w*\s*\(\s*["'\`](?:mp3|m4a|aac|opus|ogg|flac)["'\`]`,
+  },
+  {
+    name: "a filename or Content-Disposition carrying a literal extension",
+    source: String.raw`filename\w*\s*[:=][^\n]{0,80}["'\`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b`,
+  },
+  {
+    name: "a download attribute carrying a literal extension",
+    source: String.raw`\bdownload\s*=\s*\{?\s*["'\`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b`,
+  },
+  {
+    name: "a download attribute set through setAttribute",
+    source: String.raw`setAttribute\(\s*["'\`]download["'\`]\s*,`,
+  },
+  {
+    name: "a download name whose extension is assembled by concatenation",
+    source: String.raw`\bdownload\s*=\s*\{?\s*[^;\n]{0,48}[+\`]\s*["'\`]\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b`,
+  },
+];
+
+const NO_MP3_FAKING_PATTERN = new RegExp(
+  NO_MP3_FAKING_ARMS.map((arm) => arm.source).join("|"),
   "i",
 );
 
@@ -530,8 +700,8 @@ const EXCLUSIONS: Exclusion[] = [
     // shown is not a fix: the imperative assignment, the declarative JSX attribute (with or without
     // its expression container), `setAttribute("download", …)`, and the concatenation
     // `download = name + ".mp3"`. Each has its own fixture below.
-    pattern:
-      /\b(?:youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl|videotube|ffmpeg(?:\.exe)?|fluent-ffmpeg|avconv|\bsox\b|\blame\b)\b|streamingData|signatureCipher|decipherFunction|\bdecipher\b|player_ias|\/base\.js|n-parameter|new\s+Function\s*\(|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus|webm|flac|aac)|writeFile\w*\([^)]*\.(?:m4a|mp3|opus|webm|flac|aac)|\.(?:toFormat|convert|remux|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac)["'`]|filename\w*\s*[:=][^\n]{0,80}["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b|\bdownload\s*=\s*\{?\s*["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b|setAttribute\(\s*["'`]download["'`]\s*,|\bdownload\s*=\s*\{?\s*[^;\n]{0,48}[+`]\s*["'`]\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b/i,
+    pattern: NO_MP3_FAKING_PATTERN,
+    arms: NO_MP3_FAKING_ARMS,
     violations: [
       {
         label: "a second, unapproved downloader as a dependency",
@@ -686,6 +856,115 @@ const EXCLUSIONS: Exclusion[] = [
           export async function decipher(cipher: string) {
             const script = await fetch("/player_ias.vflset/en_US/base.js").then((r) => r.text());
             return new Function("a", script + ";return " + cipher)();
+          }
+        `,
+      },
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // One fixture per clause, below, for the same reason as §2.7's second group: a clause
+      // that no fixture depends on is a comment, and the fourth review found ten of the
+      // sixteen here in exactly that state. Most were "covered" only because a neighbouring
+      // clause happened to catch the same snippet — the manifest-field clause and the
+      // decipher clauses all rode along on one fixture that mentioned all of them at once.
+      //
+      // Each fixture below is therefore minimal and mentions exactly one of the ten, so
+      // deleting that clause loses a match. None of them is a shape a person would write on
+      // purpose; they are the fragments an extractor is actually made of.
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      {
+        label: "a stream manifest read field by field, naming the manifest",
+        // Only the manifest-field clause. The player-manifest and player-bundle clauses are
+        // named separately precisely so this one cannot stand in for them.
+        code: `
+          export function readFormats(player: unknown) {
+            const response = player as { streamingData: { formats: unknown[] } };
+            return response.streamingData.formats;
+          }
+        `,
+      },
+      {
+        label: "a decipher that reads the cipher field",
+        code: `
+          export function unscramble(track: unknown) {
+            const media = track as { signatureCipher: string };
+            return media.signatureCipher;
+          }
+        `,
+      },
+      {
+        label: "a decipher that looks up the decipher routine by name",
+        code: `
+          export function resolveDecipherer(track: unknown) {
+            const assets = track as { decipherFunction: string };
+            return globalThis[assets.decipherFunction];
+          }
+        `,
+      },
+      {
+        label: "a decipher invoked by name",
+        // The bare call, with none of the field names that would let a neighbouring clause
+        // cover it.
+        code: `
+          export function unplayable(track: unknown, transforms: Transform[]) {
+            return transforms.reduce((acc, transform) => decipher(acc, transform), track);
+          }
+        `,
+      },
+      {
+        label: "the player response read for its manifest id by hand",
+        code: `
+          export async function loadPlayer(videoId: string): Promise<string> {
+            const response = await fetch(\`https://www.youtube.com/youtubei/v1/player?key=KEY\`);
+            const info = (await response.json()) as { player_ias: string };
+            return info.player_ias;
+          }
+        `,
+      },
+      {
+        label: "the player base script fetched by its own path",
+        // Only the base-bundle clause: the manifest id is a variable here, so the manifest
+        // clause cannot see it, and there is no `new Function` to trip the dynamic-code clause.
+        code: `
+          export async function loadDecipherSource(bundle: string): Promise<string> {
+            const response = await fetch(\`\${bundle}/base.js\`);
+            return response.text();
+          }
+        `,
+      },
+      {
+        label: "the n-parameter transform read out of the player source",
+        code: `
+          export function readTransform(source: string): string {
+            return /"n":"([^"]+)"/.exec(source)?.[1] ?? "";
+          }
+        `,
+      },
+      {
+        label: "a reverse transform built as dynamic code",
+        // No `decipher` anywhere in it, so the two decipher clauses cannot cover it.
+        code: `
+          export function buildReverseTransform(source: string) {
+            return new Function("input", "return input.split('').reverse().join('')");
+          }
+        `,
+      },
+      {
+        label: "a CDN host hardcoded together with an audio extension",
+        // The extension is asserted in the URL itself, which is the faking ROADMAP §2.5
+        // forbids: the bytes behind it are Opus in WebM, and the name claims otherwise.
+        code: `
+          export const EXTRACTED =
+            "https://r5---sn-4g5ednsz.googlevideo.com/videoplayback/song.mp3";
+        `,
+      },
+      {
+        label: "a transcoder converting to a named audio format",
+        // The call alone, with no download attribute and no filename to give a neighbouring
+        // clause something to match.
+        code: `
+          export async function toCompactAudio(track: Track): Promise<Blob> {
+            return track.toFormat("mp3");
           }
         `,
       },
@@ -873,10 +1152,10 @@ const EXCLUSIONS: Exclusion[] = [
     // that ran. Hence `caughtBy` on every fixture below, plus a separate assertion that the named
     // arm is the one that fires.
     pattern: NO_MEDIA_PROXY_PATTERN,
+    arms: NO_MEDIA_PROXY_ARMS,
     violations: [
       {
         label: "a generic forwarder",
-        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const target = new URL(request.url).searchParams.get("url") ?? "";
@@ -891,7 +1170,6 @@ const EXCLUSIONS: Exclusion[] = [
         label: "the same forwarder with every variable renamed",
         // The specific gap the first version had. A detector keyed on the author's
         // vocabulary rather than on the code's shape passes this.
-        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const link = new URL(request.url).searchParams.get("url") ?? "";
@@ -906,7 +1184,6 @@ const EXCLUSIONS: Exclusion[] = [
         // *argument to* the fetch, so an "envelope then a fetch somewhere later" arm never sees
         // it. This is the shape a hurried implementation actually writes, and the single-line
         // evasion. *Zero* of the suite's several hundred regex literals matched it.
-        caughtBy: HEADER_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const media = await fetch(request.headers.get("x-media-url") ?? "");
@@ -919,7 +1196,6 @@ const EXCLUSIONS: Exclusion[] = [
         // A header an operator would plausibly configure, so the arm cannot rely on an `x-`
         // prefix to identify the envelope — and a compound name, so it cannot rely on an exact
         // list of literals either.
-        caughtBy: HEADER_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const target = request.headers.get("media-source") ?? "";
@@ -933,7 +1209,6 @@ const EXCLUSIONS: Exclusion[] = [
         // The other order, for the query envelope. Both are required: a forwarder written as
         // `const u = get(…); await fetch(u)` and one written as `await fetch(get(…))` are the
         // same violation, and an arm that only sees one of them is a half-rule.
-        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const media = await fetch(new URL(request.url).searchParams.get("url") ?? "");
@@ -943,7 +1218,6 @@ const EXCLUSIONS: Exclusion[] = [
       },
       {
         label: "a buffer re-wrapped rather than a body streamed",
-        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const src = new URL(request.url).searchParams.get("url") ?? "";
@@ -957,7 +1231,6 @@ const EXCLUSIONS: Exclusion[] = [
         // The second pass's probe. Same proxy, different envelope: the URL arrives in a JSON
         // body rather than a query parameter, which is how it got past a rule that only
         // looked for `searchParams.get("url")`.
-        caughtBy: BODY_JSON_FETCH.source,
         code: `
           export async function POST(request: Request): Promise<Response> {
             const { url } = await request.json();
@@ -971,7 +1244,6 @@ const EXCLUSIONS: Exclusion[] = [
         // The shape the third review found the body arms also missed: the field is not named
         // `url`, so the `.url` arm never applies and only `request.json()` does — and the fetch
         // comes after a `new URL(base, …)`, further from the read than the window allowed.
-        caughtBy: BODY_JSON_FETCH.source,
         code: `
           export async function POST(request: Request): Promise<Response> {
             const body = await request.json();
@@ -983,11 +1255,10 @@ const EXCLUSIONS: Exclusion[] = [
       },
       {
         label: "a forwarder that validates, logs and reshapes the body before fetching",
-        // 310 characters between the body read and the fetch, so the pre-review 240-character
-        // window could not see it. This is not an evasion: a handler that validates and logs its
-        // input before acting on it is the shape a careful author writes, and a window narrow
-        // enough to miss it is not a rule about evasion.
-        caughtBy: BODY_JSON_FETCH.source,
+        // 344 characters between the end of the body read and the `fetch` (measured in this file),
+        // so the pre-review 240-character window could not see it. This is not an evasion: a
+        // handler that validates and logs its input before acting on it is the shape a careful
+        // author writes, and a window narrow enough to miss it is not a rule about evasion.
         code: `
           export async function POST(request: Request): Promise<Response> {
             const body = await request.json();
@@ -1009,7 +1280,6 @@ const EXCLUSIONS: Exclusion[] = [
         // from the request. So this fixture is the approved route with the one word changed:
         // a caller-supplied URL in the query string. Same detector, same clauses.
         label: "the approved download route taking a caller-supplied media URL",
-        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(
             request: Request,
@@ -1019,6 +1289,142 @@ const EXCLUSIONS: Exclusion[] = [
             const target = new URL(request.url).searchParams.get("url") ?? videoId;
             const media = await fetch(target);
             return new Response(media.body, { headers: media.headers });
+          }
+        `,
+      },
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // The fixtures below exist to make individual clauses *load-bearing*, which is a
+      // different job from the ones above and needs a different shape.
+      //
+      // Every fixture above ends `new Response(<something>.body, …)`, so the blunt clause
+      // `fetch(…)…new Response(x.body)` catches all of them. A clause that is always shadowed by
+      // a broader one cannot be deleted without anything noticing, which means it is not a guard:
+      // it is a comment. The fourth review found 21 of 33 clauses in this file in exactly that
+      // state, so each clause below is given a fixture the blunt clause *cannot* catch.
+      //
+      // The way to defeat it is to destructure: `const { body } = await fetch(…)` followed by
+      // `new Response(body, …)`. The identifier has no `.` before `body`, so the blunt clause's
+      // `new Response(\s*[\w$]+\.body` misses, while the clause actually under test still fires.
+      // That is not a contrived shape — destructuring a response body is the ordinary way to write
+      // it, and it is the shape on which §2.7's precise clauses and its blunt one disagree.
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      {
+        label: "a query-parameter forwarder that destructures the body",
+        // Only the query clause can catch this: the blunt clause misses the destructured body,
+        // and the header clause needs a header read.
+        code: `
+          export async function GET(request: Request): Promise<Response> {
+            const target = new URL(request.url).searchParams.get("mediaUrl") ?? "";
+            const { body } = await fetch(target);
+            return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "a header forwarder that destructures the body",
+        // Only the header clause can catch this. It is also the fixture that would have caught a
+        // re-filing: while the query clause's envelope list still included `headers`, this shape
+        // satisfied both clauses and deleting either one lost nothing.
+        code: `
+          export async function GET(request: Request): Promise<Response> {
+            const { body } = await fetch(request.headers.get("x-media-url") ?? "");
+            return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "a body-envelope forwarder that destructures the body",
+        // Only the request-body clause can catch this.
+        code: `
+          export async function POST(request: Request): Promise<Response> {
+            const { url } = await request.json();
+            const { body } = await fetch(url);
+            return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "a hardcoded googlevideo URL fetched by literal name",
+        // The blunt clause misses the destructured body, and no envelope is involved at all: the
+        // URL is a literal in the source. Only the CDN-literal clause can catch this.
+        code: `
+          export async function GET(): Promise<Response> {
+            const { body } = await fetch(
+              "https://r5---sn-4g5ednsz.googlevideo.com/videoplayback?expire=1&id=abc",
+            );
+            return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "a hand-rolled proxy helper that destructures the body",
+        code: `
+          async function proxyStream(upstream: string): Promise<Response> {
+            const { body } = await fetch(upstream);
+            return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "a hand-rolled stream-proxy helper that destructures the body",
+        code: `
+          async function streamProxy(upstream: string): Promise<Response> {
+            const { body } = await fetch(upstream);
+            return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "an internal media route fetched and re-wrapped",
+        // The route-path clause, with no envelope and no destructuring to hide behind.
+        code: `
+          const MEDIA_ENDPOINT = "/api/media/stream";
+
+          export async function GET(): Promise<Response> {
+            const { body } = await fetch(MEDIA_ENDPOINT);
+            return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "the caller's own request URL fetched back and buffered",
+        // A caller-supplied URL with **no envelope read at all**, so none of the three envelope
+        // clauses can apply — `fetch(request.url)` is the request itself. Only the buffered-body
+        // clause catches it. This is the shape that made that clause look redundant: every other
+        // fixture in this detector reads the URL out of an envelope, so deleting the buffered-body
+        // clause lost nothing until this one existed.
+        code: `
+          export async function GET(request: Request): Promise<Response> {
+            const bytes = await (await fetch(request.url)).arrayBuffer();
+            return new Response(bytes, { headers: { "content-type": "audio/mpeg" } });
+          }
+        `,
+      },
+      {
+        label: "a caller-controlled path segment used to build a media URL",
+        // The only fixture the blunt clause can catch, and the most realistic §2.7 violation in
+        // this file: the caller picks the path segment, the server supplies the host, and the bytes
+        // go straight back. No envelope read (the slug comes from the *path*, not a query or a
+        // header), no literal host in the fetch call (the base is a variable, so the CDN-literal
+        // clause cannot see it), and no named helper. Only "a fetched body handed straight back"
+        // applies.
+        //
+        // It is also the argument for keeping that blunt clause at all. Every other clause is
+        // precise — it names an envelope, a literal, or a helper — and this shape has none of
+        // those, yet it is plainly the thing ROADMAP §2.7 forbids. A detector built only from
+        // precise clauses would miss it, and the precise clauses would all still be green.
+        code: `
+          const CDN = "https://media.example";
+
+          export async function GET(
+            _request: Request,
+            context: { params: Promise<{ slug: string }> },
+          ): Promise<Response> {
+            const { slug } = await context.params;
+            const upstream = await fetch(\`\${CDN}/\${slug}.webm\`);
+            return new Response(upstream.body, { headers: upstream.headers });
           }
         `,
       },
@@ -1054,8 +1460,8 @@ const EXCLUSIONS: Exclusion[] = [
     // ─────────────────────────────────────────────────────────────────────────────
     label: "no media cached for offline playback",
     clause: "ROADMAP §2.5",
-    pattern:
-      /\.getAudioData\s*\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\s*\(|createObjectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|objectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline)[^"'`]*["'`]|(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)/i,
+    pattern: NO_OFFLINE_MEDIA_PATTERN,
+    arms: NO_OFFLINE_MEDIA_ARMS,
     violations: [
       {
         label: "a media buffer written to local storage",
@@ -1104,6 +1510,89 @@ const EXCLUSIONS: Exclusion[] = [
             const stream = await extract(videoId);
             await cache.put(videoId, new Response(stream));
             return new Response(stream);
+          }
+        `,
+      },
+
+      // ─────────────────────────────────────────────────────────────────────────────
+      // One minimal fixture per remaining clause. The four above are *realistic* — whole
+      // handlers, doing what a person building an offline library would write — and that is
+      // exactly why they left eight of the ten clauses looking covered. Each of those handlers
+      // mentions several forbidden things at once, so deleting any one clause still left the
+      // others catching the same snippet.
+      //
+      // A realistic fixture and a per-clause fixture are answering different questions. These
+      // ask "if this clause were deleted, would the suite notice?", which only a snippet
+      // containing that clause and nothing else can answer.
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      {
+        label: "an audio buffer read back out of the graph",
+        code: `
+          export function readPcm(context: AudioContext, buffer: AudioBuffer) {
+            return buffer.getAudioData();
+          }
+        `,
+      },
+      {
+        label: "the parked element's output re-recorded",
+        code: `
+          export function rerecord(element: HTMLMediaElement): MediaStream {
+            return element.captureStream();
+          }
+        `,
+      },
+      {
+        label: "the recorded stream's audio tracks read",
+        code: `
+          export function keepAudioOnly(stream: MediaStream): MediaStreamTrack[] {
+            return stream.getAudioTracks();
+          }
+        `,
+      },
+      {
+        label: "a recorder wired to the parked element's audio graph",
+        // Only the recorder clause: the element source is behind a variable, so the AudioContext
+        // clause cannot see it.
+        code: `
+          export function startRecording(source: AudioNode): Recording {
+            const recorder = new MediaRecorder(source.stream);
+            recorder.start();
+            return recorder;
+          }
+        `,
+      },
+      {
+        label: "an audio source node constructed by name",
+        code: `
+          export function tap(context: AudioContext, element: HTMLMediaElement) {
+            return new MediaElementAudioSourceNode(context, { mediaElement: element });
+          }
+        `,
+      },
+      {
+        label: "an element routed into an audio context",
+        // No node constructor by name, so the clause above cannot cover it.
+        code: `
+          export function route(context: AudioContext, element: HTMLMediaElement) {
+            return context.createMediaElementSource(element);
+          }
+        `,
+      },
+      {
+        label: "a media store created under a literal name",
+        code: `
+          export function openMediaStore(db: IDBDatabase) {
+            return db.createObjectStore("audioCache");
+          }
+        `,
+      },
+      {
+        label: "a media store reopened under a literal name",
+        // Opened rather than created, which is the shape a second visit to the app takes.
+        code: `
+          export function readMediaStore(db: IDBDatabase) {
+            return db.transaction("audioCache", "readonly").objectStore("audioCache");
           }
         `,
       },
@@ -1264,29 +1753,147 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
           `the detector missed ${violation.label}`,
         ).toBe(true);
       });
-
-      // Arm isolation, and the assertion whose absence let two dead clauses survive three
-      // reviews. `pattern` matching only proves the *exclusion* is enforced; it cannot show
-      // which clause did the work. A fixture filed under a clause that matches nothing still
-      // passes, because some other arm catches it — so the two failures look identical from
-      // outside and both are green.
-      //
-      // §2.7 shipped exactly that: a query-parameter arm requiring the literal text
-      // `searchParams.get)`, and another demanding a second `)` after `.get("url")`. Neither could
-      // match real code. Both fixtures passed, via the `fetch(…)…new Response(x.body)` arm.
-      if (violation.caughtBy !== undefined) {
-        it(`flags ${violation.label} by the clause it is filed under, not by another`, () => {
-          const arm = new RegExp(violation.caughtBy!, "i");
-          expect(
-            arm.test(stripComments(violation.code)),
-            `${violation.label} is filed under a clause that cannot match it, so that clause is dead. ` +
-              `It still passes the whole-pattern assertion because a different arm catches it. ` +
-              `Clause: ${violation.caughtBy}`,
-          ).toBe(true);
-        });
-      }
     }
   }
+
+  /**
+   * Every enumerated clause of every detector is **load-bearing**: delete it and some fixture stops
+   * matching.
+   *
+   * This is the whole of "a narrowed detector is still proven able to fail, for every surviving
+   * clause", and it is computed rather than declared. For each arm, the detector is rebuilt without
+   * it and every fixture is re-run; if some fixture matched before and does not match after, that
+   * fixture depends on the arm and the arm is doing work.
+   *
+   * Why it is computed and not annotated: the previous mechanism was a `caughtBy` field per fixture,
+   * and the fourth review showed four ways to defeat it while the suite stayed green — delete every
+   * `caughtBy`; set them all to `^`; set them all to the whole pattern source; re-file a header
+   * fixture under the query arm, which nothing could notice because `HEADER_URL`'s source is a subset
+   * of `QUERY_PARAM_URL`'s. All four are author choices about the author's own detector, and a
+   * choice is not evidence. Here the fixtures decide.
+   *
+   * The reviewer's finding that motivated this: 21 of 33 clauses across these three detectors could
+   * be deleted one at a time with the entire exclusion suite green, because each was only ever
+   * "covered" by a neighbouring clause catching the same snippet.
+   */
+  describe("every enumerated clause is load-bearing, so none can be quietly dropped", () => {
+    const enumerated = EXCLUSIONS.filter((exclusion) => exclusion.arms !== undefined);
+
+    // Non-vacuity, in both directions. A detector that has stopped being enumerable would drop the
+    // `arms` field and silently opt out of the whole check, so the set is pinned.
+    it("enumerates the clauses of every detector that has more than one", () => {
+      // Compared as a sorted set: the *membership* is the claim, and asserting the declaration order
+      // would fail on a harmless reorder while passing on a detector silently opting out by renaming.
+      expect(
+        enumerated.map((exclusion) => exclusion.label).sort(),
+        "these detectors must keep their clauses enumerated; adding one to this list is fine, " +
+          "dropping one opts it out of the load-bearing check entirely",
+      ).toEqual([
+        "no MP3 faking",
+        "no media cached for offline playback",
+        "no media proxied through the application server",
+      ]);
+      for (const exclusion of enumerated) {
+        expect(exclusion.arms!.length, `${exclusion.label} must have clauses`).toBeGreaterThan(1);
+        // Duplicate sources would make one arm silently shadow another, and the reduction below would
+        // then never see the shadowed one removed.
+        const sources = exclusion.arms!.map((arm) => arm.source);
+        expect(new Set(sources).size, `${exclusion.label} has a duplicate clause`).toBe(
+          sources.length,
+        );
+        // An unnamed clause is a clause nobody can be told about when this test fails.
+        for (const arm of exclusion.arms!) {
+          expect(
+            arm.name.trim().length,
+            `${exclusion.label} has an unnamed clause`,
+          ).toBeGreaterThan(0);
+          expect(
+            arm.source.trim().length,
+            `${exclusion.label} clause "${arm.name}" is empty`,
+          ).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    for (const exclusion of enumerated) {
+      it(`no clause of ${exclusion.label} can be deleted unnoticed`, () => {
+        const arms = exclusion.arms!;
+        const flags = exclusion.pattern.flags;
+        const full = new RegExp(arms.map((arm) => arm.source).join("|"), flags);
+        const stripped = exclusion.violations.map((violation) => stripComments(violation.code));
+        const dependedOn = new Set<string>();
+
+        // Every dead clause is collected before anything is asserted. Asserting inside the loop would
+        // report one dead clause per run and hide the rest, and a check that needs twenty runs to
+        // report twenty defects is a check people stop running.
+        const dead: string[] = [];
+        const brokenReductions: string[] = [];
+
+        // How many fixtures the *whole* detector catches. Without this, "this clause is redundant"
+        // and "the detector catches nothing at all" produce the same report, and they have opposite
+        // remedies: the first needs a fixture, the second needs the detector fixed. A diagnostic that
+        // cannot tell them apart sends you to fix the wrong thing.
+        const caughtByFull = stripped.filter((code) => full.test(code)).length;
+        expect(
+          caughtByFull,
+          `${exclusion.label}: the whole detector catches only ${caughtByFull} of ` +
+            `${exclusion.violations.length} fixtures. A clause can only be redundant relative to a ` +
+            `detector that works, so fix this first.`,
+        ).toBe(exclusion.violations.length);
+
+        for (const arm of arms) {
+          const reduced = new RegExp(
+            arms
+              .filter((candidate) => candidate.source !== arm.source)
+              .map((candidate) => candidate.source)
+              .join("|"),
+            flags,
+          );
+
+          // The reduction must be a real reduction: if dropping the arm changes nothing about the
+          // pattern, the arithmetic below would silently pass. Asserting the arm really is gone is
+          // what stops a probe of this test from lying.
+          const reductionIsReal =
+            full.source.includes(arm.source) && !reduced.source.includes(arm.source);
+          if (!reductionIsReal) brokenReductions.push(arm.name);
+
+          const lost = stripped.some((code, index) => {
+            const wasCaught = full.test(code);
+            const stillCaught = reduced.test(code);
+            if (wasCaught && !stillCaught) dependedOn.add(exclusion.violations[index].label);
+            return wasCaught && !stillCaught;
+          });
+          if (!lost) {
+            // Which clauses *do* carry this detector, so the report says where the coverage actually
+            // is. "Clause X is redundant" is only actionable next to "clause Y and Z are doing all
+            // the work", and a reviewer should not have to re-derive that by hand.
+            const carriers = arms
+              .filter((candidate) =>
+                stripped.some((code) => new RegExp(candidate.source, flags).test(code)),
+              )
+              .map((candidate) => candidate.name);
+            dead.push(
+              `  - "${arm.name}"  /${arm.source}/\n` +
+                `      clauses that do catch these fixtures: ${
+                  carriers.length === 0 ? "(none — the detector is broken)" : carriers.join(" | ")
+                }`,
+            );
+          }
+        }
+
+        expect(
+          brokenReductions,
+          "these reductions did not actually remove their clause, so the check cannot fail for them",
+        ).toEqual([]);
+        expect(
+          dead,
+          `${exclusion.label}: ${dead.length} of ${arms.length} clauses can be deleted and every ` +
+            `fixture still matches. Each is a guard that guards nothing. Either give it a fixture of ` +
+            `its own, or remove it:\n${dead.join("\n")}`,
+        ).toEqual([]);
+      });
+    }
+  });
 
   it("also reads file paths, because a route's name lives in its path", () => {
     // The second verification pass's probe was a route at
@@ -2577,11 +3184,42 @@ describe("every clause this change removed is published, not quietly dropped", (
       survivesIn: null,
     },
     {
-      fingerprint:
-        "captureStream|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource",
-      why: "moved, not removed: these are clause 2's evidence and have their own detector",
-      sample:
-        "const s = media.captureStream();\nconst ctx = new AudioContext();\nconst src = ctx.createMediaElementSource(el);",
+      // One row per clause, each with a sample that exercises **only** that clause.
+      //
+      // This was a single row whose fingerprint listed five clauses and whose sample contained two
+      // of them. The fourth review's objection is the one recorded on the `getAudioData` row below:
+      // a sample that exercises two clauses at once keeps passing after either one has been
+      // dropped, so the row cannot tell you which clause went missing. Three of the five had no
+      // sample that reached them at all.
+      fingerprint: "captureStream",
+      why: "moved, not removed: clause 2's evidence, and clause 2 has its own detector",
+      sample: "const stream = media.captureStream();",
+      survivesIn: "no media cached for offline playback",
+    },
+    {
+      fingerprint: "getAudioTracks",
+      why: "moved, not removed, same reason",
+      sample: "const track = stream.getAudioTracks()[0];",
+      survivesIn: "no media cached for offline playback",
+    },
+    {
+      fingerprint: "MediaRecorder",
+      why: "moved, not removed, same reason",
+      sample: "const recorder = new MediaRecorder(stream);",
+      survivesIn: "no media cached for offline playback",
+    },
+    {
+      fingerprint: "MediaElementAudioSourceNode",
+      why: "moved, not removed, same reason",
+      // Spelled with the constructor call rather than `createMediaElementSource`, so this row's
+      // sample cannot be caught by that clause instead.
+      sample: "const node = new MediaElementAudioSourceNode(ctx, { mediaElement: el });",
+      survivesIn: "no media cached for offline playback",
+    },
+    {
+      fingerprint: "createMediaElementSource",
+      why: "moved, not removed, same reason",
+      sample: "const node = ctx.createMediaElementSource(el);",
       survivesIn: "no media cached for offline playback",
     },
     {
