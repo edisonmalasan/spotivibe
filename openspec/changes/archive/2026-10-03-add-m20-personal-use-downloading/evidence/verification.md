@@ -964,14 +964,40 @@ alternatives inline. Counting those means re-parsing the literal, which measures
 than the detector. No figure is claimed for them, and `download-non-goals.test.ts` says so in its own
 comments so a later reader does not mistake silence for a zero.
 
-### `W4` is cited above and defined nowhere
+### `W4` is cited above, and the correction below is itself wrong
 
-`W4` appears in the carried-forward list and is not defined anywhere in the repository. A carried-
-forward item that names a defect nobody can look up is not a task; it is a rumour with a number on
-it. M21's task 6.2 is to restore the definition or drop the citation, and explicitly **not** to
-invent one — writing a plausible definition now would manufacture a finding rather than record one.
-The `W1, W2, W4, W5, W6` list above is left exactly as M20 wrote it, because an archived record
-should show what was believed at the time, and the correction belongs beside it rather than in it.
+**This heading said `W4` was "not defined anywhere in the repository". That was false.**
+
+`W4` **is** defined, at `openspec/changes/archive/2026-09-30-add-podcasts/tasks.md:120`:
+
+> | W4 | Task 3.2 claimed the key rule was "proven on the real handler"; both checks are static scans.
+> | Reworded, and the detectors are now proven against a violating snippet. |
+
+It is a finding from the **podcasts** change, about a keyboard-shortcut rule claimed to be proven on a
+real handler when both checks were static scans. It has nothing to do with this change.
+
+So the defect is not a missing definition. It is a **collision**: two unrelated changes both number
+their findings `W1`, `W2`, `W4`, `W5`, `W6`, and a bare `W4` in a carried-forward list resolves to
+whichever file a reader opens first. That is a real and arguably worse problem than an undefined
+reference, because an undefined one is visibly broken while a colliding one looks perfectly resolvable
+and quietly resolves to the wrong finding.
+
+**Task 6.2 resolved by disambiguation, not by invention.** No definition was written, because the
+finding already existed and inventing a second one would have manufactured a defect rather than
+recorded one. The `W1, W2, W4, W5, W6` list at line 910 is left exactly as M20 wrote it — an archived
+record should show what was believed at the time — and this block sits beside it.
+
+Two things follow, and only the first is done here:
+
+1. **Done:** the label is disambiguated to the podcasts change's `W4`, so a reader can find it.
+2. **Not done, and recorded as such:** the numbering scheme itself is still ambiguous. Finding IDs
+   are scoped to a change and carry no namespace, so this collision will recur. Fixing it means
+   qualifying carried-forward references everywhere they appear, which is a change to how findings are
+   cited across several archives and is **outside M21's scope**. It is recorded here rather than
+   silently expanded into.
+
+Independent verification, WARNING W5, is what caught the false claim; a reviewer checking the claim
+rather than accepting it is the entire reason this block now says something true.
 
 ### Gates at this commit
 
