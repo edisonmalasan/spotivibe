@@ -662,3 +662,12 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     committed a file Prettier would reject, because the block ran lint and committed without
     formatting first. Running three of four gates is not running the gate. **Run the formatter before
     committing, not after.**
+61. **A false obstacle is worse than an honest missing capability, because a false one stops anyone
+    from looking for the capability.** Six archived records from M4 to M17 explained the unverified
+    parked player as "the IFrame API is blocked by CSP". The application ships
+    `frame-src 'self' https://www.youtube.com`, so its own policy permits the frame; the real obstacle
+    was that no browser automation existed. Recorded as *blocked by policy*, the item would have sat
+    there indefinitely looking like a decision nobody was allowed to revisit. **When a record blames
+    the environment, check whether the environment is actually the blocker before leaving the
+    explanation standing** — and keep policy and behaviour separate, since `frame-src` permitting a
+    frame says nothing about whether a 1×1 `opacity: 0` iframe advances.
