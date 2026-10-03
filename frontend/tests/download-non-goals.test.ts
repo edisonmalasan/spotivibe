@@ -152,6 +152,37 @@ function anyOf(arms: readonly string[], flags = ""): RegExp {
 }
 
 /**
+ * The rule the witness check enforces, as a value: which of these arms have no witness.
+ *
+ * One implementation, used by the check and by the test that demonstrates the check's own
+ * properties. They were two copies before, and a demonstration written against its own copy can
+ * agree with itself while the real rule behaves differently — which is how a test that exists to
+ * show "consolidation is permitted" came to forbid the consolidations it was written to permit.
+ *
+ * A clause is witnessed when some fixture matches the full pattern but not the pattern with that
+ * clause removed. Membership, not counting: deleting a witness fixture shrinks *both* counts, so a
+ * count comparison survives the deletion it exists to catch.
+ *
+ * @returns the indices of arms with no fixture of their own, in ascending order
+ */
+function unwitnessedArms(
+  arms: readonly string[],
+  fixtures: readonly string[],
+  flags = "",
+): number[] {
+  const full = anyOf(arms, flags);
+  const orphans: number[] = [];
+  for (let index = 0; index < arms.length; index += 1) {
+    const without = anyOf(
+      arms.filter((_arm, position) => position !== index),
+      flags,
+    );
+    if (!fixtures.some((code) => full.test(code) && !without.test(code))) orphans.push(index);
+  }
+  return orphans;
+}
+
+/**
  * The same source with comments and string literals removed.
  *
  * Needed for exactly one assertion, and the reason is worth stating rather than hiding: the streaming
@@ -861,6 +892,35 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     // be empty and both shipped-code assertions would pass vacuously.
     expect(SHIPPED_CODE.length).toBeGreaterThan(0);
     expect(SHIPPED_CODE.length).toBeLessThan(SOURCES.length);
+
+    // **W1: the contents check above cannot hold this line on its own.**
+    //
+    // `expect([...BUILD_TOOLING_ROOTS]).toEqual(["scripts/"])` is defeatable by swapping it for
+    // `expect.arrayContaining(["scripts/"])`, which accepts a second root. A second root narrows
+    // `SHIPPED_CODE`, so both shipped-code assertions above keep passing while watching less code.
+    //
+    // The first repair here was wrong and mutation verification said so: it asserted that dropping
+    // each root *widens* the scope, and adding `src/components/` passed, because both roots remain
+    // individually useful. "Each entry does something" is not the property. The property is "no
+    // entry excludes code it should not", and only the excluded set itself can say that — so it is
+    // asserted directly, as both directions at once.
+    const excluded = SOURCES.filter((entry) => !SHIPPED_CODE.includes(entry));
+    expect(
+      excluded.map((entry) => entry.file),
+      "the shipped-code scope must be every source except build tooling; these files are " +
+        "excluded from it and are not build tooling, so the assertions above watch less than " +
+        "they claim to",
+    ).toEqual(SOURCES.filter((entry) => entry.file.startsWith("scripts/")).map((e) => e.file));
+    expect(
+      SHIPPED_CODE.some((entry) => entry.file.startsWith("scripts/")),
+      "build tooling must stay out of the shipped-code scope",
+    ).toBe(false);
+    for (const root of BUILD_TOOLING_ROOTS) {
+      expect(
+        SOURCES.filter((entry) => entry.file.startsWith(root)).length,
+        `${root} is listed but excludes no file, so it is a claim shaped like coverage`,
+      ).toBeGreaterThan(0);
+    }
   });
 
   it("states what every detector does and does not see", () => {
@@ -919,30 +979,9 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
 
     const orphans: string[] = [];
     for (const goal of enumerable) {
-      const arms = goal.arms!;
-      for (let index = 0; index < arms.length; index += 1) {
-        const without = anyOf(
-          arms.filter((_arm, position) => position !== index),
-          goal.flags ?? "",
-        );
-        // **A clause is witnessed when some fixture matches the full pattern but not this reduced
-        // one.** The first version of this compared how many fixtures each pattern detected, and that
-        // is wrong in exactly the case that matters: deleting a witness fixture shrinks *both* counts,
-        // so the counts stay unequal and the loss reads as fine. Deleting a fixture was proved green
-        // against this check before it was corrected here.
-        //
-        // Membership, not counting. Every fixture is known to match the full pattern — `is proven able
-        // to fail` asserts that — so the question is only whether *this* clause is what makes any of
-        // them match.
-        const detectedWithout = new Set(
-          goal.violations.filter((violation) => without.test(violation.code)),
-        );
-        const witnessed = goal.violations.some(
-          (violation) => goal.pattern.test(violation.code) && !detectedWithout.has(violation),
-        );
-        if (!witnessed) {
-          orphans.push(`${goal.name} arm ${index}: ${arms[index]!.slice(0, 60)}`);
-        }
+      const codes = goal.violations.map((violation) => violation.code);
+      for (const index of unwitnessedArms(goal.arms!, codes, goal.flags ?? "")) {
+        orphans.push(`${goal.name} arm ${index}: ${goal.arms![index]!.slice(0, 60)}`);
       }
     }
     expect(
@@ -960,58 +999,81 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     // matches everything both did is allowed: the merged clause keeps both fixtures matching, so
     // removing it still orphans them and the check still holds.
     //
-    // Both directions are asserted here, on a copy rather than on the real detectors, so the test
-    // demonstrates its own properties without depending on how the table above happens to look.
-    const arms = ACCOUNT_ARMS;
-    const full = anyOf(arms, "i");
-    const fixtures = NON_GOALS[0]!.violations;
+    // ## What this test used to be
+    //
+    // It said "Both directions are asserted here, on a copy rather than on the real detectors" and
+    // then used `ACCOUNT_ARMS` and `NON_GOALS[0].violations` — the real ones. So it could not fail
+    // for a reason of its own: if the real table changed shape, this test's claims changed with it,
+    // and the comment describing what it was doing became false while the test stayed green. A
+    // comment that describes a copy is not evidence that there is one.
+    //
+    // It also never demonstrated the thing it is named for. It rewrote one arm of the real list and
+    // checked coverage was preserved, which is not consolidation: consolidation is *removing* an arm.
+    // Independent verification confirmed the gap by mutation — merging the two batch arms is reported
+    // as coverage loss, so the rule forbids the merges it exists to allow.
+    //
+    // Both defects have the same cause: the demonstration and the rule were two implementations.
+    // `unwitnessedArms` is now one, called by both, and this test runs it on data it owns.
+
+    // Synthetic on purpose: three tokens, three fixtures, no dependency on how the real table looks.
+    const arms = [String.raw`\btokenA\b`, String.raw`\btokenB\b`, String.raw`\btokenC\b`];
+    const fixtures = [`const a = tokenA;`, `const b = tokenB;`, `const c = tokenC;`];
+
+    /** Coverage of each fixture under a set of arms — what "loses coverage" is measured on. */
     const detected = (subset: readonly string[]): ReadonlySet<number> =>
       new Set(
         fixtures
-          .map((violation, index) => (anyOf(subset, "i").test(violation.code) ? index : -1))
+          .map((code, index) => (anyOf(subset).test(code) ? index : -1))
           .filter((index) => index !== -1),
       );
 
-    // **Blocking direction.** Dropping any clause must lose at least one fixture's detection, or the
-    // clause is unwatched. Membership again rather than a count, for the reason given above: a count
-    // comparison survives the deletion it exists to catch.
-    for (let index = 0; index < arms.length; index += 1) {
-      const reduced = detected(arms.filter((_arm, position) => position !== index));
-      expect(
-        [...detected(arms)].filter((fixture) => !reduced.has(fixture)),
-        `dropping arm ${index} must lose coverage`,
-      ).not.toEqual([]);
-    }
-
-    // **Permitting direction.** The rule keys on coverage, not on the clause's text, so a clause
-    // rewritten to say the same thing differently still passes. That is what lets someone consolidate
-    // two clumsy arms into one clear one instead of leaving both forever to avoid touching a test that
-    // appears to police spelling. Asserted on a synthetic rewrite: the `credentials` arm re-spelled to
-    // a broader form that still matches its fixture.
-    const REWRITTEN = arms.map((arm, index) =>
-      index === 4 ? String.raw`\bcredentials\s*:.*(?:user|pass|login|account)` : arm,
-    );
-    const afterRewrite = detected(REWRITTEN);
+    // **Permitting direction, demonstrated.** Merging two witnessed arms into one is allowed: the
+    // merged clause matches both fixtures, so dropping it loses both and the rule still holds.
+    const MERGED = [String.raw`\btokenA\b`, String.raw`\btoken(?:B|C)\b`];
     expect(
-      [...detected(arms)].filter((fixture) => !afterRewrite.has(fixture)),
-      "a coverage-preserving rewrite must not be reported as coverage loss",
+      unwitnessedArms(MERGED, fixtures),
+      "merging two witnessed arms into one must be permitted: that is what this rule is for",
     ).toEqual([]);
     expect(
-      afterRewrite.size,
-      "the rewrite was supposed to match everything it matched before",
-    ).toBe(detected(arms).size);
+      [...detected(arms)].filter((fixture) => !detected(MERGED).has(fixture)),
+      "the merge must actually preserve coverage, or it is a deletion wearing a merge's name",
+    ).toEqual([]);
 
-    // And the rule is not vacuous in the rewritten form either: it still fails when a clause of *that*
+    // **Permitting direction, restated.** A clause rewritten to say the same thing differently still
+    // passes, because the rule keys on coverage and not on text.
+    const REWRITTEN = [String.raw`\btokenA\b`, String.raw`\btokenB\b`, String.raw`\btokenC{1}\b`];
+    expect(
+      [...detected(arms)].filter((fixture) => !detected(REWRITTEN).has(fixture)),
+      "a coverage-preserving rewrite must not be reported as coverage loss",
+    ).toEqual([]);
+
+    // **Blocking direction.** A clause that no fixture matches *on its own* is reported, even when a
+    // fixture does match it. A duplicated arm is the plain case, and the one a reader is most
+    // likely to assume is fine because something does detect it. Both copies are reported, not one:
+    // removing either leaves the other matching, so neither is what makes the fixture detectable.
+    expect(
+      unwitnessedArms([String.raw`\btokenA\b`, String.raw`\btokenA\b`], [`const a = tokenA;`]),
+      "a duplicated clause has no witness of its own, and both copies must be reported",
+    ).toEqual([0, 1]);
+
+    // And the rule is not vacuous in the merged form either: it still bites when a clause of *that*
     // set goes unwatched.
     expect(
-      [...detected(REWRITTEN)].filter(
-        (fixture) => !detected(REWRITTEN.filter((_arm, position) => position !== 4)).has(fixture),
-      ),
-      "the rewritten set must still detect that every clause is witnessed",
-    ).not.toEqual([]);
-    expect(full, "the full pattern is rebuilt rather than reused, so the two cannot drift").toEqual(
-      anyOf(arms, "i"),
-    );
+      unwitnessedArms([...MERGED, String.raw`\btokenD\b`], fixtures),
+      "the merged set must still detect a clause added without a fixture",
+    ).toEqual([2]);
+
+    // Deleting a fixture is the deletion this rule exists to catch, and it is worth showing here
+    // rather than only in the message: the arm survives, its witness does not, and the arm becomes
+    // deletable.
+    expect(
+      unwitnessedArms(arms, fixtures.slice(0, 2)),
+      "deleting a witness fixture must make its arm deletable",
+    ).toEqual([2]);
+
+    // The rule is built on rebuilt patterns, so two calls cannot share a regex object and drift.
+    expect(anyOf(arms)).not.toBe(anyOf(arms));
+    expect(anyOf(arms).source).toBe(arms.join("|"));
   });
 
   it("rebuilds every detector's pattern from its arms without changing what it matches", () => {
