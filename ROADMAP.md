@@ -136,7 +136,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M17** | Home discovery enrichment | `DONE` | M11, M8 |
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `DONE` | M18 |
-| **M20** | Personal-use media downloading | `PROPOSED` | M3, M4 |
+| **M20** | Personal-use media downloading | `IMPLEMENTING` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
 
 **Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external
@@ -1482,7 +1482,10 @@ At minimum:
   by M20** — see §18 and §21.5. The v1 line is preserved because it was the v1 release gate.
 - No forced background-play circumvention exists.
 - No ad-blocking behavior exists.
-- No media is proxied through Vercel.
+- No media is proxied through Vercel. **True for v1 playback. One exception exists post-v1
+  since M20:** `GET /api/download/[videoId]` streams one track's audio through the function to
+  the listener's own device, on request, and only then — see §18 and §21.5. Playback media still
+  flows only through the embedded player.
 - Backup format/version documented.
 - Attribution notices included for substantial Lyrix-derived code.
 - Vercel production build passes.
@@ -1619,7 +1622,8 @@ with a note contradicting them.
 - [x] YouTube attribution.
 - [ ] **Post-v1:** global keyboard shortcuts, with no shortcut firing in a focused control (M18).
 - [ ] **Post-v1:** share current track / catalog surface, Web Share with copy-link fallback (M18).
-- [ ] **Post-v1:** download current track to the device, honestly named for its real format (M20).
+- [x] **Post-v1:** download current track to the device, honestly named for its real format (M20).
+  Browser verification unperformed — see `frontend/docs/DOWNLOADING.md` §8.
 - [ ] **Post-v1:** synced lyrics with active-line highlight and auto-follow on Now Playing (M16).
 
 ## Queue / Radio
