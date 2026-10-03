@@ -93,6 +93,34 @@ survive a React unmount on its own, and task 3.3 requires an exit.
 For comparison, the `framer-motion` spike cost **+41.4 kB gzipped (42,394 bytes at this
 measurement's 1 kB = 1024 B convention) — roughly a hundred times this milestone's entire cost.**
 
+### 2a. M20 re-recorded the ceiling, and what that cost
+
+M20 (personal-use media downloading) added a download action to four surfaces, which meant adding the
+client half of a request. The ceiling in `scripts/measure-client-bundle.mjs` is therefore recorded
+again, measured on 2026-10-03 from a build of the M20 tree on the same toolchain:
+
+| Measurement | After M19 (M19's own record) | After M20 | Delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 384,831 B | 387,992 B | **+3,161 B** |
+| Largest single chunk, gzipped | 96,644 B | 96,667 B | **+23 B** |
+| Emitted chunks | 24 | 25 | **+1** |
+| `/` first load, gzipped | 227,266 B (12 chunks) | 230,555 B (13 chunks) | +3,289 B |
+
+**M19's record is preserved, not overwritten.** `PRE_M19_CLIENT_BUDGET` still holds the figures above
+and is asserted on its own terms, so a reviewer asking what M20 cost has two records and the delta
+rather than one number and a commit message.
+
+**No dependency was added to the client at all.** The 3,161 bytes are first-party source: the overflow
+menu shell lifted out of `ResultMenu`, the download affordance it now appears in, and the client half
+of the download request. `@distube/ytdl-core` is the milestone's only new dependency and it is reached
+only through a dynamic `import()` inside `src/server/download/sources.ts`, a server module —
+`tests/download-non-goals.test.ts` asserts both that the import is dynamic and that nothing outside
+`src/server/` names the package.
+
+That is the distinction this budget exists to draw, and the re-recording does not weaken it:
+`totalGzippedBytes` keeps its 4,096-byte tolerance on top of the new figure, M20 spent less than that
+tolerance of its own code, and the `framer-motion` spike would still fail by a factor of ten.
+
 ## 3. No motion without a reduced-motion path
 
 The floor already existed before this milestone: `src/app/globals.css` sets `animation-duration`,

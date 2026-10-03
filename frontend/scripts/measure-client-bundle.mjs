@@ -30,12 +30,46 @@ import { gzipSync } from "node:zlib";
 const GZIP_LEVEL = 9;
 
 /**
- * The recorded ceiling, measured from a `next build` of the tree as M19 found it.
+ * M19's own record, preserved rather than overwritten.
  *
- * Measured on 2026-10-03, Windows, Node 24.21.0, `next build` (Next.js 16.3.6,
- * Turbopack), before any M19 change: 24 emitted chunks, 384,831 bytes gzipped in
- * total, largest single chunk 96,644 bytes gzipped, and `/` first load 227,266 bytes
- * across 12 chunks. Reproduce with `node scripts/measure-client-bundle.mjs`.
+ * Measured 2026-10-03, Windows, Node 24.21.0, `next build` (Next.js 16.3.6, Turbopack),
+ * before any M19 change: 24 emitted chunks, 384,831 bytes gzipped in total, largest
+ * single chunk 96,644, `/` first load 227,266 across 12 chunks.
+ *
+ * It is kept as its own exported constant because M20 re-recorded the ceiling, and a
+ * ceiling that silently replaced its predecessor erases the only evidence that the number
+ * ever moved. A reviewer asking "what did this cost?" now has both records and the delta
+ * between them rather than one number and a commit message.
+ */
+export const PRE_M19_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 384831,
+  largestChunkGzippedBytes: 96644,
+  chunkCount: 24,
+  homeFirstLoadGzippedBytes: 227266,
+  homeFirstLoadChunkCount: 12,
+});
+
+/**
+ * The recorded ceiling, re-measured after M20 (personal-use media downloading).
+ *
+ * Same toolchain and method as {@link PRE_M19_CLIENT_BUDGET}: 2026-10-03, Windows,
+ * Node 24.21.0, `next build` (Next.js 16.3.6, Turbopack). Reproduce with
+ * `node scripts/measure-client-bundle.mjs`.
+ *
+ * **What moved, and what it cost.** The total grew by 3,161 bytes gzipped (384,831 ->
+ * 387,992), the largest chunk by 23 bytes, and the emitted and `/`-first-load chunk
+ * counts by one each. All of it is first-party code: the overflow menu shell lifted out
+ * of `ResultMenu`, the download affordance it now appears in, and the client half of the
+ * download request. **No dependency was added to the client at all** —
+ * `@distube/ytdl-core` is reached only through a dynamic `import()` inside
+ * `src/server/download/sources.ts`, which `tests/download-non-goals.test.ts` asserts.
+ *
+ * That is the distinction the ceiling exists to draw. The whole reason this file exists is
+ * that M19 declined `framer-motion`, which measured **+41.4 kB** — more than ten times
+ * the 4,096-byte headroom. M20 spent 3,161 bytes of *its own* source and stayed inside the
+ * tolerance the first record already allowed; the spike would still fail by a factor of
+ * ten. Re-recording the ceilings does not weaken that: `totalGzippedBytes` keeps its
+ * 4,096-byte tolerance on top of the new figure, and a library cannot hide inside that.
  *
  * These are bytes, not "kB", so the assertion cannot move when someone rounds.
  */
@@ -49,11 +83,13 @@ export const CLIENT_BUDGET = Object.freeze({
   /** How the figure was taken, so a reader can reproduce it rather than trust it. */
   method:
     "every .js file under .next/static/chunks, gzipped at level 9; per-route, the <script src> set of the route's emitted .next/server/app HTML",
-  totalGzippedBytes: 384831,
-  largestChunkGzippedBytes: 96644,
-  chunkCount: 24,
-  homeFirstLoadGzippedBytes: 227266,
-  homeFirstLoadChunkCount: 12,
+  /** When and after what this figure was measured, so a drift has something to be compared to. */
+  recordedAt: "2026-10-03, after M20 (personal-use media downloading)",
+  totalGzippedBytes: 387992,
+  largestChunkGzippedBytes: 96667,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 230555,
+  homeFirstLoadChunkCount: 13,
   /**
    * How far a rebuild may drift from the recorded figure.
    *
