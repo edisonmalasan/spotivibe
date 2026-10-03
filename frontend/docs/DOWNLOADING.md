@@ -38,6 +38,14 @@ does not go one step past it:
 | Throttling | The shared `guardRequest` entry point, then an immediate `request.signal.aborted` check, then the dedicated limiter. | the route module |
 | Rate limit | 6 requests per address per 10 minutes; 1 concurrent transfer per address; 4 concurrent per instance. | `src/server/download/limiter.ts` |
 | Duplicate downloads | A module-level `Map` keyed by `track.id`, so two surfaces asking for the same track share one transfer. | `src/features/download/useDownloadTrack.ts` |
+| Concurrency window | The permit is held until the **body settles**, not until the handler returns. | `holdUntilSettled` in `src/server/download/service.ts` |
+
+The last row is a correction, and the reason it is worth stating. The route originally released the
+permit in a `finally`, which runs when the `Response` is *constructed* — before the first byte has
+been read from the upstream. The limiter therefore bounded concurrent **metadata lookups** while the
+multi-megabyte bodies streamed unbounded afterwards, which is the opposite of what
+`src/server/download/limiter.ts` documents about itself. The permit is now handed to the response
+body and released on close, on error, or when a listener walks away — exactly once.
 | Body | A `ReadableStream`, never a buffer. No `Content-Length` is ever sent, because a lying upstream must not be able to make the browser trust a number the route cannot honour. | `src/server/download/service.ts` |
 
 ### Status codes
@@ -118,6 +126,31 @@ The fallback list is **fixed and bounded** rather than discovered: a public-inst
 runtime is an unbounded, untrusted input, and §21.5's own table says public Invidious instances are
 "frequently rate-limited or down". When both fail, the route says so. It does not pretend.
 
+### The fallback's media URL is treated as hostile
+
+A fixed instance list bounds **who configures it**. It does not bound **what an instance replies
+with** — an Invidious response names the media URL itself, and a compromised or hostile public
+instance could name anything at all. Fetching that URL as given would let one instance aim this
+function at the cloud metadata endpoint, at loopback, or at an internal service, and stream the body
+straight back to an unauthenticated caller.
+
+So `classifyMediaUrl` in `src/server/download/sources.ts` decides, before anything is opened, whether
+the URL may be fetched:
+
+1. **HTTPS always** — the one exception being a URL same-origin with a plain-HTTP instance, which can
+   only arise from an operator configuring a local development instance.
+2. **A known media host, or the instance's own host.** Everything else is refused.
+3. **No credentials in the URL.**
+
+Redirects are **not** followed. A permitted host answering with a 302 to a forbidden one is how an
+allowlist gets walked around, so a redirect is treated as an instance that will not serve media
+directly — a failure, not something to chase. A refusal names the reason, because "this instance
+tried to point us somewhere it may not" is a materially different diagnosis from "nobody answered".
+
+This is asserted in `tests/download-sources.test.ts` against loopback, the metadata service, a
+private-network host, plain HTTP, a `evil-googlevideo.com.attacker.test` lookalike, and
+credentials-in-URL — the shapes a naive substring check gets wrong.
+
 ## 6. The client surface
 
 - `src/features/download/saveFile.ts` — builds the URL (title as an encoded query parameter and
@@ -176,9 +209,19 @@ behaviour:
 
 ### The 20 MiB budget does not fit inside 120 s
 
-At realistic audio-only bitrates — 50 to 160 kbit/s — a transfer runs at roughly 6 to 20 kB/s.
-20 MiB at that rate is **about 17 minutes**, which is past the 120 s proxied timeout by a wide
-margin. A short track finishes comfortably; a long one at the top of the ladder cannot.
+At realistic audio-only bitrates a transfer runs slowly, and the range matters:
+
+| Bitrate | Throughput | 20 MiB takes |
+| --- | ---: | ---: |
+| 160 kbit/s (fast end) | ~20 kB/s | **~17 minutes** |
+| 50 kbit/s (slow end) | ~6 kB/s | **~56 minutes** |
+
+Both ends are far past the 120 s proxied request timeout — by a factor of roughly 9× at the fast end
+and 28× at the slow one. A short track finishes comfortably; a long one at the top of the ladder
+cannot.
+
+The 50–160 kbit/s range is itself an **assumption**, not a measurement taken on this deployment;
+no transfer has been observed here. It is recorded as such in `evidence/verification.md`.
 
 This is **documented, not solved**. The design bets on `maxDuration = 300` being the operative
 ceiling rather than the 120 s proxy timeout. That bet is unverified and could be wrong. The two

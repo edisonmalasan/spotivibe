@@ -102,9 +102,16 @@ describe("the stated limits match the constants they describe", () => {
   it("carries the arithmetic that makes the budget a real risk", () => {
     // This is the finding most likely to be lost, and the one most likely to be acted on wrongly.
     // A reader who sees only "20 MiB, 300 s" concludes the feature is comfortable.
+    //
+    // Both ends of the bitrate range are stated. Quoting only the fast end — which an earlier
+    // version of this document did — reads as though the budget were borderline, when it is out of
+    // reach by roughly 9x at 160 kbit/s and 28x at 50 kbit/s.
     expect(DOC).toMatch(/17 minutes/);
+    expect(DOC).toMatch(/56 minutes/);
     expect(DOC).toMatch(/120 s proxied timeout|proxied request timeout/i);
     expect(DOC).toMatch(/documented, not solved/i);
+    // …and the range is labelled as an assumption rather than a measurement.
+    expect(DOC).toMatch(/assumption, not a measurement|no transfer has been observed/i);
   });
 
   it("lists the four statuses the route actually returns", () => {
@@ -146,6 +153,35 @@ describe("the non-goals are named, and each names the test that enforces it", ()
   it("points at the suite that enforces them, and that suite exists", () => {
     expect(DOC).toContain("tests/download-non-goals.test.ts");
     expect(existsSync(join(FRONTEND, "tests", "download-non-goals.test.ts"))).toBe(true);
+  });
+});
+
+describe("the two security boundaries are documented, because they are load-bearing", () => {
+  // Both were added after independent review found a real defect. A security control nobody reads
+  // is still a control, but one nobody knows about is a control the next person will route around
+  // "for consistency with the other fetches" — which is exactly how it came to exist.
+
+  it("states that the fallback's media URL is untrusted input, not a given", () => {
+    const sources = source("src/server/download/sources.ts");
+    expect(DOC).toMatch(/media URL is treated as hostile|treated as hostile/i);
+    expect(DOC).toMatch(/metadata endpoint|169\.254\.169\.254/);
+    // The decision is a named, exported, pure function — testable without a network, which matters
+    // for a control whose happy path proves nothing about its refusals.
+    expect(sources).toMatch(/export function classifyMediaUrl/);
+    expect(sources).toMatch(/MEDIA_HOST_SUFFIXES/);
+    // …and redirects are refused rather than followed.
+    expect(sources).toMatch(/redirect: "manual"/);
+    expect(DOC).toMatch(/[Rr]edirects are \*\*not\*\* followed|not followed/i);
+  });
+
+  it("states that the limiter bounds transfers, not metadata lookups", () => {
+    // The defect was subtle enough that the code's own documentation described behaviour it did
+    // not have. Saying it here keeps the document and the code describing the same thing.
+    const route = source("src/app/api/download/[videoId]/route.ts");
+    expect(DOC).toMatch(/until the (body )?settles|body settles/i);
+    expect(route).toMatch(/holdUntilSettled/);
+    // The permit must not be released in the route's own `finally`.
+    expect(route).not.toMatch(/finally\s*\{\s*\n\s*permit\.release\(\);\s*\n\s*\}/);
   });
 });
 
