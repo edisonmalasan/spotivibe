@@ -178,6 +178,19 @@ interface NonGoal {
   readonly name: string;
   readonly pattern: RegExp;
   /**
+   * The detector's clauses, **only when it is an enumerable disjunction**.
+   *
+   * Declared as a list rather than left inside `anyOf(...)` because a disjunction built and discarded
+   * in one expression cannot be reasoned about afterwards: the only way to ask "does every clause
+   * have a witness?" is to take the clauses apart, and taking them apart by re-parsing a regex is
+   * measuring the parser. Detectors whose pattern is a single literal with inline `|` alternatives
+   * leave this `undefined`, and `load-bearing` says so in its own output rather than reporting a zero
+   * for them.
+   */
+  readonly arms?: readonly string[];
+  /** Regex flags `pattern` was built with, so a clause can be rebuilt exactly as declared. */
+  readonly flags?: string;
+  /**
    * Snippets that violate this non-goal. Their presence is what proves the detector can fail.
    *
    * An array rather than a single snippet, because one snippet proves one spelling. A detector built
@@ -191,6 +204,22 @@ interface NonGoal {
    */
   readonly violations: ReadonlyArray<{ label: string; code: string }>;
 }
+
+/**
+ * §2.4 clause 1's clauses, as a list rather than as an inline `anyOf(...)` argument.
+ *
+ * Named because `load-bearing` below needs to hold them one at a time. A disjunction written inline
+ * can only be taken apart by re-parsing the regex it produced, and a measurement of the parser is
+ * not a measurement of the detector.
+ */
+const ACCOUNT_ARMS: readonly string[] = [
+  String.raw`(?:from|import|require)\s*\(?\s*["'][^"']*(?:next-auth|@auth\/|@supabase\/auth-js|@supabase\/supabase-js|firebase\/auth|@clerk\/|@auth0\/|auth0)`,
+  String.raw`\b(?:signIn|signInWith|logIn|logInWith|signUp|signOut|logOut|authenticate|authorize|getSession|getAccessToken|getIdToken)\s*\(`,
+  String.raw`["'\`](?:access_token|refresh_token|id_token)["'\`]`,
+  String.raw`Authorization:\s*["'\`]?Bearer`,
+  String.raw`\bcredentials:\s*["'\`][^"'\`]*(?:user|pass|login|account)[^"'\`]*["'\`]`,
+  String.raw`\b(?:password|passcode)\s*[:=]\s*["'\`][^"'\`]+["'\`]`,
+];
 
 const NON_GOALS: readonly NonGoal[] = [
   {
@@ -207,17 +236,9 @@ const NON_GOALS: readonly NonGoal[] = [
     // `refreshToken`, and three doc comments stating that there is no sign-in. A permanent
     // exclusion detector that fires on the code which upholds it is a detector people disable, and
     // the arms below are the narrowed form of that failure rather than a loosening of the policy.
-    pattern: anyOf(
-      [
-        String.raw`(?:from|import|require)\s*\(?\s*["'][^"']*(?:next-auth|@auth\/|@supabase\/auth-js|@supabase\/supabase-js|firebase\/auth|@clerk\/|@auth0\/|auth0)`,
-        String.raw`\b(?:signIn|signInWith|logIn|logInWith|signUp|signOut|logOut|authenticate|authorize|getSession|getAccessToken|getIdToken)\s*\(`,
-        String.raw`["'\`](?:access_token|refresh_token|id_token)["'\`]`,
-        String.raw`Authorization:\s*["'\`]?Bearer`,
-        String.raw`\bcredentials:\s*["'\`][^"'\`]*(?:user|pass|login|account)[^"'\`]*["'\`]`,
-        String.raw`\b(?:password|passcode)\s*[:=]\s*["'\`][^"'\`]+["'\`]`,
-      ],
-      "i",
-    ),
+    arms: ACCOUNT_ARMS,
+    flags: "i",
+    pattern: anyOf(ACCOUNT_ARMS, "i"),
     // **One fixture per arm, not one fixture for the detector.** M21 measured this: deleting any arm
     // except the import arm left the whole file green, so 5 of 6 arms had no witness at all. The
     // original single fixture did not cover them by accident — it writes `access_token:
@@ -454,6 +475,128 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     // be empty and both shipped-code assertions would pass vacuously.
     expect(SHIPPED_CODE.length).toBeGreaterThan(0);
     expect(SHIPPED_CODE.length).toBeLessThan(SOURCES.length);
+  });
+
+  it("gives every clause of an enumerable detector a witness, so deleting one is not silent", () => {
+    // The gap this closes
+    //
+    // M21 measured that 5 of this detector's 6 arms could be deleted with the suite green, and then
+    // added a fixture per arm. That is the repair — but nothing in the suite *prevented* the loss. A
+    // later edit that deletes one fixture leaves "is proven able to fail" passing, because it has one
+    // fewer thing to check, and the arm becomes deletable again. The measurement script catches it;
+    // the test suite did not.
+    //
+    // So the check is here, and it is computed rather than measured: for each arm in turn, rebuild the
+    // pattern **without** that arm and confirm at least one fixture stops matching. If removing an arm
+    // changes nothing, no fixture was watching it.
+    //
+    // No file is touched and no subprocess runs, so this costs nothing at run time — which is the
+    // reason to compute it instead of mutation-testing on every run.
+    const enumerable = NON_GOALS.filter((goal) => (goal.arms?.length ?? 0) >= 2);
+
+    // Guard against vacuity. If every detector became a single literal this loop would run zero times
+    // and report green, which is the failure mode this whole milestone exists to remove. The count is
+    // stated rather than inferred from the array, so shrinking it fails loudly.
+    expect(
+      enumerable.map((goal) => goal.name),
+      "no detector declares an enumerable disjunction, so every check below is vacuous",
+    ).toEqual(["Accounts or auth of any kind"]);
+
+    const orphans: string[] = [];
+    for (const goal of enumerable) {
+      const arms = goal.arms!;
+      for (let index = 0; index < arms.length; index += 1) {
+        const without = anyOf(
+          arms.filter((_arm, position) => position !== index),
+          goal.flags ?? "",
+        );
+        // **A clause is witnessed when some fixture matches the full pattern but not this reduced
+        // one.** The first version of this compared how many fixtures each pattern detected, and that
+        // is wrong in exactly the case that matters: deleting a witness fixture shrinks *both* counts,
+        // so the counts stay unequal and the loss reads as fine. Deleting a fixture was proved green
+        // against this check before it was corrected here.
+        //
+        // Membership, not counting. Every fixture is known to match the full pattern — `is proven able
+        // to fail` asserts that — so the question is only whether *this* clause is what makes any of
+        // them match.
+        const detectedWithout = new Set(
+          goal.violations.filter((violation) => without.test(violation.code)),
+        );
+        const witnessed = goal.violations.some(
+          (violation) => goal.pattern.test(violation.code) && !detectedWithout.has(violation),
+        );
+        if (!witnessed) {
+          orphans.push(`${goal.name} arm ${index}: ${arms[index]!.slice(0, 60)}`);
+        }
+      }
+    }
+    expect(
+      orphans,
+      "these clauses can be deleted with the suite green, because no fixture matches only them. " +
+        "Add a fixture per clause - or, if the clause is a synonym of another, merge them.",
+    ).toEqual([]);
+  });
+
+  it("permits coverage-preserving consolidation, and only that", () => {
+    // The other half of the check above, and the reason it does not get disabled.
+    //
+    // A rule that fails on every edit is a rule people turn off. This one requires each *clause* to
+    // have a witness, not each *clause as written*, so merging two clauses into one that still
+    // matches everything both did is allowed: the merged clause keeps both fixtures matching, so
+    // removing it still orphans them and the check still holds.
+    //
+    // Both directions are asserted here, on a copy rather than on the real detectors, so the test
+    // demonstrates its own properties without depending on how the table above happens to look.
+    const arms = ACCOUNT_ARMS;
+    const full = anyOf(arms, "i");
+    const fixtures = NON_GOALS[0]!.violations;
+    const detected = (subset: readonly string[]): ReadonlySet<number> =>
+      new Set(
+        fixtures
+          .map((violation, index) => (anyOf(subset, "i").test(violation.code) ? index : -1))
+          .filter((index) => index !== -1),
+      );
+
+    // **Blocking direction.** Dropping any clause must lose at least one fixture's detection, or the
+    // clause is unwatched. Membership again rather than a count, for the reason given above: a count
+    // comparison survives the deletion it exists to catch.
+    for (let index = 0; index < arms.length; index += 1) {
+      const reduced = detected(arms.filter((_arm, position) => position !== index));
+      expect(
+        [...detected(arms)].filter((fixture) => !reduced.has(fixture)),
+        `dropping arm ${index} must lose coverage`,
+      ).not.toEqual([]);
+    }
+
+    // **Permitting direction.** The rule keys on coverage, not on the clause's text, so a clause
+    // rewritten to say the same thing differently still passes. That is what lets someone consolidate
+    // two clumsy arms into one clear one instead of leaving both forever to avoid touching a test that
+    // appears to police spelling. Asserted on a synthetic rewrite: the `credentials` arm re-spelled to
+    // a broader form that still matches its fixture.
+    const REWRITTEN = arms.map((arm, index) =>
+      index === 4 ? String.raw`\bcredentials\s*:.*(?:user|pass|login|account)` : arm,
+    );
+    const afterRewrite = detected(REWRITTEN);
+    expect(
+      [...detected(arms)].filter((fixture) => !afterRewrite.has(fixture)),
+      "a coverage-preserving rewrite must not be reported as coverage loss",
+    ).toEqual([]);
+    expect(
+      afterRewrite.size,
+      "the rewrite was supposed to match everything it matched before",
+    ).toBe(detected(arms).size);
+
+    // And the rule is not vacuous in the rewritten form either: it still fails when a clause of *that*
+    // set goes unwatched.
+    expect(
+      [...detected(REWRITTEN)].filter(
+        (fixture) => !detected(REWRITTEN.filter((_arm, position) => position !== 4)).has(fixture),
+      ),
+      "the rewritten set must still detect that every clause is witnessed",
+    ).not.toEqual([]);
+    expect(full, "the full pattern is rebuilt rather than reused, so the two cannot drift").toEqual(
+      anyOf(arms, "i"),
+    );
   });
 
   it("covers every non-goal the milestone names", () => {
