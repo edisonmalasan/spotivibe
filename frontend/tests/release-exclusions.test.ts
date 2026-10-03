@@ -1300,7 +1300,7 @@ const EXCLUSIONS: Exclusion[] = [
       // Every fixture above ends `new Response(<something>.body, …)`, so the blunt clause
       // `fetch(…)…new Response(x.body)` catches all of them. A clause that is always shadowed by
       // a broader one cannot be deleted without anything noticing, which means it is not a guard:
-      // it is a comment. The fourth review found 21 of 33 clauses in this file in exactly that
+      // it is a comment. The fourth review found 27 of 35 clauses in this file in exactly that
       // state, so each clause below is given a fixture the blunt clause *cannot* catch.
       //
       // The way to defeat it is to destructure: `const { body } = await fetch(…)` followed by
@@ -1772,16 +1772,30 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
    * of `QUERY_PARAM_URL`'s. All four are author choices about the author's own detector, and a
    * choice is not evidence. Here the fixtures decide.
    *
-   * The reviewer's finding that motivated this: 21 of 33 clauses across these three detectors could
+   * The reviewer's finding that motivated this: 27 of 35 clauses across these three detectors could
    * be deleted one at a time with the entire exclusion suite green, because each was only ever
-   * "covered" by a neighbouring clause catching the same snippet.
+   * "covered" by a neighbouring clause catching the same snippet. Every clause can now be deleted
+   * only if a fixture stops matching.
    */
   describe("every enumerated clause is load-bearing, so none can be quietly dropped", () => {
     const enumerated = EXCLUSIONS.filter((exclusion) => exclusion.arms !== undefined);
 
     // Non-vacuity, in both directions. A detector that has stopped being enumerable would drop the
     // `arms` field and silently opt out of the whole check, so the set is pinned.
-    it("enumerates the clauses of every detector that has more than one", () => {
+    //
+    // The test's name says **enumerated**, and deliberately not **every**. It was previously called
+    // "enumerates the clauses of every detector that has more than one", which was untrue: five
+    // further detectors in this file have more than one clause and none is enumerated. The fifth
+    // review measured 48 of 95 top-level alternatives across the unenumerated detectors as
+    // deletable with the suite green.
+    //
+    // The name was corrected rather than the pin widened, because most of those clauses are
+    // *deliberate synonyms* — `no accounts or authentication` lists fourteen ways to spell the same
+    // forbidden thing, and demanding a sole-carrier fixture for each would mean writing fourteen
+    // near-identical snippets and would not make the detector better. What the unenumerated
+    // detectors lack is a different check, not this one, and pretending otherwise here would be the
+    // same over-claim in a different place. Carried to M21.
+    it("enumerates the clauses of the three detectors M20 narrowed", () => {
       // Compared as a sorted set: the *membership* is the claim, and asserting the declaration order
       // would fail on a harmless reorder while passing on a detector silently opting out by renaming.
       expect(

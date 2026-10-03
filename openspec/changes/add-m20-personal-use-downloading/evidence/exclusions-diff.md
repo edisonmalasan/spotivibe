@@ -2,8 +2,17 @@
 
 Change: `add-m20-personal-use-downloading` (M20)
 File narrowed: `frontend/tests/release-exclusions.test.ts`
-Suite before: 67 tests, 5 failing
-Suite after: **77 tests, 77 passing** (`node node_modules/vitest/vitest.mjs run tests/release-exclusions.test.ts`, Node 24.21.0, exit 0)
+Suite before the M15 narrowing: 67 tests, 5 failing
+Suite after it: **77 tests, 77 passing**
+Suite after this pass: **145 tests, 145 passing**
+
+(`node node_modules/vitest/vitest.mjs run tests/release-exclusions.test.ts`, Node 24.21.0, exit 0.)
+
+The two earlier figures are left as they were at the time, because a document that records a
+narrowing should record the state it produced. But a reader arriving today needs to know they are
+not current, and a bare old count in a file that is edited five milestones later is a claim nothing
+checks. The fifth review flagged both; annotating is the fix, since overwriting them would lose the
+narrowing's own record.
 
 This document exists because the M20 design commits to narrowing the exclusion detectors
 "clause-by-clause, never deleted", and because a narrowing that is only visible in a diff is a
@@ -141,10 +150,15 @@ which says nothing about where the URL came from. So the document credited the w
 and the suite never noticed, because **a dead arm and a fixture that passes for an unrelated reason
 look identical from outside: both green.**
 
-The lesson is now structural rather than a note. `violations` entries may declare `caughtBy`, naming
-the individual arm that must match, and the suite asserts that arm fires *separately* from asserting
-the whole pattern matches. The claim this section used to make is therefore checked rather than
-asserted.
+The lesson did **not** become structural here, and §2e and §12 record how that attempt also failed.
+The first attempt was a per-fixture `caughtBy` field naming the individual arm that must match —
+precisely the "declare, don't check" move this section was arguing against. The fourth review
+defeated it four ways while the whole suite stayed green: delete every field, set them all to `^`,
+set them all to the whole pattern, or re-file a header fixture under the query clause (possible
+because the query envelope's key list included `headers`, making it a strict superset). A field an
+author writes about their own detector is evidence of what the author believed.
+
+What replaced it is computed, not declared: §2e.
 
 ### 2b. What the arms are now
 
@@ -216,7 +230,7 @@ for another.
 ### 2e. Clause attribution is computed, not declared
 
 §2 above originally credited a fixture to "the existing `searchParams.get(…)` → `fetch` clause",
-which was false. §12 records the fourth review's finding that **21 of 33 clauses across three
+which was false. §12 records the fourth review's finding that **27 of 35 clauses across three
 detectors could be deleted one at a time with the whole exclusion suite green** — including *all
 nine* of §2.7's.
 
@@ -342,9 +356,22 @@ calibrating a detector on one observed failure.
 
 ## 6. What this narrowing does **not** claim
 
-- It does not claim the suite was weakened. Suite size went 67 → 77 tests; every violation
-  fixture still fires against the pattern it belongs to, and every pattern still fires against
-  the real application sources.
+- It does not claim the suite was weakened. Suite size went 67 → 77 at the M15 narrowing and **145**
+  after this pass (see the top of this document); every violation fixture still fires against the
+  pattern it belongs to, and every pattern still fires against the real application sources.
+- It does not claim "every violation fixture still fires against the pattern it belongs to" means
+  every *clause* does. Before this pass it did not: **27 of 35** clauses across three detectors were
+  deletable with the whole suite green, because each was only covered by a neighbouring clause
+  catching the same snippet. §12 and §2e record the mechanism that replaced that claim with one
+  computed from the fixtures, and §12's table is the measurement.
+- It does not claim the load-bearing check covers the whole file. It covers the three detectors that
+  declare `arms`. Five further detectors in the same file have more than one clause and are not
+  enumerated — 48 of 95 top-level alternatives across them measured deletable — but most of those
+  clauses are deliberate *synonyms* for one forbidden thing, and a sole-carrier fixture for each
+  would mean fourteen near-identical snippets without making the detector better. Carried to M21.
+  The check's own test was renamed from "every detector that has more than one" to "the three
+  detectors M20 narrowed" for this reason: it was overstating its scope by name, which is the
+  defect class this document has now produced five times.
 - It does not claim the new detectors are complete. They are clause-shaped, and a clause-shaped
   detector can always be defeated by writing code in a shape nobody enumerated. The mitigations
   are the two-proofs discipline (every clause has a fixture that must fire) and the

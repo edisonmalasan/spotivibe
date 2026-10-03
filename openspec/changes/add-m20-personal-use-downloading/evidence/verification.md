@@ -646,7 +646,7 @@ fixture comment in the source now carries 344 and says it was measured in that f
 The reviewer separately reported "9 `caughtBy` declarations" against 10 fixtures. That one is the
 reviewer's error: the file has 10, split 5 / 2 / 3, re-derived mechanically.
 
-### CRITICAL F — 21 of 33 clauses could be deleted with the whole suite green
+### CRITICAL F — 27 of 35 clauses could be deleted with the whole suite green
 
 The method was to parse each detector into its top-level alternation arms, delete one arm at a
 time, and re-run the entire exclusion suite. Across `no media proxied through the application
@@ -654,9 +654,17 @@ server`, `no MP3 faking` and `no media cached for offline playback`:
 
 | Detector | Clauses | Deletable with the suite green |
 | --- | ---: | ---: |
-| `no media cached for offline playback` | 10 | 4 |
-| `no MP3 faking` | 16 | 10 |
 | `no media proxied through the application server` | 9 | 9 |
+| `no MP3 faking` | 16 | 10 |
+| `no media cached for offline playback` | 10 | 8 |
+| **Total** | **35** | **27** |
+
+These are the counts this pass's own first run produced, printed by the check that did not yet
+exist, and they are recorded here as measured rather than as recalled: an earlier draft of this
+section said "21 of 33", which matched neither this table nor its own arithmetic. A headline number
+that understates the defect it introduced the fix for is still wrong, and the fifth review found it
+by measuring the pre-fix tree independently and getting 27/35 — agreeing with the check's output and
+not with the prose above it.
 
 Two distinct causes, and the second is the one that matters.
 
@@ -817,3 +825,93 @@ The `/` first-load figure is still **not re-claimed**, for the reason given at t
 129,849 B this pass's script prints is the 5 framework roots, not the 13 entries the recorded
 230,555 B came from, so quoting it would replace one unre-verified figure with a differently-measured
 one.
+
+---
+
+## 13. Fifth independent review
+
+A fifth read-only reviewer, told explicitly that four reviews had returned REJECT and that code
+comments in this branch carry confident wrong statements, worked from the pre-fix tree by measuring
+rather than reading.
+
+**Verdict: ACCEPT.** No CRITICAL. Six WARNINGs, five NITs. All seven gates exit 0.
+
+### The central claim independently reproduced
+
+The reviewer re-derived the fourth review's deletion experiment across all three detectors, with its
+own extraction of the clauses and its own arithmetic, and reported:
+
+| Detector | Clauses | Fixtures | Deletable, suite green |
+| --- | ---: | ---: | ---: |
+| `no MP3 faking` | 16 | 21 | **0** |
+| `no media proxied through the application server` | 9 | 19 | **0** |
+| `no media cached for offline playback` | 10 | 12 | **0** |
+
+It also ran **14 vacuity attacks** on the check — empty `violations`, whitespace-only fixtures,
+single-clause `arms`, a `.`/`^`/`.*` clause, two clauses where one is a substring of the other, a
+clause that is a superset of the whole pattern, a detector silently dropping its `arms` field — and
+all 14 failed loudly. A check that survives 14 attempts to make it vacuous is no longer a check
+whose failure can be assumed.
+
+### What it caught that this file got wrong
+
+**The 27/35 headline.** The table directly above this section originally read "21 of 33", with a
+per-detector row for the offline detector reading **4**. Both were wrong, and they were wrong in a
+document whose entire subject is a measurement. The check's own first run had printed **10 / 9 / 8
+= 27 of 35**; the prose was written from memory and did not match. The fifth review measured the
+pre-fix tree independently, got 27/35, and therefore disagreed with the prose while agreeing with
+the check's output.
+
+This is the sixth time in this change that a number in an evidence file was wrong, and the second
+time it was wrong in a commit whose stated purpose was correcting a wrong number. The difference
+between those two is the difference that matters: this time the correction was made against a
+measurement rather than against the previous reviewer's word.
+
+**Three stale test counts in `exclusions-diff.md`** — `77 tests, 77 passing` at the top, `67 → 77`
+in §6 — presented as current when the file is now 145. They are left in place and annotated rather
+than overwritten: a narrowing document should record the state it produced, but a bare old count in
+a file edited five milestones later is a claim nothing checks.
+
+**A `caughtBy` paragraph still describing the mechanism that was replaced.** §2a ended by arguing
+that the lesson had "become structural" on the strength of the `caughtBy` field — the very field the
+next review defeated four ways. It now says what actually happened: the lesson did not become
+structural there, and §2e records why.
+
+### A test that overstated its scope by name
+
+`enumerates the clauses of every detector that has more than one` was untrue. Five further detectors
+in the file have more than one clause and none is enumerated; the reviewer measured **48 of 95**
+top-level alternatives across them as deletable with the suite green.
+
+The name was corrected to "the three detectors M20 narrowed" rather than the pin widened, and the
+reason is recorded at the test. Most of those unenumerated clauses are deliberate **synonyms** —
+`no accounts or authentication` lists fourteen ways to spell one forbidden thing — and demanding a
+sole-carrier fixture for each would mean fourteen near-identical snippets without making any detector
+better. They need a different check, not this one, and saying so in the test that does not provide
+it is the difference between a limitation and an over-claim. Carried to M21.
+
+The same scope limit is now stated in `exclusions-diff.md` §6, which previously claimed "every
+violation fixture still fires against the pattern it belongs to" without noting that before this
+pass **27 of 35 clauses were deletable anyway**.
+
+### Also fixed from the review
+
+`IGNORED`'s `coverage` and `.next` are now anchored to a complete path segment, the same defect
+class as the `\.git`/`.github` hole found two sections ago and the same one-line fix. `downloads`
+and `.coverage` were added so a report directory under either name is still skipped.
+
+### Carried to M21, and why that is the honest answer
+
+- **47 of 52 clauses deletable in `download-non-goals.test.ts`**, and its `applicationSources()`
+  scan covers none of M20's new server files. This is the same defect one level down from the one
+  this pass fixed, in the suite that guards the milestone's *non-goals*. It is not fixed here because
+  the review's own recommendation is to enumerate or rename rather than add 47 fixtures, and that is
+  a change of the same size as this pass, which belongs in its own commit with its own review.
+- W1, W2, W4, W5, W6 and the coarse-clause shape from §11.
+
+### Gates at this commit
+
+Unchanged from the table above except where re-run: this pass touches two test files and three
+markdown files, and every gate below was re-run after the edits. Bundle figures are not re-claimed —
+nothing in `src/` changed, and re-measuring an unchanged number on every evidence-only commit is
+how a number stops being a measurement and starts being a decoration.

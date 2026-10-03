@@ -62,8 +62,14 @@ const EXTENSIONS = /\.(?:ts|tsx|mjs|js|json|md|css|yml|yaml)$/;
  *
  * This is the same defect as every other one in this file's history: a pattern that matches more
  * than it was written to match, in a rule whose whole job is to be exact about what it covers.
+ *
+ * `coverage` and `.next` are anchored to a complete path segment for the same reason, which the
+ * fifth review pointed out: unanchored, `coverage` also matches a *file* or directory called
+ * `coverage-notes`, and the prefix cost nothing to fix while leaving it is how the `.git`/`.github`
+ * hole above survived.
  */
-const IGNORED = /node_modules|\.next|[/\\]\.git[/\\]|\.git$|coverage/;
+const IGNORED =
+  /node_modules|[/\\]\.next[/\\]|\.next$|[/\\]\.git[/\\]|\.git$|[/\\]coverage[/\\]|\.coverage$|coverage$/;
 
 /**
  * Characters that a UTF-8 **continuation** byte becomes when the bytes are decoded as windows-1252.
