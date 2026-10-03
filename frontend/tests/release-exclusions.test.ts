@@ -121,9 +121,100 @@ interface Exclusion {
    * seventeen of them passed undetected. Every one of those is now a fixture here. The
    * evidence is therefore about the *class* of shape rather than one author's phrasing, and
    * it is the only reason to believe these patterns catch what they name.
+   *
+   * `caughtBy` names the *individual arm* that must match. It is not redundant with
+   * `pattern`: a fixture that the whole pattern catches proves the exclusion is enforced, but
+   * not that the clause it is filed under does any work. A dead arm and a fixture that passes
+   * for an unrelated reason look identical from the outside — both green — and that is exactly
+   * how §2.7's two query-parameter arms survived three reviews while matching nothing.
    */
-  violations: Array<{ label: string; code: string }>;
+  violations: Array<{ label: string; code: string; caughtBy?: string }>;
 }
+
+/**
+ * Query and header names whose value is a URL, for §2.7's caller-supplied-URL arms.
+ *
+ * Matched as `something-url-word-something` rather than as a list of whole names, because
+ * `x-media-url`, `media-source` and `targetUrl` are all the same idea written three ways and a
+ * list of literals catches whichever spelling its author happened to think of.
+ */
+const URL_KEY = "[\\w-]*(?:url|uri|href|src|source|target|media|resource|link)[\\w-]*";
+
+/** The read itself: `searchParams.get("…")` or `headers.get("…")`. */
+const ENVELOPE_READ = `(?:searchParams|searchparams|params|query|headers)\\s*\\.\\s*get\\s*\\(\\s*["'\`](?:${URL_KEY})["'\`]`;
+
+const THEN_FETCH = "[\\s\\S]{0,240}?\\bfetch\\s*\\(";
+
+/**
+ * An envelope read and a `fetch` within a short window, **in either order**.
+ *
+ * The order is the part the first attempt got wrong twice. "Envelope, then somewhere a fetch"
+ * misses `return await fetch(request.headers.get("x-media-url"))`, which is the shape a hurried
+ * implementation actually writes and the single-line evasion — the read is an *argument to* the
+ * fetch, so it comes after it. Both orders are matched.
+ *
+ * @param read the envelope read to look for
+ * @returns a regular expression for "a URL was taken from the request and then opened"
+ */
+function callerSuppliedUrlArm(read: RegExp): RegExp {
+  return new RegExp(
+    `(?:${read.source}${THEN_FETCH}|\\bfetch\\s*\\([\\s\\S]{0,240}?${read.source})`,
+    "i",
+  );
+}
+
+/** A URL read out of the query string, then opened. */
+const QUERY_PARAM_URL = callerSuppliedUrlArm(new RegExp(ENVELOPE_READ, "i"));
+
+/** A URL read out of a request header, then opened. */
+const HEADER_URL = callerSuppliedUrlArm(
+  new RegExp(`headers\\s*\\.\\s*get\\s*\\(\\s*["'\`](?:${URL_KEY})["'\`]`, "i"),
+);
+
+/**
+ * `await request.json()` — the whole request body read at once — and a `fetch` not far after it.
+ *
+ * The window is 480 characters, widened from 240 by the third review. A body that is validated,
+ * logged and reshaped before the fetch is the *ordinary* shape, not an evasion, and 240 was simply
+ * too short to see it: the fixture filed against this arm puts 310 characters between the read and
+ * the fetch.
+ *
+ * A second arm was tried here and deleted rather than kept: one that additionally required a
+ * URL-ish *field* off the parsed body (`b.mediaUrl`, `body.href`, `data.source`), on the theory
+ * that naming the field is more precise than naming the envelope. It is not more precise — the
+ * field name is a property of the offending code, while the envelope is the thing that makes it a
+ * violation — and its reach was strictly *worse*. With the field required inside the first 240
+ * characters, the fetch then had to fall inside the next 240, so the arm could only ever see a
+ * body of at most 480 characters with the field early in it; a 480-character plain body was out of
+ * its reach while the plain arm caught it. It was also unfalsifiable in the direction that
+ * mattered: `body.mediaId` contains `media`, so the arm fired on a body whose field plainly is not
+ * a URL.
+ *
+ * Recorded because the deleted arm is the kind of thing that gets re-added later as an improvement.
+ */
+const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
+
+/**
+ * §2.7's detector, assembled from named arms rather than one opaque alternation.
+ *
+ * Naming them is what makes them checkable. Written as a single literal, an arm that cannot
+ * match is indistinguishable from one that can — and this detector shipped two that could not,
+ * with a fixture filed under each, passing for an unrelated reason.
+ */
+const NO_MEDIA_PROXY_PATTERN = new RegExp(
+  [
+    String.raw`fetch\s*\(\s*["'\`][^)]*googlevideo`,
+    String.raw`proxyStream`,
+    String.raw`streamProxy`,
+    String.raw`\/api\/(proxy|stream|media)\b`,
+    QUERY_PARAM_URL.source,
+    HEADER_URL.source,
+    BODY_JSON_FETCH.source,
+    String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
+    String.raw`arrayBuffer\s*\(\s*\)[\s\S]{0,200}?new\s+Response`,
+  ].join("|"),
+  "i",
+);
 
 const EXCLUSIONS: Exclusion[] = [
   {
@@ -769,12 +860,23 @@ const EXCLUSIONS: Exclusion[] = [
     // The second pass's probe: a forwarder that takes its upstream from the *request body*
     // rather than a query parameter, so every "where does the URL come from" rule the first
     // version had missed it. A caller-supplied URL is a caller-supplied URL whichever
-    // envelope it arrives in, so both are matched.
-    pattern:
-      /fetch\s*\(\s*["'`][^)]*googlevideo|proxyStream|streamProxy|\/api\/(proxy|stream|media)\b|(?:searchParams\.get|get\s*\(\s*["'`](?:url|target|src|source|media|href)["'`]\s*\))\s*\)[\s\S]{0,240}?fetch\s*\(|request\.json\s*\(\s*\)[\s\S]{0,240}?fetch\s*\(|await\s+request\.json[\s\S]{0,120}?\.url\b[\s\S]{0,200}?fetch\s*\(|fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body|arrayBuffer\s*\(\s*\)[\s\S]{0,200}?new\s+Response/i,
+    // envelope it arrives in, so all three envelopes the spec names — query parameter, header,
+    // request body — are matched, and each has a fixture filed against its own arm.
+    //
+    // That last clause is new, and it is not cosmetic. This detector previously carried two
+    // query-parameter arms that could not match ordinary code: one required the literal text
+    // `searchParams.get)` because the group added a closing paren the code never has, and the
+    // other consumed the `)` of `.get("url")` and then demanded a *second* `)`, so it fired only
+    // on a nested call. Both fixtures filed under them passed anyway — via the
+    // `fetch(…)…new Response(x.body)` arm, which has nothing to do with where the URL came from.
+    // Three reviews and a green suite, and the clauses the comments named were not the clauses
+    // that ran. Hence `caughtBy` on every fixture below, plus a separate assertion that the named
+    // arm is the one that fires.
+    pattern: NO_MEDIA_PROXY_PATTERN,
     violations: [
       {
         label: "a generic forwarder",
+        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const target = new URL(request.url).searchParams.get("url") ?? "";
@@ -789,6 +891,7 @@ const EXCLUSIONS: Exclusion[] = [
         label: "the same forwarder with every variable renamed",
         // The specific gap the first version had. A detector keyed on the author's
         // vocabulary rather than on the code's shape passes this.
+        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const link = new URL(request.url).searchParams.get("url") ?? "";
@@ -798,7 +901,49 @@ const EXCLUSIONS: Exclusion[] = [
         `,
       },
       {
+        label: "a forwarder handed the URL as a request header, inline in the fetch",
+        // The envelope the third review found entirely uncaught. Note the order: the read is an
+        // *argument to* the fetch, so an "envelope then a fetch somewhere later" arm never sees
+        // it. This is the shape a hurried implementation actually writes, and the single-line
+        // evasion. *Zero* of the suite's several hundred regex literals matched it.
+        caughtBy: HEADER_URL.source,
+        code: `
+          export async function GET(request: Request): Promise<Response> {
+            const media = await fetch(request.headers.get("x-media-url") ?? "");
+            return new Response(media.body, { headers: media.headers });
+          }
+        `,
+      },
+      {
+        label: "a forwarder handed a named header, resolved first",
+        // A header an operator would plausibly configure, so the arm cannot rely on an `x-`
+        // prefix to identify the envelope — and a compound name, so it cannot rely on an exact
+        // list of literals either.
+        caughtBy: HEADER_URL.source,
+        code: `
+          export async function GET(request: Request): Promise<Response> {
+            const target = request.headers.get("media-source") ?? "";
+            const media = await fetch(target);
+            return new Response(media.body, { headers: media.headers });
+          }
+        `,
+      },
+      {
+        label: "a forwarder taking its upstream from a query parameter inline in the fetch",
+        // The other order, for the query envelope. Both are required: a forwarder written as
+        // `const u = get(…); await fetch(u)` and one written as `await fetch(get(…))` are the
+        // same violation, and an arm that only sees one of them is a half-rule.
+        caughtBy: QUERY_PARAM_URL.source,
+        code: `
+          export async function GET(request: Request): Promise<Response> {
+            const media = await fetch(new URL(request.url).searchParams.get("url") ?? "");
+            return new Response(media.body, { headers: media.headers });
+          }
+        `,
+      },
+      {
         label: "a buffer re-wrapped rather than a body streamed",
+        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(request: Request): Promise<Response> {
             const src = new URL(request.url).searchParams.get("url") ?? "";
@@ -812,10 +957,46 @@ const EXCLUSIONS: Exclusion[] = [
         // The second pass's probe. Same proxy, different envelope: the URL arrives in a JSON
         // body rather than a query parameter, which is how it got past a rule that only
         // looked for `searchParams.get("url")`.
+        caughtBy: BODY_JSON_FETCH.source,
         code: `
           export async function POST(request: Request): Promise<Response> {
             const { url } = await request.json();
             const media = await fetch(url);
+            return new Response(media.body, { headers: media.headers });
+          }
+        `,
+      },
+      {
+        label: "a forwarder resolving a body-supplied path against a media base",
+        // The shape the third review found the body arms also missed: the field is not named
+        // `url`, so the `.url` arm never applies and only `request.json()` does — and the fetch
+        // comes after a `new URL(base, …)`, further from the read than the window allowed.
+        caughtBy: BODY_JSON_FETCH.source,
+        code: `
+          export async function POST(request: Request): Promise<Response> {
+            const body = await request.json();
+            const target = new URL(MEDIA_BASE, String(body["mediaPath"] ?? ""));
+            const media = await fetch(target);
+            return new Response(media.body, { headers: media.headers });
+          }
+        `,
+      },
+      {
+        label: "a forwarder that validates, logs and reshapes the body before fetching",
+        // 310 characters between the body read and the fetch, so the pre-review 240-character
+        // window could not see it. This is not an evasion: a handler that validates and logs its
+        // input before acting on it is the shape a careful author writes, and a window narrow
+        // enough to miss it is not a rule about evasion.
+        caughtBy: BODY_JSON_FETCH.source,
+        code: `
+          export async function POST(request: Request): Promise<Response> {
+            const body = await request.json();
+            const id = String(body.mediaId ?? "");
+            const quality = String(body.quality ?? "highest");
+            const locale = String(body.locale ?? "en");
+            log("media request", { id, quality, locale });
+            const mediaUrl = buildMediaUrl(MEDIA_BASE, { id, quality, locale });
+            const media = await fetch(mediaUrl);
             return new Response(media.body, { headers: media.headers });
           }
         `,
@@ -828,6 +1009,7 @@ const EXCLUSIONS: Exclusion[] = [
         // from the request. So this fixture is the approved route with the one word changed:
         // a caller-supplied URL in the query string. Same detector, same clauses.
         label: "the approved download route taking a caller-supplied media URL",
+        caughtBy: QUERY_PARAM_URL.source,
         code: `
           export async function GET(
             request: Request,
@@ -1082,6 +1264,27 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
           `the detector missed ${violation.label}`,
         ).toBe(true);
       });
+
+      // Arm isolation, and the assertion whose absence let two dead clauses survive three
+      // reviews. `pattern` matching only proves the *exclusion* is enforced; it cannot show
+      // which clause did the work. A fixture filed under a clause that matches nothing still
+      // passes, because some other arm catches it — so the two failures look identical from
+      // outside and both are green.
+      //
+      // §2.7 shipped exactly that: a query-parameter arm requiring the literal text
+      // `searchParams.get)`, and another demanding a second `)` after `.get("url")`. Neither could
+      // match real code. Both fixtures passed, via the `fetch(…)…new Response(x.body)` arm.
+      if (violation.caughtBy !== undefined) {
+        it(`flags ${violation.label} by the clause it is filed under, not by another`, () => {
+          const arm = new RegExp(violation.caughtBy!, "i");
+          expect(
+            arm.test(stripComments(violation.code)),
+            `${violation.label} is filed under a clause that cannot match it, so that clause is dead. ` +
+              `It still passes the whole-pattern assertion because a different arm catches it. ` +
+              `Clause: ${violation.caughtBy}`,
+          ).toBe(true);
+        });
+      }
     }
   }
 
@@ -1880,6 +2083,31 @@ describe("every download the application initiates is classified, and named hone
     ];
   }
 
+  /**
+   * Every tag that both *initiates a download* and points at a remote origin.
+   *
+   * Order-independent by construction: the tag is located first, then both properties are checked
+   * inside it. The rule is "this tag has both", and a regex that spells out a sequence is a
+   * narrower rule wearing the same name.
+   *
+   * `href` must be a **literal** remote URL. `href={objectUrl}` cannot be judged from source, and
+   * the approved deferred download is exactly that — a local `URL.createObjectURL` handle — so
+   * requiring a literal is what lets this rule be strict without flagging the correct code.
+   *
+   * @param code one source file
+   * @returns the offending tags
+   */
+  function remoteOriginDownloadTags(code: string): string[] {
+    const offenders: string[] = [];
+    for (const match of code.matchAll(/<[A-Za-z][A-Za-z0-9]*\b[^>]*>/g)) {
+      const tag = match[0];
+      if (!/\bdownload\b/.test(tag)) continue;
+      if (!/\bhref\s*=\s*["'`](?:https?:)?\/\//i.test(tag)) continue;
+      offenders.push(tag);
+    }
+    return offenders;
+  }
+
   it("finds every download initiation and classifies it", () => {
     // A positive check, and the reason it exists. The negative pattern cannot say
     // `createObjectURL` is wrong, because the backup export *is* a file download and the
@@ -1984,11 +2212,19 @@ describe("every download the application initiates is classified, and named hone
         ).not.toMatch(/\.(?:mp3|m4a|aac|opus|ogg|flac|wav|webm)\b/i);
       }
 
-      // No `<a download>` in markup points at a remote origin, which would be a
-      // download the application did not produce.
-      expect(entry.code, `${entry.file}`).not.toMatch(
-        /download\s*=\s*["']true["'][^>]*href=["']https?:/,
-      );
+      // No `<a download>` in markup points at a remote origin, which would be a download the
+      // application did not produce.
+      //
+      // Done as a *tag* scan rather than a single regex, because the regex version read
+      // `/download=["']true["'][^>]*href=["']https?:/` and therefore only saw one attribute order.
+      // `<a href="https://cdn…" download>` — href first, which is how a component with `href` as
+      // its first prop comes out — passed. The rule is "this tag has both", not "this tag has them
+      // in this sequence", and a rule narrower than its own statement is the recurring defect in
+      // this file.
+      expect(
+        remoteOriginDownloadTags(entry.code),
+        `${entry.file} downloads a remote origin`,
+      ).toEqual([]);
     }
 
     // Neither class may be vacuous. A repository that stopped exporting backups would make the
@@ -1996,6 +2232,53 @@ describe("every download the application initiates is classified, and named hone
     // the media branch untested. Both are silent failures otherwise.
     expect(kinds, "the backup download must still be classified as one").toContain("backup");
     expect(kinds, "the approved media download must be classified as one").toContain("media");
+  });
+
+  // The remote-origin tag scan is a *rule*, and a rule nothing can fail is decoration. Both
+  // attribute orders are pinned, plus three shapes that must pass.
+  it("sees a remote-origin download in either attribute order, and neither without both", () => {
+    const cases: ReadonlyArray<{ label: string; code: string; offending: boolean }> = [
+      {
+        label: "download first, href second",
+        code: `<a download="true" href="https://cdn.example/x.webm">Save</a>`,
+        offending: true,
+      },
+      {
+        label: "href first, download second",
+        // The order the previous regex could not see, and the one a component whose first prop is
+        // `href` actually produces.
+        code: `<a href="https://cdn.example/x.webm" download>Save</a>`,
+        offending: true,
+      },
+      {
+        label: "a protocol-relative href",
+        code: `<a href="//cdn.example/x.webm" download>Save</a>`,
+        offending: true,
+      },
+      {
+        label: "the approved deferred download: a local object URL",
+        code: `<a href={objectUrl} download={filename}>Save</a>`,
+        offending: false,
+      },
+      {
+        label: "an ordinary link with no download attribute",
+        code: `<a href="https://example.test/somewhere">Read</a>`,
+        offending: false,
+      },
+      {
+        label: "a local download with no remote origin",
+        code: `<a href="/api/download/abc" download>Save</a>`,
+        offending: false,
+      },
+    ];
+    for (const testCase of cases) {
+      const found = remoteOriginDownloadTags(testCase.code);
+      if (testCase.offending) {
+        expect(found, `${testCase.label}: must be seen`).toHaveLength(1);
+      } else {
+        expect(found, `${testCase.label}: must not be seen`).toEqual([]);
+      }
+    }
   });
 
   it("can still see a declarative download, and can still tell a local variable from one", () => {
