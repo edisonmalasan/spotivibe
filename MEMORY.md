@@ -631,10 +631,19 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     correct history — I had the wrong current value in mind). **A correction can be as false as the
     claim it replaces**, so correcting a claim into a *different* false claim sends the next reader
     to fix the wrong thing. Check the direction of the error, not just its existence.
-56. **`W4` is cited in M20's carried-forward list and defined nowhere in the repository.** A carried-
-    forward item that names a defect nobody can look up is not a task, it is a rumour with a number
-    on it. Do not invent the definition to make the list resolve — that manufactures a finding
-    instead of recording one.
+56. ~~**`W4` is cited in M20's carried-forward list and defined nowhere in the repository.**~~
+    **CORRECTED — this claim was false, and the lesson it was recorded for is not the one it
+    teaches.** `W4` **is** defined: `archive/2026-09-30-add-podcasts/tasks.md:120`, a finding from the
+    *podcasts* change, not from M20's or M21's. See lesson 63 for how the false claim was made and
+    what it cost. The text is struck rather than deleted, because deleting a wrong lesson would leave
+    no trace that the file was ever wrong about it — and this file's whole subject is that a wrong
+    claim left standing is read and acted on.
+    **What survives, and is the real lesson:** a carried-forward item that names a defect by a bare
+    number nobody can resolve is not a task, it is a rumour with a number on it. `W4` *was* resolvable,
+    which is what made it worse: it resolved to a finding belonging to a different change, so a reader
+    following it would go and fix the wrong thing with total confidence. **Do not invent the definition
+    to make the list resolve** — that advice was right and is kept; it was the claim of absence that
+    was wrong, not the response to one.
 57. **Widening a scan's roots re-scopes everything that consumes it.** Adding `public/`, `scripts/`
     and `next.config.ts` to `download-non-goals` immediately failed two *other* assertions in the
     same file — legitimately: a fixture case names `offlineDownload` because it is a case about it,

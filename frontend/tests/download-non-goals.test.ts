@@ -256,8 +256,22 @@ interface NonGoal {
    * is caught by `finds nothing in the application`; a detector that matches too little is caught by
    * nothing at all, because the thing it misses is by definition not there to be found. So the
    * boundary has to be stated as a test or it is only a claim.
+   *
+   * ## Why `realPath` exists, given a snippet is already asserted not to match
+   *
+   * Independent verification's second finding: a snippet is free-floating text, so a label can
+   * describe something the code does not contain. `label: "the backup importer's own file input"`
+   * with `code: "hello world"` satisfies every assertion in this file — the label is never checked
+   * against anything. Asserting `!pattern.test(code)` proves the *snippet* is outside the detector,
+   * which is not the claim; the claim is about a *thing in this repository*.
+   *
+   * So one entry per detector carries `realPath`: a file that exists, whose real contents the
+   * detector must not match. That makes the label checkable — it names an artifact, and if the
+   * artifact is renamed or deleted the test fails rather than continuing to vouch for a blind spot
+   * described in the past tense. Independent verification caught the gap by reading; this closes it
+   * by reading too.
    */
-  readonly notSeen: ReadonlyArray<{ label: string; code: string }>;
+  readonly notSeen: ReadonlyArray<{ label: string; code: string; realPath?: string }>;
 }
 
 /**
@@ -473,6 +487,7 @@ const NON_GOALS: readonly NonGoal[] = [
     notSeen: [
       {
         label: "the IndexedDB session *restore* repository, which is local state",
+        realPath: "src/data/indexeddb/session.ts",
         // The false positive that forced these arms onto executable positions. A local record of
         // "what the listener was playing" is not an account.
         code: `const store = db.objectStore("sessions"); await store.restore();`,
@@ -539,6 +554,7 @@ const NON_GOALS: readonly NonGoal[] = [
     notSeen: [
       {
         label: "the header this clause's case sensitivity exists for",
+        realPath: "src/server/download/service.ts",
         code: `res.setHeader("X-Spotivibe-Download-Container", "keep");`,
       },
       {
@@ -618,6 +634,7 @@ const NON_GOALS: readonly NonGoal[] = [
     notSeen: [
       {
         label: "the service worker's own cache.put, which is required code",
+        realPath: "public/sw.js",
         code: `await cache.put(request, response);`,
       },
       {
@@ -675,6 +692,7 @@ const NON_GOALS: readonly NonGoal[] = [
     notSeen: [
       {
         label: "the backup importer's own file input",
+        realPath: "src/features/backup/DataControls.tsx",
         // M2's versioned JSON import is a listener bringing data *in*, the opposite of this
         // non-goal. It was the false positive that made this clause audio-scoped.
         code: `<input type="file" accept="application/json" onChange={onImport} />`,
@@ -722,6 +740,7 @@ const NON_GOALS: readonly NonGoal[] = [
     notSeen: [
       {
         label: "M20's honest container renaming, which this detector must not flag",
+        realPath: "src/app/layout.tsx",
         // The `.webm` naming is the thing this milestone exists to keep honest. A detector that
         // flagged it would invite somebody to "fix" the naming, so the absence is asserted.
         code: `const extension = ".webm"; // honest: it really is WebM`,
@@ -768,6 +787,7 @@ const NON_GOALS: readonly NonGoal[] = [
     notSeen: [
       {
         label: "the single-track route that does exist",
+        realPath: "src/app/api/download/[videoId]/route.ts",
         code: `export const POST = handle("/api/download/[videoId]");`,
       },
       {
@@ -828,6 +848,7 @@ const NON_GOALS: readonly NonGoal[] = [
     notSeen: [
       {
         label: "the playback scrubber's position, which is a true fraction",
+        realPath: "src/components/player/ProgressSlider.tsx",
         // The false positive that scoped these arms to *download* progress. A seek bar's position
         // within a known duration is not a guess, and flagging it would have gotten the component
         // removed.
@@ -1088,6 +1109,28 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     // The literals are reproduced here rather than imported, because the point is to pin the
     // *before* state. A regex that quietly stopped matching a file would still pass `finds nothing
     // in the application`; only this can notice.
+    //
+    // ## What this does and does not prove, stated exactly
+    //
+    // It proves: **no clause changed its behaviour on this corpus.** Every source file the scan
+    // reads, every `violations` fixture and every `notSeen` snippet is run through both the old
+    // literal and the rebuilt pattern, and any disagreement is reported by name.
+    //
+    // It does **not** prove: that no clause changed at all. Agreement is a per-input property, so
+    // a clause widened toward a token appearing in neither the application nor the fixtures
+    // matches the same things here, before and after, and this test cannot see the difference.
+    // The gap is real and this assertion does not close it.
+    //
+    // What catches that case is a *different* test pointing the other way.
+    // `finds nothing in the application` fails the moment a widened clause starts matching a real
+    // file, and the arm-witnessing test fails when a clause matches nothing at all
+    // (`these clauses can be deleted with the suite green`).
+    //
+    // So the two directions have different witnesses and neither test substitutes for the other:
+    // a clause that *lost* a match is caught here, and a clause that *gained* one is caught
+    // there. Stating that division is the point -- an earlier version of this comment claimed the
+    // test held the pattern's meaning in general, which is the overstatement this whole change
+    // exists to remove, committed in the file that removes it.
     const BEFORE: Record<string, RegExp> = {
       "Ad blocking or suppression":
         /adblock|ad-blocker|adBlocker|\badBlock\b|blockAds|block-ads|hideAds|hide-ads|cosmetic-filter|adsbygoogle|doubleclick\.net|googlesyndication|pagead2?|google_ads|ad-container|ad-wrapper|ad-slot|adunit|adUnit/,
@@ -1154,6 +1197,50 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
       sighted,
       "these detectors match a snippet their own scope says they cannot see, so the scope is wrong",
     ).toEqual([]);
+  });
+
+  it("anchors every scope to a real file the detector genuinely does not match", () => {
+    // Independent verification's second finding, and the reason the one above is not enough.
+    //
+    // `notSeen` proves a *snippet* lies outside the detector. The claim in each `scope` is about a
+    // *thing in this repository* — the backup importer's file input, the service worker's `cache.put`
+    // — and a snippet cannot carry that. A label reading "the backup importer's own file input"
+    // above `code: "hello world"` satisfies every assertion in this file, because the label is
+    // never checked against anything.
+    //
+    // So each detector also carries a `realPath`, and here the file's **actual contents** are run
+    // through the detector. That makes the label falsifiable in the direction that matters: if the
+    // file is renamed the test fails rather than going on vouching for a blind spot described in
+    // the past tense, and if a future edit puts the thing inside the file the detector now matches,
+    // the scope stops being true and this says so.
+    //
+    // Stated per detector rather than in aggregate, because "at least one is anchored" would let six
+    // of the seven scopes quietly go back to describing something that is not there.
+    const anchored = NON_GOALS.map(
+      (goal) => goal.notSeen.filter((snippet) => snippet.realPath).length,
+    );
+    expect(
+      anchored,
+      "every detector must anchor its blind spot to a real file; a floating snippet's label is " +
+        "not checked against anything and can describe whatever the author imagined",
+    ).toEqual([1, 1, 1, 1, 1, 1, 1]);
+
+    const problems: string[] = [];
+    for (const goal of NON_GOALS) {
+      for (const snippet of goal.notSeen) {
+        if (!snippet.realPath) continue;
+        const full = join(FRONTEND, snippet.realPath);
+        if (!existsSync(full)) {
+          problems.push(`${goal.name}: ${snippet.realPath} does not exist, so its scope is stale`);
+          continue;
+        }
+        // The whole file, comments and all. The claim is about the artifact, not about a line of it.
+        if (goal.pattern.test(readFileSync(full, "utf8"))) {
+          problems.push(`${goal.name} now matches ${snippet.realPath}, which its scope denies`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
   });
 
   it("covers every non-goal the milestone names", () => {

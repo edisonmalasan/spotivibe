@@ -285,6 +285,34 @@ export const pausedRequestHandlers = {
 };
 
 /**
+ * The plan to fall back to when deciding throws.
+ *
+ * A matcher or body that throws must not hang the request: fall through to the network, so the
+ * failure shows up as the application's own behaviour rather than a stall, and record why.
+ *
+ * ## Why this is a function and not a line in the handler
+ *
+ * Independent verification changed this fallback's outcome from `CONTINUE` to `IGNORE` and all 57
+ * tests stayed green. `IGNORE` means the paused request is never continued, which is exactly the
+ * silent hang the rest of this file is arranged to make impossible — and it is invisible to every
+ * check here, because each of them exercises `classifyPausedRequest` or `pausedRequestHandlers` on
+ * inputs that *succeed*. The error path was the one place a request could be dropped without a
+ * single assertion covering it.
+ *
+ * So the fallback is a returned value with its own tests. It is also the last remaining place a
+ * paused request could be dropped without a failing test, which is the only reason to claim the
+ * dispatch cannot drop one.
+ *
+ * @param {unknown} error the throwable that escaped classification
+ * @param {string[]} consoleErrors sink for the diagnostic
+ * @returns {PausedRequestPlan}
+ */
+export function fallbackPlan(error, consoleErrors) {
+  consoleErrors.push(`fixture router: ${String(error)}`);
+  return { outcome: PAUSED_OUTCOME.CONTINUE };
+}
+
+/**
  * Resolve a planned request, or refuse to.
  *
  * An outcome with no handler is a programming error and throws. It does **not** fall through to
@@ -503,10 +531,9 @@ export async function openSession({
           routes,
         });
       } catch (error) {
-        // A matcher or body that throws must not hang the request: fall through to the network so
-        // the failure shows up as the application's own behaviour rather than a stall.
-        consoleErrors.push(`fixture router: ${String(error)}`);
-        plan = { outcome: PAUSED_OUTCOME.CONTINUE };
+        // The reason this is `fallbackPlan` and not two lines here is written there: the error path
+        // was the last place a paused request could be dropped with no assertion covering it.
+        plan = fallbackPlan(error, consoleErrors);
       }
       await resolvePausedRequest(plan, context);
     });

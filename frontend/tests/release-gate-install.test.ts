@@ -30,6 +30,7 @@ import {
 } from "../../openspec/changes/archive/2026-09-30-add-release-validation-and-deployment/evidence/lib/router.mjs";
 import {
   classifyPausedRequest,
+  fallbackPlan,
   pausedRequestHandlers,
   PAUSED_OUTCOME,
   resolvePausedRequest,
@@ -512,8 +513,33 @@ describe("the gate script itself", () => {
     // And the presentation, which is the half a reader sees. `NOT RUN` rather than `FAIL`, because a
     // missing `tsc` is not a finding about the code and recording it as one would put a defect in the
     // tally that does not exist.
-    expect(gate).toMatch(/NOT RUN/);
-    expect(gate).toContain("the environment is broken");
+    //
+    // **Scoped to the cascade branch, because unscoped these two were not checks.** Independent
+    // verification changed that branch's `status: "NOT RUN"` to `status: "FAIL"` and all 57 tests
+    // stayed green: `toMatch(/NOT RUN/)` was satisfied by the file's three *other* not-run sites
+    // (the skipped-browser item, the unresolved item, and the printer's own handling), and
+    // `toContain("the environment is broken")` still matched the `detail` line the mutation left
+    // intact. Both assertions were about the file rather than the branch, so a mutation inside the
+    // branch could not reach them.
+    //
+    // The block is extracted first, and the extraction is itself asserted — a regex that matched
+    // nothing would make every assertion below vacuously true, which is the failure this milestone
+    // exists to remove, so the extraction is checked for content and the assertions are made
+    // *negative* as well as positive.
+    const cascade =
+      /if \(isShortCircuited\(item, environmentBroken\)\) \{[\s\S]*?\n {2}\}/.exec(gate)?.[0] ?? "";
+    expect(
+      cascade,
+      "the cascade branch could not be located, so every assertion about it would be vacuous",
+    ).toContain("isShortCircuited(item, environmentBroken)");
+    expect(cascade).toContain('status: "NOT RUN"');
+    expect(cascade).toContain("the environment is broken");
+    // The direction that matters, stated as its own assertion: the branch must not report a failure.
+    // `FAIL` in this branch would put sixteen defects in the tally where there is one, which is the
+    // thing `release-gate.mjs`'s own comment above the branch says it is avoiding.
+    expect(cascade).not.toContain('status: "FAIL"');
+    // And the reason must travel with the skip, or "not run" is an omission rather than a result.
+    expect(cascade).toMatch(/steps:\s*\[[\s\S]*?Repair the dependency tree/);
   });
 
   it("parses, and its helper modules parse", () => {
@@ -644,6 +670,10 @@ describe("the end-to-end fixture router's readiness", () => {
     );
     // And the bare-drop guard must be gone from executable text, not merely from the comments.
     expect(handler).not.toMatch(/!routerPaused/);
+    // The error path is a tested decision too, and the handler must be the one taking it — see
+    // `fallbackPlan` for why it is not two inline lines. Without this, `fallbackPlan` could be a
+    // correct function the handler never calls, which is the inert-extraction shape twice over.
+    expect(handler).toContain("plan = fallbackPlan(error, consoleErrors);");
   });
 });
 
@@ -879,6 +909,53 @@ describe("resolvePausedRequest", () => {
     const { calls, context } = stub();
     await resolvePausedRequest({ outcome: PAUSED_OUTCOME.IGNORE }, context);
     expect(calls).toEqual([]);
+  });
+
+  it("resolves the fallback plan, which is the only way out of the error path", async () => {
+    // The assertion the mutation defeated: changing the fallback's outcome from `CONTINUE` to
+    // `IGNORE` left all 57 tests green, because every other test in this file feeds the classifier
+    // and the handlers inputs that *succeed*. `IGNORE` is the silent hang — the request is never
+    // continued — so this line is what stops the error path from being the unguarded one.
+    const errors: string[] = [];
+    const plan = fallbackPlan(new Error("matcher exploded"), errors);
+    expect(plan.outcome).toBe(PAUSED_OUTCOME.CONTINUE);
+
+    // And the decision is *resolved*, not merely returned: an outcome nothing handles would throw,
+    // which turns a fixture's bug into a stalled run instead of a reported failure.
+    const { calls, context } = stub();
+    await resolvePausedRequest(plan, context);
+    expect(calls).toEqual(["continue"]);
+  });
+
+  it("records why it fell back, so a fixture's bug is not silent", () => {
+    // Two reasons this is asserted rather than assumed. A fallback that continues without saying
+    // why leaves a scenario that mysteriously behaves like the real network, which is the worst
+    // kind of fixture failure to diagnose. And the diagnostic must name the throwable's text, or
+    // it names a variable and saves the reader nothing.
+    const errors: string[] = [];
+    fallbackPlan(new Error("route matcher threw on /api/search"), errors);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("fixture router:");
+    expect(errors[0]).toContain("route matcher threw on /api/search");
+  });
+
+  it("appends rather than replacing, so two fixture failures are both reported", () => {
+    // Overwriting would make the count of fixture bugs always exactly one, which is the kind of
+    // number that looks reassuring and means nothing.
+    const errors: string[] = [];
+    fallbackPlan(new Error("first"), errors);
+    fallbackPlan(new Error("second"), errors);
+    expect(errors).toHaveLength(2);
+    expect(errors.join("\n")).toContain("first");
+    expect(errors.join("\n")).toContain("second");
+  });
+
+  it("handles a throwable that is not an Error", () => {
+    // A fixture may `throw "string"` or `throw { code: 1 }`. `String(...)` on both gives something
+    // printable, so the diagnostic is never `[object Object]`-shaped-and-empty by accident.
+    const errors: string[] = [];
+    expect(fallbackPlan("just a string", errors).outcome).toBe(PAUSED_OUTCOME.CONTINUE);
+    expect(errors[0]).toContain("just a string");
   });
 
   it("throws on an outcome it has no handler for, rather than continuing", async () => {

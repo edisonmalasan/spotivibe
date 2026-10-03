@@ -143,10 +143,27 @@ clauses are a disjunction of genuinely distinct spellings**. Where clauses are d
 — fourteen ways to write "no account" — the detector is renamed to say so, and no sole-carrier
 fixture is demanded for each.
 
-**Why not all of them.** `download-non-goals.test.ts` has seven detectors and 47 of 52 clauses
-deletable. Adding 47 sole-carrier fixtures means 47 near-identical snippets, which costs
-maintenance and teaches nothing: the clauses are synonyms, and a synonym does not need its own
-witness to be honest. What a synonym needs is a **name that admits it**, which is free.
+**Why not all of them.** ~~`download-non-goals.test.ts` has seven detectors and 47 of 52 clauses
+deletable.~~ **That count was never measured.** It was an estimate written in the grammar of a
+measurement — "47 of 52" reads as two integers someone counted, and nobody did. The exploration had
+counted *clauses* by eye and *deletable* clauses by reasoning about what each detector would find; it
+never deleted 47 clauses and watched the suite stay green. Presenting the product of two estimates as
+a measurement is the defect this change exists to remove, committed in the document that argues for
+the repair.
+
+**What is actually known**, because the difference matters for the decision below: clauses were
+*counted* (five of seven detectors were single regex literals whose alternatives the check could not
+see, and two had a fixture per arm), and the *effect* was demonstrated on the two that did — deleting
+an arm there left the file green. So the gap is real and the direction is right; only the number was
+invented. Adding one fixture per synonym means one near-identical snippet per synonym, which costs
+maintenance and teaches nothing: a synonym does not need its own witness to be honest. What a synonym
+needs is a **name that admits it**, which is free — and, since C6, a `notSeen` snippet proving the
+stated boundary is still the boundary.
+
+**And the estimate was too pessimistic in the direction that mattered.** It assumed seven detectors
+would stay as they were. Splitting the five literals into clause lists and witnessing each arm
+(`tasks.md` 5.2) turned "7 detectors, mostly unwitnessed" into "7 detectors, every arm witnessed",
+which is a stronger position than the estimate claimed to justify.
 
 **Why not leave it.** The defect this change exists to fix is a check that overstates its scope.
 Naming the scope is the whole repair for a synonym detector; enumerating it would be theatre.

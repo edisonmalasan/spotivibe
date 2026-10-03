@@ -170,3 +170,49 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   function, and any real browser download are all recorded **unverified**, with the reason.)
 - [x] 8.5 `openspec validate harden-post-v1-verification --strict` and `openspec validate --specs --strict` both valid.
   (`--specs --strict`: 26 passed / 0 failed. The change validates `--strict`.)
+- [x] 8.6 **A second independent verification, and every CRITICAL from it fixed before merging.**
+  (Verdict **REJECT** again: 5 CRITICAL, 3 WARNING, 2 NIT. It modified no repository file and worked on
+  copies. Both of the verifier's defeats were reproduced here first and only then repaired, because a
+  fix written from a description is a fix written from a description.)
+
+  | # | finding | repair | mutation proof |
+  |---|---|---|---|
+  | C1 | the cascade assertions were satisfied by three *other* not-run sites, so the branch's own `status` could read `FAIL` | extract the branch body and assert inside it | 4/4 RED, including the verifier's exact defeat |
+  | C2 | the classifier's `catch` fallback was untested, so `CONTINUE` → `IGNORE` — the silent hang — was invisible | `fallbackPlan(error, consoleErrors)`, called at the site and tested | 5/5 RED |
+  | C3 | `MEMORY.md` lesson 56's claim that `W4` is defined nowhere is false, and lesson 63 says so | lesson 56 struck and corrected in place; `proposal.md` likewise | read, not asserted |
+  | C4 | `design.md` §2.7's "47 of 52 clauses deletable" was written as a measurement and never measured | struck, with what *is* known stated separately | read, not asserted |
+  | C5 | the root `gate`'s build-before-test order was fixed but unguarded | four tests in `root-commands.test.ts` | 7/7 RED |
+  | W1 | a `notSeen` snippet is free text, so its label can describe anything | each detector's blind spot anchored to a real file whose contents are run through the detector | 4/4 RED |
+  | W2 | the equivalence comment claimed the rebuilt patterns' meaning was preserved in general | comment now states the corpus-scoped guarantee and names the test that covers the other direction | read, not asserted |
+  | W3 | `apiRoutes()` still walked `src/app/api` itself, so "one shared tree reader" was false | the private walker deleted; the predicate extracted and pinned | 8/8 RED, plus 1 expected green |
+  | N1 | `const walkRemoved = true; void walkRemoved;` — a check-shaped object that checks nothing | deleted, with the reason kept as prose | control mutation: stays green, correctly |
+  | N2 | the archived gate's `CHANGE` path names a pre-archive directory | **not fixed** — pre-existing and outside this change's scope | read |
+
+  Three things this round added that the first round did not, each because a repair created a new gap:
+
+  - **C1's repair created an unwitnessed assertion, so the branch is now extracted before it is
+    asserted.** The verifier's defeat was not a missing assertion but a *satisfied-by-the-wrong-thing*
+    one, and the generalisation is the lesson: an assertion about a file is evidence about a file.
+  - **Rewriting `apiRoutes()` introduced a defect that nothing detected.** A probe found `route.name`
+    used 13 times and checked as a failure *message* or an internal lookup key, never as a value, and
+    the nested route named in no assertion at all — so the name derivation could be wrong with the
+    suite green. Three tests now pin it from disk. This is recorded as a defect **found by writing a
+    probe for something unrelated**, which is the argument for probing.
+  - **The predicate's first repair did not work, and the second did.** Widening `=== "route.ts"` to
+    `includes("route")` stayed green, because no `route-utils.ts` exists under `app/api/` today, so
+    the wider rule selected the same set. The predicate was extracted and given synthetic cases. Same
+    shape as W2: a demonstration that is a *separate* implementation from the rule agrees with itself.
+- [x] 8.7 Full suite green with the thirteen new tests: **181 files / 3291 tests**, up exactly thirteen
+  from 3278. `tsc --noEmit` and `next typegen` exit 0; `prettier --check` and `eslint tests/` exit 0.
+- [ ] 8.8 **Not done, and recorded rather than closed: no browser verification.** Only Edge is installed
+  and there is no automation dependency, and both production and the Preview origin are behind Vercel
+  Deployment Protection, which is not circumvented. So real production streaming, the 300 s duration,
+  the 120 s proxy timeout, `@distube/ytdl-core` on a real function, any real browser download, task
+  1.8's repeated end-to-end run, task 7.1's parked player, and the verification half of 8.4 all stand
+  **unverified**. 8.4's *recording* is done; 8.4's verification is not, and no gate run substitutes.
+- [ ] 8.9 **Not done: CI has not been observed green on this branch.** Every number above is a local run.
+- [ ] 8.10 **Not done: six consecutive green gate runs have not been repeated since this round.** 8.3 was
+  met at `bdb0dba`, before all thirteen tests and five repairs above existed, so it is evidence for
+  that commit and not for this one. It is re-run after this round rather than inherited, on the same
+  reasoning 8.3 itself records: a criterion measured against a tree that has since changed is not a
+  measurement of the current tree.

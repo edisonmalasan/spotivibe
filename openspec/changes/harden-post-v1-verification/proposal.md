@@ -77,8 +77,12 @@ the prose drifts away from the code.
 - `verification.md`'s claim that `applicationSources()` "covers none of M20's new server files" is
   **false as written**. `download-non-goals.test.ts:52` walks all of `src/`, and every M20 server file
   is under `src/`. The real gaps are the missing roots, which is a narrower and different claim.
-- `W4` is cited in the carried-forward list and **defined nowhere in the repository**. Either the
-  definition is restored or the citation is removed. It is currently a task nobody can execute.
+- ~~`W4` is cited in the carried-forward list and **defined nowhere in the repository**.~~ **This
+  claim was false.** `W4` is defined, at `archive/2026-09-30-add-podcasts/tasks.md:120` — a finding
+  belonging to the *podcasts* change. So the carried-forward item was not unresolvable, which made it
+  worse than unresolvable: a bare `W4` looks resolvable and quietly resolves to another change's
+  finding. The finding stands in a corrected form — the citation is ambiguous, not dangling — and is
+  dispositioned at `tasks.md` 6.2 and `MEMORY.md` lessons 56 and 63.
 
 **Documentation describes the product as built.**
 
