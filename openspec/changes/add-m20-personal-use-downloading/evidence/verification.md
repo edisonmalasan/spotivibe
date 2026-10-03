@@ -617,10 +617,180 @@ test what their labels claim is worse than no probe.
 #### Carried to M21
 
 W1 (`audio/` replaced by a "positive rule" that does not exist server-side), W2 (four more
-`download`-attribute spellings not matched), W4 (stale counts in §1), W5 (a queued caller receives
-no response at all), W6 (a residual permit leak if the platform never reads or cancels the body),
-and the coarse-arm false positive above. None is a hole in the shipped code; each is a rule that
-says less than it appears to, which is the defect class this change has produced four times.
+`download`-attribute spellings not matched), W5 (a queued caller receives no response at all),
+W6 (a residual permit leak if the platform never reads or cancels the body), and the coarse-arm
+shape noted above.
+
+---
+
+## 12. Fourth independent review
+
+An independent read-only reviewer attacked the two commits above. Verdict: **REJECT**, on a finding
+larger than anything it had found before, plus two of its own errors.
+
+### Corrections to this file, made first
+
+Two claims in §11 were wrong, and they are corrected here rather than quietly amended in place,
+because a commit that fixes a false claim elsewhere while adding two of its own is worth very
+little.
+
+| §11 said | Actually | Who found it |
+| --- | --- | --- |
+| "310 characters" between the body read and the `fetch` | **344** strictly between, 358 from the start of `request.json()` | the review, and my own re-derivation |
+| "three envelopes … with nine fixtures, two per envelope per order or distance" | **eighteen** fixtures across the three detectors, and the per-arm split was 5 / 2 / 3, not "two per envelope" | the review, for the shape; my own count, for the split |
+
+The 310 was measured in a **probe's copy** of the fixture, which was indented differently and so was
+34 characters shorter. A number measured on a copy of the thing is a number about the copy. The
+fixture comment in the source now carries 344 and says it was measured in that file.
+
+The reviewer separately reported "9 `caughtBy` declarations" against 10 fixtures. That one is the
+reviewer's error: the file has 10, split 5 / 2 / 3, re-derived mechanically.
+
+### CRITICAL F — 21 of 33 clauses could be deleted with the whole suite green
+
+The method was to parse each detector into its top-level alternation arms, delete one arm at a
+time, and re-run the entire exclusion suite. Across `no media proxied through the application
+server`, `no MP3 faking` and `no media cached for offline playback`:
+
+| Detector | Clauses | Deletable with the suite green |
+| --- | ---: | ---: |
+| `no media cached for offline playback` | 10 | 4 |
+| `no MP3 faking` | 16 | 10 |
+| `no media proxied through the application server` | 9 | 9 |
+
+Two distinct causes, and the second is the one that matters.
+
+**Cause 1 — no clause had its own fixture.** The fixtures were realistic whole handlers, which is
+right for asking "does this detector catch a realistic violation" and useless for asking "does *this
+clause* do any work". A handler re-recording a parked element mentions `captureStream`,
+`getAudioTracks`, `MediaRecorder` and `createMediaElementSource` at once, so deleting any one of
+them left the other three catching the same snippet. Each clause was "covered" by its neighbours.
+
+**Cause 2 — one broad clause was doing nearly all the work, and masked the rest.** In §2.7 the
+clause `fetch(…)…new Response(x.body)` matches *every* forwarder fixture, because every one of them
+ends `return new Response(<something>.body, …)`. With that clause present, deleting any precise
+clause lost nothing. So §2.7's three envelope clauses — the ones the third review spent its CRITICAL
+on — were all individually deletable.
+
+That is the sharpest form of this change's recurring defect: **the clause added to fix a hole was
+being carried by the clause that caused the false positive.** §11 recorded that
+`fetch(serverResolvedUrl)` … `new Response(media.body)` is the *approved* M20 shape and the coarse
+clause flags it. The same clause was also propping up three precise ones.
+
+#### The fix: compute attribution instead of declaring it
+
+`caughtBy` is gone. In its place, every detector's clauses are a named `arms` array, and one test
+**deletes each clause in turn and requires a fixture to stop matching**:
+
+```
+for each clause:
+  reduced = the detector rebuilt without it
+  some fixture that matched before must fail to match after
+```
+
+Nothing is hand-declared, so the four ways the review defeated `caughtBy` — delete every field, set
+them all to `^`, set them all to the whole pattern, re-file a header fixture under the query clause
+— have no analogue. There is nothing to lie about; the fixtures do the arithmetic.
+
+#### What that forced, clause by clause
+
+Getting to green took **27 new fixtures** — 9 for §2.7, 10 for `no MP3 faking`, 8 for the offline
+detector — and **three clause rewrites**, and every one of them was a clause doing something other
+than what its name said:
+
+| Clause | What was actually wrong | Fix |
+| --- | --- | --- |
+| `objectStore("…")` | matched **inside** `createObjectStore("…")` — no word boundary — so it covered the clause above it | added `\b`; in `createObjectStore` the `O` follows the `e` of `create`, two word characters, so there is no boundary, while `.objectStore(` has one |
+| `n-parameter` | matched the token as *documented*, not as it *appears in code*, so nothing matched | replaced with `"n":"…"`, which is what the player source actually contains. Found by the new check **on its first run** |
+| the query-string clause | its envelope list included `headers`, making it a strict **superset** of the header clause — so the header clause could never be load-bearing and re-filing was undetectable | `headers` removed; the two envelopes are now disjoint |
+
+The `n-parameter` clause is the same defect as §2.7's `searchParams.get)` arm, found by the same
+mechanism, in a clause nobody had looked at since M15.
+
+#### The blunt clause is kept, and §11's finding about it is now sharper
+
+With the envelope arms disjoint and the fixtures destructuring their response bodies, the blunt
+`fetch(…)…new Response(x.body)` clause became the *only* redundant one in §2.7. The obvious move was
+to delete it — and that would have been wrong twice over. It false-positives on the approved M20
+shape (§11), so deleting it would have **fixed** a false positive by accident. And it is the only
+clause that catches the most realistic §2.7 violation in the file:
+
+```
+a caller-controlled path segment used to build a media URL
+```
+
+The caller picks the slug, the server supplies the host, the bytes go straight back. No envelope
+read — the slug is in the *path*, not a query or header. No literal host in the `fetch` call. No
+named helper. Nothing but "a fetched body handed straight back" applies. A §2.7 built only from
+precise clauses would miss it, and every precise clause would still be green.
+
+So it stays, and it now has a fixture whose loss it alone detects.
+
+#### The check is mutation-proven, in both directions
+
+A check that cannot fail is decoration, and this file has shipped several. Five mutations, each
+restoring the file from a byte copy verified by content hash:
+
+| Mutation | Expected | Result |
+| --- | --- | --- |
+| delete the query-envelope clause | red | **red**, via a violation test |
+| delete the fixture that witnesses it | red | **red**, via the load-bearing check |
+| delete the decipher-by-name clause | red | **red**, via a violation test |
+| delete the fixture that witnesses it | red | **red**, via the load-bearing check |
+| fold the n-parameter clause into the manifest clause | **green** | **green** |
+
+The first four are caught by *different* checks, which is the point: deleting a clause is caught by
+the violation tests, and deleting the evidence that a clause works is caught only by the new one.
+
+The fifth must stay green, and asserting that is part of the design. Coverage-preserving
+consolidation is a legitimate refactor, and a check that fails on every conceivable edit gets
+disabled — after which it protects nothing. The check's job is to catch **loss of coverage**, not
+to preserve the shape of the source.
+
+Two probe bugs were found and fixed en route, both worth recording because a broken probe reports
+false confidence: the fixture-deletion mutation initially left the opening `{` behind, so the file
+was unparseable and the run failed for a syntax reason rather than a coverage one; and one clause
+deletion did not apply, which the probe reported as a skip rather than quietly counting as a pass.
+
+### W10 — 29 text files were outside the encoding scan, and one hole was three years deep
+
+The review noted the gap without enumerating it, so it was enumerated before being closed: 17
+top-level text files (`ROADMAP.md`, `MEMORY.md`, `README.md`, `package.json`, `tsconfig.json`,
+`eslint.config.mjs`, `next.config.ts`, `postcss.config.mjs`, `next-env.d.ts`, `package-lock.json`,
+the agent instruction files) plus `.github`.
+
+Covered now: **703 files**, up from 685 — 236 `frontend/src`, 200 `frontend/tests`, 4
+`frontend/scripts`, 6 `frontend/docs`, 1 `frontend/public`, 238 `openspec`, **1 `.github`** (the CI
+workflow), 11 `frontend/` top level, 6 repository top level.
+
+Adding `.github` immediately failed, and the reason is the finding: `IGNORED` was
+`/node_modules|\.next|\.git|coverage/`, and **`\.git` also matches `.github`**. So the CI workflow
+had never once been inside this scan, and the new root was silently scanning nothing. `IGNORED` is
+now anchored to a complete path segment.
+
+That is worth stating plainly: the fix *looked* like it worked, and only an assertion naming the
+workflow's exact path caught it. This is the fourth time in this change that a pattern matching more
+than it was written to match has defeated a check — and the third time the thing that caught it was
+a new assertion rather than a review of the pattern.
+
+The newly covered areas are pinned **by name**, not by count. A count is satisfied by any large set
+of files and cannot distinguish "the configs are covered" from "the configs stopped being scanned
+and the source tree grew". A duplicate-file assertion was added at the same time, so the count
+cannot be satisfied by listing the same file twice.
+
+Top level only, deliberately: `package-lock.json` is regenerated by every install, and descending
+into it would add hundreds of files nobody edits by hand.
+
+### CRITICAL G — a removal-table row covering five clauses with one sample
+
+`REMOVED_CLAUSES` had one row whose fingerprint listed
+`captureStream|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource`
+and whose sample contained **two** of them. A sample exercising two clauses keeps passing after
+either is dropped, so the row cannot say which went missing; three of the five had no sample that
+reached them at all.
+
+Split into five rows, one clause and one single-clause sample each — the approach the `getAudioData`
+row immediately below already used, and whose comment already explained why.
 
 ### Gates at this commit
 
@@ -629,14 +799,21 @@ Node 24.21.0, repository root:
 | Gate | Result |
 | --- | --- |
 | `npm run lint` | 0 |
-| `npm run format:check` | 0 (after `npm run format`; one file reformatted) |
+| `npm run format:check` | 0 (after `npm run format`; two files reformatted) |
 | `npm run typecheck` | 0 |
-| `npm test` | 0 — **178 files / 3157 tests** (3141 before this pass) |
+| `npm test` | 0 — **178 files / 3186 tests** (3157 before this pass) |
 | `npm run build` | 0 — `ƒ /api/download/[videoId]` |
 | `openspec validate add-m20-personal-use-downloading --strict` | valid |
 | `openspec validate --specs --strict` | 25 passed, 0 failed |
 
-Bundle, gzip 9 over `.next/static/chunks/**/*.js`: **387,992 B total, 96,667 B largest, 25 chunks** —
-unchanged. This pass is entirely test- and evidence-side, so nothing in the client bundle could move.
+`release-exclusions.test.ts` is **145 tests** (116 at the third review);
+`encoding-integrity.test.ts` is 7.
 
-The `/` first-load figure is still **not re-claimed**, for the reason given at the end of §10.
+Bundle re-measured after this pass, gzip 9 over `.next/static/chunks/**/*.js`: **387,992 B total,
+96,667 B largest, 25 chunks** — byte-identical to the last three passes, which is what a pass that
+touches only tests and evidence should produce.
+
+The `/` first-load figure is still **not re-claimed**, for the reason given at the end of §10. The
+129,849 B this pass's script prints is the 5 framework roots, not the 13 entries the recorded
+230,555 B came from, so quoting it would replace one unre-verified figure with a differently-measured
+one.

@@ -150,14 +150,19 @@ asserted.
 
 Three envelopes, because the binding scenario names three: query parameter, header, request body.
 
-| Arm | Matches | Fixtures |
-| --- | --- | --- |
-| `QUERY_PARAM_URL` | `searchParams`/`params`/`query`.get(*url*) near a `fetch` | 5 |
-| `HEADER_URL` | `headers`.get(*url*) near a `fetch` | 2 |
-| `BODY_JSON_FETCH` | `request.json()` then a `fetch` within **480** characters | 3 |
+All three detectors' clauses are named `arms`, and §12's computed check requires every one of them
+to have at least one fixture that **only it** catches — so a clause cannot be deleted unnoticed. For
+§2.7, measured by running the real test module rather than by counting the file:
 
-All 10 fixtures declare `caughtBy`, so every one is asserted to fire its own arm. Counts are measured
-from the file, not written from memory.
+| Clause | Matches | Fixtures it catches | Caught by nothing else |
+| --- | --- | ---: | ---: |
+| `QUERY_PARAM_URL` | `searchParams`/`params`/`query`.get(*url*) near a `fetch` | 6 | 1 |
+| `HEADER_URL` | `headers`.get(*url*) near a `fetch` | 3 | 1 |
+| `BODY_JSON_FETCH` | `request.json()` then a `fetch` within **480** characters | 4 | 1 |
+
+All nine clauses of §2.7 have an exclusive fixture; 19 fixtures in total. The last column is the one
+that matters and the first is nearly trivia: the blunt clause below catches 10 of the 19, so "how many
+fixtures does this clause match" would have made every precise clause look amply covered.
 
 `URL_KEY` is matched as `*url*`/`*media*`/`*src*`-style rather than as a list of whole names, since
 `x-media-url`, `media-source` and `targetUrl` are one idea written three ways.
@@ -168,6 +173,13 @@ belt-and-braces: "envelope, then somewhere a `fetch`" **cannot** see
 the single-line evasion, and it is the shape a hurried implementation actually writes. For the two
 header shapes, **zero** of this suite's several hundred regex literals matched anything before this
 change.
+
+The query envelope's key list **excludes `headers`**. It used to include it, which made
+`QUERY_PARAM_URL` a strict superset of `HEADER_URL` — and a strict superset has two consequences,
+both fatal: the header clause can never be load-bearing, because any fixture proving it also proves
+the superset, and re-filing a header fixture under the query clause is undetectable for the same
+reason. The fourth review listed that as one of four ways to defeat the previous `caughtBy`
+mechanism.
 
 ### 2c. An arm written, measured and deleted
 
@@ -181,10 +193,10 @@ improvements. It was wrong twice:
   then inside the next 240, it could only see a body of at most 480 characters with the field early
   in it — so a 480-character plain body was out of its reach while the plain arm caught it.
 
-The plain arm's window went from 240 to 480 instead, with a fixture placing **310 characters** between
-the read and the `fetch`. That fixture is the honest form: a handler that validates and logs its
-input before acting on it is what a careful author writes, and a window narrow enough to miss it is
-not a rule about evasion.
+The plain arm's window went from 240 to 480 instead, with a fixture placing **344 characters** between
+the end of the read and the `fetch`, measured in the test file rather than in a copy of it. That
+fixture is the honest form: a handler that validates and logs its input before acting on it is what
+a careful author writes, and a window narrow enough to miss it is not a rule about evasion.
 
 ### 2d. A pre-existing false positive, recorded not fixed
 
@@ -196,7 +208,30 @@ than a `.body`, so the arm misses the spelling. The route is safe by spelling, n
 Verified per-arm: the coarse arm matches the approved shape; **none** of the three envelope arms do.
 That is direct evidence the new arms are aimed at *where the URL came from* — the distinction §2.7
 turns on — and narrowing the coarse arm needs that same judgement, now made structurally. Carried to
-M21.
+M21. §12 adds that this clause is also the **only** one catching the most realistic §2.7 violation
+in the file — a caller-controlled path segment used to build a media URL, with no envelope read and
+no literal host — so deleting it to fix the false positive would have traded one undetected hole
+for another.
+
+### 2e. Clause attribution is computed, not declared
+
+§2 above originally credited a fixture to "the existing `searchParams.get(…)` → `fetch` clause",
+which was false. §12 records the fourth review's finding that **21 of 33 clauses across three
+detectors could be deleted one at a time with the whole exclusion suite green** — including *all
+nine* of §2.7's.
+
+The mechanism now in place: every detector's clauses are a named `arms` array, and one test deletes
+each clause in turn and requires a fixture to stop matching. It replaced a per-fixture `caughtBy`
+field, which the review defeated four ways while the suite stayed green — delete every field, set
+them all to `^`, set them all to the whole pattern, or re-file a header fixture under the query
+clause. A field an author writes about their own detector is evidence of what the author believed,
+not of what the detector does.
+
+**Nothing was removed from §2.7 to achieve this.** Every clause that existed before still exists;
+three gained fixtures, and three were *repaired* where they were doing something other than their
+name said. `n-parameter` in `no MP3 faking` was the clearest: it matched the token as documented
+rather than as it appears in code, so nothing matched it — and the new check found that on its first
+run.
 
 ---
 
