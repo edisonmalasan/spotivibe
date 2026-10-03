@@ -679,3 +679,15 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     multi-line *string literal* joined with real newlines is a parse error that vitest reports at the
     line of the string rather than at the mistake, and an anchor written with `\n` will not match a
     CRLF file — which reads as a missing anchor rather than a line-ending mismatch.
+63. **A claim about a negative is the most expensive kind of claim, because being wrong about it is
+    invisible from where you stand.** M21 asserted "`W4` is not defined anywhere in the repository" and
+    opened task 6.2 to restore the definition. `W4` was defined the whole time, at
+    `archive/2026-09-30-add-podcasts/tasks.md:120` — a finding from the *podcasts* change. The search
+    had been for a definition *belonging to this change*, and the absence was reported as the absence
+    of any. **When a negative claim is load-bearing, name the search that would falsify it.** Worse, the
+    real defect is a *collision* rather than a gap: two changes both number findings `W1, W2, W4, W5,
+    W6`, so a bare `W4` looks resolvable and quietly resolves to the wrong finding. An undefined
+    reference is visibly broken; a colliding one misleads. **Prefer a namespaced identifier to a
+    number that is only unique by accident.** Independent verification caught this by re-running the
+    search instead of accepting the claim — which is the whole argument for having a verifier, in one
+    concrete instance rather than as a principle.
