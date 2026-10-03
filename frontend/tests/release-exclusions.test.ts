@@ -394,10 +394,15 @@ const EXCLUSIONS: Exclusion[] = [
     //   • `audio/(?:mpeg|mp4|ogg|opus|…)` and `\.(?:m4a|mp3|opus|…)` — these banned every
     //     audio media type and every audio extension anywhere in the tree. An honest format
     //     mapper *must* contain them: `container.ts` has to be able to say "Opus in WebM is
-    //     `.webm`". Replaced by a stronger, positive rule — the extension has exactly one
-    //     home — asserted below and in `tests/download-format-honesty.test.ts`. A `.mp3`
+    //     `.webm`". Replaced by a **positive** rule — the extension has exactly one home —
+    //     asserted below and in `tests/download-container.test.ts`. A `.mp3`
     //     literal appearing in a route, a helper, or a component still fails; one appearing
     //     in the codec table that decides it is now the requirement rather than the violation.
+    //     • the second half of that substitution was WRONG at first, and is now corrected. "Replaced
+    //     by a stronger rule" was not true for a client-side `<a download="….mp3">` that builds no
+    //     object URL: the filename clause only looked at `filename*`, and the initiation sweep never
+    //     saw the file at all. An extension-bearing `download` attribute is now matched in its own
+    //     right, with its own fixtures.
     //   • `captureStream|getAudioTracks|MediaRecorder|…` — moved, not removed. They are
     //     clause 2's evidence, and clause 2 has its own detector below.
     // ─────────────────────────────────────────────────────────────────────────────
@@ -420,7 +425,7 @@ const EXCLUSIONS: Exclusion[] = [
     // `filename="${name}"` is the approved shape and does not match; `filename="track.mp3"`
     // is the lie and does.
     pattern:
-      /\b(?:youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl|videotube|ffmpeg(?:\.exe)?|fluent-ffmpeg|avconv|\bsox\b|\blame\b)\b|streamingData|signatureCipher|decipherFunction|\bdecipher\b|player_ias|\/base\.js|n-parameter|new\s+Function\s*\(|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus|webm|flac|aac)|writeFile\w*\([^)]*\.(?:m4a|mp3|opus|webm|flac|aac)|\.(?:toFormat|convert|remux|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac)["'`]|filename\w*\s*[:=][^\n]{0,80}["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b/i,
+      /\b(?:youtube-dl|youtube-dl-exec|yt-dlp|yt_dlp|yt-dlp_|streamlink|audiodl|videotube|ffmpeg(?:\.exe)?|fluent-ffmpeg|avconv|\bsox\b|\blame\b)\b|streamingData|signatureCipher|decipherFunction|\bdecipher\b|player_ias|\/base\.js|n-parameter|new\s+Function\s*\(|googlevideo\.com[^"'`]*\.(?:m4a|mp3|opus|webm|flac|aac)|writeFile\w*\([^)]*\.(?:m4a|mp3|opus|webm|flac|aac)|\.(?:toFormat|convert|remux|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac)["'`]|filename\w*\s*[:=][^\n]{0,80}["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b|\bdownload\s*=\s*\{?\s*["'`][^"'\n]{1,64}\.(?:m4a|mp3|opus|flac|aac|ogg|wav|webm)\b/i,
     violations: [
       {
         label: "a second, unapproved downloader as a dependency",
@@ -477,6 +482,41 @@ const EXCLUSIONS: Exclusion[] = [
             return new Response(stream, {
               headers: { "Content-Disposition": 'attachment; filename="track.mp3"' },
             });
+          }
+        `,
+      },
+      {
+        label: "a client-side download attribute that names the file itself",
+        // NEW, and added because the first version of this fixture set missed it. The reviewer
+        // proved the gap rather than inferring it: a pre-narrowing pattern caught
+        // `<a download="Never Gonna Give You Up.mp3" href={streamUrl}>` and the narrowed one did
+        // not. The compensating "download initiation" sweep does not save it either, because it
+        // only classifies files mentioning `.download =` or `createObjectURL(`, and a *declarative
+        // JSX attribute* contains neither token — so such a file never reaches the classifier.
+        //
+        // This is the shape the narrowing newly permits, and it is the most plausible way for the
+        // lie to come back: the server streams an honest `.webm`, and the browser is told to call it
+        // `.mp3` because that is the name people recognise. Exactly what §2.5 clause 1 forbids.
+        //
+        // The approved shape — `anchor.download = filename`, where `filename` came from the
+        // server's `Content-Disposition` — is still a variable and does not match.
+        code: `
+          export function SaveTrack({ streamUrl, title }: { streamUrl: string; title: string }) {
+            return <a download={\`\${title}.mp3\`} href={streamUrl}>Save</a>;
+          }
+        `,
+      },
+      {
+        label: "an anchor whose download name is asserted to MP3",
+        // The declarative attribute and the imperative assignment are both ways to say it, and
+        // only one of them would have been caught by the arm above if that arm had been written to
+        // require `download=`. Asserted separately so the arm cannot quietly narrow to one form.
+        code: `
+          export function saveAsMp3(blob: Blob, title: string) {
+            const anchor = document.createElement("a");
+            anchor.href = URL.createObjectURL(blob);
+            anchor.download = \`\${title}.mp3\`;
+            anchor.click();
           }
         `,
       },
@@ -1947,6 +1987,93 @@ describe("the exclusions hold in the dependency manifest and the shipped configu
       expect(citation, `${name} must cite the roadmap clause that approved it`).toMatch(
         /ROADMAP §\d+(?:\.\d+)?/,
       );
+    }
+  });
+});
+
+describe("every clause this change removed is published, not quietly dropped", () => {
+  // M20's `specs/release-validation/spec.md` requires it, and independent review found it was not
+  // actually true: `player.js` had been removed from `no MP3 faking` and appeared in no removal
+  // table. Nothing caught it, because that clause's own fixture still fires on `player_ias`,
+  // `\/base\.js` and `new Function(` — three neighbouring clauses that all survived.
+  //
+  // So the guarantee is made checkable rather than asserted in prose. Each entry is a clause that
+  // M20 removed from a permanent detector. Removing the entry from this list is a deliberate act
+  // that shows up in the diff; removing the clause without publishing it fails here instead.
+  //
+  // This is a list of *fingerprints*, not of prose, so a reworded row still satisfies it and a
+  // deleted row does not.
+  const REMOVED_CLAUSES: ReadonlyArray<readonly [fingerprint: string, why: string]> = [
+    [
+      String.raw`\bytdl\b|\bytdl-core\b`,
+      "the roadmap names @distube/ytdl-core, so forbidding the package name forbade a required dependency",
+    ],
+    [
+      String.raw`\badaptiveFormats\b`,
+      "the approved Invidious fallback must read this documented field",
+    ],
+    [
+      "downloadAudio|downloadTrack|downloadVideo|extractAudio|audioExtract|extractAudioBuffer",
+      "the approved feature has functions by these names",
+    ],
+    ["audio/", "container.ts must be able to say audio/webm and audio/mpeg"],
+    ["m4a|mp3|opus|flac|aac|webm", "container.ts holds these extensions as data"],
+    [
+      "captureStream|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource",
+      "moved, not removed: these are clause 2's evidence and have their own detector",
+    ],
+    ["getAudioData", "moved, not removed, same reason"],
+    [
+      String.raw`player\.js`,
+      "found by independent review: removed and published nowhere. Redundant rather than wrong — a hand-rolled manifest reader still trips player_ias, /base.js and new Function(.",
+    ],
+  ];
+
+  const diffPath = join(
+    FRONTEND,
+    "..",
+    "openspec",
+    "changes",
+    "add-m20-personal-use-downloading",
+    "evidence",
+    "exclusions-diff.md",
+  );
+  const diff = readFileSync(diffPath, "utf8");
+  // A Markdown table cell has to escape `|` as `\|`, so every regex alternation in the document is
+  // written with a backslash before the pipe. That is a rendering requirement, not a difference in
+  // content, so it is undone before matching — otherwise this test would be asserting on Markdown
+  // escaping rather than on whether a clause was published.
+  const normalized = diff.replace(/\\\|/g, "|");
+
+  it.each(REMOVED_CLAUSES)("publishes the removal of %s", (fingerprint, why) => {
+    expect(
+      normalized.includes(fingerprint),
+      `the removal table must name this clause: ${fingerprint} (${why})`,
+    ).toBe(true);
+  });
+
+  it("records the correction rather than leaving the earlier, stronger claim standing", () => {
+    // The table first described the media-extension clause as "replaced by a stronger, positive
+    // rule". That was false for a client-side `<a download="….mp3">`, and the false claim was left
+    // in place until review caught it. A correction that does not survive in the document is not a
+    // correction.
+    expect(diff).toMatch(/stronger\*?\*? positive rule|Correction \(independent review\)/);
+    expect(diff).toMatch(/Correction \(independent review\)/);
+  });
+
+  it("cites only test files that exist", () => {
+    // The table cited `tests/download-format-honesty.test.ts` three times. No such file was ever
+    // written — the real one is `download-container.test.ts` — so a reader following the pointer to
+    // the evidence for the honesty rule found nothing.
+    const cited = [...diff.matchAll(/`?(?:tests\/)?([a-z0-9-]+\.test\.tsx?)`?/g)].map((m) => m[1]);
+    expect(cited.length, "the table must cite the tests that carry the evidence").toBeGreaterThan(
+      0,
+    );
+    for (const name of cited) {
+      expect(
+        existsSync(join(FRONTEND, "tests", name)),
+        `the table cites tests/${name}, which does not exist`,
+      ).toBe(true);
     }
   });
 });
