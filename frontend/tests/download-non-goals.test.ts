@@ -213,6 +213,20 @@ interface NonGoal {
    * those and this is the right number for the one above.
    */
   readonly violations: ReadonlyArray<{ label: string; code: string }>;
+  /**
+   * Snippets this detector is claimed **not** to see, asserted not to match.
+   *
+   * A `scope` says what a detector would miss. Written as prose, that claim is decoration — it can
+   * rot silently, because nothing checks that the sentence is still true. These make it falsifiable:
+   * each snippet is drawn from the "does not see" half of its own scope, and the assertion is that
+   * `pattern` really does miss it.
+   *
+   * This is deliberately the opposite direction from `violations`. A detector that matches too much
+   * is caught by `finds nothing in the application`; a detector that matches too little is caught by
+   * nothing at all, because the thing it misses is by definition not there to be found. So the
+   * boundary has to be stated as a test or it is only a claim.
+   */
+  readonly notSeen: ReadonlyArray<{ label: string; code: string }>;
 }
 
 /**
@@ -244,6 +258,113 @@ const PROGRESS_ARMS: readonly string[] = [
   String.raw`Math\.round\(\s*\(?\s*(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[\s\S]{0,60}?\*\s*100`,
   String.raw`(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[^\n]{0,40}\/[^\n]{0,24}(?:total|contentLength|content_length|\bsize\b)[^\n]{0,24}%`,
   String.raw`\bdownload\b[^\n]{0,40}\d+\s*%`,
+];
+
+/**
+ * The ad-blocking detector's clauses, as a list.
+ *
+ * ROADMAP §2.4. Two mistakes were available here and both were taken. A case-insensitive
+ * `ad-container` matched `X-Spotivibe-Download-Container` — the substring `ad-Container` — and a bare
+ * `\bblockAds?\b` would match a routine that blocks nothing. So every alternative below is a token
+ * that appears verbatim in a real ad-blocking implementation (a filter-list rule, a host pattern, a
+ * container-class name) and the clause is case-**sensitive**: cosmetic-filter lists are lowercase
+ * and camelCase class names are named exactly as written, while prose is not a detector's business.
+ *
+ * Twenty-one alternatives are grouped into ten arms, and the grouping is by *what a reader would
+ * call the thing* rather than by spelling. `adblock`, `ad-blocker` and `adBlocker` are three
+ * spellings of one filter name; giving each a witness would teach nothing a witness for one does
+ * not, which is the same reason the synonym detectors were exempted before. What must not happen is
+ * for a whole arm to go unwatched, and `load-bearing` checks that.
+ *
+ * `load-bearing` also asserts this list rebuilds to the same detector the single literal did, over
+ * every source file and every fixture, so the split is not a narrowing nobody would notice.
+ */
+const AD_ARMS: readonly string[] = [
+  String.raw`adblock|ad-blocker|adBlocker`,
+  String.raw`\badBlock\b|blockAds|block-ads|hideAds|hide-ads`,
+  String.raw`cosmetic-filter`,
+  String.raw`adsbygoogle`,
+  String.raw`doubleclick\.net`,
+  String.raw`googlesyndication`,
+  String.raw`pagead2?`,
+  String.raw`google_ads`,
+  String.raw`ad-container|ad-wrapper|ad-slot`,
+  String.raw`adunit|adUnit`,
+];
+
+/**
+ * The offline-library detector's clauses, as a list.
+ *
+ * §21.5's non-goal, and the one M20 came closest to by accident: a download route that cached its
+ * own response would be an offline library wearing the route's clothes. The clauses are anchored on
+ * a media-ish *store name*, because the store name is what makes it an offline library, and on
+ * `caches.open` rather than `cache.put` — the service worker's own `cache.put` is required code.
+ *
+ * Ten genuinely distinct shapes, so ten witnesses. Three of them can only be written by someone
+ * deliberately building an offline library, which is exactly the point of each having one.
+ */
+const OFFLINE_ARMS: readonly string[] = [
+  String.raw`getAudioData\s*\(`,
+  String.raw`captureStream\s*\(`,
+  String.raw`getAudioTracks`,
+  String.raw`MediaRecorder`,
+  String.raw`MediaElementAudioSourceNode`,
+  String.raw`createMediaElementSource\s*\(`,
+  String.raw`createObjectStore\s*\(\s*["'\`][^"'\`]*(?:media|audio|offline|download)[^"'\`]*["'\`]`,
+  String.raw`objectStore\s*\(\s*["'\`][^"'\`]*(?:media|audio|offline)[^"'\`]*["'\`]`,
+  String.raw`(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'\`][^"'\`]*(?:media|audio|offline|download)[^"'\`]*["'\`]`,
+  String.raw`caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)`,
+];
+
+/**
+ * The local-file detector's clauses, as a list.
+ *
+ * Distinct from the offline library: this is playing a file the listener already had. The clauses
+ * are a picker scoped to **audio**, plus the filesystem APIs and URL schemes only a local file can
+ * have.
+ *
+ * The bare `type="file"` in the first draft matched `features/backup/DataControls.tsx`, which is the
+ * versioned JSON backup importer — an `<input type="file" accept="application/json">` is how a
+ * listener brings data *in*, which is the opposite of this non-goal and a M2 requirement. So the
+ * arm requires an audio accept on the same element, and `file://` was dropped because
+ * `styles/motionTokens.ts` cites `file://./motion.css` in a doc comment.
+ */
+const LOCAL_FILE_ARMS: readonly string[] = [
+  String.raw`type\s*=\s*["']file["'][^>]*accept\s*=\s*["'][^"']*audio`,
+  String.raw`showOpenFilePicker`,
+  String.raw`webkitdirectory`,
+  String.raw`webkitRelativePath`,
+  String.raw`FileSystemFileHandle`,
+  String.raw`FileSystemDirectoryHandle`,
+  String.raw`\bblob:null\/`,
+  String.raw`path\.join\([^)]*\.(?:mp3|m4a|flac|opus|ogg|wav)`,
+];
+
+/**
+ * The transcoding detector's clauses, as a list.
+ *
+ * §21.5: "Real transcoding is explicitly out of scope." This is also what the honest `.webm` naming
+ * invites somebody to "fix", so it is worth a detector with a fixture of exactly that.
+ *
+ * Three shapes: a named tool, a conversion call naming a lossy container, and a codec option. The
+ * original single fixture matched both the first and the second at once, so it witnessed neither.
+ */
+const TRANSCODE_ARMS: readonly string[] = [
+  String.raw`\b(?:ffmpeg|fluent-ffmpeg|avconv|\bsox\b|\blame\b|libav)\b`,
+  String.raw`\.(?:toFormat|convert|remux|transcode|encode)\w*\s*\(\s*["'\`](?:mp3|m4a|aac|opus|ogg|flac|wav)["'\`]`,
+  String.raw`audio\s*:\s*["'](?:mp3|m4a|aac)["']`,
+];
+
+/**
+ * The batch-download detector's clauses, as a list.
+ *
+ * §21.5's non-goal, and the one the *route shape* is the real defence for: a batch endpoint is a
+ * different route. So this detector covers both the implementation vocabulary and the path, and the
+ * one-route assertion in this file checks the other half.
+ */
+const BATCH_ARMS: readonly string[] = [
+  String.raw`\/(?:api\/)?download\/(?:batch|bulk|all|playlist|queue|selection)`,
+  String.raw`\bdownload(?:All|Batch|Bulk|Playlist|Queue)\s*\(`,
 ];
 
 const NON_GOALS: readonly NonGoal[] = [
@@ -318,20 +439,33 @@ const NON_GOALS: readonly NonGoal[] = [
         code: `const config = { password: "hunter2" };`,
       },
     ],
+    notSeen: [
+      {
+        label: "the IndexedDB session *restore* repository, which is local state",
+        // The false positive that forced these arms onto executable positions. A local record of
+        // "what the listener was playing" is not an account.
+        code: `const store = db.objectStore("sessions"); await store.restore();`,
+      },
+      {
+        label: "the debounce counter named refreshToken",
+        code: `let refreshToken = 0; function schedule() { refreshToken = now(); }`,
+      },
+      {
+        label: "a doc comment stating there is no sign-in",
+        code: `// There is no sign-in here, and there is no account to create.`,
+      },
+      {
+        label: "the word login in a route path",
+        code: `export const GET = handle("/api/login-reminder");`,
+      },
+    ],
   },
   {
     name: "Ad blocking or suppression",
     scope:
       "sees the tokens a real cosmetic filter uses - adblock, adsbygoogle, doubleclick.net,\ngooglesyndication, pagead2, and ad container/slot class names - and matches them\ncase-sensitively. Does not see ad-blocking spelled any other way, and does not see prose. The\ncase sensitivity is load-bearing: a case-insensitive ad-container matched\nX-Spotivibe-Download-Container.",
-    // ROADMAP §2.4. Two mistakes were available here and both were taken. A case-insensitive
-    // `ad-container` matched `X-Spotivibe-Download-Container` — the substring `ad-Container` — and a
-    // bare `\bblockAds?\b` would match a routine that blocks nothing. So every alternative below is a
-    // token that appears verbatim in a real ad-blocking implementation (a filter-list rule, a host
-    // pattern, a container-class name) and the clause is case-**sensitive**: cosmetic-filter lists
-    // are lowercase and camelCase class names are named exactly as written, while prose is not a
-    // detector's business.
-    pattern:
-      /adblock|ad-blocker|adBlocker|\badBlock\b|blockAds|block-ads|hideAds|hide-ads|cosmetic-filter|adsbygoogle|doubleclick\.net|googlesyndication|pagead2?|google_ads|ad-container|ad-wrapper|ad-slot|adunit|adUnit/,
+    arms: AD_ARMS,
+    pattern: anyOf(AD_ARMS),
     violations: [
       {
         label: "a cosmetic ad filter",
@@ -340,18 +474,59 @@ const NON_GOALS: readonly NonGoal[] = [
         export function stripAds(html: string): string { return applyRules(html, rules); }
       `,
       },
+      {
+        label: "arm 1: the filter's own name, however spelled",
+        code: `const filterList = "adblock";`,
+      },
+      {
+        label: "arm 2: a routine that removes ad elements",
+        code: `function adBlock(el: Element) { el.remove(); }`,
+      },
+      {
+        label: "arm 3: a cosmetic-filter list declared as such",
+        code: `const kind = "cosmetic-filter";`,
+      },
+      {
+        label: "arm 4: the adsbygoogle push",
+        code: `window.adsbygoogle = window.adsbygoogle || [];`,
+      },
+      { label: "arm 5: the doubleclick host", code: `rules.push("||doubleclick.net^");` },
+      {
+        label: "arm 6: the googlesyndication host",
+        // Deliberately without `pagead`, which would witness arm 7 as well and leave that arm
+        // unwatched — the exact mistake a single fixture per detector makes.
+        code: `rules.push("||googlesyndication.com/ads^");`,
+      },
+      { label: "arm 7: the pagead unit", code: `const unit = "pagead2";` },
+      {
+        label: "arm 8: a google_ads container selector",
+        code: `rules.push('##div[id^="google_ads"]');`,
+      },
+      { label: "arm 9: an ad container class name", code: `el.classList.contains("ad-wrapper");` },
+      { label: "arm 10: an ad unit class name", code: `const slot = "adUnit";` },
+    ],
+    notSeen: [
+      {
+        label: "the header this clause's case sensitivity exists for",
+        code: `res.setHeader("X-Spotivibe-Download-Container", "keep");`,
+      },
+      {
+        label: "prose about blocking ads",
+        code: `// This component blocks ads for the listener when they ask it to.`,
+      },
+      {
+        label: "ad blocking spelled some other way",
+        code: `window.__adSuppress = true;`,
+      },
     ],
   },
   {
     name: "A managed offline library in IndexedDB",
     scope:
       "sees media-capture APIs, an IndexedDB store whose name is media/audio/offline/download-shaped,\nand caches.open with such a name. Does not see a service worker caching a response under a\nneutral cache name - which is why public/sw.js is now scanned rather than assumed clean, and why\ncache.put is deliberately absent, the service worker's own cache.put being required code.",
-    // §21.5's non-goal, and the one M20 came closest to by accident: a download route that cached its
-    // own response would be an offline library wearing the route's clothes. The clause is anchored on
-    // a media-ish *store name*, because the store name is what makes it an offline library, and on
-    // `caches.open` rather than `cache.put` — the service worker's own `cache.put` is required code.
-    pattern:
-      /getAudioData\s*\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\s*\(|createObjectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|objectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline)[^"'`]*["'`]|(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)/i,
+    arms: OFFLINE_ARMS,
+    flags: "i",
+    pattern: anyOf(OFFLINE_ARMS, "i"),
     violations: [
       {
         label: "an IndexedDB store created to hold downloaded media",
@@ -365,23 +540,72 @@ const NON_GOALS: readonly NonGoal[] = [
         }
       `,
       },
+      {
+        label: "arm 1: capturing raw audio out of the player",
+        code: `const pcm = audio.getAudioData(0, 4096);`,
+      },
+      {
+        label: "arm 2: capturing the element's own stream",
+        code: `const stream = track.captureStream();`,
+      },
+      {
+        label: "arm 3: taking the element's audio tracks",
+        code: `for (const t of media.getAudioTracks()) use(t);`,
+      },
+      {
+        label: "arm 4: recording the output",
+        code: `const recorder = new MediaRecorder(destination.stream);`,
+      },
+      {
+        label: "arm 5: routing audio through a graph node",
+        code: `const node = new MediaElementAudioSourceNode(audioCtx, { mediaElement: el });`,
+      },
+      {
+        label: "arm 6: creating a media element source",
+        code: `const source = ctx.createMediaElementSource(el);`,
+      },
+      {
+        label: "arm 7: a store created under a media-ish name",
+        // Named `downloads`, not `audioCache`, and that is load-bearing rather than incidental.
+        // The case-insensitive `objectStore` arm is a *suffix* of `createObjectStore`, so an
+        // `audioCache` store is detected by both arms and removing either leaves the fixture
+        // still matching — which is how this arm was found to be unwatched. `download` is the
+        // one word the created-store arm accepts and the acquired-store arm does not, so it is
+        // the only spelling that separates them. The asymmetry is in the original literal too;
+        // this records it rather than papering over it.
+        code: `db.createObjectStore("downloads", { keyPath: "id" });`,
+      },
+      {
+        label: "arm 8: a store acquired under a media-ish name",
+        code: `const store = tx.objectStore("offlineTracks");`,
+      },
+      {
+        label: "arm 10: a Cache bucket named for downloaded media",
+        code: `const cache = await caches.open("offline-media-v1");`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the service worker's own cache.put, which is required code",
+        code: `await cache.put(request, response);`,
+      },
+      {
+        label: "a Cache bucket under a neutral name",
+        code: `const cache = await caches.open("spotivibe-shell-v1");`,
+      },
+      {
+        label: "a store named for something that is not media",
+        code: `db.createObjectStore("likedTracks", { keyPath: "id" });`,
+      },
     ],
   },
   {
     name: "Local-file playback",
     scope:
       "sees an audio-scoped file picker, the File System Access handles, webkitdirectory, blob:null/,\nand a path joining an audio extension. Does not see a bare file input, which the versioned JSON\nbackup importer is one, and a listener bringing data in is the opposite of this non-goal. Nor\nthe file:// scheme, which styles/motionTokens.ts cites in a doc comment.",
-    // Distinct from the offline library: this is playing a file the listener already had. The clause
-    // is a picker scoped to **audio**, plus the filesystem APIs and URL schemes only a local file can
-    // have.
-    //
-    // The bare `type="file"` in the first draft matched `features/backup/DataControls.tsx`, which is
-    // the versioned JSON backup importer — an `<input type="file" accept="application/json">` is how
-    // a listener brings data *in*, which is the opposite of this non-goal and a M2 requirement. So
-    // the arm requires an audio accept on the same element, and `file://` was dropped because
-    // `styles/motionTokens.ts` cites `file://./motion.css` in a doc comment.
-    pattern:
-      /type\s*=\s*["']file["'][^>]*accept\s*=\s*["'][^"']*audio|showOpenFilePicker|webkitdirectory|webkitRelativePath|FileSystemFileHandle|FileSystemDirectoryHandle|\bblob:null\/|path\.join\([^)]*\.(?:mp3|m4a|flac|opus|ogg|wav)/i,
+    arms: LOCAL_FILE_ARMS,
+    flags: "i",
+    pattern: anyOf(LOCAL_FILE_ARMS, "i"),
     violations: [
       {
         label: "a local file picker",
@@ -391,16 +615,56 @@ const NON_GOALS: readonly NonGoal[] = [
         }
       `,
       },
+      {
+        label: "arm 2: the File System Access picker",
+        code: `const [handle] = await window.showOpenFilePicker({ types: [{ description: "Audio" }] });`,
+      },
+      { label: "arm 3: a directory picker", code: `<input type="file" webkitdirectory />;` },
+      {
+        label: "arm 4: reading a dropped file's path",
+        code: `const rel = file.webkitRelativePath;`,
+      },
+      {
+        label: "arm 5: holding a file handle",
+        code: `let handle: FileSystemFileHandle | null = null;`,
+      },
+      {
+        label: "arm 6: walking a directory handle",
+        code: `for await (const entry of (dir as FileSystemDirectoryHandle).values()) use(entry);`,
+      },
+      {
+        label: "arm 7: a blob URL with no origin",
+        code: `src = URL.createObjectURL(file); // blob:null/…`,
+      },
+      {
+        label: "arm 8: building a path to an audio file",
+        code: `const file = path.join(dir, name + ".flac");`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the backup importer's own file input",
+        // M2's versioned JSON import is a listener bringing data *in*, the opposite of this
+        // non-goal. It was the false positive that made this clause audio-scoped.
+        code: `<input type="file" accept="application/json" onChange={onImport} />`,
+      },
+      {
+        label: "the file:// scheme, cited in a doc comment",
+        code: `// Import this with file://./motion.css`,
+      },
+      {
+        label: "a bare file input with no accept at all",
+        code: `<input type="file" onChange={onPick} />`,
+      },
     ],
   },
   {
     name: "Transcoding",
     scope:
       "sees the named tools (ffmpeg, fluent-ffmpeg, avconv, sox, lame, libav) and a toFormat, convert,\nremux, transcode or encode call naming a lossy audio container. Does not see container renaming,\nwhich M20's honest .webm naming requires: renaming a .webm to .webm is not transcoding, and\nflagging it would invite somebody to fix the naming this milestone exists to keep honest.",
-    // §21.5: "Real transcoding is explicitly out of scope." This is also what the honest `.webm`
-    // naming invites somebody to "fix", so it is worth a detector with a fixture of exactly that.
-    pattern:
-      /\b(?:ffmpeg|fluent-ffmpeg|avconv|\bsox\b|\blame\b|libav)\b|\.(?:toFormat|convert|remux|transcode|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac|wav)["'`]|audio\s*:\s*["'](?:mp3|m4a|aac)["']/i,
+    arms: TRANSCODE_ARMS,
+    flags: "i",
+    pattern: anyOf(TRANSCODE_ARMS, "i"),
     violations: [
       {
         label: "a transcoder converting WebM audio to MP3",
@@ -409,16 +673,45 @@ const NON_GOALS: readonly NonGoal[] = [
         ffmpeg(input).audioCodec("libmp3lame").toFormat("mp3").save(output);
       `,
       },
+      {
+        label: "arm 1: a transcoder named as a process",
+        // Arm 1 on its own: the original fixture imported fluent-ffmpeg *and* called toFormat, so
+        // removing either arm left it matching and neither was watched.
+        code: `await run("ffmpeg", ["-i", input, output]);`,
+      },
+      {
+        label: "arm 2: a conversion call naming a lossy container",
+        code: `await pipeline.toFormat("opus");`,
+      },
+      {
+        label: "arm 3: a codec option naming a lossy codec",
+        code: `const options = { audio: "mp3" };`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "M20's honest container renaming, which this detector must not flag",
+        // The `.webm` naming is the thing this milestone exists to keep honest. A detector that
+        // flagged it would invite somebody to "fix" the naming, so the absence is asserted.
+        code: `const extension = ".webm"; // honest: it really is WebM`,
+      },
+      {
+        label: "a conversion to a container that is not a lossy audio one",
+        code: `await pipeline.toFormat("matroska");`,
+      },
+      {
+        label: "a codec option naming a lossless codec",
+        code: `const options = { audio: "vorbis" };`,
+      },
     ],
   },
   {
     name: "Batch or playlist downloading",
     scope:
       "sees a download path naming batch, bulk, all, playlist, queue or selection, and a downloadAll,\ndownloadBatch, downloadPlaylist or downloadQueue call. Does not see a loop that downloads one\ntrack per iteration. The route shape is the real defence - a batch endpoint is a different route\n- and the one-route assertion in this file checks that directly.",
-    // §21.5's non-goal, and the one the *route shape* is the real defence for: a batch endpoint is a
-    // different route. So this detector covers both the implementation vocabulary and the path.
-    pattern:
-      /\/(?:api\/)?download\/(?:batch|bulk|all|playlist|queue|selection)|\bdownload(?:All|Batch|Bulk|Playlist|Queue)\s*\(/i,
+    arms: BATCH_ARMS,
+    flags: "i",
+    pattern: anyOf(BATCH_ARMS, "i"),
     violations: [
       {
         label: "a batch download endpoint",
@@ -428,6 +721,31 @@ const NON_GOALS: readonly NonGoal[] = [
           return downloadAll(ids);
         }
       `,
+      },
+      {
+        label: "arm 1: a batch route path",
+        // Arm 1 on its own: the original fixture was a route handler whose *body* called
+        // downloadAll, so it never exercised the path clause — which is the half that actually
+        // proves there is no batch endpoint.
+        code: `export const POST = handle("/api/download/batch");`,
+      },
+      {
+        label: "arm 2: a batch call",
+        code: `await downloadPlaylist(playlistId);`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the single-track route that does exist",
+        code: `export const POST = handle("/api/download/[videoId]");`,
+      },
+      {
+        label: "a loop that downloads one track per iteration",
+        code: `for (const track of tracks) await downloadOne(track.id);`,
+      },
+      {
+        label: "one track downloaded once",
+        code: `await downloadOne(track.id);`,
       },
     ],
   },
@@ -474,6 +792,23 @@ const NON_GOALS: readonly NonGoal[] = [
         label: "a literal percentage beside the word download",
         // Arm 4: the crudest spelling, and the one a hand-written string takes.
         code: `return <span>download 42%</span>;`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the playback scrubber's position, which is a true fraction",
+        // The false positive that scoped these arms to *download* progress. A seek bar's position
+        // within a known duration is not a guess, and flagging it would have gotten the component
+        // removed.
+        code: `const pct = Math.round((currentTime / duration) * 100);`,
+      },
+      {
+        label: "a progress bar's aria value, which is a fraction not a percentage",
+        code: `<div role="progressbar" aria-valuenow={loaded} aria-valuemax={total} />;`,
+      },
+      {
+        label: "a percentage that is not about a download",
+        code: `return <span>battery 80%</span>;`,
       },
     ],
   },
@@ -572,7 +907,15 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     expect(
       enumerable.map((goal) => goal.name),
       "no detector declares an enumerable disjunction, so every check below is vacuous",
-    ).toEqual(["Accounts or auth of any kind", "Progress reporting by percentage"]);
+    ).toEqual([
+      "Accounts or auth of any kind",
+      "Ad blocking or suppression",
+      "A managed offline library in IndexedDB",
+      "Local-file playback",
+      "Transcoding",
+      "Batch or playlist downloading",
+      "Progress reporting by percentage",
+    ]);
 
     const orphans: string[] = [];
     for (const goal of enumerable) {
@@ -671,6 +1014,86 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     );
   });
 
+  it("rebuilds every detector's pattern from its arms without changing what it matches", () => {
+    // The price of splitting five single-regex detectors into clause lists.
+    //
+    // Splitting a literal into arms is not automatically the same detector: `|` binds differently
+    // across a top-level alternative and a nested group, and a merged synonym arm can quietly widen
+    // a clause. A change like that is invisible here — the detectors still find nothing in the
+    // application either way — so it is asserted directly: for every source file and every fixture,
+    // the rebuilt pattern must agree with the literal it replaced.
+    //
+    // The literals are reproduced here rather than imported, because the point is to pin the
+    // *before* state. A regex that quietly stopped matching a file would still pass `finds nothing
+    // in the application`; only this can notice.
+    const BEFORE: Record<string, RegExp> = {
+      "Ad blocking or suppression":
+        /adblock|ad-blocker|adBlocker|\badBlock\b|blockAds|block-ads|hideAds|hide-ads|cosmetic-filter|adsbygoogle|doubleclick\.net|googlesyndication|pagead2?|google_ads|ad-container|ad-wrapper|ad-slot|adunit|adUnit/,
+      "A managed offline library in IndexedDB":
+        /getAudioData\s*\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\s*\(|createObjectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|objectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline)[^"'`]*["'`]|(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)/i,
+      "Local-file playback":
+        /type\s*=\s*["']file["'][^>]*accept\s*=\s*["'][^"']*audio|showOpenFilePicker|webkitdirectory|webkitRelativePath|FileSystemFileHandle|FileSystemDirectoryHandle|\bblob:null\/|path\.join\([^)]*\.(?:mp3|m4a|flac|opus|ogg|wav)/i,
+      Transcoding:
+        /\b(?:ffmpeg|fluent-ffmpeg|avconv|\bsox\b|\blame\b|libav)\b|\.(?:toFormat|convert|remux|transcode|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac|wav)["'`]|audio\s*:\s*["'](?:mp3|m4a|aac)["']/i,
+      "Batch or playlist downloading":
+        /\/(?:api\/)?download\/(?:batch|bulk|all|playlist|queue|selection)|\bdownload(?:All|Batch|Bulk|Playlist|Queue)\s*\(/i,
+    };
+
+    const divergences: string[] = [];
+    for (const goal of NON_GOALS) {
+      const before = BEFORE[goal.name];
+      if (!before) continue;
+      const texts = [
+        ...SOURCES.map((entry) => `${entry.file}\n${entry.code}`),
+        ...goal.violations.map((violation) => violation.code),
+        ...goal.notSeen.map((snippet) => snippet.code),
+      ];
+      for (const text of texts) {
+        if (before.test(text) !== goal.pattern.test(text)) {
+          divergences.push(`${goal.name} on ${text.slice(0, 60).replace(/\n/g, " ")}`);
+        }
+      }
+    }
+    expect(
+      divergences,
+      "the rebuilt detectors disagree with the literals they replaced, so a clause was widened " +
+        "or narrowed by the split",
+    ).toEqual([]);
+    // And the list of literals is complete: a sixth split detector would skip this comparison
+    // silently, which is the failure mode a stated count exists to prevent.
+    expect(Object.keys(BEFORE)).toHaveLength(5);
+  });
+
+  it("proves each detector's stated blind spot is still blind", () => {
+    // C6: a `scope` is a claim about what a detector *would miss*, and as prose it rots silently —
+    // the thing it misses is by definition not in the tree to be found.
+    //
+    // So each scope's "does not see" half is a snippet, and the assertion is that the detector really
+    // does miss it. Two failures this catches that nothing else would:
+    //
+    //   - a scope sentence that stopped being true, because the clause was later broadened;
+    //   - a `notSeen` snippet that quietly started matching, which would mean the scope is
+    //     describing a detector that does not exist.
+    //
+    // The count is stated so that a detector losing its whole `notSeen` list fails loudly rather
+    // than reporting a clean run over fewer detectors.
+    expect(NON_GOALS.every((goal) => goal.notSeen.length > 0)).toBe(true);
+    expect(NON_GOALS.map((goal) => goal.notSeen.length)).toEqual([4, 3, 3, 3, 3, 3, 3]);
+
+    const sighted: string[] = [];
+    for (const goal of NON_GOALS) {
+      for (const snippet of goal.notSeen) {
+        if (goal.pattern.test(snippet.code)) {
+          sighted.push(`${goal.name}: ${snippet.label}`);
+        }
+      }
+    }
+    expect(
+      sighted,
+      "these detectors match a snippet their own scope says they cannot see, so the scope is wrong",
+    ).toEqual([]);
+  });
+
   it("covers every non-goal the milestone names", () => {
     // A guard on the guard: the milestone lists seven, so a list that shrinks is a silent scope
     // reduction. The count is stated rather than inferred from the array length.
@@ -691,13 +1114,16 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
       it("is proven able to fail, so it cannot be mistaken for one that passes", () => {
         // Every fixture, not the first one. A detector with five arms and one witness proved four
         // arms nothing; asserting the first fixture is a check on the check, not on the detector.
-        expect(
-          goal.violations.map((violation) => ({
-            label: violation.label,
-            detected: goal.pattern.test(violation.code),
-          })),
-          `every fixture must be detected; these were missed`,
-        ).toEqual(goal.violations.map((violation) => ({ label: violation.label, detected: true })));
+        //
+        // The missed labels are named in the assertion's own message rather than left to a
+        // diff of two long object arrays, which vitest truncates — so a detector with five
+        // missed fixtures reported three of them and the other two had to be found by reading
+        // the table. A failure you have to go and re-derive is a failure reported worse than
+        // it needs to be.
+        const missed = goal.violations
+          .filter((violation) => !goal.pattern.test(violation.code))
+          .map((violation) => violation.label);
+        expect(missed, `every fixture must be detected; these were missed`).toEqual([]);
       });
 
       it("finds nothing in the application", () => {
