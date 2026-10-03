@@ -31,11 +31,39 @@ const FRONTEND = join(here, "..");
 const REPO = join(FRONTEND, "..");
 
 const ROOTS = ["src", "tests", "scripts", "docs", "public"];
-const REPO_ROOTS = ["openspec"];
+const REPO_ROOTS = ["openspec", ".github"];
+
+/**
+ * Directories whose **top level only** is scanned.
+ *
+ * The fourth review noted that 29 text files sat outside the scan without saying which, so the gap
+ * was enumerated before it was closed: every top-level text file in `frontend/` and the repository
+ * root — `README.md`, `ROADMAP.md`, `MEMORY.md`, `package.json`, `tsconfig.json`,
+ * `eslint.config.mjs`, `next.config.ts`, `postcss.config.mjs`, `next-env.d.ts`, `package-lock.json`
+ * and the agent instruction files. Seventeen in total, all of them files a PowerShell accident would
+ * damage exactly as readily as a source file, and several of them (`ROADMAP.md`, `MEMORY.md`) are
+ * the files this repository's own rules live in.
+ *
+ * Top level only, deliberately. `package-lock.json` is a dependency artefact whose contents are
+ * regenerated; descending into it would add hundreds of files that nobody edits by hand and that
+ * change on every install, which is how a scan gets switched off.
+ */
+const TOP_LEVEL_DIRS = [FRONTEND, REPO];
+
 const EXTENSIONS = /\.(?:ts|tsx|mjs|js|json|md|css|yml|yaml)$/;
 
-/** Directories that are build output or dependency trees, never source. */
-const IGNORED = /node_modules|\.next|\.git|coverage/;
+/**
+ * Directories that are build output or dependency trees, never source.
+ *
+ * `\.git` is written as a *complete* path segment, not as a prefix. It was `\.git`, which also
+ * matches `.github` — so the CI workflow had never once been inside this scan, and adding `.github`
+ * to `REPO_ROOTS` silently scanned nothing. The assertion pinning the workflow's presence is what
+ * found it; without that assertion the addition would have looked like it worked.
+ *
+ * This is the same defect as every other one in this file's history: a pattern that matches more
+ * than it was written to match, in a rule whose whole job is to be exact about what it covers.
+ */
+const IGNORED = /node_modules|\.next|[/\\]\.git[/\\]|\.git$|coverage/;
 
 /**
  * Characters that a UTF-8 **continuation** byte becomes when the bytes are decoded as windows-1252.
@@ -98,9 +126,20 @@ function textFiles(root: string): string[] {
   return found;
 }
 
+/** Text files sitting directly in a directory, without descending. */
+function topLevelTextFiles(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((name) => {
+      const full = join(dir, name);
+      return !statSync(full).isDirectory() && EXTENSIONS.test(name);
+    })
+    .map((name) => join(dir, name));
+}
+
 const FILES = [
   ...ROOTS.map((root) => textFiles(join(FRONTEND, root))),
   ...REPO_ROOTS.map((root) => textFiles(join(REPO, root))),
+  ...TOP_LEVEL_DIRS.flatMap(topLevelTextFiles),
 ].flat();
 
 describe("every text file is clean UTF-8", () => {
@@ -109,6 +148,33 @@ describe("every text file is clean UTF-8", () => {
     expect(FILES.length, "the encoding scan must actually see files").toBeGreaterThan(300);
     expect(FILES.some((file) => file.includes(`${join("src", "app")}`))).toBe(true);
     expect(FILES.some((file) => file.endsWith("release-exclusions.test.ts"))).toBe(true);
+
+    // Each newly covered area is pinned by name, not merely by count. A count is satisfied by any
+    // large set of files, so it cannot tell "the top-level configs are covered" from "the configs
+    // stopped being scanned but the source tree grew". These names are the specific additions the
+    // fourth review's gap produced, and each is a file a PowerShell accident would damage.
+    for (const required of [
+      join(REPO, "ROADMAP.md"),
+      join(REPO, "MEMORY.md"),
+      join(REPO, "README.md"),
+      join(FRONTEND, "package.json"),
+      join(FRONTEND, "tsconfig.json"),
+      join(FRONTEND, "eslint.config.mjs"),
+      join(FRONTEND, "next.config.ts"),
+    ]) {
+      expect(FILES, `${relative(REPO, required)} must be inside the encoding scan`).toContain(
+        required,
+      );
+    }
+    expect(
+      FILES.some((file) => file.includes(`${join(".github", "workflows")}`)),
+      "the CI workflow is text a PowerShell accident would damage, and it is the one file whose " +
+        "damage would silently stop the gates running",
+    ).toBe(true);
+
+    // And the scan must not have started double-counting, which would make the count assertion
+    // above pass for the wrong reason.
+    expect(new Set(FILES).size, "the encoding scan must not list a file twice").toBe(FILES.length);
   });
 
   it("no file carries a UTF-8 BOM", () => {
