@@ -164,6 +164,25 @@ async function waitForJson(url, timeoutMs = 30000) {
 }
 
 /**
+ * What `classifyPausedRequest` returns.
+ *
+ * Every field except `outcome` is optional, because which fields exist depends on which outcome it
+ * is: a fulfilment carries a status and a body, a transport failure carries a reason, and the other
+ * two carry nothing. Written as a flat optional shape rather than a discriminated union because the
+ * outcome names are values in `PAUSED_OUTCOME`, not literals, so `allowJs` cannot narrow on them.
+ *
+ * The consequence is that a caller holding a plan cannot read `plan.body` as a string without first
+ * establishing the outcome — which is the correct order anyway, since the field is only meaningful
+ * once you know why it is there.
+ *
+ * @typedef {object} PausedRequestPlan
+ * @property {string} outcome one of {@link PAUSED_OUTCOME}
+ * @property {string} [errorReason] present only for a transport failure
+ * @property {number} [responseCode] present only for a fulfilment
+ * @property {string} [body] present only for a fulfilment, base64
+ */
+
+/**
  * The four things that can happen to a paused request. Every one is a name, and the names are
  * what `resolvePausedRequest` dispatches on.
  */
@@ -211,6 +230,9 @@ function serializeRouteBody(body, url) {
  * A branch that decides and a branch that sends are therefore different things. This function
  * only decides, so its whole output is a small enumerable plan; `pausedRequestHandlers` sends;
  * and a missing send is a failing unit test rather than a stalled browser.
+ *
+ * @param {{action: string, request: {url: string}, routes: ReadonlyArray<object>}} input
+ * @returns {PausedRequestPlan}
  */
 export function classifyPausedRequest({ action, request, routes }) {
   // Not a page request, or the router is not ready → the request is not ours to answer.
@@ -269,7 +291,7 @@ export const pausedRequestHandlers = {
  * the network, because "silently continue" is the exact failure this function exists to make
  * impossible — a typo in an outcome name must be loud, not a hung browser.
  *
- * @param {{outcome: string}} plan
+ * @param {PausedRequestPlan} plan
  * @param {{continueRequest: Function, failRequest: Function, fulfillRequest: Function}} context
  */
 export async function resolvePausedRequest(plan, context) {

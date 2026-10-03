@@ -207,7 +207,7 @@ npm run format       # npm --prefix frontend run format
 npm run format:check # npm --prefix frontend run format:check
 npm run typecheck    # npm --prefix frontend run typecheck
 npm test             # npm --prefix frontend test
-npm run gate         # lint -> format:check -> typecheck -> test -> build
+npm run gate         # lint -> format:check -> typecheck -> build -> test
 ```
 
 `tests/root-commands.test.ts` holds the root manifest to these properties: private, no
@@ -216,6 +216,14 @@ into `frontend/`, each naming a script the application actually defines, and the
 Node major as the application. The `format` check is deliberately strict — a root `format` that
 called prettier itself, rather than the application's own script, would look identical to a
 correct one and silently format the wrong tree.
+
+**The gate builds before it tests, and that order is load-bearing.**
+`tests/motion-budget.test.ts`'s size rules need a build report and skip without one, so
+`test`-before-`build` made every local gate run report a file whose headline is a budget
+as green while six of its rules never executed. This is the same defect `ci-workflow.test.ts`
+asserts against in `.github/workflows/ci.yml`; it was fixed in the archived release gate and in
+CI, and then left in place in this script. Measured both ways by moving `.next` aside: **21
+passed with a build, 15 passed and 6 skipped without one.**
 
 **Do not run `npm install` at the repository root.** The root manifest has no dependencies, so
 npm would create a root `package-lock.json` and a root `node_modules` that nothing installs

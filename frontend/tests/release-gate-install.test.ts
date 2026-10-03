@@ -670,6 +670,25 @@ describe("the end-to-end fixture router's readiness", () => {
 describe("classifyPausedRequest", () => {
   const request = (url: string) => ({ url, requestId: "1", method: "GET" });
 
+  /**
+   * Confirm a plan's outcome, and return it with its fields readable.
+   *
+   * Which fields a plan carries depends on its outcome — a fulfilment has a status and a body, a
+   * transport failure has a reason — so `plan.body` is `string | undefined` until the outcome is
+   * known. Reading it before then is a cast, and this is the assertion that would justify one: the
+   * outcome is checked first, and only then are the fields read. Written as a narrowing helper
+   * rather than repeated inline so the ordering is stated once.
+   */
+  const fulfilled = (plan: {
+    outcome: string;
+    errorReason?: string;
+    responseCode?: number;
+    body?: string;
+  }) => {
+    expect(plan.outcome, `expected a fulfilment, got ${plan.outcome}`).toBe(PAUSED_OUTCOME.FULFILL);
+    return plan as { outcome: string; errorReason: string; responseCode: number; body: string };
+  };
+
   it("ignores a request the router does not own", () => {
     expect(
       classifyPausedRequest({
@@ -740,8 +759,10 @@ describe("classifyPausedRequest", () => {
     // A non-2xx body is *not* a transport failure — modelling that distinction is the reason
     // `transport: "failed"` exists separately, and conflating them again would make the
     // `ok: false` fixtures dead data.
-    expect(plan.responseCode).toBe(503);
-    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe('{"error":"unavailable"}');
+    expect(fulfilled(plan).responseCode).toBe(503);
+    expect(Buffer.from(fulfilled(plan).body, "base64").toString("utf8")).toBe(
+      '{"error":"unavailable"}',
+    );
   });
 
   it("defaults a route's status to 200", () => {
@@ -750,7 +771,7 @@ describe("classifyPausedRequest", () => {
       request: request("https://example.test/api/x"),
       routes: [{ path: "/api/x", body: { ok: true } }],
     });
-    expect(plan.responseCode).toBe(200);
+    expect(fulfilled(plan).responseCode).toBe(200);
   });
 
   it("evaluates regex routes against the path, and the first match wins", () => {
@@ -767,7 +788,7 @@ describe("classifyPausedRequest", () => {
         { match: /^\/api\/search/, body: { from: "second" } },
       ],
     });
-    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe('{"from":"first"}');
+    expect(Buffer.from(fulfilled(plan).body, "base64").toString("utf8")).toBe('{"from":"first"}');
   });
 
   it("gives a body function the URL and serializes its return value", () => {
@@ -779,7 +800,7 @@ describe("classifyPausedRequest", () => {
       request: request("https://example.test/api/search?q=b"),
       routes: [{ path: "/api/search", body: (url: URL) => ({ q: url.searchParams.get("q") }) }],
     });
-    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe('{"q":"b"}');
+    expect(Buffer.from(fulfilled(plan).body, "base64").toString("utf8")).toBe('{"q":"b"}');
   });
 
   it("sends a string body verbatim, from either a value or a function", () => {
@@ -790,7 +811,7 @@ describe("classifyPausedRequest", () => {
         request: request("https://example.test/page"),
         routes: [{ path: "/page", body }],
       });
-      expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe("<html>ok</html>");
+      expect(Buffer.from(fulfilled(plan).body, "base64").toString("utf8")).toBe("<html>ok</html>");
     }
   });
 
@@ -801,7 +822,7 @@ describe("classifyPausedRequest", () => {
       routes: [{ path: "/api/empty" }],
     });
     expect(plan.outcome).toBe(PAUSED_OUTCOME.FULFILL);
-    expect(Buffer.from(plan.body, "base64").toString("utf8")).toBe("");
+    expect(Buffer.from(fulfilled(plan).body, "base64").toString("utf8")).toBe("");
   });
 });
 
