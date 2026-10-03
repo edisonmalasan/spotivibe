@@ -115,24 +115,88 @@ media *and keeps it*, which is a managed offline library wearing a download rout
 
 ---
 
-## 2. §2.7 — `no media proxied through the application server`: nothing removed
+## 2. §2.7 — `no media proxied through the application server`: nothing removed, two clauses repaired
 
-Not one clause was deleted, narrowed, or reworded in the pattern. One violation fixture was added,
-because the approved route is *itself* a route that fetches a body and hands it back, and §2.7's
-detector therefore has to be shown to still see the difference:
+**Nothing was deleted, narrowed or reworded.** Two clauses were *repaired*, which is the opposite
+move and is recorded separately for that reason.
 
-- **Added:** `the approved download route taking a caller-supplied media URL` — the approved route
-  with `new URL(request.url).searchParams.get("url")` substituted for the validated path id. It
-  fires on the existing `searchParams.get("url|target|src|source|media|href")` → `fetch` clause.
+### 2a. The two arms that could not match, and the false claim made about them
 
-Two near-misses were checked and deliberately **not** narrowed, because the detector was already
-right not to match:
+This section previously read: *"It fires on the existing
+`searchParams.get("url|target|src|source|media|href")` → `fetch` clause."*
 
-- `route.ts` reads `searchParams.get("title")`, not one of the URL-intake parameter names, and
-  then calls a server-side resolver rather than `fetch`. The parameter-name list is unchanged.
-- `service.ts` does `const upstream = await fetch(url, …)` and returns `upstream.body`. The
-  "buffered body handed back" clause requires `new Response(<identifier>.body`; `route.ts` builds
-  `new Response(payload.stream, …)` instead. Unchanged.
+**That was false.** The clause it named matched nothing. Its group read:
+
+```
+(?:searchParams\.get|get\s*\(\s*["'`](?:url|target|src|source|media|href)["'`]\s*\))\s*\)
+```
+
+- `searchParams\.get` followed by `\s*\)` demands the literal text `searchParams.get)`. Real code is
+  `searchParams.get("url")` — a `(` after `get`, never a `)`. It can only match a syntax error.
+- The `.get("url")` alternative **consumes** the closing paren of `.get("url")`, and the group then
+  demands a **second** `)`. It fires only on a nested call: `wrapper(get("url"))`.
+
+The fixture passed anyway, via `fetch(…)…new Response(x.body)` — a clause about handing a body back,
+which says nothing about where the URL came from. So the document credited the work to a dead clause
+and the suite never noticed, because **a dead arm and a fixture that passes for an unrelated reason
+look identical from outside: both green.**
+
+The lesson is now structural rather than a note. `violations` entries may declare `caughtBy`, naming
+the individual arm that must match, and the suite asserts that arm fires *separately* from asserting
+the whole pattern matches. The claim this section used to make is therefore checked rather than
+asserted.
+
+### 2b. What the arms are now
+
+Three envelopes, because the binding scenario names three: query parameter, header, request body.
+
+| Arm | Matches | Fixtures |
+| --- | --- | --- |
+| `QUERY_PARAM_URL` | `searchParams`/`params`/`query`.get(*url*) near a `fetch` | 5 |
+| `HEADER_URL` | `headers`.get(*url*) near a `fetch` | 2 |
+| `BODY_JSON_FETCH` | `request.json()` then a `fetch` within **480** characters | 3 |
+
+All 10 fixtures declare `caughtBy`, so every one is asserted to fire its own arm. Counts are measured
+from the file, not written from memory.
+
+`URL_KEY` is matched as `*url*`/`*media*`/`*src*`-style rather than as a list of whole names, since
+`x-media-url`, `media-source` and `targetUrl` are one idea written three ways.
+
+Both orders are matched, in either direction of the envelope relative to the `fetch`. That is not
+belt-and-braces: "envelope, then somewhere a `fetch`" **cannot** see
+`fetch(request.headers.get("x-media-url"))`, where the read is an *argument to* the fetch. That is
+the single-line evasion, and it is the shape a hurried implementation actually writes. For the two
+header shapes, **zero** of this suite's several hundred regex literals matched anything before this
+change.
+
+### 2c. An arm written, measured and deleted
+
+A fourth arm required a URL-ish *field* off the parsed body (`b.mediaUrl`, `body.href`) in addition
+to the read. It was removed, and the removal is recorded because deleted arms get re-added later as
+improvements. It was wrong twice:
+
+- **Less precise.** The field name is a property of the offending code; the envelope is what makes it
+  a violation.
+- **Strictly less reach.** With the field required inside the first 240 characters and the `fetch`
+  then inside the next 240, it could only see a body of at most 480 characters with the field early
+  in it — so a 480-character plain body was out of its reach while the plain arm caught it.
+
+The plain arm's window went from 240 to 480 instead, with a fixture placing **310 characters** between
+the read and the `fetch`. That fixture is the honest form: a handler that validates and logs its
+input before acting on it is what a careful author writes, and a window narrow enough to miss it is
+not a rule about evasion.
+
+### 2d. A pre-existing false positive, recorded not fixed
+
+`fetch(serverResolvedUrl)` … `new Response(media.body)` is the **approved** M20 shape, and the coarse
+`fetch(…)…new Response(x.body)` arm flags it regardless of origin. The real route does not trip it,
+but only **incidentally**: its body argument is `holdUntilSettled(payload.stream, …)`, a call rather
+than a `.body`, so the arm misses the spelling. The route is safe by spelling, not by design.
+
+Verified per-arm: the coarse arm matches the approved shape; **none** of the three envelope arms do.
+That is direct evidence the new arms are aimed at *where the URL came from* — the distinction §2.7
+turns on — and narrowing the coarse arm needs that same judgement, now made structurally. Carried to
+M21.
 
 ---
 

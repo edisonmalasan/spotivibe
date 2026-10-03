@@ -493,3 +493,150 @@ only the 5 framework-and-page roots (129,849 B), not the 13 entries the recorded
 An earlier attempt at this pass measured 129,849 B and looked like a 100 KB regression; it was the
 method that differed, not the build. The recorded 230,555 B / 13 chunks stands unre-verified rather
 than replaced with a number from a different measurement.
+
+## 11. Third independent review
+
+An independent read-only reviewer re-examined the branch after CRITICAL D was fixed. Verdict:
+**REJECT** — the permit fix confirmed good, and one new CRITICAL found, in a place no test had ever
+been able to fail.
+
+### CRITICAL E — two dead arms in §2.7, and fixtures that passed for an unrelated reason
+
+The binding scenario is *"a caller-supplied URL is never fetched and its bytes are never returned"*.
+The detector meant to enforce it, `no media proxied through the application server`, carried a
+group that read:
+
+```
+(?:searchParams\.get|get\s*\(\s*["'`](?:url|target|src|source|media|href)["'`]\s*\))\s*\)
+```
+
+Neither alternative can match ordinary code, for two different reasons:
+
+- **`searchParams\.get` followed by `\s*\)`** demands the literal text `searchParams.get)`. Real code
+  is `searchParams.get("url")` — a `(` after `get`, never a `)`. This arm can only ever match a
+  syntax error.
+- **The `.get("url")` alternative consumes the closing paren** of `.get("url")`, and the group then
+  demands a **second** `)`. It fires only on a nested call: `wrapper(get("url"))`.
+
+Both arms had a fixture filed under them, and both fixtures passed — via the
+`fetch(…)…new Response(x.body)` arm, which is about *handing a body back* and says nothing about
+*where the URL came from*. The reviewer separately found that for the two **header** shapes
+(`fetch(request.headers.get("x-media-url"))`, the single-line evasion) **zero** of the suite's
+several hundred regex literals matched, and that 5 of 8 injected violations passed every check.
+
+This is the same shape as every other CRITICAL in this change, and it is worth stating plainly:
+**a dead arm and a fixture that passes for an unrelated reason are indistinguishable from outside.
+Both are green.** A rule is not exercised by its own fixture; it is exercised by a test that fails
+when the rule stops working.
+
+#### The structural fix: `caughtBy`
+
+Each `violations` entry may now name the **individual arm** that must match, and the suite asserts
+the named arm is the one that fires — separately from asserting the whole pattern matches. So:
+
+- `caughtBy` present → a test named *"flags X by the clause it is filed under, not by another"*.
+- `caughtBy` absent → only the whole-pattern assertion, and the entry says so by omission.
+
+This cannot be retrofitted to hide a dead arm, because the assertion runs over every entry that
+declares one. **It immediately caught two of my own mistakes during this pass**, which is the
+argument for having it:
+
+| Mistake | Caught by |
+| --- | --- |
+| `HEADER_URL` required the envelope read *before* the `fetch` | the "fetch first" fixture failed the arm assertion |
+| `media-source` is not any single alternative of a literal key list | the "named header" fixture failed |
+
+#### The arms
+
+`URL_KEY` is now matched as `*url*`/`*media*`/`*src*`-style rather than as a list of whole names,
+because `x-media-url`, `media-source` and `targetUrl` are one idea written three ways.
+
+`callerSuppliedUrlArm` matches the envelope read and a `fetch` within a window **in either order**.
+The order is the part that was wrong twice: "envelope, then somewhere a fetch" misses
+`fetch(request.headers.get("x-media-url"))`, where the read is an *argument to* the fetch and so
+comes after it. That is the shape a hurried implementation actually writes.
+
+Three envelopes are now covered — query parameter, header, request body — with **nine fixtures**, two
+per envelope per order or distance, each filed against its own arm.
+
+#### An arm written, measured, and deleted
+
+A fourth arm was added for the body envelope and then **removed**, and the removal is recorded
+because deleted arms get re-added later as improvements. It required a URL-ish *field* off the
+parsed body (`b.mediaUrl`, `body.href`) as well as the read. It was wrong twice over:
+
+- **Less precise.** The field name is a property of the offending code; the envelope is the thing
+  that makes it a violation.
+- **Strictly less reach.** With the field required inside the first 240 characters and the `fetch`
+  then inside the next 240, the arm could only see a body of at most 480 characters with the field
+  early in it — so a 480-character plain body was *out of its reach* while the plain arm caught it.
+
+The plain arm's window was widened from 240 to **480** instead, with a fixture putting **310
+characters** between the body read and the fetch. That fixture is the honest form: a handler that
+validates and logs its input before acting on it is what a careful author writes, and a window
+narrow enough to miss it is not a rule about evasion.
+
+#### W3 — a rule narrower than its own statement
+
+*"No `<a download>` points at a remote origin"* was implemented as
+`/download=["']true["'][^>]*href=["']https?:/`, which spells out one attribute **order**.
+`<a href="https://cdn…" download>` passed — and href-first is exactly what a component whose first
+prop is `href` produces. Now a tag scan: locate the tag, then check both properties inside it, so
+the rule is "this tag has both" as stated rather than "in this sequence". Six pinned cases, both
+orders, a protocol-relative URL, and three shapes that must pass.
+
+#### A pre-existing false positive, found by the probe and recorded rather than fixed
+
+`fetch(serverResolvedUrl)` … `new Response(media.body)` is the **approved** M20 shape — M20 reverses
+§2.7 for a validated provider id resolved server-side — and the coarse
+`fetch(…)…new Response(x.body)` arm flags it regardless of origin.
+
+The real route does not trip it, but only **incidentally**: its body argument is
+`holdUntilSettled(payload.stream, permit.release)`, a call rather than a `.body`, so the arm misses
+the spelling. The route is safe by *spelling*, not by design, and one refactor naming that value
+differently would trip a detector whose whole purpose is to be impossible to argue with.
+
+Verified which arm is responsible, so the finding is precise rather than speculative: the coarse arm
+matches; **none** of the query-parameter, header or request-body arms match the approved shape. That
+is direct evidence the new arms are precisely targeted at *where the URL came from*, which is the
+distinction §2.7 actually turns on. Narrowing the coarse arm needs that same origin judgement, now
+made structurally by the envelope arms, and belongs to M21.
+
+#### Evidence
+
+An independent probe re-declares the arms from scratch rather than importing them — a probe that
+imports the thing it is checking cannot catch the case where the import itself is wrong — and checks
+9 violating shapes, the two original dead arms pinned to stay dead, 4 legitimate request-handling
+shapes, and the false positive above. All pass. Two probe bugs were found and fixed en route, both
+of the same kind: a control testing `yt-dlp` against the string `ytdlp`, and a "no URL-ish field"
+control whose `body.mediaId` *is* URL-ish by the arm's own definition. A probe whose controls do not
+test what their labels claim is worse than no probe.
+
+`release-exclusions.test.ts` is now **116 tests** (91 at the second review).
+
+#### Carried to M21
+
+W1 (`audio/` replaced by a "positive rule" that does not exist server-side), W2 (four more
+`download`-attribute spellings not matched), W4 (stale counts in §1), W5 (a queued caller receives
+no response at all), W6 (a residual permit leak if the platform never reads or cancels the body),
+and the coarse-arm false positive above. None is a hole in the shipped code; each is a rule that
+says less than it appears to, which is the defect class this change has produced four times.
+
+### Gates at this commit
+
+Node 24.21.0, repository root:
+
+| Gate | Result |
+| --- | --- |
+| `npm run lint` | 0 |
+| `npm run format:check` | 0 (after `npm run format`; one file reformatted) |
+| `npm run typecheck` | 0 |
+| `npm test` | 0 — **178 files / 3157 tests** (3141 before this pass) |
+| `npm run build` | 0 — `ƒ /api/download/[videoId]` |
+| `openspec validate add-m20-personal-use-downloading --strict` | valid |
+| `openspec validate --specs --strict` | 25 passed, 0 failed |
+
+Bundle, gzip 9 over `.next/static/chunks/**/*.js`: **387,992 B total, 96,667 B largest, 25 chunks** —
+unchanged. This pass is entirely test- and evidence-side, so nothing in the client bundle could move.
+
+The `/` first-load figure is still **not re-claimed**, for the reason given at the end of §10.
