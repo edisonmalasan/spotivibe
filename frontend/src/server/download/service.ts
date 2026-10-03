@@ -28,7 +28,7 @@
  * whole, which is the worst outcome available.
  */
 
-import { downloadFilename } from "./container";
+import { asciiDispositionFilename, downloadStem } from "./container";
 import { DOWNLOAD_BUDGET_BYTES } from "./selectFormat";
 import {
   createAudioSourceChain,
@@ -124,13 +124,20 @@ export function downloadHeaders(payload: {
   title: string;
 }): Readonly<Record<string, string>> {
   const { resolved, title } = payload;
-  const filename = downloadFilename(title, resolved.description.extension);
+  const extension = resolved.description.extension;
+  // Two filenames, deliberately different. `filename*` is UTF-8 and percent-encoded, so it carries
+  // the title as the listener knows it. `filename` is latin1 **by specification**, and header values
+  // are coerced to `ByteString` — which throws above U+00FF. So the ASCII half gets an ASCII name,
+  // derived from the same sanitiser rather than from the finished string.
+  //
+  // Getting this wrong was not theoretical: a Greek, Cyrillic, CJK or Arabic title put a character
+  // above U+00FF into the ASCII half, `new Response` threw before sending a byte, and the listener
+  // got a 500 on every download. See `asciiDispositionFilename`.
+  const filename = `${downloadStem(title)}${extension}`;
+  const asciiFilename = asciiDispositionFilename(downloadStem(title), extension);
   const headers: Record<string, string> = {
     "Content-Type": resolved.description.mime,
-    // Both forms: the ASCII one for a browser that will not look at the second, and the RFC 5987
-    // one so a non-ASCII title survives. The ASCII form is already sanitised to letters, numbers
-    // and dashes by `downloadFilename`.
-    "Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    "Content-Disposition": `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
     // Never cacheable. This is per-track media at a URL a caller could re-request forever; a cached
     // copy is a second copy of the file nobody asked to keep.
     "Cache-Control": "no-store",

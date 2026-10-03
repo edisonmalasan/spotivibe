@@ -173,17 +173,20 @@ export function describeAudioFormat(input: MediaTypeInput): AudioFormatMapping {
 }
 
 /**
- * A download filename for a track, built from the *selected* format.
+ * The sanitised *stem* of a download filename, with no extension.
  *
- * The extension comes from {@link describeAudioFormat} and from nowhere else. The stem is
- * sanitised rather than trusted: a title is caller-visible text that ends up in a header the
- * browser writes to disk, and a quote or a path separator in it would either break the header or
- * produce a filename the listener did not ask for.
+ * Split out from {@link downloadFilename} so the two `Content-Disposition` halves can be built from
+ * one sanitiser rather than by stripping a suffix off a finished string: the `filename` half is
+ * ASCII-only by specification and the `filename*` half is not, so they legitimately differ, and
+ * string surgery to recover the stem from the combined name would be a guess about where the title
+ * ended and the extension began.
+ *
+ * Note that `\p{L}` is Unicode-wide, so this stem may contain Greek, Cyrillic, CJK or Arabic. That
+ * is correct for `filename*` and wrong for `filename`; see {@link asciiDispositionFilename}.
  *
  * @param title the track title, used only as the stem
- * @param extension the extension from the selected format, including the dot
  */
-export function downloadFilename(title: string, extension: string): string {
+export function downloadStem(title: string): string {
   const stem = title
     .normalize("NFKD")
     // Anything that is not a letter, a number, a space, or a dash collapses to a single dash.
@@ -198,5 +201,62 @@ export function downloadFilename(title: string, extension: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80)
     .replace(/^-+|-+$/g, "");
-  return `${stem === "" ? "track" : stem}${extension}`;
+  return stem === "" ? "track" : stem;
+}
+
+/**
+ * A download filename for a track, built from the *selected* format.
+ *
+ * The extension comes from {@link describeAudioFormat} and from nowhere else. The stem is
+ * sanitised rather than trusted: a title is caller-visible text that ends up in a header the
+ * browser writes to disk, and a quote or a path separator in it would either break the header or
+ * produce a filename the listener did not ask for.
+ *
+ * @param title the track title, used only as the stem
+ * @param extension the extension from the selected format, including the dot
+ */
+export function downloadFilename(title: string, extension: string): string {
+  return `${downloadStem(title)}${extension}`;
+}
+
+/**
+ * The `filename` half of a `Content-Disposition`, as opposed to the `filename*` half.
+ *
+ * The distinction is not cosmetic and it is not a style choice. RFC 6266's `filename` parameter is
+ * **latin1**, while `filename*` is UTF-8 and percent-encoded. A browser reads whichever it
+ * understands, so a name has to survive both: the true one in `filename*`, and something legal in
+ * `filename`.
+ *
+ * This function exists because of a real failure. `downloadFilename` keeps every `\p{L}`, which is
+ * Unicode-wide, so a Greek, Cyrillic, CJK or Arabic title produced a stem such as `Ωmega-Track` —
+ * perfectly valid, and carried correctly in the `filename*` half. But the `filename="…"` half is
+ * emitted **raw**, and `new Response(body, { headers })` coerces header values to `ByteString`,
+ * which throws on any character above U+00FF. The result was a `TypeError` before a single byte was
+ * sent, so every listener whose track title was not Latin-1 got a 500 on every download. Existing
+ * tests missed it because their fixture title, `Sigur Rós`, happens to be Latin-1: NFKD already
+ * decomposes `ó` to `o` plus a combining mark, and the mark is stripped.
+ *
+ * So: decompose as far as Unicode will go, drop the combining marks, and whatever is *still* not
+ * ASCII has no ASCII spelling — drop it rather than guess at a transliteration. Greek `Ω` becomes
+ * nothing, which is ugly but honest; a wrong transliteration would silently write the wrong name to
+ * disk. `filename*` still carries the full title for any browser that reads it.
+ *
+ * @param stem the stem from {@link downloadFilename}, which may contain any script
+ * @param extension the extension from the selected format, including the dot — always ASCII, and
+ *   re-appended *after* stripping so that a fully non-Latin title does not collapse to a filename of
+ *   just `.webm`, which every browser shows as hidden and the listener cannot identify
+ * @returns an ASCII-only name, falling back to `track` if no usable stem survives
+ */
+export function asciiDispositionFilename(stem: string, extension: string): string {
+  const ascii = stem
+    .normalize("NFKD")
+    // Combining marks are what NFKD leaves behind after decomposing an accented Latin letter. They
+    // are not letters in their own right, and every one of them is non-ASCII.
+    .replace(/\p{M}/gu, "")
+    // Anything left is a script with no ASCII spelling. Removed, then the leftover separators
+    // collapsed so a title that was entirely non-Latin does not become a run of dashes.
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${ascii === "" ? "track" : ascii}${extension}`;
 }

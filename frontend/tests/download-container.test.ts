@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { describeAudioFormat, downloadFilename } from "@/server/download/container";
+import {
+  asciiDispositionFilename,
+  describeAudioFormat,
+  downloadFilename,
+  downloadStem,
+} from "@/server/download/container";
 
 /**
  * Container and codec honesty (M20; spec `download` — "The delivered file is named for what it
@@ -338,5 +343,81 @@ describe("downloadFilename", () => {
     // functional download but a useless filename.
     expect(downloadFilename("千本桜", ".webm")).toBe("千本桜.webm");
     expect(downloadFilename("Композитор", ".opus")).toBe("Композитор.opus");
+  });
+
+  it("builds an ASCII-only Content-Disposition name for a title in any script", () => {
+    // The failure this exists for. `downloadStem` keeps every `\p{L}`, which is Unicode-wide, so a
+    // Greek, Cyrillic, CJK or Arabic title produced a stem such as `Ωmega-Track`. That is correct
+    // for the `filename*` half. It was also being emitted *raw* in the `filename` half, which RFC
+    // 6266 defines as latin1 — and `new Response(body, { headers })` coerces header values to
+    // `ByteString`, which throws above U+00FF. The result was a `TypeError` before a byte was sent:
+    // a 500 on every download, for every listener whose track title was not Latin-1.
+    //
+    // No test caught it because the fixture above, `Sigur Rós`, happens to be Latin-1 — NFKD already
+    // decomposes `ó` to `o` plus a combining mark, and the mark is stripped. The fix had to come
+    // with fixtures from scripts the suite previously did not contain.
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["Ωmega Track", "mega-Track.webm"],
+      ["Композитор", "track.webm"],
+      ["千本桜", "track.webm"],
+      ["مرحبا", "track.webm"],
+    ];
+    for (const [title, expected] of cases) {
+      const ascii = asciiDispositionFilename(downloadStem(title), ".webm");
+      expect(ascii, `the ASCII name for ${JSON.stringify(title)}`).toBe(expected);
+      // The property that matters, asserted rather than inferred: nothing above U+00FF.
+      expect(
+        [...ascii].every((character) => (character.codePointAt(0) ?? 0) <= 0x7f),
+        `${ascii} must be ASCII`,
+      ).toBe(true);
+    }
+  });
+
+  it("survives being handed to a Response, which is where the header actually breaks", () => {
+    // The end-to-end shape of the bug, through the real constructor. `new Response` is the thing
+    // that throws, so asserting on the string alone would have let this regression back in.
+    for (const title of ["Ωmega Track", "Композитор", "千本桜", "Sigur Rós"]) {
+      const stem = downloadStem(title);
+      const headers = {
+        "Content-Disposition":
+          `attachment; filename="${asciiDispositionFilename(stem, ".webm")}"; ` +
+          `filename*=UTF-8''${encodeURIComponent(`${stem}.webm`)}`,
+      };
+      expect(() => new Response(null, { headers }), `headers for ${title}`).not.toThrow();
+    }
+  });
+
+  it("keeps the true title in the filename* half while the filename half degrades", () => {
+    // Degrading the ASCII name is a trade, not a loss: any browser that understands RFC 5987 uses
+    // `filename*` and writes the real name to disk. Asserting only that the ASCII half is ASCII
+    // would let a future edit make *both* halves ASCII, silently renaming every Greek and CJK track
+    // to `track.webm` for everybody.
+    expect(asciiDispositionFilename(downloadStem("Ωmega Track"), ".webm")).toBe("mega-Track.webm");
+    expect(downloadFilename("Ωmega Track", ".webm")).toBe("Ωmega-Track.webm");
+  });
+
+  it("re-appends the extension after stripping, so a fully non-Latin title is not a hidden file", () => {
+    // `asciiDispositionFilename("千本桜", ".webm")` must not be `.webm`: every browser shows a
+    // leading-dot file as hidden, and the listener cannot identify it. That is the same failure the
+    // dash-trimming inside `downloadStem` exists to prevent, reached by a different route.
+    expect(asciiDispositionFilename(downloadStem("千本桜"), ".webm")).toBe("track.webm");
+    expect(asciiDispositionFilename("", ".mp3")).toBe("track.mp3");
+  });
+
+  it("transliterates what NFKD can and drops what it cannot, without guessing", () => {
+    // NFKD decomposes accented Latin, so those get a real spelling. Greek `Ω` has no ASCII
+    // decomposition and is dropped rather than approximated — a guessed transliteration would
+    // silently write the wrong name to disk, which is worse than a generic one.
+    expect(asciiDispositionFilename(downloadStem("Sigur Rós"), ".webm")).toBe("Sigur-Ros.webm");
+    expect(asciiDispositionFilename(downloadStem("Café del Mar"), ".webm")).toBe(
+      "Cafe-del-Mar.webm",
+    );
+    expect(asciiDispositionFilename(downloadStem("Ωmega"), ".webm")).toBe("mega.webm");
+  });
+
+  it("collapses the separators left behind when the unspellable characters are dropped", () => {
+    // Removing the characters can leave the dashes that surrounded them, so the collapse and trim
+    // have to run *after* the removal. Ordered the other way, this title becomes `-track.webm`.
+    expect(asciiDispositionFilename(downloadStem("千本桜 - さくら"), ".webm")).toBe("track.webm");
   });
 });
