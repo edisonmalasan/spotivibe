@@ -211,8 +211,32 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   1.8's repeated end-to-end run, task 7.1's parked player, and the verification half of 8.4 all stand
   **unverified**. 8.4's *recording* is done; 8.4's verification is not, and no gate run substitutes.
 - [ ] 8.9 **Not done: CI has not been observed green on this branch.** Every number above is a local run.
-- [ ] 8.10 **Not done: six consecutive green gate runs have not been repeated since this round.** 8.3 was
-  met at `bdb0dba`, before all thirteen tests and five repairs above existed, so it is evidence for
-  that commit and not for this one. It is re-run after this round rather than inherited, on the same
-  reasoning 8.3 itself records: a criterion measured against a tree that has since changed is not a
-  measurement of the current tree.
+- [x] 8.10 **Six consecutive green gate runs, repeated at `cdc0fb0`.** 8.3 was met at
+  `bdb0dba`, before all thirteen tests and five repairs above existed, so it was evidence for that
+  commit and not this one. Re-run rather than inherited, on the reasoning 8.3 itself records: a
+  criterion measured against a tree that has since changed is not a measurement of the current tree.
+  The tree was committed and unmodified for the whole batch.
+
+  | run | exit | seconds | run | exit | seconds |
+  |---|---|---|---|---|---|
+  | 1 | 0 | 113 | 4 | 0 | 104 |
+  | 2 | 0 | 103 | 5 | 0 | 104 |
+  | 3 | 0 | 103 | 6 | 0 | 103 |
+
+  Every run is the root `npm run gate` — lint, `format:check`, typecheck, build, test — and every run
+  reports **181 test files / 3291 tests, 0 failed, 0 skipped**, with `tests/motion-budget.test.ts`
+  reporting **21 tests in every run**. That last figure is the one that matters: its six size rules
+  skip without a build report, and 15 passed + 6 skipped is what a run with no build gives. A green
+  run in which those six rules skipped is indistinguishable from this one at the exit code, which is
+  why the per-run count is recorded rather than the exit status alone.
+
+  **The first capture of this batch produced nothing, and reporting that as "no counts" would have
+  been wrong.** The batch script stripped ANSI with a PowerShell `` `e `` escape, which Windows
+  PowerShell 5.1 does not have, and `Tee-Object` wrote the logs as **UTF-16LE** while the parser read
+  them as UTF-8 — so half the characters were NULs and `"Test Files"` was not *findable* in the
+  string at all. All six runs had reported their counts; the parser could not see them. **A parser
+  that cannot find what it is looking for must not be read as a claim that what it is looking for is
+  absent.** The parser now detects the encoding before trusting a number, and reports a run that
+  yields nothing as a parse failure rather than as a missing count. The figures above were re-derived
+  from the six logs on disk; the gate was deliberately not re-run to produce them, because that
+  would have measured a second thing.

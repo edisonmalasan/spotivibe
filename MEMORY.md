@@ -700,3 +700,18 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     number that is only unique by accident.** Independent verification caught this by re-running the
     search instead of accepting the claim — which is the whole argument for having a verifier, in one
     concrete instance rather than as a principle.
+64. **A parser that cannot find what it is looking for is not evidence that it is
+    absent — and the two failures look identical from the outside.** M21 re-measured six consecutive
+    green gate runs and the per-run counts came back empty for all six. The natural reading was "the
+    gate did not report its counts". It had, in every run. `Tee-Object` writes **UTF-16LE** on Windows
+    PowerShell 5.1, the parser read the logs as UTF-8, and half the characters were NULs — so
+    `"Test Files"` was not *findable* in the string. A UTF-8 read of UTF-16 data does not throw; it
+    returns a plausible-looking string in which every later `includes` quietly answers false. (A second,
+    independent bug sat on top: the ANSI strip used a PowerShell `\`e\`` escape, which is PowerShell 6+,
+    so Windows PowerShell left the escape sequences in place.) Two defects that both produce "no
+    results", neither of which is a finding about the system under test.
+    **Never let a measurement tool report absence.** Assert that the thing you are reading is present
+    before concluding it is missing, detect the encoding rather than assuming it, and report a run that
+    yields nothing as a *parse failure* so it cannot be filed as a result. The counts were re-derived
+    from the same six logs rather than by re-running the gate — re-running would have measured a
+    second thing and quietly replaced a failed measurement with a passing one.
