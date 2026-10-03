@@ -271,8 +271,63 @@ const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
  * `the streaming clause's facts are asserted` below makes all of this a checked fact rather than a
  * comment that can go stale.
  */
-const STREAMED_BODY_AS_RESPONSE =
-  /fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body/;
+// Declared as a `String.raw` **literal** rather than only as a compiled constant, so that a check
+// which scrapes this suite's clauses finds this one too. The identity filter in that check exists to
+// exclude it from the "other arms" list; while it lived only as a constant, that filter had nothing to
+// exclude, so it was dead code and replacing it with `true` changed nothing.
+const STREAMED_BODY_AS_RESPONSE_ARM = {
+  name: "a fetched body handed straight back as the response body",
+  source: String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
+} as const;
+
+// Built from the arm rather than written out a second time, so the regex the tests exercise and the
+// text the scraper reads cannot drift apart. A second copy of a regex is a second thing to keep
+// correct, and the drift would be invisible.
+const STREAMED_BODY_AS_RESPONSE = new RegExp(STREAMED_BODY_AS_RESPONSE_ARM.source);
+
+/**
+ * The `source: String.raw`…`` arms declared in a file, scanned rather than matched.
+ *
+ * ## Why a hand-written scanner
+ *
+ * A regex cannot do this. Ten of this suite's arms contain a backtick inside a character class —
+ * `["'\`]` — so ``/String\.raw`([\s\S]*?)`/`` stops at that backtick and returns a fragment that does
+ * not compile. A caller that then treats "does not compile" as "cannot match" skips a third of the
+ * arms **silently**, which is how a check comes to read as evidence while examining less than it claims.
+ * The cost of getting this wrong is invisible, so it is written out rather than approximated.
+ *
+ * ## The rule
+ *
+ * A backtick closes the literal unless an odd number of backslashes precedes it. That is the whole of
+ * template-literal escaping, and it is enough here: no arm uses `${…}` interpolation, and an
+ * interpolated one would simply be reported as not compiling rather than quietly mis-read.
+ *
+ * `source:` may also be a bare string rather than a `String.raw` tag; those are found too, because the
+ * four arms named by a constant (`THEN_FETCH`, `QUERY_PARAM_URL`, `HEADER_URL`, `BODY_JSON_FETCH`) reach
+ * this file as `.source` and would otherwise be invisible to any check about the suite's own clauses.
+ */
+function scrapeArms(source: string): string[] {
+  const arms: string[] = [];
+  const opener = /source:\s*(?:String\.raw)?[`"]/g;
+  for (const match of source.matchAll(opener)) {
+    const tag = match[0].includes("String.raw") ? "`" : match[0].slice(-1);
+    const quote = tag === "`" ? "`" : tag;
+    let index = match.index + match[0].length;
+    let body = "";
+    while (index < source.length) {
+      const character = source[index]!;
+      if (character === quote) {
+        let backslashes = 0;
+        for (let back = index - 1; back >= 0 && source[back] === "\\"; back -= 1) backslashes += 1;
+        if (backslashes % 2 === 0) break;
+      }
+      body += character;
+      index += 1;
+    }
+    if (body.length > 0) arms.push(body);
+  }
+  return arms;
+}
 
 /**
  * §2.5 clause 2's detector, as named clauses. Split for the same reason as the other two: the
@@ -345,7 +400,7 @@ const NO_MEDIA_PROXY_ARMS: ReadonlyArray<DetectorArm> = [
   { name: "a request body read whole, then a URL opened", source: BODY_JSON_FETCH.source },
   {
     name: "a fetched body handed straight back as the response body",
-    source: STREAMED_BODY_AS_RESPONSE.source,
+    source: STREAMED_BODY_AS_RESPONSE_ARM.source,
   },
   {
     name: "a buffered response handed back as a new Response",
@@ -3448,27 +3503,63 @@ describe("the streaming clause's facts are asserted", () => {
   it("is the only arm that catches it, so deleting it opens a hole nothing else covers", () => {
     // Read from the suite's own declared arms rather than restated here, so this cannot drift from
     // the suite. Arms are compiled the same way `anyOf`/`new RegExp` compiles them.
-    const arms = [
-      ...readFileSync(join(FRONTEND, "tests", "release-exclusions.test.ts"), "utf8").matchAll(
-        /source:\s*String\.raw`([\s\S]*?)`/g,
-      ),
-    ].map((match) => match[1]!);
+    //
+    // ## Why this scans rather than matches
+    //
+    // The first version used ``/source:\s*String\.raw`([\s\S]*?)`/g`` — non-greedy to the *first*
+    // backtick. Ten arms contain a backtick inside a character class (`["'\`]`), so each was
+    // truncated to an uncompilable fragment, and a `catch { return false }` then classified every one
+    // of them as "not catching". That is the worst shape a check can have: it read as evidence while
+    // being blind to a third of what it claimed to examine. Adding a matching alternative to the
+    // truncated googlevideo arm left this test green with sole custody genuinely gone.
+    //
+    // So the scan now finds the true closing backtick — one not preceded by a backslash — and an arm
+    // that fails to compile is a **loud failure** rather than a silent exclusion.
+    const arms = scrapeArms(
+      readFileSync(join(FRONTEND, "tests", "release-exclusions.test.ts"), "utf8"),
+    );
+
+    // Both directions of the vacuity guard, because `length > 20` alone is satisfied by a scanner that
+    // finds 21 truncated fragments just as happily as 31 whole arms.
     expect(
       arms.length,
       "the arms must have been found, or this assertion is vacuous",
-    ).toBeGreaterThan(20);
-    const others = arms.filter((arm) => {
+    ).toBeGreaterThan(25);
+    const uncompilable = arms.filter((arm) => {
       try {
-        const compiled = new RegExp(arm);
-        // Skip the clause itself: it is the one under test here.
-        return (
-          compiled.source !== STREAMED_BODY_AS_RESPONSE.source && compiled.test(CALLER_SUPPLIED)
-        );
-      } catch {
-        // An arm that does not compile standalone cannot be catching anything either.
+        new RegExp(arm);
         return false;
+      } catch {
+        return true;
       }
     });
+    expect(
+      uncompilable,
+      "every scraped arm must compile; one that does not means the scrape is truncating, and " +
+        "treating it as 'not catching' is how a blind check passes as a strict one",
+    ).toEqual([]);
+
+    // **The clause under test must be in the scraped set at all.** Without this, the identity filter
+    // below is dead code: `STREAMED_BODY_AS_RESPONSE` is declared as a named constant, not as a
+    // `source:` entry, so it never appears in `arms` and the filter never has anything to exclude.
+    // Replacing that filter with `true` therefore changed nothing and the suite stayed green — which
+    // looked like a defeat and was in fact a no-op, which is worse, because it would have been filed
+    // as one.
+    //
+    // Asserted positively so the gap cannot reopen: the scraped set must contain this clause's own
+    // source, and therefore the filter below is load-bearing rather than decorative.
+    expect(
+      arms,
+      "the clause under test is not among the scraped arms, so the identity filter below is dead " +
+        "code and this assertion examines the suite minus the clause without saying so",
+    ).toContain(STREAMED_BODY_AS_RESPONSE.source);
+
+    const others = arms
+      .map((arm) => new RegExp(arm))
+      .filter(
+        (compiled) =>
+          compiled.source !== STREAMED_BODY_AS_RESPONSE.source && compiled.test(CALLER_SUPPLIED),
+      );
     expect(
       others,
       "if another arm now catches this too, this clause is redundant and the sole-custody claim " +

@@ -27,7 +27,6 @@ import { describe, expect, it } from "vitest";
 // jsdom, `import.meta.url` is a path, not a `file:` URL, and the `URL` constructor refuses it.
 const here = dirname(fileURLToPath(import.meta.url));
 const FRONTEND = join(here, "..");
-const SRC = join(FRONTEND, "src");
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];
 

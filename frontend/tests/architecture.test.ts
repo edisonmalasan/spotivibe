@@ -56,14 +56,12 @@ import { readTree as readTreeShared } from "./helpers/sourceTree";
 const srcRel = "../src";
 const srcDir = fileURLToPath(new URL(srcRel, import.meta.url));
 
-function walk(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return walk(full);
-    return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
-  });
-}
+// M21 removed the last caller of this local walker in favour of `readTreeShared` from
+// `helpers/sourceTree.ts`, which reads the tree once and reports any file that changed underneath it.
+// Deleting the walker rather than leaving it is the point: a second implementation of "list the
+// source tree" is a second thing to keep correct, and the shared helper already is that thing.
+const walkRemoved = true;
+void walkRemoved;
 
 /**
  * Directory reads, memoized per directory for the same reason as

@@ -148,8 +148,15 @@ detectors whose clauses could each be deleted with the whole suite green (27 of 
 file that had never been inside the encoding scan because `\.git` also matched `.github`, and two
 arms that matched the token as documented rather than as it appears in code. None was a defect in
 shipped behaviour; all were rules that said less than they appeared to. M21 inherits the rest —
-including 47 of 52 deletable clauses in `download-non-goals.test.ts`, whose scan covers none of
-M20's new server files.
+including the deletable clauses in `download-non-goals.test.ts`.
+
+> **M21 correction, 2026-10-04.** The clause of that sentence that said the scan "covers none of M20's
+> new server files" was **false**. `applicationSources()` walks all of `src/`, and every server file M20
+> added lives under `src/server/download/`, so all of them were covered by that scan the whole time.
+> The real gap ran the other way: `public/`, `scripts/` and `next.config.ts` were never scanned at all.
+> M21 widened the roots and asserted the widening took effect. The "47 of 52" figure was also never
+> measured — M21 measured the one detector whose clauses can be enumerated and found 5 of 6 deletable,
+> now 0 of 6. See the marked correction in the M20 archive's `evidence/verification.md`.
 
 **Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external
 provider, a parser, a playback-position binding) and it proves the Now Playing surface can grow.
