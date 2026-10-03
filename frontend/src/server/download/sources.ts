@@ -397,6 +397,80 @@ export function parseInvidiousVideo(body: unknown): ParsedInvidiousVideo {
   return { candidates: formats, urlsByItag, durationSeconds };
 }
 
+/**
+ * Hosts the fallback is allowed to fetch media from, by suffix.
+ *
+ * A public Invidious instance answers with a **media URL of its own choosing**, and that URL is
+ * otherwise attacker-controlled from this function's point of view: the instance list is a bundled
+ * constant, but what an instance *replies with* is not. Without this allowlist, one hostile or
+ * compromised public instance could point the function at the metadata endpoint
+ * (`169.254.169.254`), at loopback, or at an internal service, and the response body would be
+ * streamed straight back to an unauthenticated caller. That is an SSRF, and it is reachable by
+ * anyone who can trigger a download while the fallback is in play.
+ *
+ * These are the hosts a legitimate instance actually serves media from.
+ */
+export const MEDIA_HOST_SUFFIXES: readonly string[] = [
+  ".googlevideo.com",
+  ".googleusercontent.com",
+];
+
+export type MediaUrlVerdict = { ok: true; url: URL } | { ok: false; reason: string };
+
+/**
+ * Decide whether a media URL the fallback instance handed us is one this function may fetch.
+ *
+ * Pure and exported so the decision is testable without a network, which matters because this is a
+ * security control and "the happy path worked" proves nothing about it. Three rules, all of which
+ * have to hold:
+ *
+ * 1. **HTTPS**, always — with one deliberate exception: a URL that is *same-origin* with the
+ *    instance we asked, when that instance is itself plain HTTP. That combination only arises when
+ *    an operator has configured a local development instance, which is a host we chose, so the
+ *    "attacker said so" path cannot reach it. A remote instance answering with an `http:` media URL
+ *    is rejected.
+ * 2. **A known media host, or the instance's own host.** Anything else is refused.
+ * 3. No credentials in the URL. A `user:pass@host` form is a way of making a URL look like one host
+ *    while resolving to another.
+ *
+ * The caller also fetches with `redirect: "manual"`, because a same-host redirect chain is exactly
+ * how an allowlist is walked around.
+ */
+export function classifyMediaUrl(raw: string, instance: string): MediaUrlVerdict {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { ok: false, reason: "the media URL was not a URL" };
+  }
+
+  let instanceUrl: URL;
+  try {
+    instanceUrl = new URL(instance);
+  } catch {
+    return { ok: false, reason: "the fallback instance was not a URL" };
+  }
+
+  if (url.username !== "" || url.password !== "") {
+    return { ok: false, reason: "the media URL carried credentials" };
+  }
+
+  const sameHost = url.hostname === instanceUrl.hostname;
+  const sameOrigin =
+    sameHost && url.port === instanceUrl.port && url.protocol === instanceUrl.protocol;
+
+  if (url.protocol !== "https:" && !sameOrigin) {
+    return { ok: false, reason: `the media URL was ${url.protocol}// rather than https:` };
+  }
+
+  if (sameHost) return { ok: true, url };
+  const host = url.hostname.toLowerCase();
+  if (MEDIA_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))) {
+    return { ok: true, url };
+  }
+  return { ok: false, reason: `the media URL pointed at an unexpected host (${host})` };
+}
+
 /** The configured fallback instances, or the built-in pair. */
 function resolveFallbackInstances(): readonly string[] {
   const configured = parseInstanceList(
@@ -463,8 +537,8 @@ export function createInvidiousAudioSource(
 
         const { selection } = outcome;
         const itag = selection.format.itag;
-        const url = itag === undefined ? undefined : parsed.urlsByItag.get(itag);
-        if (url === undefined) {
+        const raw = itag === undefined ? undefined : parsed.urlsByItag.get(itag);
+        if (raw === undefined) {
           lastFailure = new ExtractionError(
             "no_suitable_format",
             "the selected format could not be reopened",
@@ -472,6 +546,17 @@ export function createInvidiousAudioSource(
           );
           continue;
         }
+        // The instance named the host. Nothing else about that host is trusted: see
+        // {@link classifyMediaUrl}. A refusal here is one more attempt rather than a hard failure,
+        // because the next instance may well serve a legitimate URL.
+        const verdict = classifyMediaUrl(raw, instance);
+        if (!verdict.ok) {
+          lastFailure = new ExtractionError("unavailable", verdict.reason, {
+            source: "invidious",
+          });
+          continue;
+        }
+        const url = verdict.url.toString();
 
         return {
           source: "invidious",
@@ -483,7 +568,13 @@ export function createInvidiousAudioSource(
           async open(openSignal) {
             // `response.body` is passed straight through. It is already a stream, and reading it
             // would defeat the only constraint this route exists to respect.
-            const upstream = await fetch(url, { signal: openSignal, redirect: "follow" });
+            //
+            // `redirect: "manual"` is load-bearing, not a default. The URL has already been checked
+            // against a host allowlist; following redirects would let a permitted host hand the
+            // request to a forbidden one, which is precisely how an allowlist is walked around. A
+            // redirect is therefore an upstream that will not serve media directly, which is a
+            // failure and not something to chase.
+            const upstream = await fetch(url, { signal: openSignal, redirect: "manual" });
             if (!upstream.ok || upstream.body === null) {
               throw new ExtractionError("unavailable", "the fallback stream could not be opened", {
                 source: "invidious",

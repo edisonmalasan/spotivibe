@@ -6,6 +6,7 @@ import {
   RESOLVE_TIMEOUT_MS,
   createAudioSourceChain,
   createInvidiousAudioSource,
+  classifyMediaUrl,
   parseInvidiousVideo,
   ytdlAudioSource,
   type AudioSource,
@@ -57,27 +58,27 @@ describe("parseInvidiousVideo", () => {
       adaptiveFormats: [
         {
           itag: "140",
-          url: "https://cdn.example/opus",
+          url: "https://rr3---sn-test.googlevideo.com/opus",
           type: 'audio/webm; codecs="opus"',
           bitrate: "128000",
         },
         {
           itag: "251",
-          url: "https://cdn.example/opus-hi",
+          url: "https://rr3---sn-test.googlevideo.com/opus-hi",
           type: "audio/webm; codecs=opus",
           bitrate: "160000",
         },
         // Skipped: video, however high its bitrate.
         {
           itag: "137",
-          url: "https://cdn.example/mp4",
+          url: "https://rr3---sn-test.googlevideo.com/mp4",
           type: 'video/mp4; codecs="avc1"',
           bitrate: "3000000",
         },
         // Skipped: no URL, so it cannot be opened.
         { itag: "999", type: 'audio/webm; codecs="opus"', bitrate: "128000" },
         // Skipped: unlabelled, so it is not guessed at.
-        { itag: "998", url: "https://cdn.example/unknown", bitrate: "128000" },
+        { itag: "998", url: "https://rr3---sn-test.googlevideo.com/unknown", bitrate: "128000" },
       ],
     });
 
@@ -88,8 +89,8 @@ describe("parseInvidiousVideo", () => {
       mimeType: 'audio/webm; codecs="opus"',
       audioBitrate: 128_000,
     });
-    expect(parsed.urlsByItag.get(140)).toBe("https://cdn.example/opus");
-    expect(parsed.urlsByItag.get(251)).toBe("https://cdn.example/opus-hi");
+    expect(parsed.urlsByItag.get(140)).toBe("https://rr3---sn-test.googlevideo.com/opus");
+    expect(parsed.urlsByItag.get(251)).toBe("https://rr3---sn-test.googlevideo.com/opus-hi");
   });
 
   it("accepts a numeric itag and a numeric bitrate, because the shape is not guaranteed", () => {
@@ -98,7 +99,7 @@ describe("parseInvidiousVideo", () => {
       adaptiveFormats: [
         {
           itag: 140,
-          url: "https://cdn.example/a",
+          url: "https://rr3---sn-test.googlevideo.com/a",
           type: 'audio/webm; codecs="opus"',
           bitrate: 128000,
         },
@@ -109,7 +110,7 @@ describe("parseInvidiousVideo", () => {
     // The reopen map is keyed by the normalised numeric itag, which is what a selected numeric itag
     // is looked up with. A mismatch here would make every selection unopenable and the failure would
     // read as "no suitable format" rather than as a key mismatch.
-    expect(parsed.urlsByItag.get(140)).toBe("https://cdn.example/a");
+    expect(parsed.urlsByItag.get(140)).toBe("https://rr3---sn-test.googlevideo.com/a");
   });
 
   it("carries the codec Invidious reports separately from the media type", () => {
@@ -119,7 +120,7 @@ describe("parseInvidiousVideo", () => {
       adaptiveFormats: [
         {
           itag: "140",
-          url: "https://cdn.example/opus",
+          url: "https://rr3---sn-test.googlevideo.com/opus",
           type: "audio/webm",
           codecs: "opus, mp4a.40.2",
           bitrate: "128000",
@@ -133,9 +134,17 @@ describe("parseInvidiousVideo", () => {
   it("skips a format whose itag it could not normalise, because such a format cannot be reopened", () => {
     const parsed = parseInvidiousVideo({
       adaptiveFormats: [
-        { itag: "not-a-number", url: "https://cdn.example/a", type: 'audio/webm; codecs="opus"' },
-        { url: "https://cdn.example/b", type: 'audio/webm; codecs="opus"' },
-        { itag: "140", url: "https://cdn.example/c", type: 'audio/webm; codecs="opus"' },
+        {
+          itag: "not-a-number",
+          url: "https://rr3---sn-test.googlevideo.com/a",
+          type: 'audio/webm; codecs="opus"',
+        },
+        { url: "https://rr3---sn-test.googlevideo.com/b", type: 'audio/webm; codecs="opus"' },
+        {
+          itag: "140",
+          url: "https://rr3---sn-test.googlevideo.com/c",
+          type: 'audio/webm; codecs="opus"',
+        },
       ],
     });
     expect(parsed.candidates.map((entry) => entry.itag)).toEqual([140]);
@@ -165,10 +174,14 @@ describe("parseInvidiousVideo", () => {
   it("records an unusable bitrate as zero, so the candidate is dropped rather than ranked last", () => {
     const parsed = parseInvidiousVideo({
       adaptiveFormats: [
-        { itag: 1, url: "https://cdn.example/a", type: 'audio/webm; codecs="opus"' },
+        {
+          itag: 1,
+          url: "https://rr3---sn-test.googlevideo.com/a",
+          type: 'audio/webm; codecs="opus"',
+        },
         {
           itag: 2,
-          url: "https://cdn.example/b",
+          url: "https://rr3---sn-test.googlevideo.com/b",
           type: 'audio/webm; codecs="opus"',
           bitrate: "nonsense",
         },
@@ -195,7 +208,7 @@ describe("parseInvidiousVideo", () => {
       adaptiveFormats: [
         {
           itag: 1,
-          url: "https://cdn.example/a",
+          url: "https://rr3---sn-test.googlevideo.com/a",
           type: 'audio/webm; codecs="opus"',
           bitrate: "128000",
         },
@@ -215,7 +228,7 @@ describe("createInvidiousAudioSource", () => {
     adaptiveFormats: [
       {
         itag: "140",
-        url: "https://cdn.example/opus",
+        url: "https://rr3---sn-test.googlevideo.com/opus",
         type: 'audio/webm; codecs="opus"',
         bitrate: "128000",
       },
@@ -273,6 +286,77 @@ describe("createInvidiousAudioSource", () => {
     const result = await source.resolve("dQw4w9WgXcQ", never);
     expect(result.source).toBe("invidious");
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("two.example");
+  });
+
+  it("refuses a media URL the instance named but this application may not fetch", async () => {
+    // The security control, tested as a control. A public Invidious instance answers with a media
+    // URL of **its own choosing**, so the instance list being a bundled constant bounds who
+    // configures it but not what an instance replies with. Without a host allowlist, one hostile or
+    // compromised public instance could aim this function at the cloud metadata endpoint, at
+    // loopback, or at an internal service, and the body would be streamed straight back to an
+    // unauthenticated caller.
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        lengthSeconds: 200,
+        adaptiveFormats: [
+          {
+            itag: "140",
+            url: "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+            type: 'audio/webm; codecs="opus"',
+            bitrate: "128000",
+          },
+        ],
+      }),
+    );
+
+    const source = createInvidiousAudioSource(["https://one.example"]);
+    // The refusal names the reason rather than a generic "upstream is down", because "this instance
+    // tried to point us somewhere it may not" is a materially different diagnosis from "nobody
+    // answered" — one is a hostile or misconfigured instance, the other is an outage.
+    await expect(source.resolve("dQw4w9WgXcQ", never)).rejects.toThrow(/http:\/\/ rather than/);
+    expect(
+      fetchMock.mock.calls.map((call) => String(call[0])),
+      "the instance's own chosen host must never be fetched",
+    ).not.toContain("http://169.254.169.254/latest/meta-data/iam/security-credentials/");
+  });
+
+  it.each([
+    ["plain HTTP", "http://rr3---sn-test.googlevideo.com/videoplayback"],
+    ["loopback", "https://127.0.0.1/videoplayback"],
+    ["the metadata service over TLS", "https://169.254.169.254/latest/meta-data/"],
+    ["a private network host", "https://10.0.0.5/internal"],
+    ["a lookalike of an allowed suffix", "https://evil-googlevideo.com.attacker.test/x"],
+    ["credentials smuggled into the URL", "https://user:pass@rr3---sn-test.googlevideo.com/x"],
+  ])("classifies a media URL as unusable: %s", (_label, raw) => {
+    // Pure, so this needs no network. It is deliberately a table rather than one assertion: the
+    // interesting cases are the ones a future edit would plausibly introduce, and `10.0.0.5` and the
+    // `evil-googlevideo.com.attacker.test` lookalike are exactly the shapes that a naive
+    // "endsWith('googlevideo.com')" gets wrong.
+    expect(classifyMediaUrl(raw, "https://one.example").ok).toBe(false);
+  });
+
+  it.each([
+    ["a real media CDN host", "https://rr3---sn-test.googlevideo.com/videoplayback?expire=1"],
+    ["a secondary CDN host", "https://rr1---sn-xyz.lh3.googleusercontent.com/x"],
+    ["the instance's own host", "https://one.example/media/140"],
+  ])("accepts a legitimate media URL: %s", (_label, raw) => {
+    expect(classifyMediaUrl(raw, "https://one.example").ok).toBe(true);
+  });
+
+  it("never follows a redirect when opening the media URL", async () => {
+    // The allowlist is only as good as the fetch that uses it. A permitted host that answers with a
+    // 302 to a forbidden one is how an allowlist gets walked around, so the redirect is refused
+    // rather than chased: an instance that will not serve media directly has failed.
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(audioFormat))
+      .mockResolvedValueOnce(new Response(null, { status: 302 }));
+    const source = createInvidiousAudioSource(["https://one.example"]);
+    const result = await source.resolve("dQw4w9WgXcQ", never);
+
+    await expect(result.open(never)).rejects.toThrow();
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ redirect: "manual" });
   });
 
   it("stops after a bounded number of instances rather than trying every one it was given", async () => {
