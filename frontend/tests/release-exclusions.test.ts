@@ -35,6 +35,17 @@ import { describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const FRONTEND = join(here, "..");
 const SRC = join(FRONTEND, "src");
+const REPO = join(FRONTEND, "..");
+
+/**
+ * The OpenSpec change whose narrowing this file records, and where its evidence lives.
+ *
+ * The change is archived, so the name carries the archive's date prefix. Written as a constant
+ * because it appears in two candidate paths below, and a second literal spelling would eventually
+ * drift from this one — at which point the lookup would quietly start reading the wrong document and
+ * the obligation it enforces would still report green.
+ */
+const ARCHIVED_CHANGE = "2026-10-03-add-m20-personal-use-downloading";
 
 /**
  * Remove comments before matching.
@@ -3254,15 +3265,32 @@ describe("every clause this change removed is published, not quietly dropped", (
     },
   ];
 
-  const diffPath = join(
-    FRONTEND,
-    "..",
-    "openspec",
-    "changes",
-    "add-m20-personal-use-downloading",
-    "evidence",
-    "exclusions-diff.md",
-  );
+  // Resolved, not hardcoded. This test enforces a binding ROADMAP obligation — every clause removed
+  // from a narrowed detector is published with the clause that authorised its removal — so it has to
+  // read the document that obligation points at, and that document's path changes when the change is
+  // archived.
+  //
+  // It used to name the active change directory, which meant archiving the change broke the test with
+  // `ENOENT`. That is the wrong way round: the obligation outlives the change, so the lookup has to
+  // outlive it too. The archive directory is tried first, because a document found there is the
+  // finished record rather than a draft — and a re-opened change would be found by the second
+  // candidate rather than silently reading a stale archived copy.
+  //
+  // A missing document in *both* places is a hard failure, not a skip. Skipping is how a publishing
+  // obligation disappears without anybody ever deciding to remove it.
+  const evidence = join("evidence", "exclusions-diff.md");
+  const candidates = [
+    join(REPO, "openspec", "changes", "archive", ARCHIVED_CHANGE, evidence),
+    join(REPO, "openspec", "changes", ARCHIVED_CHANGE, evidence),
+  ];
+  const diffPath = candidates.find((path) => existsSync(path));
+  if (diffPath === undefined) {
+    throw new Error(
+      `no ${evidence} found for the M20 change. Looked in:\n` +
+        candidates.map((path) => `  - ${path}`).join("\n") +
+        "\nThe removed-clause publication obligation cannot be checked without it.",
+    );
+  }
   const diff = readFileSync(diffPath, "utf8");
   // A Markdown table cell has to escape `|` as `\|`, so every regex alternation in the document is
   // written with a backslash before the pipe. That is a rendering requirement, not a difference in
