@@ -30,6 +30,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { beginRouting, createReadiness, pausedAction, PAUSED_ACTION } from "./router.mjs";
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -191,7 +192,9 @@ export async function openSession({
   const sessions = new Map();
   let wantedTargetId = "";
   const routes = [];
-  let routerPaused = false;
+  // The router's readiness, as a value rather than a local boolean, so the ordering and the
+  // not-ready decision are expressed once in `lib/router.mjs` and can be tested without a browser.
+  const readiness = createReadiness();
 
   const pageSession = () => sessions.get(wantedTargetId) ?? "";
 
@@ -329,7 +332,20 @@ export async function openSession({
      * router is here to stand in for the providers, not to stand in for the application.
      */
     on("Fetch.requestPaused", async (params, sessionId) => {
-      if (sessionId !== pageSession() || !routerPaused) return;
+      const action = pausedAction(readiness, sessionId === pageSession());
+      if (action === PAUSED_ACTION.IGNORE) return;
+      // Not ready → **continue**, never drop. The decision is `pausedAction`'s, not this
+      // handler's, so it cannot be re-broken here without the tests noticing.
+      if (action === PAUSED_ACTION.CONTINUE) {
+        try {
+          await sendTo(sessionId, "Fetch.continueRequest", {
+            requestId: params.requestId,
+          });
+        } catch {
+          /* the request is already resolved */
+        }
+        return;
+      }
       const { requestId, request } = params;
       const url = new URL(request.url);
       const route = routes.find(
@@ -449,11 +465,15 @@ export async function openSession({
 
       /** Start intercepting. Called once; flows then see the router. */
       async startRouting() {
-        if (routerPaused) return;
-        await send("Fetch.enable", {
+        if (readiness.ready) return;
+        // The ordering and the rollback both live in `beginRouting`, because this change had them
+        // inlined here and the only check on them was a string-index comparison — which a mutation
+        // proof showed was unchecked. See `lib/router.mjs`.
+        await beginRouting({
+          send,
+          readiness,
           patterns: [{ urlPattern: `${origin}/*` }],
         });
-        routerPaused = true;
       },
 
       async evaluate(expression) {
@@ -577,7 +597,7 @@ export async function openSession({
       },
 
       async close() {
-        routerPaused = false;
+        readiness.release();
         try {
           ws?.close();
         } catch {
