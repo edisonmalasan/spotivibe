@@ -113,6 +113,71 @@ describe("readTree", () => {
     expect(isMissing(undefined)).toBe(false);
   });
 
+  // ## The two tests below are the ones that were missing
+  //
+  // Everything above this line unit-tested the `isMissing` **predicate**. Nothing exercised
+  // `readTree`'s **decision** — the line `if (!isMissing(error)) throw error` — which is the whole
+  // stated purpose of the helper. Independent verification found that deleting it entirely
+  // (`void error`) left 139 tests green. A predicate can be right while the branch that uses it is
+  // dead, and that is the more likely failure, because deleting a branch looks like cleanup.
+
+  it("throws when a read fails for any reason other than the file being gone", () => {
+    const root = tree();
+    const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    const raced: string[] = [];
+
+    expect(() =>
+      readTree(root, {
+        read: (file) => {
+          if (file.endsWith("a.ts")) throw denied;
+          return `contents of ${file}`;
+        },
+        onRace: (file) => raced.push(file),
+      }),
+    ).toThrow(denied);
+
+    // **And it must not be reported as a race.** This is the half that matters: a real read failure
+    // dressed up as a vanished file would let `architecture.test.ts` pass while silently reading fewer
+    // files than it thinks, which is worse than failing, because the suite would claim to have checked
+    // the architecture of files it never opened.
+    expect(raced).toEqual([]);
+  });
+
+  it("keeps tolerating the vanished case while the fatal case throws", () => {
+    // Both branches of the same decision, in one place, so neither can be changed without the other
+    // being visible. A narrowing that broke the tolerance would show up here as the first expectation;
+    // a widening would show up as the absence of a throw.
+    const root = tree();
+    const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
+
+    const tolerated = readTree(root, {
+      read: (file) => {
+        if (file.endsWith("a.ts")) throw vanished;
+        return "";
+      },
+    });
+    expect(tolerated.map((entry) => entry.file.split(/[\\/]/).pop())).toEqual(["b.tsx"]);
+
+    expect(() =>
+      readTree(root, {
+        read: (file) => {
+          if (file.endsWith("a.ts")) throw Object.assign(new Error("boom"), { code: "EISDIR" });
+          return "";
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("uses readFileSync when no reader is given", () => {
+    // The seam is optional. If the default were wrong, every caller that omits it would silently get
+    // empty contents rather than an error — so the ordinary path is asserted, not assumed.
+    expect(
+      readTree(tree())
+        .map((entry) => entry.source)
+        .sort(),
+    ).toEqual(["export const a = 1;\n", "export const b = 2;\n"]);
+  });
+
   it("recognises a vanished file", () => {
     expect(isMissing(Object.assign(new Error("no such file"), { code: "ENOENT" }))).toBe(true);
   });

@@ -56,6 +56,13 @@ export function isMissing(error: unknown): boolean {
  * @param afterList called with the listed paths, after listing and before reading. This is the
  *   seam the race test uses to cause the race deterministically; ordinary callers omit it.
  * @param onRace called with each path that vanished before it could be read, for reporting
+ * @param read how to read one file. Defaults to `readFileSync`. Present because the *other* branch
+ *   - a read failure that is **not** a vanished file - is the whole reason `isMissing` is narrow, and
+ *   it cannot be provoked reliably through the filesystem: making a real file unreadable needs a
+ *   permission this platform may not grant, and a directory is never listed as a file because
+ *   `walk` recurses into it first. Injecting the reader makes that branch testable on every
+ *   platform and on every run, which is the difference between a documented intention and a
+ *   checked one.
  */
 export function readTree(
   directory: string,
@@ -63,26 +70,31 @@ export function readTree(
     extensions = [".ts", ".tsx"],
     afterList = () => {},
     onRace = () => {},
+    read = (path: string) => readFileSync(path, "utf8"),
   }: {
     extensions?: ReadonlyArray<string>;
     afterList?: (files: ReadonlyArray<string>) => void;
     onRace?: (path: string) => void;
+    read?: (path: string) => string;
   } = {},
 ): Array<{ file: string; source: string }> {
   const files = walk(directory, extensions);
   afterList(files);
-  const read: Array<{ file: string; source: string }> = [];
+  const contents: Array<{ file: string; source: string }> = [];
   for (const file of files) {
     try {
-      read.push({ file, source: readFileSync(file, "utf8") });
+      contents.push({ file, source: read(file) });
     } catch (error) {
       // The one tolerated case. Anything else propagates: a tree that cannot be read is a real
       // failure and must not be reported as a race.
+      // Note the scope: only errors from `read` reach this decision. `afterList` runs outside the
+      // `try`, so a caller that misuses that seam fails loudly rather than being reported as a
+      // race - which is the correct behaviour for a programming error.
       if (!isMissing(error)) throw error;
       onRace(file);
     }
   }
-  return read;
+  return contents;
 }
 
 /** Absolute paths of the matching files under `directory`, depth first. */
