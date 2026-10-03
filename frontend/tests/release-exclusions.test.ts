@@ -240,6 +240,41 @@ const HEADER_URL = callerSuppliedUrlArm(
 const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
 
 /**
+ * A fetched body handed straight back as the response body.
+ *
+ * ## Measured, not assumed — and an inherited claim about this clause was wrong
+ *
+ * A previous record stated that this clause "flags the approved M20 shape as a false positive *and*
+ * is the only clause catching the caller-path-segment violation". M21 checked both halves. **The
+ * first is false.** The approved download route streams `payload.stream`, not `x.body`, so the
+ * clause does not match it — it matches **0 of the 233** real files under `src/`.
+ *
+ * The second half is true, and it is now measured rather than repeated: this clause is the **only**
+ * one of the suite's 31 arms that catches a caller-supplied URL fetched and handed straight back.
+ * `callerSuppliedUrlArm` does not reach it, because that arm looks for a URL read *out of* the
+ * caller and then opened, and a path-parameter construction does not spell it that way.
+ *
+ * ## Why it is kept
+ *
+ * With no false positives in the real tree and sole custody of a permanent-exclusion violation,
+ * deleting it would trade a clause that costs nothing for a hole nothing else covers. That is a bad
+ * trade at any ratio, and it is the opposite of the trade the false claim would have implied.
+ *
+ * ## What its real limitation is
+ *
+ * It matches on `.body` specifically, so it cannot see a stream-through written as `.stream` — which
+ * is precisely how the *approved* route is written. So it would miss an approved shape spelled that
+ * way, and it catches the forbidden one. It errs toward flagging and the application happens not to
+ * trip it, which is a better position than the reverse: an allowlist entry that is never needed is
+ * cheap, and a permanent exclusion with no clause reaching it is not.
+ *
+ * `the streaming clause's facts are asserted` below makes all of this a checked fact rather than a
+ * comment that can go stale.
+ */
+const STREAMED_BODY_AS_RESPONSE =
+  /fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body/;
+
+/**
  * §2.5 clause 2's detector, as named clauses. Split for the same reason as the other two: the
  * fourth review deleted four of the ten with the suite green.
  */
@@ -310,7 +345,7 @@ const NO_MEDIA_PROXY_ARMS: ReadonlyArray<DetectorArm> = [
   { name: "a request body read whole, then a URL opened", source: BODY_JSON_FETCH.source },
   {
     name: "a fetched body handed straight back as the response body",
-    source: String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
+    source: STREAMED_BODY_AS_RESPONSE.source,
   },
   {
     name: "a buffered response handed back as a new Response",
@@ -3358,5 +3393,113 @@ describe("every clause this change removed is published, not quietly dropped", (
         `the table cites tests/${name}, which does not exist`,
       ).toBe(true);
     }
+  });
+});
+
+describe("the streaming clause's facts are asserted", () => {
+  /**
+   * The clause's justification, checked rather than asserted in prose.
+   *
+   * This clause is kept on the strength of a claim, and a previous version of that claim was wrong.
+   * A justification written only in a comment is exactly what goes stale when the code changes
+   * underneath it — which is how a clause kept for a false reason survives review after review.
+   *
+   * Four things are asserted:
+   *
+   *   1. It matches **nothing** in the real `src/` tree. This is the fact that was previously
+   *      believed false, and asserting it is what stops someone "fixing" the clause to remove a
+   *      false positive that does not exist.
+   *   2. It **does** match a caller-supplied URL fetched and handed straight back.
+   *   3. **No other arm** catches that violation, so this clause is not redundant.
+   *   4. It does **not** match the approved route's actual shape, which is why it costs nothing
+   *      today and what its real limitation is.
+   */
+  const DOWNLOAD_ROUTE = join(FRONTEND, "src", "app", "api", "download", "[videoId]", "route.ts");
+  const routeSource = readFileSync(DOWNLOAD_ROUTE, "utf8");
+
+  /** The forbidden shape, written the way the permanent exclusion describes it. */
+  const CALLER_SUPPLIED = `
+    export async function GET(request: Request, { params }: { params: { id: string } }) {
+      const upstream = await fetch(\`https://example.test/\${params.id}\`);
+      return new Response(upstream.body, { status: upstream.status });
+    }
+  `;
+
+  it("does not match the approved route, which streams rather than forwarding a body", () => {
+    // The half of the inherited claim that was false. If this ever becomes true, the clause *is*
+    // producing a false positive and someone should decide what to do about it deliberately.
+    expect(
+      STREAMED_BODY_AS_RESPONSE.test(routeSource),
+      "the approved route streams payload.stream, so this clause does not match it; if it now " +
+        "does, the false-positive question is real and needs a decision rather than a comment",
+    ).toBe(false);
+    expect(routeSource, "the premise, read from the real file").toContain(
+      "holdUntilSettled(payload.stream",
+    );
+  });
+
+  it("matches a caller-supplied URL fetched and handed straight back", () => {
+    expect(
+      STREAMED_BODY_AS_RESPONSE.test(CALLER_SUPPLIED),
+      "this is the violation the clause exists to catch",
+    ).toBe(true);
+  });
+
+  it("is the only arm that catches it, so deleting it opens a hole nothing else covers", () => {
+    // Read from the suite's own declared arms rather than restated here, so this cannot drift from
+    // the suite. Arms are compiled the same way `anyOf`/`new RegExp` compiles them.
+    const arms = [
+      ...readFileSync(join(FRONTEND, "tests", "release-exclusions.test.ts"), "utf8").matchAll(
+        /source:\s*String\.raw`([\s\S]*?)`/g,
+      ),
+    ].map((match) => match[1]!);
+    expect(
+      arms.length,
+      "the arms must have been found, or this assertion is vacuous",
+    ).toBeGreaterThan(20);
+    const others = arms.filter((arm) => {
+      try {
+        const compiled = new RegExp(arm);
+        // Skip the clause itself: it is the one under test here.
+        return (
+          compiled.source !== STREAMED_BODY_AS_RESPONSE.source && compiled.test(CALLER_SUPPLIED)
+        );
+      } catch {
+        // An arm that does not compile standalone cannot be catching anything either.
+        return false;
+      }
+    });
+    expect(
+      others,
+      "if another arm now catches this too, this clause is redundant and the sole-custody claim " +
+        "in its comment is stale",
+    ).toEqual([]);
+  });
+
+  it("matches nothing in the real source tree", () => {
+    // Asserted by walking the tree rather than by a recorded number, so it stays true as the
+    // application changes instead of needing to be re-measured. A clause that grows a false positive
+    // fails here rather than being discovered by whoever next reads an allowlist.
+    const offenders = sourceFiles(SRC)
+      .map((file) => ({
+        file: relative(FRONTEND, file).split("\\").join("/"),
+        code: readFileSync(file, "utf8"),
+      }))
+      .filter((entry) => STREAMED_BODY_AS_RESPONSE.test(entry.code))
+      .map((entry) => entry.file);
+    expect(
+      offenders,
+      "this clause has begun matching application code; that is a decision to make, not a drift " +
+        "to absorb",
+    ).toEqual([]);
+  });
+
+  it("is proven able to fail", () => {
+    // The regex is the only thing under test, so it is exercised against a shape it must *not*
+    // match. A clause that matched everything would satisfy every assertion above.
+    expect(
+      STREAMED_BODY_AS_RESPONSE.test("const x = 1; return new Response(body);"),
+      "a hand-built Response with no fetch in front of it is not the streaming shape",
+    ).toBe(false);
   });
 });
