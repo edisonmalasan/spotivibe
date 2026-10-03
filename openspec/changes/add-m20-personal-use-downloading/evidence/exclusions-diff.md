@@ -64,6 +64,30 @@ out from the bundle they shared with the clause that *was* reversed.
 | `a transcoder that converts WebM audio to MP3` | **Added.** | Newly possible shape: converting what the honest mapper calls `.webm`. |
 | `a second, unapproved downloader as a dependency` | **Added.** | Replaces the re-aimed fixture above in role. |
 | `a media buffer written to local storage` | **Moved** verbatim to §1d. | Its clauses belong to clause 2. |
+| a `download` name assembled by concatenation, and one set via `setAttribute` | **Added by the second independent review.** | The arm added for the `audio/` correction covered the imperative assignment and the declarative JSX attribute. `setAttribute("download", …)` has no `=` after the word at all, and `anchor.download = name + ".mp3"` has no literal extension next to `download` — only a `+` and then one, which is the shape a developer reaches for precisely because they think it is more dynamic. A narrowing fix that only patches the shape it was shown is not a fix. |
+| a `download` attribute in markup that names an honest extension | **Not narrowed, on purpose.** | Second review flagged that the new arm also matches `<a download="Track.webm">`, which is broader than this exclusion's name, "no MP3 faking". Kept: the extension must come from the server's `Content-Disposition`, because the server is the only place that knows whether the bytes are Opus in WebM or MP3, so a client asserting *any* extension is second-guessing it. Distinguishing "probably lying" from "lying" inside a regex is not a distinction worth having, and the approved shape — `anchor.download = filename`, a variable — matches no arm at all. |
+
+### 1c-bis. The download-initiation sweep, which is a filter and not a detector
+
+A filter is not a detector: **nothing fails when it is too narrow.** That makes it the easiest part of
+this suite to get quietly wrong, and two wrong versions existed before this pass:
+
+| Version | What it matched | What it missed / broke |
+|---|---|---|
+| `/\.download\s*=\|createObjectURL\(/` | `anchor.download = x` | A **declarative** JSX attribute, which has no dot and calls no `createObjectURL`. So *"no `<a download>` points at a remote origin"* was unenforced for the most natural way to write one. |
+| `/\bdownload\s*=/` | the above, plus the declarative form | `const download = useCallback(…)` — an ordinary local in the approved hook. Every file it swept in had to classify as a download, so the fix **broke the check it was meant to strengthen**. |
+| `/\.\s*download\s*=\|createObjectURL\(\|<[A-Za-z][^>]*\sdownload\s*=\|setAttribute\(…/` | property access, a JSX tag attribute scoped to inside the tag, `setAttribute` | — |
+
+The attribute is now *located* rather than the word. `DOWNLOAD_INITIATION_BEFORE` is kept in the file
+so the third version can be **justified** rather than merely asserted: a detector that is quietly
+loosened is indistinguishable from one that was always right. A five-row table in the suite pins both
+directions, including that the two shapes which must *not* be found are not.
+
+The companion helper `downloadNamesOffered` captures the brace form **whole**, up to the last `}`
+before the tag closes. A lazier capture stops at the first `}`, which for
+`<a download={\`${title}.mp3\`}>` truncates at the `}` inside `${title}` — the extension sits past the
+captured point and the name looks honest. Over-reading rather than under-reading is the right
+direction: it may swallow a neighbouring attribute's value, which can only make the check stricter.
 
 ### 1d. `no media cached for offline playback` (new entry, appended as index 8)
 
@@ -177,6 +201,32 @@ from this suite as well as from `download-container.test.ts`.
 
 Both classes are asserted to be **non-empty**, so neither branch is vacuous, and a second test
 names both known initiations so the classifier itself is known to be falsifiable.
+
+### 4b. The removal table is enforced, not merely published
+
+The removal tables above are read by `REMOVED_CLAUSES` in `release-exclusions.test.ts`, and the first
+version of that table proved only that **the document named a clause**. It never proved the clause had
+left a pattern — so a row could name `ytdl`, `ytdl` could still be sitting in `no MP3 faking`, and
+every test would pass. That is the failure `Requirement 8` exists to prevent, one layer up, and the
+second independent review found it.
+
+Each entry now also carries a `sample` — a snippet the removed clause used to catch — and a
+`survivesIn`:
+
+- `survivesIn: null` — the clause is genuinely gone, and **no** live pattern may catch the sample.
+- `survivesIn: "<a detector label>"` — the clause was *moved*, and that detector must still catch it.
+
+The second direction is the point. Without it, "moved, not removed" is aspirational: the clause could
+vanish from the whole suite and the publication check would still pass. The labels were **read off a
+diagnostic run** over the live patterns rather than reasoned out, and both directions are proven able
+to fail — re-adding `\bytdl\b` fails the absence row, and dropping `\.getAudioData\s*\(` fails the
+moved row.
+
+One fixture was corrected while proving the second direction. `getAudioData`'s sample was
+`const { getAudioData } = el.captureStream();`, which trips the neighbouring `captureStream` arm, so
+the row would have kept passing after `getAudioData` itself had been dropped. **A sample that
+exercises two clauses at once cannot tell you which one is missing** — the same mistake as
+calibrating a detector on one observed failure.
 
 ---
 

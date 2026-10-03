@@ -154,6 +154,12 @@ deployment sit behind Deployment Protection — `302` to `vercel.com/sso-api`, t
 | `@distube/ytdl-core` on a real function | **not verified** — pure JavaScript, no native binary, compatible in principle |
 | A real download in a real browser | **not verified** — no file has landed on a disk here |
 | Invidious fallback availability | **not verified** — best-effort by nature, surfaced as a failure state |
+| `MEDIA_HOST_SUFFIXES` covers what instances actually return | **not verified** — the fixture hosts are the CDN shapes that were reasoned about, never an observed response from a live instance |
+| The repaired `invidious-search.json` against a live instance | **not verified** — the repair is provably the inverse of the corruption, but the original capture was never re-fetched, so the restored characters are unconfirmed against the real service |
+
+The last two were added by the second review. The first is the honest cost of keeping
+`.googleusercontent.com` in the suffix list rather than narrowing it on the strength of no
+observation; the second follows from the fixture repair in §10.
 
 ### The arithmetic finding
 
@@ -327,3 +333,163 @@ A required trailing comma fixes it: `payload.stream` must be an *argument* of th
 pass-through match; buffered, array-collected, and text-decoded do not. This is recorded because the
 sequence is the lesson: loosening a detector to accommodate a fix is exactly when it stops being a
 detector, and only probing violating shapes revealed it.
+
+## 10. Second independent review
+
+An independent read-only reviewer re-examined the branch after the three CRITICALs above were fixed.
+Verdict: **REJECT** — the three original CRITICALs were confirmed fixed, but the fix for CRITICAL B had
+introduced a new one.
+
+### CRITICAL D — an unauthenticated remote permit leak that wedges the limiter
+
+Found by *reviewing the fix*, not by any test. All four of these had to be true at once:
+
+1. `route.ts` set `handedOff = true` on the line **before** `new Response(...)`.
+2. `new Response(body, { headers })` coerces header values to `ByteString` and **throws** above U+00FF.
+3. So a construction failure reached the `finally` with a permit already marked handed off, and
+   released nothing.
+4. `permit.release()` is the only path back to the instance semaphore slot
+   (`limiter.ts:169` → `releaseSlot()`), and `resetDownloadLimiter()` is test-only
+   (`limiter.ts:180-183`). `DOWNLOAD_CONCURRENCY_LIMIT` is 4.
+
+Four such requests therefore consumed every slot on the instance and disabled downloading for **every**
+address, until Vercel recycled it. The per-address `active` counter does self-heal when the 10-minute
+window expires, so the per-address limit is not the bound that matters — the semaphore is.
+
+**The trigger was real, and it was a 500 on every download for every listener whose track title was
+not Latin-1.** `downloadStem` keeps every `\p{L}`, which is Unicode-wide, so a Greek, Cyrillic, CJK or
+Arabic title produced a stem such as `Ωmega-Track`; that was correct in the `filename*` half and was
+being emitted **raw** in the `filename` half, which RFC 6266 defines as latin1.
+
+Nothing caught it because the fixture every existing test used, `Sigur Rós`, happens to be Latin-1:
+NFKD already decomposes `ó` to `o` plus a combining mark, and the mark is stripped. The suite tested
+one script and the bug lived in the other three.
+
+Both halves are fixed, and separately:
+
+| Half | Fix | Test | Proven able to fail |
+| --- | --- | --- | --- |
+| The trigger | `asciiDispositionFilename(stem, extension)` — decompose, drop combining marks, drop what has no ASCII spelling, re-append the extension last. `filename*` still carries the true title. | 6 new cases in `download-container.test.ts`, including `new Response(null, { headers })` through the real constructor | A probe runs the **old** header shape through the same constructor: it throws for all four non-Latin-1 titles and does not throw for `Sigur Rós` |
+| The window | The `Response` is built inside its own `try`; `handedOff = true` is set only after it returns. A construction failure releases and rethrows. | `releases the permit even when the response body cannot be constructed`, injecting an unconstructable header directly so it does not rely on the trigger being fixed | Restoring the previous ordering fails it: `expected false to be true` |
+
+Two details worth keeping:
+
+- The route test injects an **unconstructable header directly**. It therefore still closes the window
+  if some *other* module ever produces a bad header — it does not test the trigger, it tests the
+  window.
+- The extension is re-appended **after** stripping, or a fully non-Latin title yields `.webm`, which
+  every browser shows as hidden. That is the same failure the dash-trimming inside `downloadStem`
+  exists to prevent, reached by a different route.
+
+The Latin-1 control in the probe is asserted, not just observed: it is the reason the original suite
+missed this, so a probe that stopped distinguishing it would be a worse probe.
+
+### WARNINGs from the second review
+
+| # | Finding | Resolution |
+| --- | --- | --- |
+| 1 | The new `download`-shaped arm also matches `<a download="Track.webm">` — honest extensions — so it is broader than the exclusion's name, "no MP3 faking". | **Kept, and the divergence documented.** The rule is right: the extension must come from the server's `Content-Disposition`, so a client asserting *any* extension is second-guessing it. The approved shape (`anchor.download = filename`) matches no arm at all. Narrowing it to "probably lying" versus "lying" inside a regex is not a distinction worth having. |
+| 2 | The arm missed `el.setAttribute("download", "Track.mp3")` and `anchor.download = name + ".mp3"`. | Two arms added, each with its own fixture. **A narrowing fix that only patches the shape it was shown is not a fix.** |
+| 3 | `REMOVED_CLAUSES` was decorative: it proved the *document* named a clause, never that the clause left the pattern. A row could name a clause, the clause could still be in `no MP3 faking`, and every test would pass — the exact failure it exists to prevent, one layer up. | Each entry now carries a `sample` and a `survivesIn`. `null` → no live pattern may catch the sample. A label → that detector still must. The second direction is what makes "moved, not removed" true rather than aspirational. `survivesIn` was **read off a diagnostic run**, not reasoned out. Both directions proven able to fail: re-adding `\bytdl\b` fails the absence row; dropping `\.getAudioData\s*\(` fails the moved row. |
+| 4 | The mojibake detector searched the UTF-8 **lead**-byte range (0xC0–0xFF) instead of the **continuation** range, so it caught a mangled em dash — the one failure this repository had actually suffered — and missed mangled Cyrillic, mangled CJK, and every other form that does not happen to contain a mangled quotation mark. | Rewritten as lead byte (0xC2–0xF4) followed by what a windows-1252 continuation byte becomes, which is two ranges because 0x80–0x9F map to typographic punctuation. Calibration pinned by 8 must-catch and 11 must-not-match cases. |
+| 5 | The `\u00C2[\s]` arm flagged `Â ngela` — and `Â` is a real Portuguese and French letter, so that is a real name. | Alternative dropped. `aÂ b` and `Â ngela` are indistinguishable to any rule; chasing the low-value catch at the cost of a false positive on a real name trades a detector that gets switched off for one that does not. |
+| 6 | The locator accepted the instance's host on a **different port** on the HTTPS branch, while the plain-HTTP branch compared ports. | Now one rule, `sameOrigin`, on both branches. The exposure was small — an operator-chosen hostname, unreachable to loopback or the metadata service — but the asymmetry was unintentional, and an allowlist whose two branches disagree about what "the same instance" means is one nobody can reason about. |
+| 7 | The download-initiation sweep filter `/\.download\s*=|createObjectURL\(/` requires a dot, so a **declarative** JSX attribute never entered the set and property 2 was unenforced for the most natural way to write one. | Fixed — twice. `\bdownload\s*=` over-corrected into `const download = useCallback(…)`, an ordinary local in the approved hook, and **broke the check it was meant to strengthen**. The attribute is now *located*, not the word. `DOWNLOAD_INITIATION_BEFORE` is kept in the file so the change can be justified rather than asserted. |
+| 8 | `downloadNamesOffered` truncated `<a download={\`${title}.mp3\`}>` at the first `}`, which is the one inside `${title}`, so the extension sat past the captured point and the name looked honest. | The brace form is captured whole, up to the last `}` before the tag closes. Over-reading is the right direction: it can only make the check stricter. |
+| 9 | `.googleusercontent.com` is a broader surface than the evidence requires. | **Kept, deliberately.** Not attacker-registrable — Google controls the parent — so not a live hole. Narrowing it to a specific subdomain on the strength of no observation would risk disabling a fallback that has never been seen working, which is the worse failure. Recorded rather than guessed at. |
+| 10 | Fixture hosts were re-aimed at real CDN hosts. | Recorded in §9's earlier pass. A security control proven only against fixtures written before it existed proves nothing. |
+
+### The self-reference trap, three times in one file
+
+Widening the mojibake detector immediately flagged **eleven lines** — all of them its own calibration
+fixtures. The pattern literal contained the bytes it searched for; then the fixtures did; then the
+comment explaining the fixtures did.
+
+That is a detector matching its own pattern, which is a self-inflicted false positive, and the
+available "fix" — excluding the file from the scan — is exactly the carve-out that turns a check into
+decoration. Every one was fixed by construction instead: the pattern is built from `\uXXXX` escapes,
+and the fixtures are produced by **actually performing** the corruption
+(`Buffer.from(text, "utf8").toString("latin1")`), which is self-documenting and cannot drift from what
+the damage really looks like.
+
+### A corrupted provider fixture, found by the widened detector
+
+`tests/fixtures/providers/invidious-search.json` — captured evidence of a real `GET
+/invidious.f5.si/api/v1/search` — turned out to be mojibake-corrupted. Three of its titles were damaged: a
+channel name with a mangled en dash, a Korean-language video title, and a channel name with a
+mangled geometric character. The old detector could not see any of it, because none of it happens
+to contain the mangled sequence the old pattern was fitted to.
+
+Repaired rather than excepted, on three grounds, each checked before anything was written:
+
+1. **The inverse is deterministic, not a reconstruction.** The damage was one latin1 round trip, and
+   re-mangling the repair reproduces the damaged bytes **byte for byte**. There is only one possible
+   preimage, so nothing was guessed at.
+2. **Nothing depended on it.** `tests/providers/invidious.test.ts` asserts exactly one title and it is
+   pure ASCII.
+3. **An exception would have been worse.** A detector that has to be told about the file it found is
+   not doing its job.
+
+The pinned byte size in `tests/fixtures/providers/README.md` moved 48,872 → 48,839, which is how a
+reader can tell a capture was replaced.
+
+This is **outside M20's feature scope** and recorded as such. Corrupted provider evidence is not
+evidence: the fixture's value is that it is what a real instance actually returned, and mangled
+titles are not what it returned.
+
+### A corrupted probe, and what it proved
+
+The first version of the ByteString probe was written with the `write` tool and then piped through
+`Set-Content -Encoding utf8` to patch an import path. That re-encoded the titles as windows-1252
+mojibake. Mojibake happens to be **Latin-1 representable**, so the probe reported *"the trigger is not
+reproduced"* for three of four titles — while still printing `raw threw` from a branch that had not
+run.
+
+A corrupted probe that reports a clean result is worse than no probe at all, and the specific trap is
+worth naming: the very corruption under investigation destroyed the ability to investigate it. The
+rewrite uses `write` end to end and never a PowerShell text command.
+
+### Detector narrowing, first pass
+
+Per the standing instruction to prove every new detector can fail, each of the following was mutated
+and the failure observed:
+
+| Detector | Mutation | Result |
+| --- | --- | --- |
+| `no MP3 faking` — removed-clause absence | add `\bytdl\b` to the vocabulary | 2 failures: the real code check **and** the new removal row |
+| `no MP3 faking` — moved-clause presence | drop `\.getAudioData\s*\(` from the offline detector | 1 failure: *"moved, not removed" is not a removal* |
+| `classifyMediaUrl` — port equality | accept the instance host on any port | `download-sources` fails on the differing-port case |
+| Route — permit release on construction failure | move `handedOff = true` before `new Response` | fails: `expected false to be true` |
+| ByteString — the trigger | run the old header shape through `new Response` | throws for all four non-Latin-1 titles, not for the Latin-1 control |
+| `downloadNamesOffered` — brace capture | truncate at the first `}` | the declarative `.mp3` case is missed |
+
+The `getAudioData` probe also corrected the fixture itself. Its original sample was
+`const { getAudioData } = el.captureStream();`, which trips the neighbouring `captureStream` arm — so
+the row would have kept passing after `getAudioData` itself had been dropped. **A sample that
+exercises two clauses at once cannot tell you which one is missing**, which is the same mistake as
+calibrating a detector on a single observed failure.
+
+### Gates at the final commit
+
+Node 24.21.0, repository root:
+
+| Gate | Result |
+| --- | --- |
+| `npm run lint` | 0 |
+| `npm run format:check` | 0 (after `npm run format`; four files were reformatted) |
+| `npm run typecheck` | 0 |
+| `npm test` | 0 — **178 files / 3141 tests** (3119 before this pass) |
+| `npm run build` | 0 — `ƒ /api/download/[videoId]` |
+| `openspec validate add-m20-personal-use-downloading --strict` | valid |
+| `openspec validate --specs --strict` | 25 passed, 0 failed |
+
+Bundle, measured over `.next/static/chunks/**/*.js` at gzip 9: **387,992 B total, 96,667 B largest, 25
+chunks** — delta `0`, `0`, `0` against the recorded `CLIENT_BUDGET`. Expected: every code change in
+this pass is server-side (`route.ts`, `container.ts`, `service.ts`, `sources.ts`) or test-side.
+
+The `/` first-load figure is **not re-claimed here**. This pass's measurement method did not reproduce
+it — Turbopack's per-page `build-manifest.json` has an empty `pages` object, and `rootMainFiles` holds
+only the 5 framework-and-page roots (129,849 B), not the 13 entries the recorded 230,555 B came from.
+An earlier attempt at this pass measured 129,849 B and looked like a 100 KB regression; it was the
+method that differed, not the build. The recorded 230,555 B / 13 chunks stands unre-verified rather
+than replaced with a number from a different measurement.

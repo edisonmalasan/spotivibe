@@ -87,6 +87,33 @@ one media type a bare declaration would let us name a file `.mp3` without knowin
 this application: no `ffmpeg`, no codec conversion, no renaming to a lie.
 `tests/download-container.test.ts` carries the Opus-in-WebM fixture §21.5 asks for by name.
 
+### What a non-Latin title is saved as
+
+The extension is never affected by any of this — it comes from the container table and nowhere else.
+The **stem** can be, so this is worth stating plainly.
+
+`Content-Disposition` carries the name twice, and the two halves are deliberately different:
+
+```
+attachment; filename="mega-Track.webm"; filename*=UTF-8''%CE%A9mega-Track.webm
+```
+
+The `filename` half is **latin1 by specification** (RFC 6266) and header values are coerced to
+`ByteString`, which throws above U+00FF. The `filename*` half is UTF-8 and percent-encoded, and
+carries the title as the listener knows it.
+
+So the ASCII half is reduced to ASCII: decomposed as far as Unicode will go, combining marks dropped,
+and whatever is *still* not ASCII removed rather than guessed at. A Greek `Ω` becomes nothing. Any
+browser that reads RFC 5987 — which is every current one — uses `filename*` and writes `Ωmega Track`
+to disk; a browser that ignores it writes `mega Track`. A title with no ASCII characters at all
+becomes `track`.
+
+That trade is deliberate. A wrong transliteration would silently write the wrong name to a listener's
+disk, which is worse than a generic one, and emitting the Unicode name raw in the latin1 half is not a
+degradation at all — it is a `TypeError` before the first byte is sent, which is a 500 on every
+download for every listener whose track is not Latin-1. That was a real bug; see
+`evidence/verification.md` §10.
+
 ## 4. Choosing the format: highest that *fits*
 
 `src/server/download/selectFormat.ts`. One number governs both the ladder and the ceiling:
@@ -139,17 +166,32 @@ the URL may be fetched:
 
 1. **HTTPS always** — the one exception being a URL same-origin with a plain-HTTP instance, which can
    only arise from an operator configuring a local development instance.
-2. **A known media host, or the instance's own host.** Everything else is refused.
+2. **A known media host, or the instance's own origin.** Everything else is refused.
 3. **No credentials in the URL.**
+
+"The instance's own origin" means scheme, host **and port** together. An earlier version compared the
+port on the plain-HTTP branch and not on the HTTPS branch, so `https://instance.example:8443/…`
+slipped through on a `https://instance.example` instance. The exposure was small — an
+operator-chosen hostname, which could not reach loopback or the metadata service — but the asymmetry
+was unintentional, and an allowlist whose two branches disagree about what "the same instance" means
+is one nobody can reason about.
 
 Redirects are **not** followed. A permitted host answering with a 302 to a forbidden one is how an
 allowlist gets walked around, so a redirect is treated as an instance that will not serve media
 directly — a failure, not something to chase. A refusal names the reason, because "this instance
 tried to point us somewhere it may not" is a materially different diagnosis from "nobody answered".
 
+`MEDIA_HOST_SUFFIXES` is `.googlevideo.com` and `.googleusercontent.com`. The second is **broader than
+the evidence requires** and is kept anyway: Google controls the parent, so it is not attacker-
+registrable, and narrowing it to one observed subdomain — none has been observed here — risks
+disabling a fallback that has never been seen working, which is the worse failure. Recorded as
+unverified in `evidence/verification.md` §6.
+
 This is asserted in `tests/download-sources.test.ts` against loopback, the metadata service, a
-private-network host, plain HTTP, a `evil-googlevideo.com.attacker.test` lookalike, and
-credentials-in-URL — the shapes a naive substring check gets wrong.
+private-network host, plain HTTP, a `evil-googlevideo.com.attacker.test` lookalike, credentials-in-URL,
+and the differing-port case — the shapes a naive substring check gets wrong. The fixtures use **real
+CDN hostnames**, because a security control proven only against hosts written before it existed
+proves nothing.
 
 ## 6. The client surface
 
