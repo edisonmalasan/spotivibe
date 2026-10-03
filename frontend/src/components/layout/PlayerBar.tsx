@@ -1,6 +1,7 @@
 "use client";
 
 import { IconButton } from "@/components/design-system/IconButton";
+import { OverflowMenu } from "@/components/player/OverflowMenu";
 import {
   PlayPauseButton,
   RepeatToggle,
@@ -8,6 +9,7 @@ import {
   VolumeControls,
 } from "@/components/player/PlaybackControls";
 import { ProgressSlider } from "@/components/player/ProgressSlider";
+import { DownloadOverflowRow } from "@/features/download/DownloadControl";
 import { usePlayerStore } from "@/stores/playerStore";
 import { useQueueStore } from "@/stores/queueStore";
 import { Heart, ListMusic, Music2, SkipBack, SkipForward } from "lucide-react";
@@ -109,6 +111,18 @@ export function PlayerBar() {
         <IconButton label={queueLabel} onClick={() => router.push("/queue")}>
           <ListMusic className="size-5" aria-hidden="true" />
         </IconButton>
+        {/*
+          M20: the overflow this bar did not have. ROADMAP §21.5 names "the
+          PlayerBar/MiniPlayer overflow" as a download surface; neither bar had one, so
+          the smallest shell that carries the approved action is created here. It is
+          omitted while there is no track, because a trigger that opens to one disabled
+          row is a control that lies about what it can do.
+        */}
+        {currentTrack ? (
+          <OverflowMenu label={`More options for ${currentTrack.title}`} items={[]}>
+            <DownloadOverflowRow track={currentTrack} />
+          </OverflowMenu>
+        ) : null}
         <VolumeControls />
       </div>
     </div>

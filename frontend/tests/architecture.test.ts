@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import manifestRoute from "@/app/manifest";
@@ -147,6 +147,11 @@ function mentionsRawProviderShape(source: string): boolean {
     /\b\w+(?:Renderer|ViewModel)\b/.test(source) ||
     /\b(?:InvidiousVideo|PipedItem|MusicRun|MusicFlexColumn|TextRun|SimpleText)\b/.test(source)
   );
+}
+
+/** Strip block and line comments, so a rule about code is not answered by prose. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
 }
 
 /** Indicators that an API route streams or proxies raw bytes instead of JSON. */
@@ -369,16 +374,66 @@ describe("architecture: the server layer stays off IndexedDB (task 6.1)", () => 
   });
 });
 
-describe("architecture: API routes never return media bytes (task 6.1)", () => {
-  it("finds no media-byte indicators in any src/app/api route", () => {
-    const routes = readTree(join(srcDir, "app", "api")).filter(({ file }) =>
-      /[\\/]route\.tsx?$/.test(file),
-    );
+/**
+ * The one route allowed to return media bytes (M20; ROADMAP §2.5 clause 3, reversed by §18/§21.5).
+ *
+ * The rule was "no API route streams or proxies media", which M20 deliberately reversed for a single
+ * handler. Naming that handler is the whole narrowing: a rule that says "except the download route" is
+ * still a rule about every other route, and the exception is a path string a reader can check rather
+ * than a loosened pattern nobody can.
+ */
+const MEDIA_BYTE_ROUTE = "app/api/download/[videoId]/route.ts";
+
+describe("architecture: only the approved route returns media bytes (task 6.1, §21.5)", () => {
+  /** Every API route handler, as a path relative to `src/` and its source. */
+  function apiRouteFiles(): Array<{ path: string; source: string }> {
+    return readTree(join(srcDir, "app", "api"))
+      .filter(({ file }) => /[\\/]route\.tsx?$/.test(file))
+      .map(({ file, source }) => ({
+        path: relative(srcDir, file).split(sep).join("/"),
+        source,
+      }));
+  }
+
+  it("finds no media-byte indicators in any src/app/api route but the approved one", () => {
+    const routes = apiRouteFiles();
     expect(routes.length).toBeGreaterThan(0);
 
-    for (const { file, source } of routes) {
-      expect(mediaByteIndicators(source), file).toEqual([]);
+    for (const { path, source } of routes) {
+      if (path === MEDIA_BYTE_ROUTE) continue;
+      expect(mediaByteIndicators(source), path).toEqual([]);
     }
+  });
+
+  it("is a rule about one named route, not a loosened pattern", () => {
+    // The exception is a path, and it resolves. If it were a pattern or a prefix, a second
+    // download-shaped route would satisfy it without anybody deciding that it should.
+    const routes = apiRouteFiles();
+    const streaming = routes.filter(({ source }) => mediaByteIndicators(source).length > 0);
+    expect(streaming.map(({ path }) => path)).toEqual([MEDIA_BYTE_ROUTE]);
+
+    // …and the named route still has to exist, so renaming or relocating it fails here rather than
+    // silently exempting a route nobody chose.
+    expect(routes.some(({ path }) => path === MEDIA_BYTE_ROUTE)).toBe(true);
+  });
+
+  it("still catches a media-byte route that nobody approved, proven on a violating snippet", () => {
+    // The detector is not weakened by the exemption: it is the same pattern list, applied to every
+    // route that is not the named one. This snippet is exactly what a rejected route would look like.
+    const rogue = `
+      export async function GET(): Promise<Response> {
+        const upstream = await fetch("https://example.test/audio");
+        return new Response(upstream.body, { headers: { "Content-Type": "audio/webm" } });
+      }
+    `;
+    expect(mediaByteIndicators(rogue).length).toBeGreaterThan(0);
+
+    const permitted = `
+      export async function GET(): Promise<Response> {
+        return new Response(null, { status: 404 });
+      }
+    `;
+    expect(mediaByteIndicators(permitted)).toEqual([]);
   });
 });
 
@@ -3126,15 +3181,31 @@ describe("architecture: the M13 PWA shell holds (M13 task 6.1)", () => {
  * ------------------------------------------------------------------------- */
 
 describe("architecture: the M14 request boundary is one boundary (M14 task 1.6)", () => {
-  /** Every API route handler, as (name, source). */
+  /**
+   * Every API route handler, as (name, source).
+   *
+   * Walked **recursively**, not one level deep. The download route (M20) is the first handler nested
+   * inside a dynamic segment — `api/download/[videoId]/route.ts` — and a one-level walk reported it
+   * as `api/download/route.ts` and then failed on a missing file. That is the worst kind of harness
+   * bug: a new route broke a rule rather than the rule checking it. Nested handlers are now found,
+   * and `name` carries the path relative to `api/` so a failure message still identifies the route.
+   */
   function apiRoutes(): Array<{ name: string; source: string }> {
     const routesDir = join(srcDir, "app", "api");
-    return readdirSync(routesDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => ({
-        name: entry.name,
-        source: readFileSync(join(routesDir, entry.name, "route.ts"), "utf8"),
-      }));
+    const found: Array<{ name: string; source: string }> = [];
+    const walk = (directory: string, prefix: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const absolute = join(directory, entry.name);
+        if (entry.isDirectory()) {
+          walk(absolute, prefix === "" ? entry.name : `${prefix}/${entry.name}`);
+          continue;
+        }
+        if (entry.name !== "route.ts") continue;
+        found.push({ name: prefix, source: readFileSync(absolute, "utf8") });
+      }
+    };
+    walk(routesDir, "");
+    return found.sort((left, right) => left.name.localeCompare(right.name));
   }
 
   it("finds every route, so the rules below are known to reach them", () => {
@@ -3155,8 +3226,44 @@ describe("architecture: the M14 request boundary is one boundary (M14 task 1.6)"
         return Response.json({ ok: await runSearch(params.get("q") ?? "") });
       }
     `;
-    const firstStatement = (source: string) =>
-      source.slice(source.indexOf("export async function GET")).split("\n").slice(1, 4).join("\n");
+    /**
+     * The first lines of a route handler's **body**, with comments removed.
+     *
+     * Three things are measured rather than assumed. The window starts at the `{` that follows the
+     * closing parenthesis of the parameter list — not at `export async function GET`, and not at the
+     * first brace anywhere after it. The download route's signature spans three lines and its
+     * `context` parameter contains an object literal, so both cheaper readings ended before the body
+     * began or inside the signature, and a route that *did* call the guard first looked unguarded.
+     * And comments are stripped, because the rule is about what the handler *does*, and a route that
+     * explains itself in two comment lines before guarding was read as unguarded too. A rule that
+     * misreads a correct route is worse than no rule, because the fix people reach for is deleting
+     * the guard.
+     */
+    const firstStatement = (source: string) => {
+      const exportAt = source.indexOf("export async function GET");
+      const openParen = source.indexOf("(", exportAt);
+      let depth = 0;
+      let closeParen = -1;
+      for (let index = openParen; index < source.length; index += 1) {
+        if (source[index] === "(") depth += 1;
+        else if (source[index] === ")") {
+          depth -= 1;
+          if (depth === 0) {
+            closeParen = index;
+            break;
+          }
+        }
+      }
+      // Past the parameter list, the next `{` is the body's — not a default value's, and not the
+      // `context: { params: ... }` object a nested route receives.
+      const braceAt = source.indexOf("{", closeParen);
+      return withoutComments(source.slice(braceAt + 1))
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== "")
+        .slice(0, 2)
+        .join("\n");
+    };
     expect(firstStatement(unguarded), "the snippet is the violation").not.toContain("guardRequest");
     expect(firstStatement(readSource("app", "api", "search", "route.ts"))).toContain(
       "guardRequest",

@@ -289,6 +289,25 @@ describe("the deployment procedure is held by the application it describes (M15 
     expect(text, "ad blocking must be ruled out").toMatch(/ads?\b/i);
   });
 
+  it("scopes the exclusions to playback and names the one exception, so deleting them fails", () => {
+    // M20 falsified this document's flat claim, and the fix is not to delete the claim — that
+    // would let the original exclusions go quietly — but to scope it and to state the exception.
+    // A document that dropped "for playback" everywhere and said nothing about downloading would
+    // pass the test above; this one rejects it.
+    const text = documentText("DEPLOYMENT.md");
+    expect(text, "the exclusions must be scoped to playback rather than restated flat").toMatch(
+      /for\s+\*\*playback\*\*|not playback/i,
+    );
+    expect(text, "the one exception must be named").toMatch(/\/api\/download/);
+    expect(text, "the exception must be scoped away from playback").toMatch(/not playback/i);
+    // …and it must be a download *to the device*, with the honest-format rule attached, because
+    // "it downloads" on its own would read as a resumption of the thing §2.5 prohibited.
+    expect(text).toMatch(/to the listener's own device/i);
+    expect(text, "the honest-format rule must travel with the exception").toMatch(
+      /never transcoded|never named `?\.mp3/i,
+    );
+  });
+
   it("cites only files that exist", () => {
     const text = documentText("DEPLOYMENT.md");
     // Repository-relative paths only: the document also writes served URLs such as

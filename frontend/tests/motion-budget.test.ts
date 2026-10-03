@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { MOTION_ALLOWED } from "@/styles/motionTokens";
 import {
   CLIENT_BUDGET,
+  PRE_M19_CLIENT_BUDGET,
   measureClientBundle,
   measureRouteFirstLoad,
   routeFirstLoads,
@@ -94,11 +95,39 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     // 24.21.0: 24 emitted chunks, 384,831 bytes gzipped in total, largest 96,644, and
     // `/` first load 227,266 across 12 chunks. These are bytes, so the comparison cannot
     // move when someone rounds.
-    expect(CLIENT_BUDGET.totalGzippedBytes).toBe(384831);
-    expect(CLIENT_BUDGET.largestChunkGzippedBytes).toBe(96644);
-    expect(CLIENT_BUDGET.chunkCount).toBe(24);
-    expect(CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(227266);
-    expect(CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(12);
+    //
+    // Preserved as its own exported constant and asserted on its own terms: M20 re-recorded the
+    // live ceiling, and a record that is overwritten rather than kept is the only evidence that
+    // the number ever moved. M19's measurement still has to be right, and the current ceiling
+    // still has to be at least it.
+    expect(PRE_M19_CLIENT_BUDGET.totalGzippedBytes).toBe(384831);
+    expect(PRE_M19_CLIENT_BUDGET.largestChunkGzippedBytes).toBe(96644);
+    expect(PRE_M19_CLIENT_BUDGET.chunkCount).toBe(24);
+    expect(PRE_M19_CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(227266);
+    expect(PRE_M19_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(12);
+
+    expect(CLIENT_BUDGET.totalGzippedBytes).toBeGreaterThanOrEqual(
+      PRE_M19_CLIENT_BUDGET.totalGzippedBytes,
+    );
+    expect(CLIENT_BUDGET.chunkCount).toBeGreaterThanOrEqual(PRE_M19_CLIENT_BUDGET.chunkCount);
+  });
+
+  it("states what M20 cost, in bytes, so a re-recorded ceiling is not an unexplained one", () => {
+    // The claim being made is specific and checkable: personal-use downloading added first-party
+    // code to the client and added no dependency. Both halves are asserted — the size of the move,
+    // and that the moved size is nowhere near the cost of the library M19 declined.
+    const delta = CLIENT_BUDGET.totalGzippedBytes - PRE_M19_CLIENT_BUDGET.totalGzippedBytes;
+    expect(delta, "M20's measured cost in gzipped bytes").toBe(3161);
+    expect(CLIENT_BUDGET.recordedAt).toContain("M20");
+
+    // Inside the headroom the *original* record already allowed, and far below the spike.
+    expect(delta).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
+    expect(delta * 10, "an animation library remains out of reach by a factor of ten").toBeLessThan(
+      SPIKE_COST_BYTES,
+    );
+
+    // One new chunk, and one only. A dependency that arrived would not come in ones.
+    expect(CLIENT_BUDGET.chunkCount - PRE_M19_CLIENT_BUDGET.chunkCount).toBe(1);
   });
 
   it("names what the headroom is for, and keeps it far smaller than any real dependency", () => {
@@ -326,7 +355,9 @@ describe("the evidence file carries the decision and what would reverse it (task
     // asserted against it — which means the two cannot drift apart again, and neither can
     // drift from the recorded baseline without this failing.
     const measuredAfterM19 = 385238;
-    const delta = measuredAfterM19 - CLIENT_BUDGET.totalGzippedBytes;
+    // Anchored on M19's own preserved record, not on the live ceiling. M20 re-recorded
+    // `CLIENT_BUDGET`, so reading the baseline off it would have quietly redefined what M19 cost.
+    const delta = measuredAfterM19 - PRE_M19_CLIENT_BUDGET.totalGzippedBytes;
     expect(delta, "the recorded totals must actually differ by the published figure").toBe(407);
     expect(evidence).toContain(`+${delta} B`);
     expect(evidence, "the prose must name the same number the table publishes").toMatch(
@@ -367,6 +398,19 @@ describe("the evidence file carries the decision and what would reverse it (task
     expect(evidence).toMatch(/spring/i);
     expect(evidence).toMatch(/gesture/i);
     expect(evidence).toMatch(/interruptible/i);
+  });
+
+  it("records what M20 re-recorded the ceiling for, in bytes", () => {
+    // The evidence file has to carry the later re-recording too, or the budget's whole claim —
+    // that its numbers are measurements rather than intentions — stops holding at the moment a
+    // feature moves them. Read from the constants, so the prose cannot claim a different cost.
+    const delta = CLIENT_BUDGET.totalGzippedBytes - PRE_M19_CLIENT_BUDGET.totalGzippedBytes;
+    expect(evidence, "M20's cost is published").toContain(`+${delta.toLocaleString("en-US")} B`);
+    expect(evidence).toContain(PRE_M19_CLIENT_BUDGET.totalGzippedBytes.toLocaleString("en-US"));
+    expect(evidence).toContain(CLIENT_BUDGET.totalGzippedBytes.toLocaleString("en-US"));
+    // …and the reason it is a figure the ceiling can absorb: no client dependency was added.
+    expect(evidence).toMatch(/dynamic `import\(\)`|dynamic import/i);
+    expect(evidence).toContain("@distube/ytdl-core");
   });
 
   it("carries the method and the toolchain the numbers were taken with", () => {

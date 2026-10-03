@@ -10,6 +10,7 @@ import {
 } from "@/components/player/PlaybackControls";
 import { ProgressSlider } from "@/components/player/ProgressSlider";
 import { startTrackRadio, stopRadio, useRadioStatus } from "@/features/personalization/startRadio";
+import { DownloadIconButton } from "@/features/download/DownloadControl";
 import { clearRefillFailure } from "@/features/personalization/RefillAgent";
 import { MoreLikeThisShelf } from "@/features/related/MoreLikeThisShelf";
 import { useLibraryStore } from "@/stores/libraryStore";
@@ -334,6 +335,10 @@ export default function NowPlayingPage() {
               <Radio className="size-5" aria-hidden="true" />
             </IconButton>
           ) : null}
+          {/* M20: the download affordance, in the transport row with the other
+              current-track actions. Omitted rather than disabled when nothing plays,
+              matching the radio and video controls on this surface. */}
+          <DownloadIconButton track={currentTrack} />
         </div>
 
         <div className="flex items-center gap-4">

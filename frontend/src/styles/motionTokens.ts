@@ -180,6 +180,20 @@ export interface MotionAllowance {
   readonly markers: readonly string[];
   /** Why this module is in scope. Recorded so an entry cannot be added silently. */
   readonly why: string;
+  /**
+   * A shared shell whose motion this module's markers are satisfied by.
+   *
+   * M20 lifted the context-menu shell out of `ResultMenu` into
+   * `components/player/OverflowMenu`, so the search result menu no longer declares its rows'
+   * hover and tap feedback itself — it renders rows the shell styles. Removing its entry would have
+   * quietly dropped a named surface out of the scope rule, and declaring a motion class it does not
+   * apply would be motion with no behaviour, which is the thing this whole list exists to prevent.
+   *
+   * So the marker may be satisfied by the shell, under two conditions the tests assert rather than
+   * assume: the target must itself be on this allowance, and it must carry the marker itself. A
+   * `delegatesTo` pointing at a module that does not animate the row would fail both.
+   */
+  readonly delegatesTo?: string;
 }
 
 /** A marker the milestone did **not** introduce and deliberately did not normalise. */
@@ -395,6 +409,7 @@ export const MOTION_ALLOWED: ReadonlyMap<string, MotionAllowance> = new Map<
       surface: "feedback",
       markers: [MOTION_CLASS.feedback],
       why: "A per-result context-menu row answering a pointer; the menu itself does not animate, because it is not a named surface.",
+      delegatesTo: "components/player/OverflowMenu.tsx",
     },
   ],
   [
@@ -411,6 +426,24 @@ export const MOTION_ALLOWED: ReadonlyMap<string, MotionAllowance> = new Map<
       surface: "feedback",
       markers: [MOTION_CLASS.feedback],
       why: "A recent-search chip answering a pointer, like every other chip in the application.",
+    },
+  ],
+
+  // ------------------------------------------------------------ M20 shells ---
+  [
+    "components/player/OverflowMenu.tsx",
+    {
+      surface: "feedback",
+      markers: [MOTION_CLASS.feedback],
+      why: "M20: the overflow menu shell, lifted out of ResultMenu because the two player bars needed the same behaviour (ROADMAP §21.5). Its rows answer a pointer, which is the feedback the search result menu already had and no longer declares itself.",
+    },
+  ],
+  [
+    "features/download/DownloadControl.tsx",
+    {
+      surface: "feedback",
+      markers: [MOTION_CLASS.feedback, INHERITED_MOTION.busy],
+      why: "M20: the download affordance's icon button and its overflow row answer a pointer, and the busy state spins so the listener can tell a download is running. The spinner is the inherited busy indicator every other control in the application already uses, not a new kind of motion.",
     },
   ],
 

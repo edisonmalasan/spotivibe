@@ -1,12 +1,13 @@
 "use client";
 
-import { Ellipsis } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { IconButton } from "@/components/design-system/IconButton";
+import { useState } from "react";
+import { Ellipsis } from "lucide-react";
+import { OverflowMenu, type OverflowMenuEntry } from "@/components/player/OverflowMenu";
 import type { Track } from "@/data/repositories";
 import { albumHrefFromRelease } from "@/features/album/albumKeys";
 import { artistHref } from "@/features/artist/artistKeys";
+import { DownloadOverflowRow } from "@/features/download/DownloadControl";
 import { startTrackRadio } from "@/features/personalization/startRadio";
 import { PlaylistPicker } from "@/features/search/PlaylistPicker";
 import { useQueueStore } from "@/stores/queueStore";
@@ -19,9 +20,6 @@ interface ResultMenuProps {
   /** Awaits the liked-tracks repository before the UI updates (design §8). */
   onToggleLike(): void;
 }
-
-const itemClassName =
-  "motion-feedback flex w-full items-center rounded-buttons px-3 py-2 text-left text-body-lg text-pure-white hover:bg-graphite";
 
 /**
  * A metadata field that carries identity, or `undefined` when it carries none.
@@ -39,27 +37,22 @@ function nonBlank(value: string | undefined): string | undefined {
 }
 
 /**
- * Feature-local per-result context menu (design §8 — no shared menu primitive
- * until another feature needs one): `IconButton` trigger with
- * `aria-haspopup`/`aria-expanded`, `role="menu"` items in DOM order
- * (plain buttons, so Tab reaches each), Escape and outside-click close,
- * "Add to queue" appends through the queue store, "Add to playlist"
- * opens the feature-local picker dialog, "Go to artist"/"Go to album"
- * open the real catalog surfaces (M9 task 6.1) rather than refining the query,
- * and M10's "Start track radio" hands the result to the radio engine.
+ * Track context menu (design §8; spec `search` — "Result context actions").
  *
- * The radio item is the last one, after the navigation items, because it is the
- * only item that *replaces* what plays rather than editing or navigating: the
- * menu closes first (through the same `activate` every other item uses) and the
- * request runs after, so the user sees the menu dismiss immediately instead of
- * waiting on the network. Every existing item keeps its position and behavior.
+ * The menu **shell** — the `IconButton` trigger, `role="menu"` items in DOM order as plain buttons,
+ * focus management, Escape and outside-click dismissal — is now
+ * {@link import("@/components/player/OverflowMenu").OverflowMenu}, because M20 needed the same
+ * behaviour in the two player bars and `ResultMenu` had named itself feature-local pending exactly
+ * that ("no shared menu primitive until another feature needs one"). This file keeps the items.
+ *
+ * Item order is unchanged and load-bearing in two places: "Play" stays first, and the radio item
+ * stays last, after the navigation items, because it is the only item that *replaces* what plays
+ * rather than editing or navigating. The download row (M20) sits with the editing actions, above the
+ * navigation pair, because a download also changes nothing about what plays.
  */
 export function ResultMenu({ track, isLiked, onPlay, onToggleLike }: ResultMenuProps) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const triggerRef = useRef<HTMLSpanElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const primaryArtist = track.artists[0];
 
@@ -78,162 +71,69 @@ export function ResultMenu({ track, isLiked, onPlay, onToggleLike }: ResultMenuP
           artistName: nonBlank(primaryArtist?.name),
         });
 
-  /** Focus the trigger button (the IconButton does not forward a ref). */
-  const focusTrigger = useCallback(() => {
-    triggerRef.current?.querySelector("button")?.focus();
-  }, []);
-
-  const close = useCallback(
-    (returnFocus: boolean) => {
-      setOpen(false);
-      if (returnFocus) focusTrigger();
+  const items: OverflowMenuEntry[] = [
+    { label: "Play", onSelect: onPlay },
+    { label: isLiked ? "Remove from Liked Songs" : "Save to Liked Songs", onSelect: onToggleLike },
+    {
+      label: "Add to queue",
+      onSelect() {
+        // Queue insertion with duplicate protection (M6 task 7.1) — the
+        // store rejects identities already current/upcoming; playback
+        // state is never touched by `enqueue`.
+        useQueueStore.getState().enqueue(track);
+      },
     },
-    [focusTrigger],
-  );
-
-  function activate(action: () => void): void {
-    setOpen(false);
-    action();
-  }
-
-  // Open-state listeners: outside press and Escape both dismiss the menu.
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: Event) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
-      close(false); // pointer press: focus follows the pointer, not the trigger
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close(true);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, close]);
-
-  // Opening moves focus to the first item so Escape/Tab start from the menu.
-  useEffect(() => {
-    if (!open) return;
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-  }, [open]);
+    { label: "Add to playlist", onSelect: () => setPickerOpen(true) },
+    /*
+      M20: the download row, with the editing actions rather than after the navigation
+      pair. It is a custom entry rather than a declarative one because its label is one of
+      four states read from a store, and it is placed here so the radio item stays last.
+    */
+    { element: <DownloadOverflowRow track={track} /> },
+    ...(artistRoute === undefined
+      ? []
+      : [{ label: "Go to artist", onSelect: () => router.push(artistRoute) }]),
+    ...(albumRoute === undefined
+      ? []
+      : [{ label: "Go to album", onSelect: () => router.push(albumRoute) }]),
+    /*
+      M10 (spec `search` — "Result context actions"): a track radio seeded by this
+      result. The engine replaces the queue with the radio's own tracks and starts
+      playback once. Fire-and-forget by design: the outcome is not a menu concern,
+      and the engine reports a failure through the non-blocking refill affordance
+      rather than a dialog in a closed menu.
+    */
+    {
+      label: "Start track radio",
+      onSelect() {
+        void startTrackRadio(track);
+      },
+    },
+  ];
 
   return (
-    <div className="relative">
-      <span ref={triggerRef} className="inline-flex">
-        <IconButton
-          label={`More options for ${track.title}`}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Ellipsis className="size-4" aria-hidden="true" />
-        </IconButton>
-      </span>
-
-      {open && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label={`Actions for ${track.title}`}
-          className="absolute right-0 top-full z-30 mt-1 flex w-56 flex-col gap-0.5 rounded-cards bg-carbon p-1 shadow-lg"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            className={itemClassName}
-            onClick={() => activate(onPlay)}
-          >
-            Play
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={itemClassName}
-            onClick={() => activate(onToggleLike)}
-          >
-            {isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={itemClassName}
-            onClick={() =>
-              // Queue insertion with duplicate protection (M6 task 7.1) — the
-              // store rejects identities already current/upcoming; playback
-              // state is never touched by `enqueue`.
-              activate(() => {
-                useQueueStore.getState().enqueue(track);
-              })
-            }
-          >
-            Add to queue
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={itemClassName}
-            onClick={() => activate(() => setPickerOpen(true))}
-          >
-            Add to playlist
-          </button>
-          {artistRoute !== undefined && (
-            <button
-              type="button"
-              role="menuitem"
-              className={itemClassName}
-              onClick={() => activate(() => router.push(artistRoute))}
-            >
-              Go to artist
-            </button>
-          )}
-          {albumRoute !== undefined && (
-            <button
-              type="button"
-              role="menuitem"
-              className={itemClassName}
-              onClick={() => activate(() => router.push(albumRoute))}
-            >
-              Go to album
-            </button>
-          )}
-          {/*
-            M10 (spec `search` — "Result context actions"): a track radio seeded
-            by this result. The engine replaces the queue with the radio's own
-            tracks and starts playback once; the menu closes before the request
-            is issued, and a refused start leaves the existing queue untouched.
-          */}
-          <button
-            type="button"
-            role="menuitem"
-            className={itemClassName}
-            onClick={() =>
-              activate(() => {
-                // Fire-and-forget by design: the outcome is not a menu concern,
-                // and the engine reports a failure through the non-blocking
-                // refill affordance rather than a dialog in a closed menu.
-                void startTrackRadio(track);
-              })
-            }
-          >
-            Start track radio
-          </button>
-        </div>
-      )}
+    <>
+      {/* The 16px trigger is this surface's own, preserved from before the shell was
+          shared: the default is the 20px the player bars use, and a search result row
+          is not a 72px player bar. */}
+      <OverflowMenu
+        label={`More options for ${track.title}`}
+        menuLabel={`Actions for ${track.title}`}
+        items={items}
+        icon={<Ellipsis className="size-4" aria-hidden="true" />}
+      />
 
       {pickerOpen && (
         <PlaylistPicker
           track={track}
           onClose={() => {
             setPickerOpen(false);
-            focusTrigger(); // focus return (design §8)
+            // Focus return (design §8). The trigger is queried rather than held in a ref,
+            // because the menu owns its trigger's DOM and the picker is a sibling of it.
+            document.querySelector<HTMLElement>('[aria-haspopup="menu"]')?.focus();
           }}
         />
       )}
-    </div>
+    </>
   );
 }

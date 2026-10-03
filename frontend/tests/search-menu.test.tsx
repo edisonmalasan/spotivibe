@@ -121,13 +121,16 @@ describe("result menu (task 5.1)", () => {
 
     const items = within(openMenuFor("Karma Police")).getAllByRole("menuitem"); // opens the menu
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    // Every pre-M10 item keeps its position; M10's radio item is appended last,
-    // because it is the only one that replaces what plays.
+    // Every pre-M20 item keeps its position; M20's download row joins the editing
+    // actions, above the navigation pair, because a download also changes nothing
+    // about what plays; and M10's radio item stays last, because it is the only one
+    // that replaces what plays.
     expect(items.map((item) => item.textContent)).toEqual([
       "Play",
       "Save to Liked Songs",
       "Add to queue",
       "Add to playlist",
+      "Download",
       "Go to artist",
       "Go to album",
       "Start track radio",
@@ -313,6 +316,9 @@ describe("start track radio (M10 task 5.2)", () => {
       "Save to Liked Songs",
       "Add to queue",
       "Add to playlist",
+      // M20 (ROADMAP §21.5): the download row, with the editing actions. Present here too so that
+      // a radio starting does not quietly cost the listener the download action.
+      "Download",
       "Go to artist",
       "Go to album",
       "Start track radio",
