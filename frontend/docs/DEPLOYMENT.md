@@ -64,10 +64,19 @@ player does both. It was done deliberately, for private and personal use, and
 `openspec/changes/archive/…-lyrix-style-hidden-player/` records the reasoning.
 
 What this deployment **does not** do, and what no test would catch a regression of beyond the
-detectors written for it: it does not extract, download, capture, or proxy audio or video, does
-not use `yt-dlp` or any stream download, does not proxy media through the application server,
-and does not block or alter ads. Media flows only through the embedded player. Those remain
-permanent product exclusions and are enforced by `tests/release-exclusions.test.ts`.
+detectors written for it: it does not extract, download, capture, or proxy audio or video **for
+playback**, does not use `yt-dlp` or any stream download **for playback**, and does not block or
+alter ads. During playback, media flows only through the embedded player. Those remain permanent
+product exclusions and are enforced by `tests/release-exclusions.test.ts`.
+
+**M20 added exactly one exception, and it is not playback.** `GET /api/download/[videoId]` streams
+one track's audio through the application server **to the listener's own device**, when they ask
+for it, at the format the source actually provides — never transcoded, and never named `.mp3`
+unless it contains MP3. See `docs/DOWNLOADING.md`. It serves no player, feeds no queue, writes
+nothing to IndexedDB, and cannot be used to fetch a URL the caller supplies: the video id comes
+from the path and is shape-validated. `tests/download-non-goals.test.ts` enforces §21.5's
+non-goals — no accounts, no ad blocking, no managed offline library, no local-file playback, no
+transcoding, no batch download, no percentage — with a violating fixture per detector.
 
 **If you are deploying this publicly or sharing it with anyone else, change this back first.**
 The parked configuration is appropriate for a personal instance and is not appropriate for a
