@@ -136,7 +136,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M17** | Home discovery enrichment | `DONE` | M11, M8 |
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `DONE` | M18 |
-| **M20** | Personal-use media downloading | `APPROVED` | M3, M4 |
+| **M20** | Personal-use media downloading | `PROPOSED` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `APPROVED` | M16–M20 |
 
 **Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external

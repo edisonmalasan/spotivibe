@@ -598,3 +598,12 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     actually a corrupted tree. **On any unexpected harness count, check the file the failing case names
     before believing the harness.** Run it with a timeout longer than its worst case (it mutates and
     restores ~70 files, each running vitest).
+52. **`gh pr merge <n> --merge --delete-branch` leaves the working tree ON `main`, which is exactly how
+    work gets committed straight to `main`.** After M19's archive merge the harness reported the tree on
+    `main` and clean, so a one-line roadmap correction felt like a triviality to land directly. It was
+    pushed to `main` with no branch and no PR, breaking the one rule this repository has no exception
+    for. The failure is not the push, it is that **`main` being the current branch is not a signal that
+    a branch is allowed.** Two guards: **create the next milestone's branch BEFORE composing its first
+    commit**, so the commit lands on the branch by construction rather than by decision; and after any
+    merge, run `git branch --show-current` and expect `main`, which is the state to leave. Not
+    reverted, because reverting a merged push is the more destructive operation; recorded here instead.
