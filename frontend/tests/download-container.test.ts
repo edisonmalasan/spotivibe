@@ -303,7 +303,7 @@ describe("downloadFilename", () => {
       "a\r\nContent-Type: text/html",
       'x"; filename="evil.mp3',
       "‮gnp.exe",
-      "a b",
+      "a\u0000b",
       "%2e%2e%2f",
     ];
     for (const title of hostile) {

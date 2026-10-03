@@ -222,4 +222,43 @@ describe("beginDownload", () => {
     expect(trackedDownloadKeys()).toBe(0);
     expect((await beginDownload("a", never)).allowed).toBe(true);
   });
+
+  it("evicts an idle window rather than one whose transfer is still running", async () => {
+    // Found by independent review. `evictIfFull` took the oldest entry unconditionally, so a
+    // window could be deleted while one of its downloads was still streaming. The `release()` that
+    // later arrived for that download could then no longer find the entry to decrement, so the
+    // per-address concurrency count for a key that was still live was lost rather than returned.
+    //
+    // The observable consequence: an address that is genuinely mid-download stops being recognised
+    // as mid-download, and the "one concurrent transfer per address" rule quietly stops holding for
+    // it. That is the limiter's main defence against one client monopolising the instance.
+    //
+    // The live window is created FIRST, so it is the oldest entry — which is exactly the one a
+    // naive "evict the oldest" would discard. Order is the whole test: with the live window last,
+    // the old implementation would evict an idle entry instead and this would pass against the bug
+    // it exists to catch.
+    const live = await beginDownload("live-address", never);
+    expect(live.allowed).toBe(true);
+
+    for (let index = 0; index < DOWNLOAD_MAX_KEYS - 1; index += 1) {
+      const idle = await beginDownload(`idle-${index}`, never);
+      expect(idle.allowed).toBe(true);
+      if (idle.allowed) idle.release();
+    }
+
+    // This push has to evict something, and the only entry worth evicting is an idle one.
+    const newcomer = await beginDownload("newcomer", never);
+    expect(newcomer.allowed).toBe(true);
+    if (newcomer.allowed) newcomer.release();
+
+    // The live window must still be enforcing its per-address rule…
+    expect(
+      (await beginDownload("live-address", never)).allowed,
+      "the live window was evicted, so its concurrency rule stopped applying",
+    ).toBe(false);
+
+    // …and its release must still find the entry it belongs to.
+    if (live.allowed) live.release();
+    resetDownloadLimiter();
+  });
 });

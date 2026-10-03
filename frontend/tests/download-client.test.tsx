@@ -1,4 +1,8 @@
-﻿import "fake-indexeddb/auto";
+import "fake-indexeddb/auto";
+import * as FS from "node:fs";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -589,5 +593,68 @@ describe("OverflowMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: "More options" }));
     expect(screen.getByRole("menu")).toBeTruthy();
     expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+});
+
+describe("every surface a listener is already looking at offers the action", () => {
+  // `specs/download/spec.md` Requirement 7 has a scenario reading "every surface offers the
+  // action". Independent review found only the search context menu was actually asserted — the two
+  // player bars and the Now Playing page mounted the control with nothing checking it, so deleting
+  // one line from any of them would have shipped a silently reduced surface and every test would
+  // still have passed.
+  //
+  // This is a source-level check rather than a render of all four surfaces, because rendering
+  // `PlayerBar`, `MiniPlayer` and the Now Playing page each needs the full provider/queue/player
+  // store graph, and a test that needs a graph that large to answer "is this component in the file"
+  // is testing less than it costs. What matters is that the affordance is *mounted and wired to the
+  // current track*, not that a particular store happens to be populated.
+  const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+  const SURFACES: ReadonlyArray<readonly [file: string, control: string, bound: string]> = [
+    ["src/components/layout/PlayerBar.tsx", "DownloadOverflowRow", "track={currentTrack}"],
+    ["src/components/layout/MiniPlayer.tsx", "DownloadOverflowRow", "track={currentTrack}"],
+    ["src/app/now-playing/page.tsx", "DownloadIconButton", "track={currentTrack}"],
+    ["src/features/search/ResultMenu.tsx", "DownloadOverflowRow", "track={track}"],
+  ];
+
+  it.each(SURFACES)("%s mounts %s bound to the current track", (file, control, bound) => {
+    const source = readFileSync(join(FRONTEND, file), "utf8");
+    expect(source, `${file} must import ${control}`).toMatch(
+      new RegExp(
+        `import\\s*\\{[^}]*\\b${control}\\b[^}]*\\}\\s*from\\s*"@/features/download/DownloadControl"`,
+      ),
+    );
+    // Mounted *with* the current track, not imported and left unused.
+    expect(source, `${file} must render <${control} ${bound}> rather than importing it`).toContain(
+      `<${control} ${bound}`,
+    );
+  });
+
+  it("does not offer the action anywhere outside those four surfaces", () => {
+    // The complement. A fifth surface appearing is a *decision* — a new place to reach for a
+    // download — and it should be a visible diff rather than an accident.
+    const users = [
+      "src/components/layout/PlayerBar.tsx",
+      "src/components/layout/MiniPlayer.tsx",
+      "src/app/now-playing/page.tsx",
+      "src/features/search/ResultMenu.tsx",
+    ];
+    const { readdirSync, statSync } = FS;
+    const found: string[] = [];
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) {
+          walk(full);
+        } else if (/\.tsx$/.test(name)) {
+          const text = readFileSync(full, "utf8");
+          if (/<Download(?:OverflowRow|IconButton)\b/.test(text)) {
+            found.push(full.slice(FRONTEND.length + 1).replace(/\\/g, "/"));
+          }
+        }
+      }
+    };
+    walk(join(FRONTEND, "src"));
+    expect(found.sort()).toEqual([...users].sort());
   });
 });

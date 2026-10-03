@@ -80,6 +80,23 @@ export type DownloadDecision = DownloadRefusalResult | DownloadPermit;
 
 function evictIfFull(): void {
   if (windows.size < DOWNLOAD_MAX_KEYS) return;
+  // Evict the oldest window **that has nothing in flight**. The first version took the oldest entry
+  // unconditionally, which meant a window could be deleted while one of its downloads was still
+  // transferring — and the `release()` that later arrived for that download could no longer find
+  // the entry to decrement, so the per-address concurrency count for a key that was still live was
+  // lost rather than returned. The leak was bounded by the instance semaphore, so it was never a
+  // denial of service, but "bounded" is not the same as "correct", and an invariant that can be
+  // broken by ordinary traffic is not an invariant.
+  //
+  // Falling back to the oldest entry when every window is active is deliberate: the map must stay
+  // bounded even if every entry is live, because an unbounded map on a serverless instance is a
+  // memory leak that no amount of correctness elsewhere excuses.
+  for (const [key, window] of windows) {
+    if (window.active === 0) {
+      windows.delete(key);
+      return;
+    }
+  }
   const oldest = windows.keys().next();
   if (!oldest.done) windows.delete(oldest.value);
 }

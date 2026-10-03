@@ -405,10 +405,18 @@ describe("the download feature is a download to the device and nothing more", ()
     expect(codeOnly(read("src/server/download/service.ts")), "service bounds the stream").toMatch(
       /new\s+ReadableStream</,
     );
+    // The route hands the stream to the response, optionally through the pass-through that holds the
+    // limiter's permit until the body settles. `holdUntilSettled` reads one chunk at a time and
+    // forwards it, so it is the same claim.
+    //
+    // The trailing comma is load-bearing, not punctuation. It requires `payload.stream` to be an
+    // *argument* of the outermost `Response`, and it rejects `new Response(payload.stream).text()`
+    // — a whole-body read that a looser pattern matched happily, because the inner constructor
+    // satisfies it. Found by probing the pattern against violating shapes, not by reading it.
     expect(
       codeOnly(read("src/app/api/download/[videoId]/route.ts")),
       "route hands the stream straight to the response",
-    ).toMatch(/new\s+Response\(\s*payload\.stream/);
+    ).toMatch(/new\s+Response\(\s*(?:holdUntilSettled\(\s*)?payload\.stream\s*,/);
   });
 
   it("keeps the approved extractor server-only, so it never enters a client chunk", () => {
