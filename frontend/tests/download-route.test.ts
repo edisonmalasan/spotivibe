@@ -32,9 +32,13 @@ import {
 const resolveTrackDownload = vi.hoisted(() => vi.fn());
 const permitFor = vi.hoisted(() => vi.fn());
 
-vi.mock("@/server/download/service", () => ({
-  resolveTrackDownload: resolveTrackDownload,
-}));
+// `holdUntilSettled` is deliberately **not** mocked. It is the real mechanism this milestone's
+// concurrency boundary depends on, so a whole-module mock that stubbed it away would have left the
+// tests below asserting against a fiction. Only the network-facing half is replaced.
+vi.mock("@/server/download/service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/download/service")>();
+  return { ...actual, resolveTrackDownload };
+});
 
 vi.mock("@/server/download/limiter", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/download/limiter")>();
@@ -77,7 +81,10 @@ beforeEach(() => {
   permitFor.mockReset();
   resetDownloadLimiter();
   resetThrottle();
-  resolveTrackDownload.mockResolvedValue({
+  // A *fresh* stream per call. A stream can only be consumed once, and the route now takes a reader
+  // on it to hand the permit to the body — so a single shared instance would make the second call in
+  // a test fail on "stream is locked" for a reason that has nothing to do with what is being tested.
+  resolveTrackDownload.mockImplementation(async () => ({
     source: "ytdl",
     stream: new ReadableStream<Uint8Array>({
       start(controller) {
@@ -90,7 +97,7 @@ beforeEach(() => {
       "Content-Disposition": 'attachment; filename="t.webm"',
       "Cache-Control": "no-store",
     },
-  });
+  }));
   permitFor.mockReturnValue(undefined);
 });
 
@@ -217,7 +224,7 @@ describe("GET /api/download/[videoId] — success", () => {
     expect(resolveTrackDownload.mock.calls[0]?.[1]).toBe("Some Song");
   });
 
-  it("releases its permit once the transfer has been handed over", async () => {
+  it("holds its permit until the body settles, then releases it", async () => {
     let released = false;
     permitFor.mockReturnValue({
       allowed: true,
@@ -229,6 +236,15 @@ describe("GET /api/download/[videoId] — success", () => {
     });
     const response = await call();
     expect(response.status).toBe(200);
+
+    // Rewritten, because this assertion previously encoded the bug this milestone was reviewed for.
+    // It asserted `released === true` immediately after `GET` returned — which is exactly what
+    // releasing in a `finally` did, and exactly what made the limiter bound concurrent metadata
+    // lookups instead of concurrent transfers. A test asserting the defect was not a safety net; it
+    // was a ratchet holding the defect in place.
+    expect(released, "the permit must still be held: the body has not been read yet").toBe(false);
+
+    await response.text();
     expect(released, "a permit left held would eventually refuse every download").toBe(true);
   });
 
@@ -356,27 +372,116 @@ describe("GET /api/download/[videoId] — limiting", () => {
     expect(resolveTrackDownload).not.toHaveBeenCalled();
   });
 
-  it("refuses a second download from the same address through the real limiter", async () => {
+  it("refuses a second download from the same address while the first is still transferring", async () => {
     // The mocked-out case above proves the mapping; this proves the limiter is actually consulted
     // and that its own state does what its module says.
+    //
+    // This test was previously named "refuses a second download from the same address" while
+    // asserting that the second request **succeeded** with a 200 — the negation of its own name. It
+    // would have read as coverage of the concurrency requirement while establishing the reverse,
+    // which is worse than having no test: the requirement it claimed to cover was, in fact, broken.
+    //
+    // It was broken because the route released the permit in a `finally`, which ran when the
+    // `Response` was constructed — before the body was read. What the limiter bounded was therefore
+    // concurrent metadata lookups, not concurrent transfers. The permit is now handed to the stream.
     permitFor.mockReturnValue(undefined);
-    const first = await downloadGet(
+
+    // A stream that stays open. This is the whole point: the first transfer has resolved its
+    // format and is mid-body, which is exactly the window in which the slot must still be held.
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        bodyController = controller;
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+      },
+      pull() {
+        // Never resolves: the transfer stays open until this test closes it.
+        return new Promise<void>(() => {});
+      },
+    });
+    // The first call gets the open body above; later calls get a fresh, already-complete stream,
+    // because a stream can only be consumed once and the point of this test is the limiter, not
+    // re-reading the same bytes.
+    let call = 0;
+    resolveTrackDownload.mockImplementation(async () => {
+      call += 1;
+      return {
+        stream:
+          call === 1
+            ? body
+            : new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.close();
+                },
+              }),
+        headers: { "Content-Type": "audio/webm" },
+      };
+    });
+
+    const request = () =>
       new Request(`http://localhost${PATH}`, {
         signal: new AbortController().signal,
         headers: { "x-forwarded-for": "198.51.100.7" },
-      }),
-      context(VIDEO_ID),
-    );
+      });
+
+    const first = await downloadGet(request(), context(VIDEO_ID));
     expect(first.status).toBe(200);
-    // …and the real permit was released by the route, so the next one is allowed again.
-    const second = await downloadGet(
+    // One chunk has been delivered and the body is still open. The slot must still be held.
+    expect(bodyController, "the body must still be open").toBeDefined();
+    expect(bodyController?.desiredSize, "the body must not be finished").toBeGreaterThan(0);
+
+    const second = await downloadGet(request(), context(VIDEO_ID));
+    expect(second.status).toBe(429);
+    const refusal = (await second.json()) as { error: { code: string } };
+    expect(refusal.error.code).toBe("already_downloading");
+
+    // Once the first transfer finishes, the address is allowed again — so the 429 above was the
+    // limiter working, not a permanently wedged window.
+    bodyController?.close();
+    await first.text();
+    const third = await downloadGet(request(), context(VIDEO_ID));
+    expect(third.status).toBe(200);
+  });
+
+  it("releases the permit when the client walks away mid-transfer", async () => {
+    // The other half of the same boundary. A listener who navigates away must not hold a slot for
+    // the rest of the window, and the upstream must be cancelled rather than left running.
+    permitFor.mockReturnValue(undefined);
+    let cancelled = false;
+    resolveTrackDownload.mockImplementation(async () => ({
+      stream: new ReadableStream<Uint8Array>({
+        pull() {
+          return new Promise<void>(() => {
+            /* never settles: the transfer hangs until the consumer leaves */
+          });
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      headers: { "Content-Type": "audio/webm" },
+    }));
+
+    const response = await downloadGet(
       new Request(`http://localhost${PATH}`, {
         signal: new AbortController().signal,
-        headers: { "x-forwarded-for": "198.51.100.7" },
+        headers: { "x-forwarded-for": "198.51.100.44" },
       }),
       context(VIDEO_ID),
     );
-    expect(second.status).toBe(200);
+    expect(response.status).toBe(200);
+    await response.body?.cancel();
+
+    expect(cancelled, "the upstream must be cancelled, not abandoned").toBe(true);
+
+    const next = await downloadGet(
+      new Request(`http://localhost${PATH}`, {
+        signal: new AbortController().signal,
+        headers: { "x-forwarded-for": "198.51.100.44" },
+      }),
+      context(VIDEO_ID),
+    );
+    expect(next.status).toBe(200);
   });
 
   it("runs the shared throttle before validation, so a refused request costs nothing", async () => {

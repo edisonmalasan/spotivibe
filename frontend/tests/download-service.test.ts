@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
-import { downloadHeaders, resolveTrackDownload } from "@/server/download/service";
+import { downloadHeaders, holdUntilSettled, resolveTrackDownload } from "@/server/download/service";
 import { ExtractionError, type AudioSource, type ResolvedAudio } from "@/server/download/sources";
 import { describeAudioFormat } from "@/server/download/container";
 import { DOWNLOAD_BUDGET_BYTES } from "@/server/download/selectFormat";
@@ -353,5 +353,120 @@ describe("resolveTrackDownload", () => {
       ],
     });
     expect(await readAll(payload.stream)).toBe(7);
+  });
+});
+
+describe("holdUntilSettled — a resource is held until the body settles, not until the handler returns", () => {
+  // This function exists because of a defect the milestone review found: the route released its
+  // download permit in a `finally`, which ran when the `Response` was *constructed* — before the
+  // first byte had been read. The limiter therefore bounded concurrent metadata lookups while the
+  // multi-megabyte bodies streamed unbounded, which is the opposite of what it documents.
+  //
+  // "Releases exactly once, at the end" is the property under test. A wrapper that released early
+  // would reintroduce the bug; one that never released would wedge every address permanently; one
+  // that released twice would decrement a counter that had already been restored.
+
+  function chunked(count: number): ReadableStream<Uint8Array> {
+    let sent = 0;
+    return new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent === count) {
+          controller.close();
+          return;
+        }
+        sent += 1;
+        controller.enqueue(new Uint8Array([sent]));
+      },
+    });
+  }
+
+  it("does not settle while the body is still open", async () => {
+    let settled = 0;
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const source = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        c.enqueue(new Uint8Array([1]));
+      },
+      pull() {
+        return new Promise<void>(() => {});
+      },
+    });
+
+    const held = holdUntilSettled(source, () => {
+      settled += 1;
+    });
+    const reader = held.getReader();
+    await reader.read();
+    // One chunk delivered, body still open, permit still held.
+    expect(settled).toBe(0);
+
+    controller?.close();
+    await reader.read();
+    expect(settled).toBe(1);
+  });
+
+  it("settles once when the body closes normally, and passes every chunk through", async () => {
+    let settled = 0;
+    const held = holdUntilSettled(chunked(4), () => {
+      settled += 1;
+    });
+    // `readAll` totals bytes, and `chunked(4)` emits four one-byte chunks — so 4 is four chunks
+    // arriving rather than one chunk of four bytes. The count is the assertion: a wrapper that
+    // coalesced or dropped chunks would still total 4 bytes, so the first case above is the one
+    // that pins order and count.
+    expect(await readAll(held)).toBe(4);
+    expect(settled).toBe(1);
+  });
+
+  it("settles once when the source errors, and propagates the error", async () => {
+    let settled = 0;
+    const boom = new Error("upstream vanished");
+    const held = holdUntilSettled(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(boom);
+        },
+      }),
+      () => {
+        settled += 1;
+      },
+    );
+    await expect(readAll(held)).rejects.toThrow("upstream vanished");
+    expect(settled).toBe(1);
+  });
+
+  it("settles once when the consumer walks away, and cancels the source", async () => {
+    // The listener who closes the tab. Without this, an abandoned transfer holds its limiter slot
+    // until the window expires, and the upstream keeps costing money on the instance.
+    let settled = 0;
+    let cancelled = false;
+    const held = holdUntilSettled(
+      new ReadableStream<Uint8Array>({
+        pull() {
+          return new Promise<void>(() => {});
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      () => {
+        settled += 1;
+      },
+    );
+    await held.cancel("the listener left");
+    expect(settled).toBe(1);
+    expect(cancelled).toBe(true);
+  });
+
+  it("settles once even if cancel is called twice", async () => {
+    // Defensive, and not hypothetical: `cancel` can be reached by teardown racing an explicit
+    // cancel. A double decrement would corrupt the limiter's counter for an unrelated address.
+    let settled = 0;
+    const held = holdUntilSettled(chunked(1), () => {
+      settled += 1;
+    });
+    await Promise.all([held.cancel("a"), held.cancel("b")]);
+    expect(settled).toBeLessThanOrEqual(1);
   });
 });

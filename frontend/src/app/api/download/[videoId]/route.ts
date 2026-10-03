@@ -2,7 +2,7 @@ import { z } from "zod";
 import { guardRequest } from "@/server/http/guard";
 import { requestToAddress } from "@/server/http/requestAddress";
 import { beginDownload } from "@/server/download/limiter";
-import { resolveTrackDownload } from "@/server/download/service";
+import { holdUntilSettled, resolveTrackDownload } from "@/server/download/service";
 import { ExtractionError } from "@/server/download/sources";
 
 /**
@@ -93,6 +93,11 @@ export async function GET(
     return new Response(null, { status: 499, headers: { "Cache-Control": NO_STORE } });
   }
 
+  // Set once the permit has been handed to the response body, so the `finally` below knows not to
+  // release a slot whose transfer is still running. Declared before any early return so every path
+  // through this function is covered by one rule rather than by remembering to opt out.
+  let handedOff = false;
+
   const { videoId: rawVideoId } = await context.params;
   const title = new URL(request.url).searchParams.get("title") ?? "";
   const parsed = downloadParamsSchema.safeParse({ videoId: rawVideoId, title });
@@ -135,7 +140,17 @@ export async function GET(
 
   try {
     const payload = await resolveTrackDownload(videoId, safeTitle, request.signal);
-    return new Response(payload.stream, { status: 200, headers: payload.headers });
+    // The permit is handed to the stream rather than released here. A `Response` is constructed
+    // *before* its body is read, so a `finally { permit.release() }` released the slot while the
+    // upstream transfer had barely started — which made the limiter bound concurrent *metadata
+    // lookups* while the multi-megabyte bodies streamed unbounded afterwards, the opposite of what
+    // `server/download/limiter.ts` documents. `holdUntilSettled` releases on close, on error, and on
+    // a client that walks away, exactly once.
+    handedOff = true;
+    return new Response(holdUntilSettled(payload.stream, permit.release), {
+      status: 200,
+      headers: payload.headers,
+    });
   } catch (error) {
     if (request.signal.aborted) {
       // Caller disconnected mid-flight — nothing left to deliver.
@@ -169,6 +184,9 @@ export async function GET(
     // retry. A generic 500 body leaks no more of the message than a 502 would.
     throw error;
   } finally {
-    permit.release();
+    // Every path *except* the success one released its own permit here. The success path handed
+    // ownership to the stream, so releasing in this `finally` would have released it at the moment
+    // the `Response` was constructed rather than when the transfer ended.
+    if (!handedOff) permit.release();
   }
 }
