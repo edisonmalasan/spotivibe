@@ -176,6 +176,17 @@ function codeOnly(source: string): string {
 interface NonGoal {
   /** §21.5's own wording, trimmed to a clause. */
   readonly name: string;
+  /**
+   * What this detector sees, and — more importantly — what it does not.
+   *
+   * Required, and asserted two-sided, because five of the seven detectors are built as a single regex
+   * literal whose alternatives are **synonyms** of one another: `adblock`, `ad-blocker` and
+   * `adBlocker` are three spellings of one idea, so a witness each would teach nothing a witness for
+   * one does not. For those, the honest repair is to state the boundary where a reader will meet it.
+   * The detectors whose arms are genuinely distinct shapes carry a witness per arm instead, and the
+   * asymmetry is deliberate rather than unfinished.
+   */
+  readonly scope: string;
   readonly pattern: RegExp;
   /**
    * The detector's clauses, **only when it is an enumerable disjunction**.
@@ -221,9 +232,26 @@ const ACCOUNT_ARMS: readonly string[] = [
   String.raw`\b(?:password|passcode)\s*[:=]\s*["'\`][^"'\`]+["'\`]`,
 ];
 
+/**
+ * §21.5's "progress reporting by percentage" clauses, as a list for the same reason as
+ * {@link ACCOUNT_ARMS}.
+ *
+ * Four arms, and the single fixture this detector had matched only the second: arm 3 needs a `%`
+ * on the same line, arms 1 and 4 need the word "download", and `Math.round((loaded / contentLength)
+ * * 100)` has neither. Proven rather than assumed — removing arm 4 left the suite green.
+ */
+const PROGRESS_ARMS: readonly string[] = [
+  String.raw`\b(?:download(?:ed)?[A-Za-z]{0,12}(?:Progress|Percent|Pct)[A-Za-z]{0,12}|progressPercent|pctComplete|percentDownloaded|downloadPct)\b`,
+  String.raw`Math\.round\(\s*\(?\s*(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[\s\S]{0,60}?\*\s*100`,
+  String.raw`(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[^\n]{0,40}\/[^\n]{0,24}(?:total|contentLength|content_length|\bsize\b)[^\n]{0,24}%`,
+  String.raw`\bdownload\b[^\n]{0,40}\d+\s*%`,
+];
+
 const NON_GOALS: readonly NonGoal[] = [
   {
     name: "Accounts or auth of any kind",
+    scope:
+      "sees an auth-library import specifier, a session-or-token call, a quoted credential token key,\nan Authorization: Bearer header, a credentials field, or a password literal, in any scanned\nroot. Does not see a home-grown session store whose identifiers avoid every one of those\nspellings, and does not see the English words at all - deliberately: the first draft matched\nbare login, createSession and refreshToken and caught four files of this repository, including a\ndebounce counter in historyStore called refreshToken.",
     // ROADMAP §2.4 clause 1. Independent of the `release-exclusions` suite on purpose: that suite
     // guards the whole permanent-exclusion set, and this one guards the §21.5 list. Two detectors
     // for one policy is duplication only when they would drift, and the drift is the failure mode
@@ -294,6 +322,8 @@ const NON_GOALS: readonly NonGoal[] = [
   },
   {
     name: "Ad blocking or suppression",
+    scope:
+      "sees the tokens a real cosmetic filter uses - adblock, adsbygoogle, doubleclick.net,\ngooglesyndication, pagead2, and ad container/slot class names - and matches them\ncase-sensitively. Does not see ad-blocking spelled any other way, and does not see prose. The\ncase sensitivity is load-bearing: a case-insensitive ad-container matched\nX-Spotivibe-Download-Container.",
     // ROADMAP §2.4. Two mistakes were available here and both were taken. A case-insensitive
     // `ad-container` matched `X-Spotivibe-Download-Container` — the substring `ad-Container` — and a
     // bare `\bblockAds?\b` would match a routine that blocks nothing. So every alternative below is a
@@ -315,6 +345,8 @@ const NON_GOALS: readonly NonGoal[] = [
   },
   {
     name: "A managed offline library in IndexedDB",
+    scope:
+      "sees media-capture APIs, an IndexedDB store whose name is media/audio/offline/download-shaped,\nand caches.open with such a name. Does not see a service worker caching a response under a\nneutral cache name - which is why public/sw.js is now scanned rather than assumed clean, and why\ncache.put is deliberately absent, the service worker's own cache.put being required code.",
     // §21.5's non-goal, and the one M20 came closest to by accident: a download route that cached its
     // own response would be an offline library wearing the route's clothes. The clause is anchored on
     // a media-ish *store name*, because the store name is what makes it an offline library, and on
@@ -338,6 +370,8 @@ const NON_GOALS: readonly NonGoal[] = [
   },
   {
     name: "Local-file playback",
+    scope:
+      "sees an audio-scoped file picker, the File System Access handles, webkitdirectory, blob:null/,\nand a path joining an audio extension. Does not see a bare file input, which the versioned JSON\nbackup importer is one, and a listener bringing data in is the opposite of this non-goal. Nor\nthe file:// scheme, which styles/motionTokens.ts cites in a doc comment.",
     // Distinct from the offline library: this is playing a file the listener already had. The clause
     // is a picker scoped to **audio**, plus the filesystem APIs and URL schemes only a local file can
     // have.
@@ -362,6 +396,8 @@ const NON_GOALS: readonly NonGoal[] = [
   },
   {
     name: "Transcoding",
+    scope:
+      "sees the named tools (ffmpeg, fluent-ffmpeg, avconv, sox, lame, libav) and a toFormat, convert,\nremux, transcode or encode call naming a lossy audio container. Does not see container renaming,\nwhich M20's honest .webm naming requires: renaming a .webm to .webm is not transcoding, and\nflagging it would invite somebody to fix the naming this milestone exists to keep honest.",
     // §21.5: "Real transcoding is explicitly out of scope." This is also what the honest `.webm`
     // naming invites somebody to "fix", so it is worth a detector with a fixture of exactly that.
     pattern:
@@ -378,6 +414,8 @@ const NON_GOALS: readonly NonGoal[] = [
   },
   {
     name: "Batch or playlist downloading",
+    scope:
+      "sees a download path naming batch, bulk, all, playlist, queue or selection, and a downloadAll,\ndownloadBatch, downloadPlaylist or downloadQueue call. Does not see a loop that downloads one\ntrack per iteration. The route shape is the real defence - a batch endpoint is a different route\n- and the one-route assertion in this file checks that directly.",
     // §21.5's non-goal, and the one the *route shape* is the real defence for: a batch endpoint is a
     // different route. So this detector covers both the implementation vocabulary and the path.
     pattern:
@@ -396,6 +434,8 @@ const NON_GOALS: readonly NonGoal[] = [
   },
   {
     name: "Progress reporting by percentage",
+    scope:
+      "sees download progress only: a download...Progress/Percent/Pct identifier, a Math.round(loaded *\n100), a loaded / total % readout, or a literal % beside the word download. Does not see a\nplayback scrubber's position, which is a true fraction of a known duration - matching any\nMath.round(x * 100) caught components/player/ProgressSlider.tsx, whose removal would be a\nregression. The rendered half is asserted behaviourally in tests/download-client.test.tsx, the\nonly place a rendered figure can be observed.",
     // §21.5's non-goal, and a subtle one: the size behind any percentage is an *estimate*, so a
     // percentage is a confident number derived from a guess.
     //
@@ -407,15 +447,9 @@ const NON_GOALS: readonly NonGoal[] = [
     // to the thing §21.5 actually prohibits. The *rendered* half of the same claim — no `progressbar`,
     // no `<progress>`, no `NN%` — is asserted behaviourally in `tests/download-client.test.tsx`,
     // which is the only place a rendered figure can be observed.
-    pattern: anyOf(
-      [
-        String.raw`\b(?:download(?:ed)?[A-Za-z]{0,12}(?:Progress|Percent|Pct)[A-Za-z]{0,12}|progressPercent|pctComplete|percentDownloaded|downloadPct)\b`,
-        String.raw`Math\.round\(\s*\(?\s*(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[\s\S]{0,60}?\*\s*100`,
-        String.raw`(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[^\n]{0,40}\/[^\n]{0,24}(?:total|contentLength|content_length|\bsize\b)[^\n]{0,24}%`,
-        String.raw`\bdownload\b[^\n]{0,40}\d+\s*%`,
-      ],
-      "i",
-    ),
+    arms: PROGRESS_ARMS,
+    flags: "i",
+    pattern: anyOf(PROGRESS_ARMS, "i"),
     violations: [
       {
         label: "a download percentage",
@@ -423,6 +457,24 @@ const NON_GOALS: readonly NonGoal[] = [
         const pct = Math.round((loaded / contentLength) * 100);
         return <span>{pct}%</span>;
       `,
+      },
+      {
+        label: "a download progress value named as a percentage",
+        // Arm 1: the identifier itself. Nothing here computes anything, which is the point — a field
+        // named downloadProgressPct states the claim with no formula at all.
+        code: `const downloadProgressPct = remaining === 0 ? 100 : (done / total) * 100;`,
+      },
+      {
+        label: "a loaded-over-total readout rendered with a percent sign",
+        // Arm 3: the shape a progress readout takes without arithmetic. Both the `/` and the `%` must
+        // be on one line, which is why this fixture is a single JSX line and the original was not a
+        // witness for it.
+        code: `return <span>{loaded} / {contentLength} %</span>;`,
+      },
+      {
+        label: "a literal percentage beside the word download",
+        // Arm 4: the crudest spelling, and the one a hand-written string takes.
+        code: `return <span>download 42%</span>;`,
       },
     ],
   },
@@ -477,6 +529,27 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     expect(SHIPPED_CODE.length).toBeLessThan(SOURCES.length);
   });
 
+  it("states what every detector does and does not see", () => {
+    // Task 5.3's repair, checked rather than asserted in prose.
+    //
+    // A detector's name says what it forbids. Its *scope* says what it would miss, and that is
+    // the half a reader needs when it does not fire: without it, the only available conclusion
+    // is that the detector is broken. With it, the reader learns the boundary instead.
+    //
+    // Two properties are enforced, because a scope that is present but empty, or one-sided, is
+    // decoration:
+    //
+    //   - non-empty, and long enough to be a statement rather than a word;
+    //   - two-sided - it must say both what it sees and what it does not. A scope listing only
+    //     what is covered is a press release.
+    const thin = NON_GOALS.filter(
+      (goal) => goal.scope.trim().length < 60 || !/does not/i.test(goal.scope),
+    ).map((goal) => `${goal.name}: ${goal.scope.slice(0, 40)}`);
+    expect(
+      thin,
+      "every detector must state what it does NOT see, or the scope is decoration",
+    ).toEqual([]);
+  });
   it("gives every clause of an enumerable detector a witness, so deleting one is not silent", () => {
     // The gap this closes
     //
@@ -500,7 +573,7 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
     expect(
       enumerable.map((goal) => goal.name),
       "no detector declares an enumerable disjunction, so every check below is vacuous",
-    ).toEqual(["Accounts or auth of any kind"]);
+    ).toEqual(["Accounts or auth of any kind", "Progress reporting by percentage"]);
 
     const orphans: string[] = [];
     for (const goal of enumerable) {

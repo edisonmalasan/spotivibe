@@ -671,3 +671,11 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     the environment, check whether the environment is actually the blocker before leaving the
     explanation standing** — and keep policy and behaviour separate, since `frame-src` permitting a
     frame says nothing about whether a 1×1 `opacity: 0` iframe advances.
+62. **A mutation needle that matches nothing, and one that matches something harmless, look
+    identical: both leave the suite green.** Two of M21's mutations were mis-specified and read as
+    weak checks — one replaced only a fixture's `label` and left its `code` in place, another removed
+    one "does not see" from a scope that had a second one further along. **Always assert the needle is
+    present before applying it, and report `DID NOT APPLY` separately from `STILL GREEN`.** Also: a
+    multi-line *string literal* joined with real newlines is a parse error that vitest reports at the
+    line of the string rather than at the mistake, and an anchor written with `\n` will not match a
+    CRLF file — which reads as a missing anchor rather than a line-ending mismatch.
