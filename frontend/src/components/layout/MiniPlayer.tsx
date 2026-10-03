@@ -1,8 +1,10 @@
 "use client";
 
+import { OverflowMenu } from "@/components/player/OverflowMenu";
 import { PlayPauseButton } from "@/components/player/PlaybackControls";
+import { DownloadOverflowRow } from "@/features/download/DownloadControl";
 import { usePlayerStore } from "@/stores/playerStore";
-import { Music2 } from "lucide-react";
+import { Ellipsis, Music2 } from "lucide-react";
 import Link from "next/link";
 
 /**
@@ -59,6 +61,16 @@ export function MiniPlayer() {
         </span>
       </Link>
       <PlayPauseButton />
+      {/* M20: the overflow the compact shell did not have, for the same reason as the
+          desktop bar's. Omitted with no track rather than disabled. */}
+      {currentTrack ? (
+        <OverflowMenu
+          label={`More options for ${currentTrack.title}`}
+          icon={<Ellipsis className="size-4" aria-hidden="true" />}
+        >
+          <DownloadOverflowRow track={currentTrack} />
+        </OverflowMenu>
+      ) : null}
     </div>
   );
 }
