@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -93,10 +94,16 @@ const readTreeCache = new Map<string, Array<{ file: string; source: string }>>()
  */
 const racedFiles = new Set<string>();
 
-function readTree(dir: string): Array<{ file: string; source: string }> {
+function readTree(
+  dir: string,
+  options: { read?: (path: string) => string } = {},
+): Array<{ file: string; source: string }> {
   const cached = readTreeCache.get(dir);
   if (cached) return cached;
-  const files = readTreeShared(dir, { onRace: (file) => racedFiles.add(file) });
+  const files = readTreeShared(dir, {
+    onRace: (file) => racedFiles.add(file),
+    ...options,
+  });
   readTreeCache.set(dir, files);
   return files;
 }
@@ -3617,6 +3624,50 @@ describe("architecture: the M14 resilience items stay implemented (M14 task 2.5)
 });
 
 describe("the source tree was not mutated while this suite read it", () => {
+  it("records a tolerated miss rather than swallowing it", () => {
+    // The assertion below is satisfied by an empty set no matter what, because a real collision is
+    // timing-dependent and almost never happens in a green run. Independent verification's mutation
+    // confirmed the cost: deleting `onRace:` from the `readTreeShared` call above left every test in
+    // this file green, so "the tolerance is visible" was a claim with nothing behind it.
+    //
+    // So the miss is forced through the same seam `source-tree-race.test.ts` uses. The point is not
+    // that `onRace` fires -- that is proven there -- but that **this** call site is wired to it, which
+    // is a different property and was the unwitnessed one.
+    //
+    // A temporary directory rather than a probe inside `src/`: writing into the source tree is the
+    // very thing the suite below asserts did not happen, so manufacturing it here would make that
+    // assertion depend on test ordering.
+    const directory = mkdtempSync(join(tmpdir(), "spotivibe-race-"));
+    const file = join(directory, "probe.ts");
+    writeFileSync(file, "export const probe = 1;\n");
+    try {
+      const before = new Set(racedFiles);
+      const missing = Object.assign(new Error("gone"), { code: "ENOENT" });
+
+      const read = readTree(directory, {
+        read: () => {
+          throw missing;
+        },
+      });
+
+      const recorded = [...racedFiles].filter((name) => !before.has(name));
+      // Cleaned up before the assertion below can observe it, so ordering cannot decide the outcome.
+      for (const name of recorded) racedFiles.delete(name);
+
+      expect(
+        read,
+        "the miss must be tolerated rather than thrown, or the flake this exists for is still a failure",
+      ).toEqual([]);
+      expect(
+        recorded,
+        "this call site did not record the tolerated miss, so the empty-set assertion below is " +
+          "vacuous and the tolerance is silent",
+      ).toEqual([file]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("no file vanished between being listed and being read", () => {
     // The tolerance in `readTree` is only acceptable because it is visible. A file that appeared
     // or disappeared under this suite means another worker is writing into `src` while this one

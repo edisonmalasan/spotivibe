@@ -78,10 +78,17 @@ const ITEMS = [
     // the existing tree and, only if that tree is unusable, installs into a temporary directory
     // and swaps the result in. See `lib/install.mjs` for why a dry run would not have been enough
     // and why the exit code is not treated as proof.
-    requirement_note:
-      "M15 ran `npm ci` here, which deletes node_modules before installing. A failed install " +
-      "therefore broke the working tree and then every later item failed for a reason that was " +
-      "not the code.",
+    //
+    // **Why this item exists at all**, which is history rather than an instruction: M15 ran `npm ci`
+    // here, which deletes `node_modules` before installing. A failed install therefore broke the
+    // working tree, and then every later item failed for a reason that was not the code.
+    //
+    // That sentence was a `requirement_note` field until independent verification's second pass,
+    // and the field was the defect: it was declared here and read by nothing — the printer emits
+    // `requirement`, the JSON report emits `requirement:`, and no test referred to it. Repair
+    // instructions for a human are carried by `steps`, which is emitted; this is the reason the step
+    // was reshaped, so it belongs beside the reasoning rather than in a record shape that implies
+    // something consumes it.
   },
   {
     id: "gates-lint",

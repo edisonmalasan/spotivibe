@@ -193,6 +193,15 @@ Three things M16 established that the rest of the post-v1 work inherits:
 observed in a real browser** — the YouTube IFrame API is blocked by CSP in this environment — and the
 M16 release gate could not be used as a comparison, which is how the destructive-install finding below
 was found. Both are in M21's scope.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 The work that followed M15 was not a milestone. It was the one defect M15's own release
 process was built to find, found before the first deploy rather than during it:
@@ -2002,6 +2011,15 @@ UI states. Reduced-motion behaviour. Provider scoring and its negative cache.
 **Browser verification.** Active-line highlight advancing against a real position source, and
 auto-scroll following. **Not verifiable in this environment** (IFrame API blocked by CSP) — the
 position *plumbing* is verified in jsdom, the *following* is not.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 **Completion criteria.** Lyrics appear on Now Playing for a track that has them, in the correct
 format, and the panel is indistinguishable in structure from the rest of the surface. All four

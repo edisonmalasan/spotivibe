@@ -240,3 +240,49 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   yields nothing as a parse failure rather than as a missing count. The figures above were re-derived
   from the six logs on disk; the gate was deliberately not re-run to produce them, because that
   would have measured a second thing.
+
+- [x] 8.11 **Third independent verification: REJECT again (1 CRITICAL, 2 WARNING, 2 NIT), all closed.**
+  Verifier 3 modified no repository file, worked on a robocopy mirror, and confirmed by hashing all 27
+  changed files that 0 differ, with `HEAD` unmoved at `dc5ca85`. Its verdict is accepted in full.
+
+  | # | finding | repair | proof |
+  |---|---|---|---|
+  | F1 | **CRITICAL.** `scrapeArms` could not see `source: IDENT.source` arms, and matched prose out of the file's own doc comments, so the sole-custody checks examined the wrong set | scraper **deleted**; arms read as data via `EXCLUSIONS.flatMap((e) => e.arms ?? [])`, because a hand-written list would reproduce the staleness in a new place | **6/6 RED**, including the verifier's decisive passthrough/inline pair; 3 expected greens |
+  | F2 | **WARNING.** `requirement_note` in the archived gate's `ITEMS` was declared once and read nowhere | deleted, its information folded into the adjacent comment; the guard distinguishes code from prose references | read, not asserted |
+  | F3 | **WARNING.** a comment claimed the match was on `.body` specifically; `src/app/api/download/[videoId]/route.ts` has no `fetch(` and no `.body` at all | comment now states the real limitation - the required `fetch(...)` hand-back shape - and both checked facts are named | read, not asserted |
+  | F4 | **NIT.** the CSP correction existed but was not discoverable from where `ROADMAP.md` sends a reader | 8 correction pointers added at the sites that still assert the false reason; archived records keep their original text | 8 sites, each read back |
+  | F5 | **NIT.** `racedFiles` was recorded but unwitnessed - dropping `onRace:` left 135/135 green | `readTree` takes an injectable `read`, and a test forces a real `ENOENT` through it | **5/5 defeated** |
+
+  **Two corrections to my own work came out of this round, and both are the defect class this change
+  exists to remove.**
+
+  - **A repair I made went silently vacuous, and only `tsc` caught it.** After F1's repair, `arms`
+    holds objects, and a leftover `new RegExp(arm)` did not throw - it coerced to `"[object Object]"`,
+    a valid regex - so a "every arm compiles" filter classified every arm as compilable and the suite
+    stayed green. A type error is a check too.
+  - **Having been repaired, that filter was still unwitnessed, and the honest repair was to delete it.**
+    Reverting `arm.source` back to `arm` left 153/153 green. The reason is structural: every declared arm
+    is compiled at module scope, so a malformed pattern throws during import and no assertion is ever
+    reached. Mutating its only call site to `arms.filter(() => false)` also stayed green. A guard whose
+    subject can be deleted with no observable change is decoration, so the filter, the `compilesAsRegex`
+    predicate, and three synthetic tests of that predicate were all removed; module load is the real
+    enforcement. The coercion trap is recorded on `DetectorArm.source`, where a reader meets it.
+
+  **Mutation accounting is stated per verdict, never as a single green number.** Six must-go-red
+  mutations are RED; three are green *by construction* and are named as such rather than counted as
+  passes; one (`vacuity-guard-weakened`) is unwitnessed and **recorded as such** - the registry holds 35
+  arms and every partial read still clears the 25-arm threshold, so no mutation can falsify it. It is a
+  coarse backstop behind the coverage assertion, not load-bearing. One mutation initially reported
+  `DID NOT APPLY` because its needle had been reformatted by Prettier; rather than invent a needle,
+  it was **deleted**, because `helpers/sourceTree.ts` accepts only `onRace` and `read` and the property
+  it named does not exist at that seam. Its underlying claim is witnessed from the caller side by the
+  ENOENT mutation. A sixth result, `(no tests)`, was at first misreported as RED: no tests means the
+  mutant failed at import, which is not a check firing. The script now classifies that as
+  `RED BUT DID NOT RUN`.
+
+  **Still not verified after this round, and not closable here.** 8.8 and 8.9 stand open (no browser,
+  CI not observed green). `npm ci`, `npm run setup`, and both archived `release-gate.mjs` copies remain
+  manual-invocation-only and outside every CI gate. Verifier 3 did not mutation-attack
+  `ci-workflow.test.ts` (+239 lines) or `MEMORY.md` lessons 53-55, so those are unexamined by
+  adversarial reading. Its five GREENs in `download-non-goals.test.ts` were coverage-kill mutants its
+  branches already exercise, and it correctly did not count them as findings.

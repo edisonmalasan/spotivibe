@@ -114,7 +114,17 @@ function applicationSources(): Array<{ file: string; code: string; raw: string }
 interface DetectorArm {
   /** What the clause is for, in words. */
   name: string;
-  /** The clause's own regular expression source, without flags. */
+  /**
+   * The clause's own regular expression source, without flags.
+   *
+   * Always compile `arm.source`, never `arm`. `new RegExp(someObject)` does not throw: it coerces
+   * the object to the string `"[object Object]"`, which is a valid regex. A "does every arm compile"
+   * check written that way reports every arm as compilable whatever the pattern is, and the suite
+   * stays green — only `tsc` objects, because `DetectorArm` is not a `RegExp`. That check has since
+   * been removed rather than fixed: each arm is compiled at module scope, so a malformed pattern
+   * throws during import and never reaches an assertion. Module load is the enforcement, and a
+   * second guard that provably cannot fire is not insurance.
+   */
   source: string;
 }
 
@@ -250,7 +260,11 @@ const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
  * clause does not match it — it matches **0 of the 233** real files under `src/`.
  *
  * The second half is true, and it is now measured rather than repeated: this clause is the **only**
- * one of the suite's 31 arms that catches a caller-supplied URL fetched and handed straight back.
+ * one of the suite's arms that catches a caller-supplied URL fetched and handed straight back.
+ * ("31" is struck rather than deleted: the suite declares 35 arms, and until this round the check
+ * compared only 32 of them — three of the 35 it did see were prose from this file's own doc comments,
+ * and four real arms written as `source: IDENT.source` were invisible to it. The number was never
+ * right, and it was quoted twice as though it had been counted.)
  * `callerSuppliedUrlArm` does not reach it, because that arm looks for a URL read *out of* the
  * caller and then opened, and a path-parameter construction does not spell it that way.
  *
@@ -260,21 +274,43 @@ const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
  * deleting it would trade a clause that costs nothing for a hole nothing else covers. That is a bad
  * trade at any ratio, and it is the opposite of the trade the false claim would have implied.
  *
- * ## What its real limitation is
+ * ## What its real limitation is, and how that is known
  *
- * It matches on `.body` specifically, so it cannot see a stream-through written as `.stream` — which
- * is precisely how the *approved* route is written. So it would miss an approved shape spelled that
- * way, and it catches the forbidden one. It errs toward flagging and the application happens not to
- * trip it, which is a better position than the reverse: an allowlist entry that is never needed is
- * cheap, and a permanent exclusion with no clause reaching it is not.
+ * An earlier version of this paragraph claimed the clause "matches on `.body` specifically, so it
+ * cannot see a stream-through written as `.stream` — which is precisely how the *approved* route is
+ * written". Independent verification checked that mechanism against the route rather than accepting
+ * it, and **it is not the mechanism**. Two facts, both checked:
+ *
+ * - `src/app/api/download/[videoId]/route.ts` contains **no `fetch(` at all**, so a clause that
+ *   requires `fetch\s*\(` cannot match it whatever it does about `.body`.
+ * - It also contains no `.body`, and its response argument is not `x.stream` either: it is
+ *   `new Response(holdUntilSettled(payload.stream, permit.release), …)` — a *call*, not a property
+ *   read. Widening the clause to accept `.stream` as well as `.body` leaves it matching the route
+ *   not at all.
+ *
+ * So the real limitation is the required `fetch(...)` hand-back shape: the approved route obtains its
+ * upstream stream by a different mechanism and never fetches-then-returns in this file. The clause
+ * catches the forbidden caller-supplied-URL fetch-and-hand-back and does not reach the approved route.
+ * It errs toward flagging and the application happens not to trip it, which is a better position than
+ * the reverse: an allowlist entry that is never needed is cheap, and a permanent exclusion with no
+ * clause reaching it is not.
+ *
+ * The correction matters more than the conclusion, because the paragraph's job was to stop the next
+ * reader believing a mechanism that had never been checked. A right answer for a wrong reason invites
+ * the next edit to "fix" the reason and break the answer.
  *
  * `the streaming clause's facts are asserted` below makes all of this a checked fact rather than a
  * comment that can go stale.
  */
-// Declared as a `String.raw` **literal** rather than only as a compiled constant, so that a check
-// which scrapes this suite's clauses finds this one too. The identity filter in that check exists to
-// exclude it from the "other arms" list; while it lived only as a constant, that filter had nothing to
-// exclude, so it was dead code and replacing it with `true` changed nothing.
+// Declared as its own named object rather than inline in the arm list, because the compiled constant
+// below is built from it and the sole-custody check needs to recognise this clause among the others by
+// identity. While it lived only as a compiled constant, that identity filter had nothing to exclude, so
+// it was dead code and replacing it with `true` changed nothing — a check that examines the suite minus
+// this clause without saying so.
+//
+// This arm is reachable from `EXCLUSIONS` like every other, so the sole-custody check now reads it as
+// data. It previously had to be scraped out of this file's text, which could not see an arm written as
+// `source: IDENT.source` — including this one.
 const STREAMED_BODY_AS_RESPONSE_ARM = {
   name: "a fetched body handed straight back as the response body",
   source: String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
@@ -284,50 +320,6 @@ const STREAMED_BODY_AS_RESPONSE_ARM = {
 // text the scraper reads cannot drift apart. A second copy of a regex is a second thing to keep
 // correct, and the drift would be invisible.
 const STREAMED_BODY_AS_RESPONSE = new RegExp(STREAMED_BODY_AS_RESPONSE_ARM.source);
-
-/**
- * The `source: String.raw`…`` arms declared in a file, scanned rather than matched.
- *
- * ## Why a hand-written scanner
- *
- * A regex cannot do this. Ten of this suite's arms contain a backtick inside a character class —
- * `["'\`]` — so ``/String\.raw`([\s\S]*?)`/`` stops at that backtick and returns a fragment that does
- * not compile. A caller that then treats "does not compile" as "cannot match" skips a third of the
- * arms **silently**, which is how a check comes to read as evidence while examining less than it claims.
- * The cost of getting this wrong is invisible, so it is written out rather than approximated.
- *
- * ## The rule
- *
- * A backtick closes the literal unless an odd number of backslashes precedes it. That is the whole of
- * template-literal escaping, and it is enough here: no arm uses `${…}` interpolation, and an
- * interpolated one would simply be reported as not compiling rather than quietly mis-read.
- *
- * `source:` may also be a bare string rather than a `String.raw` tag; those are found too, because the
- * four arms named by a constant (`THEN_FETCH`, `QUERY_PARAM_URL`, `HEADER_URL`, `BODY_JSON_FETCH`) reach
- * this file as `.source` and would otherwise be invisible to any check about the suite's own clauses.
- */
-function scrapeArms(source: string): string[] {
-  const arms: string[] = [];
-  const opener = /source:\s*(?:String\.raw)?[`"]/g;
-  for (const match of source.matchAll(opener)) {
-    const tag = match[0].includes("String.raw") ? "`" : match[0].slice(-1);
-    const quote = tag === "`" ? "`" : tag;
-    let index = match.index + match[0].length;
-    let body = "";
-    while (index < source.length) {
-      const character = source[index]!;
-      if (character === quote) {
-        let backslashes = 0;
-        for (let back = index - 1; back >= 0 && source[back] === "\\"; back -= 1) backslashes += 1;
-        if (backslashes % 2 === 0) break;
-      }
-      body += character;
-      index += 1;
-    }
-    if (body.length > 0) arms.push(body);
-  }
-  return arms;
-}
 
 /**
  * §2.5 clause 2's detector, as named clauses. Split for the same reason as the other two: the
@@ -3501,60 +3493,66 @@ describe("the streaming clause's facts are asserted", () => {
   });
 
   it("is the only arm that catches it, so deleting it opens a hole nothing else covers", () => {
-    // Read from the suite's own declared arms rather than restated here, so this cannot drift from
-    // the suite. Arms are compiled the same way `anyOf`/`new RegExp` compiles them.
+    // ## Read as data, not scanned out of this file's text
     //
-    // ## Why this scans rather than matches
+    // This block has now tried three ways to obtain "the suite's own arms", and the first two
+    // failed in ways worth keeping, because both were *green*.
     //
-    // The first version used ``/source:\s*String\.raw`([\s\S]*?)`/g`` — non-greedy to the *first*
-    // backtick. Ten arms contain a backtick inside a character class (`["'\`]`), so each was
-    // truncated to an uncompilable fragment, and a `catch { return false }` then classified every one
-    // of them as "not catching". That is the worst shape a check can have: it read as evidence while
-    // being blind to a third of what it claimed to examine. Adding a matching alternative to the
-    // truncated googlevideo arm left this test green with sole custody genuinely gone.
+    // **Scraping with a non-greedy match.** The original pattern stopped at the *first* backtick.
+    // Ten arms contain one inside a character class, so each was truncated to a fragment, and a
+    // `catch { return false }` classified every fragment as "not catching". Adding a matching
+    // alternative to the truncated googlevideo arm left this test green with sole custody gone.
     //
-    // So the scan now finds the true closing backtick — one not preceded by a backslash — and an arm
-    // that fails to compile is a **loud failure** rather than a silent exclusion.
-    const arms = scrapeArms(
-      readFileSync(join(FRONTEND, "tests", "release-exclusions.test.ts"), "utf8"),
-    );
+    // **Scanning with a correct closing-backtick rule.** That fixed the truncation and not the real
+    // problem, which is that parsing a value out of source text is a second implementation of a
+    // value this file already holds in scope. The scan could not see an arm declared as
+    // `source: IDENT.source` — its opener required a quote character straight after `source:` —
+    // and four arms are written that way. It also matched spans of **prose in this file's own doc
+    // comments**, so the vacuity guard below was partly satisfied by English.
+    //
+    // The decisive detail, and the reason a count could never have caught it: the scan returned
+    // **35 entries and the registry holds 35 arms.** The same number, with different contents —
+    // prose standing in for real arms, and four real arms missing. **A check on a count cannot see
+    // a substitution.** So the coverage assertion below compares against the registry rather than
+    // against a constant, and the arms are read directly rather than recovered from text.
+    //
+    // Nothing is parsed, so neither failure mode can recur: a backtick inside an arm is just a
+    // character, and a doc comment is not data.
+    const arms = EXCLUSIONS.flatMap((exclusion) => exclusion.arms ?? []);
 
-    // Both directions of the vacuity guard, because `length > 20` alone is satisfied by a scanner that
-    // finds 21 truncated fragments just as happily as 31 whole arms.
+    // Both directions of the vacuity guard, because `length > 20` alone is satisfied by a collection
+    // that has lost its arms. The count is asserted against the registry rather than against a
+    // constant, so "some arms went missing" and "the check is looking at a subset" fail here instead
+    // of passing quietly.
     expect(
       arms.length,
       "the arms must have been found, or this assertion is vacuous",
     ).toBeGreaterThan(25);
-    const uncompilable = arms.filter((arm) => {
-      try {
-        new RegExp(arm);
-        return false;
-      } catch {
-        return true;
-      }
-    });
     expect(
-      uncompilable,
-      "every scraped arm must compile; one that does not means the scrape is truncating, and " +
-        "treating it as 'not catching' is how a blind check passes as a strict one",
-    ).toEqual([]);
+      arms.length,
+      "the arms read here must be every arm the registry declares, or this check examines a subset " +
+        "of the suite while its comment claims to examine all of it",
+    ).toBe(EXCLUSIONS.reduce((total, exclusion) => total + (exclusion.arms?.length ?? 0), 0));
 
-    // **The clause under test must be in the scraped set at all.** Without this, the identity filter
-    // below is dead code: `STREAMED_BODY_AS_RESPONSE` is declared as a named constant, not as a
-    // `source:` entry, so it never appears in `arms` and the filter never has anything to exclude.
-    // Replacing that filter with `true` therefore changed nothing and the suite stayed green — which
-    // looked like a defeat and was in fact a no-op, which is worse, because it would have been filed
-    // as one.
+    // **The clause under test must be in the set at all.** Without this the identity filter below is
+    // dead code: if this arm were ever dropped from the registry the filter would have nothing to
+    // exclude and this assertion would quietly become "no *other* arm catches it" — which is a
+    // different claim, stated the same way. Replacing that filter with `true` changed nothing and the
+    // suite stayed green; that looked like a defeat and was in fact a no-op, which is worse, because
+    // it would have been filed as one.
     //
-    // Asserted positively so the gap cannot reopen: the scraped set must contain this clause's own
-    // source, and therefore the filter below is load-bearing rather than decorative.
+    // Asserted positively so the gap cannot reopen, and compared by `source` because `arms` now holds
+    // the declared objects rather than scraped strings. Comparing the compiled `source` rather than
+    // object identity is deliberate: it also fails if this arm is rewritten to a *different* regex
+    // that happens to sit in the list, which identity would wave through.
+    const sources = arms.map((arm) => arm.source);
     expect(
-      arms,
-      "the clause under test is not among the scraped arms, so the identity filter below is dead " +
+      sources,
+      "the clause under test is not among the registry's arms, so the identity filter below is dead " +
         "code and this assertion examines the suite minus the clause without saying so",
     ).toContain(STREAMED_BODY_AS_RESPONSE.source);
 
-    const others = arms
+    const others = sources
       .map((arm) => new RegExp(arm))
       .filter(
         (compiled) =>

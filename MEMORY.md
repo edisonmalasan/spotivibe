@@ -350,6 +350,15 @@ followed the user onto Home, because the host lives in the shell so navigating u
 **The largest open item is unverified and unticked:** whether a 1×1 `opacity: 0` iframe actually
 keeps advancing position in a live browser. The IFrame API is blocked by CSP here, so no run can
 confirm it. Geometry and the tab stop were measured *before* the fixes; there is no re-run after.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 ## Hard-won lessons
 1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
@@ -715,3 +724,28 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     yields nothing as a *parse failure* so it cannot be filed as a result. The counts were re-derived
     from the same six logs rather than by re-running the gate — re-running would have measured a
     second thing and quietly replaced a failed measurement with a passing one.
+
+65. **A repair can empty a check it never mentions, and a check with no witness is worse than no check.**
+    M21 replaced a scraper with data read from a registry. Two things followed that nothing caught at
+    the time. First, a leftover `new RegExp(arm)` where `arm` was now an *object* rather than a string:
+    `new RegExp` does not throw on an object, it coerces to `"[object Object]"` - a valid regex - so a
+    "does every arm compile" filter silently classified every arm as compilable. The suite was green.
+    `tsc` was the only thing that objected, because an object is not a `RegExp`. Second, and worse: after
+    fixing that, the filter was *still* unwitnessed. Reverting the fix left 153/153 green, because every
+    declared arm really does compile - and it must, since arms are compiled at module scope, so a malformed
+    pattern throws during import and no assertion is ever reached. Deleting the filter's only call site
+    (`arms.filter(() => false)`) also left the suite green.
+    **That last fact is the lesson.** A guard whose subject can be deleted with no observable change is
+    decoration, and decoration in a test suite is worse than an honest gap because it reads as coverage.
+    The honest repair was to delete the filter, the predicate it called, and three synthetic tests of that
+    predicate whose only remaining caller was itself - a helper asserting that `new RegExp` throws on bad
+    input, which is a tautology wearing a test's clothes. What replaced them was not more assertions but a
+    note on `DetectorArm.source`, where the mistake is actually made.
+    Three rules that came out of it: **after a repair, re-run the mutation suite for the file you touched,
+    not just the new check**; **keep the type checker in the loop, because it catches what a green suite
+    cannot**; and **when you find a guard that cannot fail, delete it rather than keep it as insurance.**
+    Also worth keeping from the same round: `new RegExp` accepting an object is not a type error at runtime,
+    so any check of the form "does this compile" written over a value that might be an object is vacuous
+    until the parameter is typed `string`. And a mutation result of *no tests ran* is a mutant that failed
+    at import - not a check firing. It is reported as `RED BUT DID NOT RUN`, never as a defeat, because
+    the difference between those two is the difference between a proof and a lie.

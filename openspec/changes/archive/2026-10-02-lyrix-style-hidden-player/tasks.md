@@ -51,3 +51,12 @@
       **Partly done, and the remainder cannot be done here.** The parked geometry, the single `iframe_api` script tag, the single instance, and the tab-order defect were all measured in Edge **before** their fixes, and the pass reported the resulting numbers. What is *not* done is a browser re-run **after** them, and in this environment the IFrame API is blocked by CSP, so no run can confirm that a 1×1 `opacity: 0` iframe actually keeps advancing position. That is the largest open item and it is recorded as such rather than ticked.
 - [ ] 6.3 Confirm session restore still cues without autoplay and that queue/shuffle/repeat/seek/volume behaviour is unchanged by this change — verify: an end-to-end cold-launch run asserting a cued-paused restore with the player parked, and the existing playback suites still green.
       **Store and suite level only.** The existing playback suites are green and `PlayerHost` asserts a cued-paused restore with the host parked. A browser cold-launch run is not possible here, for the CSP reason above.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
