@@ -399,3 +399,35 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   did not mutation-attack `release-gate-install.test.ts` (+1068), `download-non-goals.test.ts`,
   `motion-budget.test.ts`'s size rules, or `MEMORY.md` lessons 53/54. It did re-derive lesson 55's
   figures (233 files in `src`) and lesson 56's correction, and found both accurate.
+
+- [x] 8.14 **Six consecutive green gate runs, fourth measurement, at `68860cb` after the pass-4 repairs.**
+  8.3 was met at `bdb0dba`, 8.10 at `cdc0fb0`, 8.12 at `9a5634e`. None covers C1's comment strip, W1's
+  flags repair, the five NIT corrections, or the new `tests/helpers/yaml.ts`. Re-run on the same
+  reasoning rather than inherited. The tree was committed and unmodified for the whole batch
+  (`git status --short` empty at `68860cb` before it started).
+
+  | run | exit | seconds | files | tests | motion-budget | skipped | parse |
+  |---|---|---|---|---|---|---|---|
+  | 1 | 0 | 102 | 181 | 3292 | 21 | 0 | ok |
+  | 2 | 0 | 98 | 181 | 3292 | 21 | 0 | ok |
+  | 3 | 0 | 97 | 181 | 3292 | 21 | 0 | ok |
+  | 4 | 0 | 95 | 181 | 3292 | 21 | 0 | ok |
+  | 5 | 0 | 95 | 181 | 3292 | 21 | 0 | ok |
+  | 6 | 0 | 97 | 181 | 3292 | 21 | 0 | ok |
+
+  Every run is the root `npm run gate`. All six report **181 test files / 3292 tests, 0 failed, 0
+  skipped**, and `tests/motion-budget.test.ts` reports **21 in every run** - the figure that separates
+  this from a run where its six size rules skipped, which is indistinguishable at the exit code. One
+  suite total, one file count, one budget count across the batch.
+
+  **Corroborated by re-reading the six logs with separate code, and that checker now asserts its
+  markers exist before reading any number.** 8.12's first version of this check reported that the logs
+  contained none of the counts; they contained all of them, and it had not stripped ANSI. The rewrite
+  locates `Test Files`, `Tests` and the `motion-budget` line as *strings* first and reports `MARKER
+  ABSENT` separately from a missing number, so "no number" can no longer be reported as "no marker".
+  This run: all three markers found in all six logs, 181 / 3292 / 21 agreed, zero skipped, zero NUL
+  bytes and zero U+FFFD in every log - so no log is UTF-16 or lossy, confirmed from outside the batch
+  script that wrote them.
+
+  The batch script itself needed no repair this time: it carried forward 8.12's UTF-8 write, the
+  `[char]27` ANSI strip, and the `PARSE FAILURE` verdict, and every row reports `parse: ok`.
