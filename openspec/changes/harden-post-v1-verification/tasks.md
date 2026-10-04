@@ -913,3 +913,65 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   is about test-suite integrity and has no runtime observable on the deployed site, so a fetch would have
   been decoration rather than evidence. There is still no `openspec verify` subcommand, so the
   AGENTS.md-mandated verification-workflow step remains unverified.
+
+- [x] 8.20 **Six consecutive green full gate runs at `9f1dc2a`, after round 7's repairs, corroborated
+  from the six logs by separate code that then had to be corrected twice to mean anything.**
+
+  8.3 was met at `bdb0dba`, 8.10 at `cdc0fb0`, 8.12 at `9a5634e`, 8.14's six runs at `68860cb`, 8.16's
+  at `f4b5cb1`, and 8.18's at `4d31728`. **None of those executes round 7's `keyLinesIn` /
+  `directChildKeys`, the rewritten `jobRunDefaults`, the `stepWith` duplicate-name refusal, the
+  generalised exact-command gate assertion, the block-scalar trailing-comment refusal, or the two
+  window-extent anchors** — so on 8.3's own reasoning (*a criterion measured against a tree that has since
+  changed is not a measurement of the current tree*) the batch is re-run rather than inherited.
+
+  ```
+  run  exit  seconds  files  tests  motion-budget  skipped  parse
+  1    0     126      181    3305   21                      ok
+  2    0     100      181    3305   21                      ok
+  3    0     98       181    3305   21                      ok
+  4    0     97       181    3305   21                      ok
+  5    0     96       181    3305   21                      ok
+  6    0     97       181    3305   21                      ok
+  ```
+
+  **3305, not 3302:** round 7 added three witness tests to `ci-workflow.test.ts`. `motion-budget` is 21
+  in every run, which is the load-bearing half — 15 passed + 6 skipped is the no-build figure, so a run
+  without a build would report 15 here.
+
+  **No repository file was edited while the batch ran.** Round 7 sharpens that constraint rather than
+  repeating it: round 7 changed the *exported shape* of `tests/helpers/yaml.ts`, which every
+  workflow-reading test consumes, so a stray edit mid-batch would surface as a baffling suite failure
+  rather than as a diff.
+
+  ## The corroborator, and the two ways it was wrong first
+
+  `verify-gateruns7.mjs` reads all six logs. Each marker (`Test Files`, `Tests `,
+  `tests/motion-budget.test.ts`) is located **as a string before any number is read from its region**, 0
+  NUL bytes and 0 U+FFFD per log, and every total identical across the six. Unlike run 6's checker, it does
+  **not** hard-code the expected test total: a hard-coded expectation that is wrong about the tree reports
+  itself as a finding about the tree, which is the same false-report shape as a decoy that wins.
+
+  **v1 reported `UNAVAILABLE` for the independent enumeration while the measurement was working.** It
+  guarded the phase behind a regex for a summary line *`vitest list` does not print*, so a working
+  enumeration read as an absent capability. **A precondition stricter than the method turns a working
+  measurement into a missing capability** — lesson 64's shape, committed by the checker rather than the
+  code.
+
+  **v2 then asserted equality against a count it could not legitimately have.** It counted ` > `
+  *separators* (5966) rather than ids (2980), and required the id count to equal the gate's 3305. The
+  reason it cannot is real and worth recording: **`vitest list` emits one line per test *template*, not
+  per expanded parameterised case**, and this suite has 33 `.each(` call sites that expand over their
+  tables at run time. Enumeration is therefore a **lower bound by construction**, and the two mechanisms
+  do not measure the same quantity — so their difference is not a discrepancy in either of them.
+
+  **v3 asserts only the one directional claim the two mechanisms share** — enumerated <= executed, since
+  every executed test is enumerated at least once as its template — and *reports* the gap and its cause.
+  The alternative, tuning the id pattern until the number equalled 3305, is **fitting a checker to the
+  number it was supposed to be checking**, which is precisely what this change exists to remove.
+
+  That is five defects in this change's own tooling across three rounds, and four of the five share one
+  signature: **a report about something other than what was measured.**
+
+  **Not re-measured by this batch, and therefore not claimed:** `npm ci`, `npm run setup`, and both
+  archived `release-gate.mjs` copies. `npm run gate` does not invoke them, so `AGENTS.md`'s claim that they
+  exit 0 remains inherited from M0 rather than re-measured here.
