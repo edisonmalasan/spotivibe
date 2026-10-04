@@ -137,13 +137,23 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `DONE` | M18 |
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
-| **M21** | Post-v1 integration, regression validation, documentation | `APPLY` (PR #100 open) | M16–M20 |
+| **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
 
-**M21 status, 2026-10-05 - Apply in progress, and its central claim has been narrowed.** Proposal merged
-as `6f86211`; Apply is PR #100. **Seventeen rounds** of independent verification have run: rounds 1-15
-returned REJECT, round 16 returned ACCEPT/MERGEABLE and round 17 returned MERGEABLE/ACCEPT, neither with
-a CRITICAL. Every rejecting round found the *previous round's* defect class reproduced inside the previous
-round's own repair.
+> **`DONE` means the milestone's criterion was met at its merge commit — verified by a rule, not by
+> assertion.** `design.md` §2.10 requires six consecutive green full gate runs at the tree being merged.
+> Batch 24, at `8b072be`, is 6 of 6 with the corroborator at exit 0, and `git rev-parse HEAD^{tree}` on
+> `main` after the merge returned `3856fe9d212c0cce5a63d05a34c0516601f143e0` — the batched tree exactly.
+> **The check a reader can repeat:** `head -2` any of batch 24's logs, then
+> `git merge-base --is-ancestor origin/main 8b072be` and `git rev-parse 8b072be^{tree}`. `DONE` does
+> **not** mean the gate cannot lie: CRITICAL 1 and CRITICAL 2 remain named, measured, and **unclosed**.
+
+**M21 outcome, 2026-10-05 - complete, and its central claim was retired rather than proved.** Proposal
+merged as `6f86211`; Apply as PR #100 / `a2c1665`; spec sync as PR #101 / `5400d92c`; archived as
+`2026-10-05-harden-post-v1-verification`. **Eighteen rounds** of independent verification ran: rounds
+1-15 returned REJECT, and rounds 16, 17 and 18 each returned a mergeable verdict with **no CRITICAL**.
+Every rejecting round found the *previous round's* defect class reproduced inside the previous round's
+own repair — and so did the two defects found *after* round 18 accepted the change, both of them in the
+rule written to close the loop.
 > **Round 17's WARNING 5: this paragraph said twelve rounds, and that was a stale count contradicting this
 > same document seventy lines below**, which reported round 16's ACCEPT. It understated, so it manufactured
 > no false green - but it was the kind of number written down once and never recounted, in a milestone
@@ -166,13 +176,22 @@ Both were measured on the real gate with `node --check` passing. They are not fi
 structural rather than pending: the instrument that closes this class is *executing the gate* and
 observing whether `environmentBroken` is set, or a taint/flow analysis, and executing the gate is
 forbidden for this work because its first step is a dependency install. What remains available is more
-syntactic predicates, and **sixteen rejecting rounds** show each one is answered by the next round — name,
+syntactic predicates, and **fifteen rejecting rounds** show each one is answered by the next round — name,
 then span, then declaration, then dispatch, then complement, never the rung that covers the next finding.
 > **Round 18's NIT 3: this sentence said "twelve rounds" while line 143 of the same file said
 > "Seventeen rounds", twenty-six lines above.** Round 17 corrected line 143 and left this one, so the
 > defect survived the fix by being one paragraph away from where the fix was applied. It understates, so
 > it manufactures no false green. **Counting a sequence is the one task in this change that has been
 > reliable less often than expected, and it is the task every other finding here is about.**
+>
+> **The repair for NIT 3 was itself an instance of NIT 3, which is why this note is longer than the fix.**
+> It replaced "twelve" with "sixteen rejecting rounds" — a number chosen by adding one to fifteen rather
+> than by counting, so it contradicted line 153 of the same file ("rounds 1-15 returned REJECT") in the
+> same commit that cited NIT 3 as the reason for touching the line. **Fixing a count by editing the count
+> is not fixing it**, and the edit was made one paragraph from the evidence that refuted it, exactly the
+> failure mode NIT 3 described. The number is **fifteen**, counted from the round headings in the archived
+> `tasks.md` (§8.23 round 10, §8.27 round 11, §8.28 round 12, §8.31 round 13, §8.33 round 14, §8.35 round 15
+> — REJECT; §8.37 round 16, §8.39 round 17, §8.41 round 18 — no CRITICAL), not inferred.
 
 **What M21 therefore delivers:** the gate's install cascade pinned against a named, mutation-proven list
 of regressions; the batch evidence checker that runs the gate six times and refuses anything it cannot
@@ -319,10 +338,18 @@ digests, every log stamped `commit bcebb1e7f28b`.
 > independently, so this sentence can be stale without misleading anyone about the criterion. That is the
 > difference between a pointer and a rule, demonstrated on the pointer I had just replaced.
 
-What that does **not** establish: CI is still unobserved on this branch; there is still no live-browser
-verification of anything; the two accepted residuals remain named, measured and **unclosed**; and the
-`commit` stamp binds a batch to a commit but cannot establish that the logs came from a gate run rather
-than being written by hand. Six sequential runs are also not a contention test.
+What that does **not** establish: there is still **no live-browser verification of anything**, which no
+CI job can supply and which is the one item on the milestone's open list that observation alone cannot
+close; the two accepted residuals remain named, measured and **unclosed**; and the `commit` stamp binds a
+batch to a commit but cannot establish that the logs came from a gate run rather than being written by
+hand. Six sequential runs are also not a contention test.
+> **CI is no longer on this list, because it was observed rather than assumed.** It read "CI is still
+> unobserved on this branch" and was true for nineteen rounds. Merging is what causes CI to run, so the
+> statement became false the moment Apply merged. Four runs are green: `37239459341` at `8b072be`,
+> `37240070622` at the merge commit `a2c1665`, `37240237780` at the sync commit `7a89cd9`, and
+> `37240257686` at `5400d92c`. **That establishes the workflow runs the gate in the required order and is
+> green on the final tree. It does not retroactively validate any figure measured locally** — the same
+> rule this milestone applied to its own batches, now applied to CI.
 
 **M20 outcome, 2026-10-03.** Proposal merged as `eb76cfc`; Apply as PR #96 / `9b61e72`; spec sync as
 PR #97 / `91f47a1`. The `download` capability is 8 requirements and 31 scenarios, and

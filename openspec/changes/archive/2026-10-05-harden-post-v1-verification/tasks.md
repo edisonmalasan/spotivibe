@@ -210,7 +210,36 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   the 120 s proxy timeout, `@distube/ytdl-core` on a real function, any real browser download, task
   1.8's repeated end-to-end run, task 7.1's parked player, and the verification half of 8.4 all stand
   **unverified**. 8.4's *recording* is done; 8.4's verification is not, and no gate run substitutes.
-- [ ] 8.9 **Not done: CI has not been observed green on this branch.** Every number above is a local run.
+- [x] 8.9 **CI observed green on this branch — closed during Archive, and it was the last of the
+  "unverified" items that observation could close.** This entry read *"Not done: CI has not been observed
+  green on this branch. Every number above is a local run."* It was true for nineteen rounds and became
+  false the moment Apply merged, because merging is what causes CI to run. Observed, not inferred:
+  - run `37239459341`, `fix/verification-integrity` at `8b072be` — `quality-gates` **SUCCESS**
+  - run `37240070622`, `main` at the merge commit `a2c1665` — **SUCCESS**
+  - run `37240237780`, the spec-sync branch at `7a89cd9` — **SUCCESS**
+  - run `37240257686`, `main` at `5400d92c` — **SUCCESS**
+
+  **What that establishes, and what it does not.** It establishes that the CI workflow runs the gate in
+  the order `tasks.md` requires and is green on this branch's final tree. It does **not** retroactively
+  validate any earlier figure: every number above was measured locally, and local runs remain local runs.
+  **A CI run on the merge commit is evidence about the merge commit's tree, not about the twenty-two
+  commits that preceded it** — the same rule this change applied to its own batches, now applied to CI.
+  It also does not cover the browser, which no CI job touches; 8.8 stands, and it is the one item on this
+  list that observation alone cannot close.
+
+  **This claim recurs in six later entries of this file — §8.30, §8.32, §8.35, §8.37, §8.39 and §8.41 —
+  and each was true when written.** None is edited. A round record stating what observation had not yet
+  established is a dated measurement, and rewriting it would falsify the round it belongs to. But a reader
+  who greps `CI unobserved` finds six hits and can reasonably conclude the record is current, so the
+  supersession is stated here once, at the entry that owns the claim, rather than repeated six times.
+  **This is the difference between an entry and a pointer: an entry is scoped to its own round and says so;
+  a pointer has no round, so it must be updated or it is wrong.** §8.37, §8.39 and §8.41 are the entries
+  a reader most likely lands on, and each already names the criterion batch and its residual, so the
+  supersession is reachable from them without editing any of them. **The list was written as §8.28/§8.31
+  first and measured as §8.30/§8.32** — two of six section numbers inferred from nearby headings rather
+  than counted, which is the same class as the round count `ROADMAP.md` got wrong in this very archive.
+  The count of six was right; the identifiers were not. **An enumeration assembled from memory is still
+  an enumeration assembled from memory**, however carefully the sentence around it is written.
 - [x] 8.10 **Six consecutive green gate runs, repeated at `cdc0fb0`.** 8.3 was met at
   `bdb0dba`, before all thirteen tests and five repairs above existed, so it was evidence for that
   commit and not this one. Re-run rather than inherited, on the reasoning 8.3 itself records: a
