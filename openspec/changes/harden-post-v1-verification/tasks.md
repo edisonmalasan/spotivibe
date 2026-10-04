@@ -1558,3 +1558,143 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   run (cause **unverified**), no browser verification, CI not observed green on this branch, and the
   round-9 question about whether refusing loudly at module scope is the right trade for three reader
   ambiguities rather than one.
+
+## 8.25 The corroborator's third defect - found by attacking it rather than by using it
+
+  8.24 fixed two defects in the two scripts this change had just shipped, both found by pasting the
+  command the driver prints. That is a *use* test, and it is bounded: it can only find what the happy path
+  touches. So the next question is what the checker **absorbs** - every phase, given a deliberately broken
+  input, asked whether it reports a problem or prints a verdict word anyway.
+
+  Five cases against copies of the batch-11 logs. Four were already caught; **one was not**:
+
+  ```
+  control (6 untouched logs)                    exit 0  corroborated          <- the pass that must stay
+  one log removed (5 present)                   exit 1  FAIL only 5 of 6 logs were present
+  --runs 9 against 6 logs                       exit 1  FAIL only 6 of 9 logs were present
+  --runs 2 against 6 logs                       exit 0  corroborated: ... all 2 logs   <- THE DEFECT
+  one log's 'Test Files' marker damaged         exit 1  FAIL Test Files across the logs: 181,
+  one log reports 3319 tests instead of 3320     exit 1  FAIL Tests across the logs: 3320, 3319
+  ```
+
+  ### D3 - the checker was loud about missing evidence and silent about unexamined evidence
+
+  The loop reads `run1.log` .. `runN.log` and **never enumerates the directory**. So a caller passing
+  `--runs 2` against six logs had `run3.log` .. `run6.log` silently ignored, and the closing line read:
+
+  ```
+  corroborated: every asserted figure was found in all 2 logs, they all agree, and no log is UTF-16...
+  ```
+
+  Asserting *more* runs than exist was caught. Asserting *fewer* was not. **The asymmetry is the defect**, and
+  the word "all" is what makes it one: it is a claim about the batch, printed over a subset of it. Four logs
+  of real evidence went unread and the tool said the batch agreed.
+
+  This is 8.24's general form one level down - *a report that mixes what was checked with what was skipped
+  must not print one word of verdict over both* - with the skipped part being four logs the caller plainly
+  meant to include.
+
+  Repaired: the directory is enumerated and must contain exactly the logs the caller named. **Excess logs
+  are reported as *unexamined*, distinctly from *absent*,** because they fail differently and a reader who
+  conflated the two would be told to go and run a batch that has already been run:
+
+  ```
+  FAIL 4 log(s) in ... were NOT examined, because --runs is 2: run3.log, run4.log, run5.log, run6.log
+        These are not missing logs; they are logs nobody read, and a verdict over a subset is not a
+        verdict over the batch. Pass --runs 6 to examine them, or --runs 6 to assert this batch.
+  exit: 1
+  ```
+
+  Re-measured, all five caught and the control unchanged:
+
+  ```
+  control (6 untouched logs)                    exit 0  corroborated
+  one log removed                               exit 1  FAIL only 5 of 6 logs were present
+  --runs 9 against 6 logs                       exit 1  FAIL only 6 of 9 logs were present
+  --runs 2 against 6 logs                       exit 1  FAIL 4 log(s) ... were NOT examined
+  one log's 'Test Files' marker damaged         exit 1  FAIL Test Files across the logs: 181,
+  one log reports 3319 tests instead of 3320     exit 1  FAIL Tests across the logs: 3320, 3319
+  ```
+
+  **The control is the part that matters.** Three of the five broken cases were already caught before this
+  repair, so "the fix works" is only half the claim; the other half is that the fix did not make the honest
+  case fail. A repair that closes a hole by tightening the tool until it refuses everything is the same
+  defect wearing the opposite sign, and only the control distinguishes it.
+
+  ### The criterion batch, and why its figures are in the PR body rather than here
+
+  Six consecutive green full gate runs at `6f24e8a`: `181 files / 3320 tests / motion-budget 21`, 0 skipped,
+  exit 0 on all six, spread 20 s (129 / 126 / 114 / 126 / 131 / 134). Corroborated by the checker above,
+  which reported agreement with enumeration `2995 <= 3320`.
+
+  **These figures are deliberately not written here.** `tasks.md` and `MEMORY.md` are both gate inputs, so
+  any commit recording a batch's results invalidates the batch it describes - and recording batch 12 would
+  oblige a batch 13, and so on without end. That regress is lesson 73, and its recorded resolution is that
+  the final batch is run at the final documentation commit and its evidence lives outside the tree. So this
+  entry records the *defect and its repair*, the entry above records batch 11, and the criterion batch's
+  numbers are in PR #100 - which is mutable, not in the repository, and therefore costs no gate run.
+
+  If a reviewer wants the criterion's evidence to be checkable from the repository, the honest fix is to
+  commit the six logs as artifacts under this change's `evidence/`, which is a scope decision this change
+  does not make for itself. It is raised in the round-11 brief as a judgement call rather than settled here.
+
+## 8.26 Batch 12 at `6f24e8a`, and how far a *use* test reaches
+
+  ### The criterion
+
+  ```
+  run 1  exit 0  129s  files 181  tests 3320  motion-budget 21  skipped none
+  run 2  exit 0  126s  files 181  tests 3320  motion-budget 21  skipped none
+  run 3  exit 0  114s  files 181  tests 3320  motion-budget 21  skipped none
+  run 4  exit 0  126s  files 181  tests 3320  motion-budget 21  skipped none
+  run 5  exit 0  131s  files 181  tests 3320  motion-budget 21  skipped none
+  run 6  exit 0  134s  files 181  tests 3320  motion-budget 21  skipped none
+  ```
+
+  Six of six, `181 / 3320 / 21` identical, 0 skipped, spread 20 s. Corroborated by the shipped checker,
+  which reported agreement and an enumeration of `2995 <= 3320`.
+
+  **Why this is the criterion batch and not batch 11's.** This entry and the memory lesson beside it both
+  change gate inputs, so the batch that satisfies the criterion is measured at the commit that *follows*
+  them - and recording *this* batch would oblige a batch 13. The regress is real and unbounded, so it is
+  resolved rather than iterated: **the final batch is run at the final documentation commit and its figures
+  are reported in PR #100**, which is not in the tree and therefore costs no gate run. Batch 12's figures are
+  in the section above; they are not restated here, because restating them is the regress.
+
+  ### A use test finds defects a review cannot, and then stops
+
+  Round 10 found D1 and D2 in the two shipped evidence scripts by pasting the command the driver prints - a
+  **use** test, and it worked immediately. But a use test is bounded by the happy path: it can only reach
+  what a correct invocation touches. `run-gate-batch.ps1` printed a correct command, the checker ran, and
+  both defects were visible - **D3 was not**, and D3 was found only by *attacking* it.
+
+  The distinction is worth keeping because the two answer different questions:
+
+  ```
+  USE      "run it the way its reader will"        ->  does the happy path work at all?
+  ATTACK   "give each phase a broken input"       ->  what does it absorb?
+
+  ```
+
+  Five broken inputs against the shipped checker; four were caught, and the fifth (`--runs 2` against six
+  logs, which silently ignored four and then printed `corroborated: ... all 2 logs`) was the defect. The
+  repaired checker now enumerates the directory and requires exactly the logs the caller named, reporting
+  excess as *unexamined* rather than *absent* - different failures, because absent logs are missing evidence
+  and excess logs are evidence nobody read, and a reader who conflated them would be sent to run a batch
+  that has already been run.
+
+  **The control is load-bearing in that measurement and is easy to leave out.** Three of the five cases were
+  already caught before the repair, so the fix is only half the claim; the other half is that it did not make
+  the honest case fail. A repair that closes a hole by tightening a tool until it refuses everything is the
+  same defect with the sign flipped, and only an unmodified control distinguishes the two.
+
+  ### Unchanged, and still open
+
+  - The unreproduced `2 failed | 3314 passed (3316)` run from round 10. **Cause unverified**; six further
+    green runs raise confidence in the tree but do not identify the cause, and no log exists to identify it
+    from. It is not closed by this batch.
+  - No browser verification of any kind. CI unobserved green on this branch. Root `scripts/`, both archived
+    `release-gate.mjs` copies, and now these two evidence scripts all sit outside every gate - the evidence
+    scripts' case is the sharpest, since their entire purpose is to be run by a reader.
+  - Round 9's open question, now larger: `readSteps` throws at module scope for three ambiguities rather than
+    one, so any of them takes down a whole suite file and 180 others stop reporting with it.

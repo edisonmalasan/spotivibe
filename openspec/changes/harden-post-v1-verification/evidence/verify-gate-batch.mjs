@@ -62,7 +62,7 @@
 //    characters were NULs and `Test Files` was not *findable*. The NUL and U+FFFD assertions above exist
 //    because of that, not because encoding is interesting.
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -112,6 +112,41 @@ if (!existsSync(DIR)) {
 
 const rows = [];
 let problems = 0;
+
+// **Third defect in this checker's own history, found by attacking it rather than by using it.**
+//
+// The loop below reads `run1.log` .. `runN.log` and never enumerates the directory, so a caller who passed
+// `--runs 2` against a directory holding six logs had logs 3-6 silently ignored - and the closing line then
+// read `every asserted figure was found in all 2 logs, they all agree`. Asserting *more* runs than exist was
+// caught (`only 6 of 9 logs were present`); asserting *fewer* was not. **The asymmetry is the defect**: the
+// check is loud about missing evidence and silent about unexamined evidence, and the word "all" in the
+// verdict is a claim about the batch rather than about the subset that was read.
+//
+// This is lesson 76's general form, one level down: a report that mixes what was checked with what was
+// skipped must not print one word of verdict over both. Here the skipped part is four logs the caller
+// plainly meant to include.
+//
+// So the directory is enumerated and must contain exactly the logs the caller named. Extra logs are
+// reported as *unexamined*, distinctly from *absent*, because they fail differently: absent logs are missing
+// evidence and extra logs are evidence nobody read, and a reader who conflated the two would be told to go
+// and run a batch that has already been run.
+const presentLogs = existsSync(DIR)
+  ? readdirSync(DIR)
+      .filter((name) => /^run\d+\.log$/.test(name))
+      .sort((left, right) => Number(left.match(/\d+/)[0]) - Number(right.match(/\d+/)[0]))
+  : [];
+const expectedLogs = Array.from({ length: options.runs }, (_, index) => `run${index + 1}.log`);
+const unexamined = presentLogs.filter((name) => !expectedLogs.includes(name));
+if (unexamined.length > 0) {
+  process.stdout.write(
+    `\nFAIL ${unexamined.length} log(s) in ${DIR} were NOT examined, because --runs is ${options.runs}: ` +
+      `${unexamined.join(", ")}\n` +
+      "      These are not missing logs; they are logs nobody read, and a verdict over a subset is not a\n" +
+      "      verdict over the batch. Pass --runs " +
+      `${presentLogs.length} to examine them, or --runs ${expectedLogs.length} to assert this batch.\n`,
+  );
+  problems += 1;
+}
 
 for (let run = 1; run <= options.runs; run += 1) {
   const path = `${DIR}/run${run}.log`;

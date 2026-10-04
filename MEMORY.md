@@ -1005,3 +1005,29 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     And the general form, which is lesson 74 again one level out: **a report that mixes what was checked with
     what was skipped must not print a single word of verdict over both.** "Corroborated" is a claim about the
     whole run. When one phase is missing, the run has no verdict, and saying so is the only honest output.
+
+77. **A checker is loud about evidence it could not find and silent about evidence it never looked at - and
+    the silence is the defect.**
+    Round 10's evidence scripts had two defects found by pasting the command the driver prints. That is a
+    *use* test, and it found both - but a use test is bounded by the happy path. Attacking each phase with a
+    deliberately broken input found a third the use test could not reach: the corroborator read
+    `run1.log`..`runN.log` and never enumerated the directory, so `--runs 2` against six logs silently
+    ignored four of them and then printed `corroborated: ... all 2 logs`.
+    Asserting *more* runs than exist was caught. Asserting *fewer* was not, and **the asymmetry is the whole
+    finding**: the check complains about missing evidence and says nothing about unexamined evidence, while
+    the word "all" in the verdict is a claim about the batch rather than about the subset that was read.
+    - **Count the things you were given, not the things you asked for.** A checker driven by a caller-supplied
+      count must also compare it against what is actually there, in both directions.
+    - **Name the two failure modes differently.** *Absent* logs are missing evidence; *excess* logs are
+      evidence nobody read. Same `FAIL`, opposite remedy, and a reader who conflates them is told to go and
+      run a batch that has already been run.
+    - **Keep a control in the same measurement.** Three of the five broken cases were caught before the
+      repair, so the fix is only half the claim; the other half is that it did not break the honest case. A
+      repair that closes a hole by tightening a tool until it refuses everything is this same defect with the
+      sign flipped, and only an unmodified control tells the two apart.
+    And the general form, which keeps recurring now that it has been reached three times in one week:
+    **describing a mechanism and exercising a mechanism are different acts** (74), **a guard keyed on a word
+    rather than a signature will misfire on any test whose subject is that word** (75), **existence is not
+    function** (76), and **a verdict must not be printed over evidence that was skipped** (76's tail). Four
+    separate defects, one shape: something was believed because it was written down, and not because
+    anything about it could fail.
