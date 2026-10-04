@@ -397,13 +397,81 @@ describe("LyricsPanel — following yields to the listener", () => {
     // a positive value rather than a negative one is not cosmetic: it pins that the panel scrolls
     // *toward* the line, not that it moved at all.
     layout(ACTIVE_LINE_BELOW_CENTRE);
+
+    // **This test was intermittently wrong, and the reason was that `layout()` above changes the
+    // geometry while an effect is still pending.** Measured, not inferred (tasks.md 8.29):
+    //
+    //   - `scrollCalls.length` read at the marker was **0 in 8 of 8 isolated runs** and **0 in 3 of 3**
+    //     under the explicit-flush probe, so the lyrics resolution's own centring effect — the one for
+    //     `activeIndex === 0` — has *never* recorded by the time this test reads its marker.
+    //   - Its centring delta is computed from `getBoundingClientRect` at the moment it **flushes**, not
+    //     when it is scheduled. `layout()` swaps that stub in between.
+    //
+    // So there are two outcomes, and which one occurs is decided by a scheduler:
+    //
+    //   flushes BEFORE `layout()`  ->  delta 0     -> `delta === 0` early return -> 1 call -> passes
+    //   flushes AFTER  `layout()`  ->  delta 150   -> records into the window       -> 2 calls -> fails
+    //
+    // The received array in the failing run was exactly two *identical* calls, which is what makes this
+    // diagnosable at all: a genuine duplicate scroll from the panel would not be byte-identical to the
+    // one under test unless the layout had changed between the two.
+    //
+    // **The panel is not at fault.** It issues one scroll per active-line change, which is the intended
+    // behaviour, and a production change here would have meant suppressing a legitimate first centring.
+    // The defect is that the test measured a window containing an effect it had not yet quiesced.
+    //
+    // Flushing first, then clearing, makes the window provably contain only the change under test —
+    // whichever way the scheduler ran the pending effect, its call is discarded before the marker.
+    await act(async () => {});
+    scrollCalls = [];
     const before = scrollCalls.length;
 
     act(() => usePlayerStore.setState({ positionSeconds: 25 }));
 
     // The exact centring delta, so the assertion is about centring rather than "a scroll happened".
+    // Unchanged: this is the assertion that caught the defect, and relaxing it to a length check would
+    // convert a caught bug into a silent one.
     const expected = BELOW_LINE.top - (SCROLLER_HEIGHT - LINE_HEIGHT) / 2;
     expect(scrollCalls.slice(before)).toEqual([{ top: expected, behavior: "smooth" }]);
+  });
+
+  it("keeps a centring effect that was pending across a geometry change out of the window", async () => {
+    // **This is the regression test for the intermittent failure recorded at `tasks.md` 8.29**, and it
+    // forces the established mechanism deterministically instead of waiting for a scheduler to produce
+    // it. The original failure was reproducible only under contention (2 in 10 concurrent, 0 in 40
+    // isolated), which makes a probabilistic test useless as a guard: it passes almost always and
+    // proves nothing when it does.
+    //
+    // The mechanism, measured: `scrollActiveLineIntoView` computes its delta from
+    // `getBoundingClientRect` at the moment the effect **flushes**, not when it is scheduled. So a
+    // centring effect scheduled by the lyrics resolution and still pending when `layout()` swaps the
+    // geometry stub will compute against the *new* geometry and record a call.
+    //
+    // **The geometry is installed before the lyrics settle, and that ordering is what makes this
+    // deterministic.** An earlier version of this test installed it after `await waitFor(lines)`, which
+    // does not exercise the hazard at all: by then the `activeIndex === 0` centring has already flushed,
+    // geometry is not one of the effect's dependencies, so changing it re-runs nothing and no call can
+    // leak no matter where the marker sits. That version passed under the discipline it was written to
+    // police — a guard that cannot fail is the defect this milestone exists to remove.
+    //
+    // Installed first, the panel's own first centring is guaranteed to compute against *this* geometry,
+    // so it is guaranteed to record a real call. The leak vector now exists on every run.
+    play(0);
+    render(<LyricsPanel />);
+    layout(ACTIVE_LINE_BELOW_CENTRE);
+
+    // Settling inside `act` flushes that pending centring against the geometry above. The call it makes
+    // is correct product behaviour and is deliberately allowed to happen here.
+    await act(async () => {});
+    await waitFor(() => expect(lines()).toHaveLength(3));
+
+    // Window discipline: the marker is taken only after pending effects are quiesced. Take it first and
+    // the centring above lands inside the window, which is the intermittent failure at `tasks.md` 8.29.
+    const settled = scrollCalls.length;
+    act(() => usePlayerStore.setState({ positionSeconds: 25 }));
+
+    const expected = BELOW_LINE.top - (SCROLLER_HEIGHT - LINE_HEIGHT) / 2;
+    expect(scrollCalls.slice(settled)).toEqual([{ top: expected, behavior: "smooth" }]);
   });
 
   it("does not scroll when following has been suspended", async () => {

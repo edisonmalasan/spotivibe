@@ -2224,34 +2224,75 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   **Neither file is touched by this branch.** The defect is pre-existing from M16/M19 work, and the
   six-green criterion is what made it visible. That is the criterion working, not failing.
 
-  ### Cause: narrowed, NOT established - and deliberately not fixed
+  ### Cause: ESTABLISHED by measurement. **This supersedes the "not established" record above.**
 
-  What the measurement supports. `LyricsPanel.tsx:91-96` runs the scroll in an effect keyed on
+  Scope was extended by the owner under `design.md` 2.12 to permit this investigation and repair, and the
+  cause is now established by measurement rather than narrowed. The narrowing above was also wrong in one
+  specific respect, which is worth correcting plainly: **all four candidate dependencies are inert.** The
+  effect fires exactly three times, with these values, and there are only ever two scrolls:
 
-  ```ts
-  useEffect(() => { ... scrollActiveLineIntoView(activeIndex); },
-    [following, state.kind, activeIndex, scrollActiveLineIntoView]);
+  ```
+  effect#1  render#1  following=true  kind=loading  activeIndex=-1   early return
+  effect#2  render#2  following=true  kind=timed    activeIndex=0    scrolled
+  effect#3  render#3  following=true  kind=timed    activeIndex=2    scrolled
   ```
 
-  and `scrollActiveLineIntoView` is a `useCallback` whose sole dependency is `reducedMotion`, which
-  `usePrefersReducedMotion` supplies as a **boolean** via `useSyncExternalStore` - referentially stable
-  while the preference is unchanged. The callback identity is therefore not the moving part, and a
-  second scroll call requires either one of `following` / `state.kind` / `activeIndex` to change a
-  second time, or the effect to run twice for one change. Under `act()` the second is not expected, and
-  I have not established which it is.
+  The trace is **byte-identical whether the run passes or fails**. So `following` never changes,
+  `state.kind` does not transit, `activeIndex` changes once, and the callback identity is stable. **None
+  of the four was the moving part**, which is why two rounds of reading could not separate them.
 
-  What I did **not** establish and am not going to guess at: which dependency moved, whether `state.kind`
-  transits (`timed` -> something -> `timed`) when a lyrics fetch resolves out of order under load, or
-  whether React flushed the effect twice. **Mechanism: unverified.**
+  The real mechanism, and it is in the **test's measurement window**, not in the panel:
 
-  **Not fixed, by this change's own rule.** `design.md` 2.6: an intermittently failing test SHALL have
-  its cause established and recorded before a change is made to it, and re-running until it passes is
-  not evidence. The cause is not established, so no fix is claimed. This is a **fourth** intermittent
-  failure, joining the three in scope; those three have recorded causes and this one does not yet.
+  ```
+  MARKER read: scrollCalls.length = 0     (8 of 8 isolated runs)
+  exactly ONE scroll recorded per passing run
+  ```
 
-  It is also **out of M21's scope**: `LyricsPanel` is shipped product code and this milestone alters no
-  shipped behaviour. It surfaced here because the criterion runs the suite six times under load, which is
-  the point of the criterion.
+  `layout()` mutates the global `getBoundingClientRect` stub, and `scrollActiveLineIntoView` computes its
+  delta **at the moment the effect flushes**, not when it is scheduled. So:
+
+  | the `activeIndex = 0` effect flushes | delta | outcome |
+  |---|---|---|
+  | before `layout()` | `0` | `delta === 0` early return, nothing recorded -> **1 call, passes** |
+  | after `layout()` | `150` | records into the window -> **2 calls, fails** |
+
+  Which branch occurs is decided by a scheduler, not by anything in the component. That is the whole
+  defect: **the test read its marker at a point where an effect it had not quiesced could still record.**
+
+  Why the diagnosis was worth the trouble rather than a guess: adding a `console.error` inside `scrollBy`
+  dropped the reproduction to 0/48, and two log lines in the test dropped it to **0/100**. This defect is
+  sensitive enough that observing it removes it, so a probabilistic test would have proved nothing.
+
+  **The panel is not at fault and no production change was made** - `git diff --stat -- src/` is empty. The
+  panel issues one scroll per active-line change, which is the intended behaviour, and a fix here would
+  have meant suppressing a legitimate first centring.
+
+  **The fix**, in the test only: flush pending passive effects, discard whatever the flush recorded, then
+  take the marker. The window then provably contains only the change under test, whichever way the
+  scheduler ran the pending effect. The assertion is **unchanged**, including its exact count.
+
+### The regression test, and the one that had to be thrown away first
+
+  The first version of the guard was **decorative and was measured to be so**. It installed the geometry
+  inside `act()` on the theory that this would force the pending flush; it did not. Geometry is not one of
+  the effect's dependencies, so changing it re-runs nothing, and by that point the `activeIndex = 0` effect
+  had already flushed. The test **passed with the discipline removed** - a guard that cannot fail, which
+  is the exact defect family this milestone exists to remove, caught in its own new test.
+
+  Fixed by installing the geometry **before** the lyrics settle, which makes the leak vector exist on
+  every run. Proven in both directions, isolated, 5 runs each:
+
+  ```
+  discipline removed   5/5 RED     expected [ ...(2) ] to deeply equal [ { top: 150, ... } ]
+  as committed         5/5 GREEN   1 failed | 0 ... -> 29 passed (29) whole file
+  ```
+
+  and under 4-way contention, 40 runs of the original test with the fix: **0 failures**. That 0/40 is
+  reported as an observation, **not** as proof the fix works - the pre-fix ordering did not reproduce in
+  the same sample either. What the fix does is remove the race *by construction*; the cause evidence for
+  the race is the 8/8 marker reading above, which is independent of load.
+
+  All instrumentation removed. Every probe restored its target byte-exactly.
 
   ### What the criterion means now
 
@@ -2276,5 +2317,9 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   3. **A defect in the test**: an exact-count assertion against a shared counter, whose measurement
      window can legitimately include a second activation.
 
-  All three are open. Establishing which is the next action, and it belongs to whoever takes M16/M19's
-  follow-up work rather than to this milestone.
+  **Reading 3 is the one that is correct, and it is now established by measurement rather than chosen.**
+  It was always the defect: the component's behaviour never varied between a passing and a failing run, so
+  there was no component defect to find. See the established cause and the fix above.
+
+  The six-green count **restarts at the fix**; pre-fix runs are not evidence about the tree the fix
+  produces.
