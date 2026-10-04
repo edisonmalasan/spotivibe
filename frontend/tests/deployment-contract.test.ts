@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { stripYamlComments } from "./helpers/yaml";
 import { validateEnv } from "@/server/env";
 
 /**
@@ -232,7 +233,12 @@ function pinnedMajor(range: string | undefined): string | null {
 /** The Node major the CI workflow verifies, read from the workflow rather than restated. */
 function ciNodeMajor(): string | null {
   const workflow = readFileSync(join(FRONTEND, "..", ".github", "workflows", "ci.yml"), "utf8");
-  return /node-version:\s*["']?(\d+)/.exec(workflow)?.[1] ?? null;
+  // Stripped, not raw: `# node-version: 24` matches the pattern below, so a commented-out pin read as a
+  // real one and the entire engines / package.json / workflow agreement held while nothing was pinned at
+  // all - the runner would have used its own default Node. The same hole as `ci-workflow.test.ts`, and
+  // deliberately the same helper: fixing one file and not the other would only have moved it.
+  const code = stripYamlComments(workflow);
+  return /node-version:\s*["']?(\d+)/.exec(code)?.[1] ?? null;
 }
 
 describe("the build that runs is the build that was tested (M15 task 4.2)", () => {

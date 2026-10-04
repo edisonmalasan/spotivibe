@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { stripYamlComments } from "./helpers/yaml";
 
 /**
  * The CI workflow's step order.
@@ -60,7 +61,10 @@ function readSteps(yaml: string): Step[] {
   let current: Step | null = null;
 
   for (const line of lines) {
-    if (/^\s*#/.test(line) || line.trim() === "") continue;
+    // Comments are stripped once, up front, by `stripYamlComments`, and `readSteps` works on that.
+    // It used to skip comment lines here inline while three assertions later read the un-stripped
+    // text - so the file knew to distrust comments and then did not. One code path, no second opinion.
+    if (line.trim() === "") continue;
 
     const indent = line.length - line.trimStart().length;
 
@@ -103,6 +107,17 @@ function readSteps(yaml: string): Step[] {
 }
 
 const workflow = readFileSync(WORKFLOW, "utf8");
+
+/**
+ * The workflow with comments removed. Any assertion that the workflow *does* something must use
+ * this: a comment is the workflow saying what it does not do, so `# node-version: 24` satisfies a
+ * `toContain("node-version: 24")` on the raw text. That was a live hole - commenting out the Node pin
+ * left all 3292 tests green - and `deployment-contract.test.ts` carried the same one via a regex.
+ *
+ * `workflow` stays raw for exactly one assertion, which checks that the workflow *explains* its
+ * build-before-test ordering. There the comment is the subject, and stripping it would assert nothing.
+ */
+const workflowCode = stripYamlComments(workflow);
 const steps = readSteps(workflow);
 const indexOfStep = (needle: string): number =>
   steps.findIndex((step) => (step.run ?? "").includes(needle));
@@ -134,7 +149,19 @@ describe("every gate that runs these steps builds before it tests", () => {
     "utf8",
   );
 
-  /** The `id:` of every gate item, in the order the array declares them. */
+  /**
+   * The `id:` of every gate item, in the order the array declares them.
+   *
+   * **The indent in this pattern is decorative today, and that is recorded rather than implied.**
+   * Loosening `^\s{4}id:` to `id:` leaves the suite green, because the gate contains no other
+   * `id: "..."` for it to pick up. It is kept because a differently-indented item would be a real
+   * change to the file's shape and would then be *missed* rather than reported - but nothing here
+   * should be read as claiming the indent is what proves the scan worked.
+   *
+   * That is `toHaveLength(26)` below. This regex decides which keys are read and in what order; the
+   * length assertion decides whether the read was complete. Confusing the two is how a scan that
+   * matched three of twenty-six items gets described as a structural check.
+   */
   const gateItemIds = [...gate.matchAll(/^\s{4}id: "([^"]+)",$/gm)].map((match) => match[1]!);
 
   it("reads every gate item the file declares", () => {
@@ -224,16 +251,22 @@ describe("the CI workflow's steps", () => {
     // Not re-derived here: `tests/deployment-contract.test.ts` already asserts that `engines.node`,
     // `package.json` and this workflow agree, and it proves itself by rejecting a pin Vercel
     // cannot build. Duplicating it would be a second place for the value to drift.
-    expect(workflow).toContain("node-version: 24");
-    expect(workflow).toContain("cache-dependency-path: frontend/package-lock.json");
-    expect(workflow).toContain("working-directory: frontend");
+    expect(workflowCode).toContain("node-version: 24");
+    expect(workflowCode).toContain("cache-dependency-path: frontend/package-lock.json");
+    expect(workflowCode).toContain("working-directory: frontend");
   });
 
   it("states why the build comes first, in the workflow rather than only in a test comment", () => {
     // A comment in the test file is where this was disclosed for a whole milestone. The
     // disclosure belongs next to the thing it explains, or the next person reorders the steps
     // having read only the file they were editing.
+    // Raw text, and deliberately: `motion-budget` appears in `ci.yml` only inside the comment that
+    // explains why the build precedes the tests. This asserts the workflow *documents* the budget's
+    // two halves, not that it runs anything about it - there is no executable reference to it. Moving it
+    // to `workflowCode` would have looked like fixing the strip and would have deleted the check.
     expect(workflow).toContain("motion-budget.test.ts");
+    // Raw text on purpose: this asserts the workflow *says* why the build precedes the tests, so the
+    // comment is the subject here. Every other content assertion in this file reads `workflowCode`.
     expect(workflow).toContain("The build runs **before** the tests");
   });
 });

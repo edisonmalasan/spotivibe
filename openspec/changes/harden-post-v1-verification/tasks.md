@@ -340,3 +340,62 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   UTF-16LE logs, the `` `e `` escape, and now this), and in all three the system under test was fine.
   The rule that survives is the narrow one: assert that what you are reading is present before you
   conclude that it is missing.
+
+- [x] 8.13 **Fourth independent verification: REJECT again (1 CRITICAL, 1 WARNING, 5 NIT), all closed.**
+  Verifier 4 modified no repository file, hash-verified all four files it touched as restored, and left
+  `HEAD` at `4781453` with a clean tree. Its verdict is accepted in full, including the two NITs that
+  are about *my* claims rather than the code's behaviour.
+
+  | # | finding | repair | proof |
+  |---|---|---|---|
+  | C1 | **CRITICAL.** `expect(workflow).toContain("node-version: 24")` reads the raw YAML, comments included. Commenting out the pin - **one character** - left 43/43 and then 3292/3292 green. `deployment-contract.test.ts`'s `ciNodeMajor()` had the identical hole via a regex | shared `tests/helpers/yaml.ts`; comments stripped before any content assertion, in **both** files, because fixing one and not the other only moves the weakness | **6/6 RED**, including the verifier's exact edit and their two-line form |
+  | W1 | **WARNING.** the sole-custody check compiled every arm flagless while every arm-bearing detector builds with `"i"`, so it reasoned about different matching semantics than the detectors | arms paired with their owning exclusion and compiled with `exclusion.pattern.flags`; the clause under test gains its own detector's flags too | 3 defeats + 2 controls, below |
+  | N1 | the coverage assertion compares two functions of the same `EXCLUSIONS`, so it is a tautology, while its comment claimed it caught a missing arm | comment corrected to state what it does catch (a change to the *reading*) and what catches the rest; the `> 25` sibling recorded as unwitnessed | read, not asserted |
+  | N2 | `reductionIsReal` compared raw `arm.source` against `RegExp.prototype.source`, which escapes `/`, so any arm with a bare slash was reported as a fake reduction | both sides normalised through `new RegExp(arm.source).source` - the same call that builds the joined pattern | read, not asserted |
+  | N3 | `dependedOn` was populated and never read - dead code in the load-bearing check | deleted; `grep` finds zero occurrences | read, not asserted |
+  | N4 | `ROADMAP.md:241` pointed at a section heading `"Not verified"`; the heading is `"Not verified, and not claimed"` | heading quoted exactly | read |
+  | N5 | the `\s{4}id:` anchor is decorative - loosening it leaves the suite green - while `toHaveLength(26)` is what actually proves the scan was complete | both labelled at the regex: which decides *which keys and what order*, which decides *completeness* | verifier's own measurement, confirmed |
+
+  **C1 is the finding this change is about, committed by this change.** `MEMORY.md` lesson 53, added
+  by this diff, says a source assertion that must be kept from matching a comment is one edit away
+  from matching it again and prescribes stripping comments first. The same diff added a check a
+  comment satisfies. The file even demonstrated it knew better - `readSteps` discarded comment lines
+  three assertions before one that read the un-stripped text.
+
+  One assertion is deliberately left on the raw text, and the strip is what revealed why:
+  `motion-budget` appears in `ci.yml` **only inside the comment** explaining the build-before-test
+  order. There is no executable reference to it. So that assertion checks that the workflow
+  *documents* the budget, which is a real thing to check and was the intent - it moves to the raw group
+  and says so. Stripping it would have looked like completing the repair and would have deleted a check.
+
+  **W1's numbers need their three-way split, because two of the five results are green and neither
+  green is a pass.** The verifier's probe now fails the sole-custody assertion *by name* (3 defeats:
+  the probe alone, the probe plus the clause-under-test deflagged, and the verifier's bounded
+  same-exclusion case). Two results are green because each applies the probe **and reverts the repair**,
+  which is precisely the state the verifier measured as green - so their greenness is what attributes
+  causation to the repair rather than to anything else that changed. Had either gone red, that would
+  have meant something else now catches the defect and the repair would need revisiting.
+
+  **Three of my own errors this round, each caught by reading a verdict rather than a summary:**
+
+  - My first W1 probe anchored on a `violations` array belonging to a **different exclusion**, so its
+    red came from an unrelated assertion. That would have been filed as a witness for a check that was
+    not what fired. Re-anchored on the MP3 exclusion's own first violation.
+  - Two probe insertions were parse errors - inside an object literal, then inside the array - both
+    reported as "no tests". `RED BUT DID NOT RUN`, twice, from multi-line literals I had believed
+    matched. Inserted after a scanned entry close instead.
+  - Reverting the W1 repair **alone** is green, because with no case-sensitive competitor in the tree
+    flags change nothing observable. Composed with the probe instead. Run alone it would have read as
+    "the repair is unwitnessed", which would have been the wrong conclusion.
+
+  Re-run after these repairs, because three test files changed under them: `mut-f1` 6/6 (its
+  `identity-filter-removed` needle was re-pointed after W1 changed the filter's shape - reported as
+  `DID NOT APPLY` first, not quietly dropped), `mut-f5` 5/5, `mut-c1-comments` 6/6 + 1 expected green,
+  `mut-gate-order` 7/7, `mut-apiroutes` 8/8 + 1 expected green, `mut-notseen-anchor` 4/4. Suite **181
+  files / 3292 tests**; `tsc`, `next typegen`, `prettier --check`, `eslint` exit 0; both validators valid.
+
+  **Still unverified, unchanged from 8.11.** No browser verification (8.8); CI not observed green (8.9);
+  `npm ci` / `npm run setup` / both archived gates never run and outside every gate. Verifier 4 also
+  did not mutation-attack `release-gate-install.test.ts` (+1068), `download-non-goals.test.ts`,
+  `motion-budget.test.ts`'s size rules, or `MEMORY.md` lessons 53/54. It did re-derive lesson 55's
+  figures (233 files in `src`) and lesson 56's correction, and found both accurate.

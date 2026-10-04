@@ -319,7 +319,11 @@ const STREAMED_BODY_AS_RESPONSE_ARM = {
 // Built from the arm rather than written out a second time, so the regex the tests exercise and the
 // text the scraper reads cannot drift apart. A second copy of a regex is a second thing to keep
 // correct, and the drift would be invisible.
-const STREAMED_BODY_AS_RESPONSE = new RegExp(STREAMED_BODY_AS_RESPONSE_ARM.source);
+// Flags come from the detector this arm belongs to, not from a literal. Built flagless, this regex
+// behaved differently from the `NO_MEDIA_PROXY_PATTERN` it is a clause of, and both the
+// "matches the violation" and the "no other arm catches it" assertions below were then reasoning
+// about a regex the suite never actually runs.
+const STREAMED_BODY_AS_RESPONSE = new RegExp(STREAMED_BODY_AS_RESPONSE_ARM.source, "i");
 
 /**
  * §2.5 clause 2's detector, as named clauses. Split for the same reason as the other two: the
@@ -1928,7 +1932,6 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
         const flags = exclusion.pattern.flags;
         const full = new RegExp(arms.map((arm) => arm.source).join("|"), flags);
         const stripped = exclusion.violations.map((violation) => stripComments(violation.code));
-        const dependedOn = new Set<string>();
 
         // Every dead clause is collected before anything is asserted. Asserting inside the loop would
         // report one dead clause per run and hide the rest, and a check that needs twenty runs to
@@ -1960,14 +1963,20 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
           // The reduction must be a real reduction: if dropping the arm changes nothing about the
           // pattern, the arithmetic below would silently pass. Asserting the arm really is gone is
           // what stops a probe of this test from lying.
+          //
+          // Compared in NORMALISED form on both sides. `full.source` is `RegExp.prototype.source`,
+          // which escapes `/` - so comparing it against the raw `arm.source` reported any arm
+          // containing a bare slash as a fake reduction, failing closed but blaming the wrong thing.
+          // Normalising the arm with the same call that builds the joined pattern keeps both sides
+          // in one representation, and they cannot drift because they come from the same source.
+          const armAsCompiled = new RegExp(arm.source).source;
           const reductionIsReal =
-            full.source.includes(arm.source) && !reduced.source.includes(arm.source);
+            full.source.includes(armAsCompiled) && !reduced.source.includes(armAsCompiled);
           if (!reductionIsReal) brokenReductions.push(arm.name);
 
-          const lost = stripped.some((code, index) => {
+          const lost = stripped.some((code) => {
             const wasCaught = full.test(code);
             const stillCaught = reduced.test(code);
-            if (wasCaught && !stillCaught) dependedOn.add(exclusion.violations[index].label);
             return wasCaught && !stillCaught;
           });
           if (!lost) {
@@ -3443,6 +3452,20 @@ describe("every clause this change removed is published, not quietly dropped", (
   });
 });
 
+/** Every declared arm, paired with the exclusion that owns it, so its flags can be read. */
+const ARMS_WITH_OWNER_FLAGS = EXCLUSIONS.flatMap((exclusion) =>
+  (exclusion.arms ?? []).map((arm) => ({ arm, owner: exclusion.label })),
+);
+
+/** The flags the named exclusion's detector is actually built with. */
+function flagsOf(label: string): string {
+  const exclusion = EXCLUSIONS.find((candidate) => candidate.label === label);
+  if (!exclusion) {
+    throw new Error(`no exclusion is labelled "${label}"; the arm list and the registry disagree`);
+  }
+  return exclusion.pattern.flags;
+}
+
 describe("the streaming clause's facts are asserted", () => {
   /**
    * The clause's justification, checked rather than asserted in prose.
@@ -3520,14 +3543,24 @@ describe("the streaming clause's facts are asserted", () => {
     // character, and a doc comment is not data.
     const arms = EXCLUSIONS.flatMap((exclusion) => exclusion.arms ?? []);
 
-    // Both directions of the vacuity guard, because `length > 20` alone is satisfied by a collection
-    // that has lost its arms. The count is asserted against the registry rather than against a
-    // constant, so "some arms went missing" and "the check is looking at a subset" fail here instead
-    // of passing quietly.
+    // The coarse floor, because `length > 20` alone is satisfied by a collection that has lost arms.
+    // **Unwitnessed, and recorded rather than dressed up:** the registry holds 35 arms, so every
+    // partial read still clears 25 and no mutation can falsify this threshold. It is a backstop behind
+    // the equality assertion below, not a load-bearing check.
     expect(
       arms.length,
       "the arms must have been found, or this assertion is vacuous",
     ).toBeGreaterThan(25);
+    // Equality with the registry, which is what the round-3 `scrapeArms` defect needed: a hand-written
+    // list silently drops a table, and that is caught here.
+    //
+    // **What this does NOT do, stated because the previous comment claimed it did:** `arms` *is*
+    // `EXCLUSIONS.flatMap(...)` and this total is `EXCLUSIONS.reduce(...)`, so the two are equal for
+    // every possible `EXCLUSIONS`. This assertion cannot fail because an arm was added to or removed
+    // from the registry - both sides move together. It catches a change to the *reading*, and nothing
+    // else. An arm disappearing from the registry is caught by the membership assertion below; an arm
+    // becoming redundant is caught by the load-bearing delete-a-clause check. Claiming this assertion
+    // covers those would be the same defect as the assertion being vacuous, only quieter.
     expect(
       arms.length,
       "the arms read here must be every arm the registry declares, or this check examines a subset " +
@@ -3552,12 +3585,17 @@ describe("the streaming clause's facts are asserted", () => {
         "code and this assertion examines the suite minus the clause without saying so",
     ).toContain(STREAMED_BODY_AS_RESPONSE.source);
 
-    const others = sources
-      .map((arm) => new RegExp(arm))
-      .filter(
-        (compiled) =>
-          compiled.source !== STREAMED_BODY_AS_RESPONSE.source && compiled.test(CALLER_SUPPLIED),
-      );
+    // Each arm compiled with **its own exclusion's flags**. Every arm-bearing exclusion builds its
+    // detector with "i", and this used to compile them bare - so an arm whose pattern only reached a
+    // caller-supplied URL under `i` looked like it caught nothing, and the sole-custody claim held
+    // while two arms could catch the same violation. Defeated with exactly that arm before the fix.
+    // Flags are read from the owning exclusion rather than written here, so an exclusion that changes
+    // them cannot leave this check silently behind.
+    const others = ARMS_WITH_OWNER_FLAGS.filter(
+      ({ arm, owner }) =>
+        arm.source !== STREAMED_BODY_AS_RESPONSE.source &&
+        new RegExp(arm.source, flagsOf(owner)).test(CALLER_SUPPLIED),
+    ).map(({ owner, arm }) => `${owner} :: ${arm.name}`);
     expect(
       others,
       "if another arm now catches this too, this clause is redundant and the sole-custody claim " +
