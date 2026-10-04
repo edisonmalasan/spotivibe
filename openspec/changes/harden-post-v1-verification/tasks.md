@@ -734,3 +734,45 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   a trap for the next person who adds one, not a hole today. `download-non-goals.test.ts`'s
   `SOURCES_BY_FILE` anchor and `motion-budget.test.ts` were also checked and found sound. The
   fixture-presence gap noted in 8.15 remains open **by decision**.
+
+- [x] 8.18 **Six consecutive green full gate runs at `4d31728`, after round 6's repairs, corroborated
+  from the logs by a separate checker.**
+
+  8.3 was met at `bdb0dba`, 8.10 at `cdc0fb0`, 8.12 at `9a5634e`, 8.14's six runs at `68860cb`, and 8.16's
+  six runs at `f4b5cb1`. **None of those executes round 6's `stepWith`, `jobRunDefaults`,
+  duplicate-key refusal, throwing `indexOfStep`, the `GATES` declaration, the arm-name uniqueness
+  assertion, or the four new multi-line witnesses** — so on 8.3's own reasoning (*a criterion measured
+  against a tree that has since changed is not a measurement of the current tree*) the batch is re-run
+  rather than inherited.
+
+  ```
+  run  exit  seconds  files  tests  motion-budget  skipped  parse
+  1    0     104      181    3302   21                      ok
+  2    0     100      181    3302   21                      ok
+  3    0     98       181    3302   21                      ok
+  4    0     98       181    3302   21                      ok
+  5    0     97       181    3302   21                      ok
+  6    0     96       181    3302   21                      ok
+  ```
+
+  **3302, not 3297:** round 6 added four multi-line witnesses to `ci-workflow.test.ts` and one
+  registry-wide arm-name uniqueness assertion to `release-exclusions.test.ts`. `motion-budget` is 21 in
+  every run, which is the load-bearing half — 15 passed + 6 skipped is the no-build figure, so a run
+  without a build would report 15 here.
+
+  **Corroborated from the logs, not from the batch's own summary.** `verify-gateruns6.mjs` reads all six
+  logs and finds every marker (`Test Files`, `Tests `, `tests/motion-budget.test.ts`), 0 NUL bytes and 0
+  U+FFFD replacement characters in each — so no log is UTF-16 or lossy — and asserts each total is
+  distinct across the six. **The checker locates each marker as a string before reading any number from
+  its region**, because the first version of this checker reported *the logs contain none of the counts*
+  when they plainly did: vitest colours its summary, so the bytes read `Test Files \x1b[2m181
+  passed\x1b[22m` and an escape sequence is not whitespace. A parser that cannot find what it is looking
+  for is not evidence that it is absent — the lesson this whole change is an instance of.
+
+  **No repository file was edited while the batch ran.** Round 6 sharpens that constraint rather than
+  repeating it: four of the five files the gate checks are files that mutation suites edit, and 8.3's
+  batch failed run 6 on `format:1` for exactly this reason.
+
+  **Not re-measured by this batch, and therefore not claimed:** `npm ci`, `npm run setup`, and both
+  archived `release-gate.mjs` copies. `npm run gate` does not invoke them, so AGENTS.md's claim that they
+  exit 0 remains inherited from M0 rather than re-measured here.
