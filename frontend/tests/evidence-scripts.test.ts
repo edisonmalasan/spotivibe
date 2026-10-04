@@ -1,8 +1,9 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(here, "..", "..");
@@ -14,36 +15,221 @@ const TASKS = join(CHANGE, "tasks.md");
 
 const read = (path: string): string => readFileSync(path, "utf8");
 
+/** Executable text only. A needle satisfied by a comment is not an assertion about behaviour. */
+function stripComments(source: string, markers: readonly string[]): string {
+  return source
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (markers.some((marker) => trimmed.startsWith(marker))) return "";
+      for (const marker of markers) {
+        const at = line.search(new RegExp(`\\s${marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+        if (at !== -1) return line.slice(0, at);
+      }
+      return line;
+    })
+    .join("\n");
+}
+
+const POWERSHELL = ["#", "*"] as const;
+const JAVASCRIPT = ["//", "*"] as const;
+
+// ---------------------------------------------------------------------------------------------
+// The harness. Everything below asserts on what the checker DOES, by running it.
+//
+// Round 11 replaced this file's predecessor with four assertions on literal substrings of the
+// checker's and driver's own diagnostic messages. Round 12 measured what that was worth: disabling the
+// enforcement while leaving the message in place (`if (!allDistinct)` -> `if (false && !allDistinct)`)
+//// left the suite green at 6/6, and the shipped checker then printed
+//
+//     FAIL log digests across the logs: 1 distinct of 6
+//     corroborated: all 6 logs are distinct runs, each green, ...
+//
+// on consecutive lines and exited **0**. That is this checker's own recorded defect 6 - "A phase that
+// could not run was counted as a pass, and the word 'corroborated' was printed under it" - reintroduced
+// by the repair written for it. The worse half is easy to miss: the gate was green when the checker was
+// **correct** too, because a test that greps a file for strings it wrote has no opinion about behaviour
+// either way.
+//
+// So every case below is a negative case, and a negative case is its own proof the checker can fail:
+// there is nothing to mutate, because the assertion *is* the mutation.
+// ---------------------------------------------------------------------------------------------
+
+const scratch = mkdtempSync(join(tmpdir(), "evidence-gate-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+/** A log carrying every figure the checker asserts, plus nothing it objects to. */
+function greenLog(run: number): string {
+  return [
+    "gate exit0",
+    " Test Files  182 passed (182)",
+    "      Tests  3326 passed (3326)",
+    " ✓ tests/motion-budget.test.ts (21 tests) 1200ms",
+    `   Duration  ${170 + run}.44s`,
+    "",
+  ].join("\n");
+}
+
+function writeLogs(dir: string, bodies: readonly string[]): string {
+  mkdirSync(dir, { recursive: true });
+  bodies.forEach((body, index) => writeFileSync(join(dir, `run${index + 1}.log`), body, "utf8"));
+  return dir;
+}
+
 /**
- * Round 11's NIT 4, which the verifier graded **not acceptable as it stands**.
- *
- * These two files are the only artefacts in this change a reader is asked to *execute*. Everything else in
- * the repository is covered by `prettier`, `eslint`, `tsc` and `vitest`; these two sit outside `frontend/`
- * and so outside all four. That is not a theoretical gap: round 10 found two defects in them *after* they
- * shipped, round 11 found five more, and not one of those seven would have been caught by the gate. The
- * defence offered in the records — that they had been corrected several times — is an argument for a gate,
- * not against one.
- *
- * Four assertions, each of which the seven defects above defeated individually:
- *
- *  1. both files exist and the `.mjs` **parses** — `node --check`, the cheapest possible proof that a file a
- *     reader is told to run is not a syntax error;
- *  2. the checker **requires** a `gate exit` line, and the driver **writes** one. This is a wiring
- *     assertion between two files, and it is here because that exact pairing was WARNING 3: the criterion
- *     says six *green* runs and the exit status had no artefact in either file;
- *  3. neither file hard-codes a machine path. `--runs` appears in the driver's printed command (NIT 1: the
- *     printed interface was correct only for the default, which is not what an interface is for);
- *  4. `tasks.md` never names a checker that is not in the repository without saying so — closing WARNING 6,
- *     which was a *correction* that asserted a fact about the file which the file did not bear out.
+ * A stub frontend, so the enumeration phase returns a figure we control. It is `node` and a directory:
+ * no package is installed, which is also why this suite can run the checker on a machine that has never
+ * run an install.
  */
-describe("the batch evidence scripts are covered, because they are the only files a reader is told to run", () => {
+function stubFrontend(name: string, templates: number): string {
+  const dir = join(scratch, name);
+  mkdirSync(join(dir, "node_modules/vitest"), { recursive: true });
+  writeFileSync(join(dir, "package.json"), '{"name":"stub","private":true}\n', "utf8");
+  writeFileSync(
+    join(dir, "node_modules/vitest/vitest.mjs"),
+    `for (let i = 0; i < ${templates}; i += 1) process.stdout.write(\`tests/x.test.ts > t\${i}\\n\`);\n`,
+    "utf8",
+  );
+  return dir;
+}
+
+interface Verdict {
+  exit: number | null;
+  corroborated: boolean;
+  digestLine: string;
+  problems: string | null;
+}
+
+function runChecker(logDir: string, frontend: string, extra: readonly string[] = []): Verdict {
+  const result = spawnSync(
+    process.execPath,
+    [CHECKER, logDir, "--frontend", frontend, "--runs", "6", ...extra],
+    { encoding: "utf8", env: process.env },
+  );
+  const output = ((result.stdout ?? "") + (result.stderr ?? "")).replace(/\x1b\[[0-9;]*m/g, "");
+  return {
+    exit: result.status,
+    corroborated: /^corroborated:/m.test(output),
+    digestLine: (output.split("\n").find((line) => /log digests/.test(line)) ?? "").trim(),
+    problems: /(\d+) problem\(s\) unresolved/.exec(output)?.[1] ?? null,
+  };
+}
+
+describe("the shipped checker corroborates a real batch", () => {
+  it("accepts six green, distinct logs and says so", () => {
+    // The control. Without it, every case below could be green because the checker refuses everything.
+    const dir = writeLogs(
+      join(scratch, "control"),
+      [1, 2, 3, 4, 5, 6].map((run) => greenLog(run)),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-control", 3003));
+
+    expect(verdict.exit, `the control must pass; digest line was: ${verdict.digestLine}`).toBe(0);
+    expect(verdict.corroborated, "the control must reach the corroborated verdict").toBe(true);
+  });
+});
+
+describe("the shipped checker refuses what round 11's gate could only grep for", () => {
+  // Each `it` below is a case the checker must reject. If one of these passes silently, the checker has
+  // a false green - which is the defect this whole change exists to remove.
+
+  it("refuses six byte-identical logs: agreement between copies is not stability", () => {
+    // Round 11's NIT 3. Round 12's R7b disabled this enforcement and the gate stayed green while the
+    // checker printed `corroborated` and exited 0 over its own printed FAIL.
+    const dir = writeLogs(
+      join(scratch, "copies"),
+      Array.from({ length: 6 }, () => greenLog(1)),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-copies", 3003));
+
+    expect(verdict.exit, `six copies were corroborated: ${verdict.digestLine}`).not.toBe(0);
+    expect(verdict.corroborated, "six copies must never reach the corroborated verdict").toBe(
+      false,
+    );
+  });
+
+  it("refuses a log that carries no exit status, because the criterion is six GREEN runs", () => {
+    // Round 11's W3. The exit status had no artefact anywhere; the driver's `$exitCode` went to the
+    // console while the log received the gate's stdout and nothing else.
+    const dir = writeLogs(
+      join(scratch, "no-exit"),
+      [1, 2, 3, 4, 5, 6].map((run) => greenLog(run).replace("gate exit0\n", "")),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-no-exit", 3003));
+
+    expect(
+      verdict.exit,
+      "a log with no exit status cannot establish that the run was green",
+    ).not.toBe(0);
+    expect(verdict.corroborated).toBe(false);
+  });
+
+  it("refuses a log whose gate exited non-zero, however green its figures look", () => {
+    const dir = writeLogs(
+      join(scratch, "nonzero"),
+      [1, 2, 3, 4, 5, 6].map((run) => greenLog(run).replace("gate exit0", "gate exit1")),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-nonzero", 3003));
+
+    expect(verdict.exit, "a non-zero gate exit is not a green run").not.toBe(0);
+    expect(verdict.corroborated).toBe(false);
+  });
+
+  it("refuses a log carrying a second, failing verdict", () => {
+    // A log with two verdicts is not decidable from the file, so it is refused rather than resolved.
+    const dir = writeLogs(
+      join(scratch, "two-verdicts"),
+      [1, 2, 3, 4, 5, 6].map((run) =>
+        run === 1
+          ? `${greenLog(run)}\n Test Files  1 failed | 181 passed (182)\n      Tests  1 failed | 3325 passed (3326)\nnpm error code 1\n`
+          : greenLog(run),
+      ),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-two", 3003));
+
+    expect(verdict.exit, "a log holding two verdicts was resolved rather than refused").not.toBe(0);
+    expect(verdict.corroborated).toBe(false);
+  });
+
+  it("refuses an enumeration anchored to nothing: one test in the tree is not corroboration", () => {
+    // Round 11's W2. A `--frontend` holding a single test satisfied `listedIds <= logTotal`, because
+    // 1 <= 3326.
+    const dir = writeLogs(
+      join(scratch, "one-test"),
+      [1, 2, 3, 4, 5, 6].map((run) => greenLog(run)),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-one", 1));
+
+    expect(verdict.exit, "a tree holding one test was accepted as corroboration").not.toBe(0);
+    expect(verdict.corroborated).toBe(false);
+  });
+
+  it("refuses an executed total inflated a thousandfold", () => {
+    // Round 11's W4. `listedIds <= logTotal` detects an understated total and is blind to an overstated
+    // one; six logs claiming 999999 tests were reported as agreeing, with a gap of 997 004 printed on the
+    // line above the verdict word.
+    const dir = writeLogs(
+      join(scratch, "inflated"),
+      [1, 2, 3, 4, 5, 6].map((run) =>
+        greenLog(run)
+          .replace("Tests  3326 passed (3326)", "Tests  999999 passed (999999)")
+          .replace("Duration", "Duration"),
+      ),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-inflated", 3003));
+
+    expect(verdict.exit, "an inflated executed total was accepted as corroboration").not.toBe(0);
+    expect(verdict.corroborated).toBe(false);
+  });
+});
+
+describe("the two evidence scripts are readable by the person told to run them", () => {
   it("both exist, and the checker parses", () => {
     expect(existsSync(DRIVER), `${DRIVER} is missing`).toBe(true);
     expect(existsSync(CHECKER), `${CHECKER} is missing`).toBe(true);
 
-    // `node --check` rather than importing it: importing would execute the module, and this file's whole
-    // subject is a script that must be run deliberately with a log directory. Executing it here would need a
-    // fixture of six logs, which is the batch's job and not this suite's.
+    // `node --check`, not an import: importing would execute the module, and this suite already runs the
+    // script properly, with a log directory, further down.
     const checked = spawnSync(process.execPath, ["--check", CHECKER], { encoding: "utf8" });
     expect(
       checked.status,
@@ -51,68 +237,23 @@ describe("the batch evidence scripts are covered, because they are the only file
     ).toBe(0);
   });
 
-  it("the driver writes the exit status the checker requires", () => {
-    const driver = read(DRIVER);
-    const checker = read(CHECKER);
+  it("the driver's executable code writes the exit status the checker requires", () => {
+    // Round 11 asserted `driver.toContain("gate exit$exitCode")`. Round 12's R6 satisfied that needle by
+    // commenting the line out, and the suite stayed green - the same defect class `code()` was written to
+    // kill two files over. So the needle is taken from the executable text only.
+    const executable = stripComments(read(DRIVER), POWERSHELL);
 
-    // WARNING 3, measured both ways: a log carrying every green figure plus `npm error code 1` was
-    // corroborated with exit 0, because the criterion's green half had no artefact anywhere.
-    expect(driver, "the driver must write the gate's exit status into the log").toContain(
-      "gate exit$exitCode",
-    );
-    expect(checker, "the checker must require that status rather than infer it").toContain(
-      "gate exit",
-    );
-
-    // And it must *refuse* a log without one. A checker that defaults an absent status to zero has
-    // reintroduced the original defect with a default value.
-    expect(checker).toContain("the log carries no `gate exit <code>` line");
-    // NIT 3: six byte-identical logs were corroborated as six runs, which is the cheapest way to make a
-    // stability criterion vacuous. Distinctness is asserted on the bytes.
-    expect(checker, "distinct logs must be asserted, not just agreeing figures").toContain(
-      "identical logs cannot be six runs",
-    );
+    expect(executable).toContain("gate exit$exitCode");
+    expect(
+      executable,
+      "the exit status must be written by the WriteAllText call, not merely mentioned near it",
+    ).toMatch(/WriteAllText\(\$logPath,\s*"gate exit\$exitCode/);
   });
 
-  it("neither script hard-codes a machine path", () => {
-    for (const path of [DRIVER, CHECKER]) {
-      // Prose in a comment may legitimately *name* a path while explaining that it must not be hard-coded, so
-      // comments are removed before the search rather than excused after it. The first version of this filter
-      // stripped only `*` and `//`, which missed PowerShell's `#` — and the assertion then failed on a
-      // comment in the driver that says the arrangement was self-reported. A check that fires on prose is
-      // worse than no check, because the next person widens the exemption instead of fixing the path.
-      //
-      // A `#` inside a string literal would be mistaken for a comment, which can only make this assertion
-      // miss a real path, never invent one. That is the correct direction to be wrong in.
-      const offenders = read(path)
-        .split(/\r?\n/)
-        .map((line) => {
-          const trimmed = line.trim();
-          // A comment marker at column 0 has no whitespace before it, so the trailing-comment rule below
-          // cannot see it. The driver's header documents the arrangement this change replaced and names the
-          // old script while explaining that it must not be relied on — which is prose, not a hard-coded
-          // path, and an assertion that reads it as one fires on the very comment that keeps the record
-          // honest.
-          if (trimmed.startsWith("#") || trimmed.startsWith("*") || trimmed.startsWith("//"))
-            return "";
-          return line.replace(/\s(#|\/\/|\*).*$/, "").trim();
-        })
-        .filter((line) => line.length > 0)
-        .filter((line) => /[A-Za-z]:\\|AppData|Temp\\|gateruns\d/.test(line));
-
-      expect(
-        offenders,
-        `${path} hard-codes a machine-specific path:\n${offenders.join("\n")}`,
-      ).toEqual([]);
-    }
-  });
-
-  it("the driver prints a checker command that carries the run count it was given", () => {
-    // NIT 1: the printed interface omitted `--runs`, so it was correct only for `-Runs 6` - and a `-Runs 3`
-    // batch printed a command that then failed on four unexamined logs. Loud beats silent, so this was a
-    // NIT rather than a WARNING, but the interface was wrong for every non-default value.
-    const driver = read(DRIVER);
-    const printed = driver
+  it("the driver's printed checker command carries the run count it was given", () => {
+    // NIT 1: the printed interface omitted `--runs`, so it was right only for `-Runs 6`.
+    const executable = stripComments(read(DRIVER), POWERSHELL);
+    const printed = executable
       .split(/\r?\n/)
       .find((line) => line.includes("verify-gate-batch.mjs") && line.includes("--frontend"));
 
@@ -122,44 +263,80 @@ describe("the batch evidence scripts are covered, because they are the only file
       "the printed command omits --runs, so it is right only for the default",
     ).toContain("--runs $Runs");
   });
+
+  it("neither script hard-codes a machine path, on any platform", () => {
+    // Round 11's filter was `/[A-Za-z]:\\|AppData|Temp\\|gateruns\d/` - four Windows shapes. CI is
+    // `ubuntu-latest`, and round 12's R9 put `/home/runner/work/...` into the driver and stayed green.
+    // The assertion is now the one its name claims: any machine, any platform.
+    for (const [path, markers] of [
+      [DRIVER, POWERSHELL],
+      [CHECKER, JAVASCRIPT],
+    ] as const) {
+      const offenders = stripComments(read(path), markers)
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .filter((line) =>
+          /[A-Za-z]:\\|\/home\/|\/Users\/|AppData|gateruns\d|\/var\/folders/.test(line),
+        );
+
+      expect(
+        offenders,
+        `${path} hard-codes a machine-specific path:\n${offenders.join("\n")}`,
+      ).toEqual([]);
+    }
+  });
+
+  it("the checker's documented defaults are the defaults it asserts", () => {
+    // Round 12's CRITICAL 4a: the header said the flags "default to 181 and 21" while the code read
+    // `?? "182"`, and nothing anywhere compared the two. Commit ed6f9f6 raised the default and left the
+    // sentence behind it, which is a false claim in a file a reader runs.
+    const checker = read(CHECKER);
+    const files = /flags\.get\("expect-files"\)\s*\?\?\s*"(\d+)"/.exec(checker)?.[1];
+    const budget = /flags\.get\("expect-budget"\)\s*\?\?\s*"(\d+)"/.exec(checker)?.[1];
+    const documented = /default to (\d+) and (\d+)/.exec(checker);
+
+    expect(files, "could not read the --expect-files default out of the checker").toBeDefined();
+    expect(budget, "could not read the --expect-budget default out of the checker").toBeDefined();
+    expect(
+      documented?.[0],
+      "the checker's header no longer states its defaults in the form this assertion reads, so the " +
+        "sentence and the code can drift apart again without anything noticing",
+    ).toBeDefined();
+    expect(`${documented![1]} and ${documented![2]}`).toBe(`${files} and ${budget}`);
+  });
 });
 
-/**
- * Round 11's WARNING 6, closed by a gate rather than by an amendment.
- *
- * The eleventh entry claimed all eleven earlier batch entries "now read as" pointing at the shipped
- * checker. Measured: three still named `verify-gaterunsN.mjs` — a temp-directory file, not in the
- * repository — and three more said "by separate code" with no pointer at all. The correction existed,
- * 600 lines *after* the entries it corrected, which is the wrong direction for anyone reading forward.
- *
- * So the entries are amended in place, and this asserts the amendment holds. The alternative is a
- * correction that is one edit away from the same hole, which is what the eleventh entry was.
- */
 describe("no record in this change claims corroboration from a checker nobody else can run", () => {
-  const lines = read(TASKS).split(/\r?\n/);
-  const mentions = lines
-    .map((line, index) => ({ line, index }))
-    .filter(({ line }) => /verify-gateruns\d*\.mjs/.test(line));
+  /**
+   * Round 11 guarded this with a ±3-line window around a `/verify-gateruns\d*\.mjs/` match. Round 12
+   * measured two ways past it: dropping `.mjs` removed the line from the population entirely, and putting
+   * the disclaimer on the *neighbouring* entry satisfied a proximity window that was never a reference.
+   *
+   * So the unit is the **entry** - a blank-line-delimited paragraph - not the line. A mention in an entry
+   * requires that entry to say the script is not in the repository, which is the only thing the sentence
+   * actually has to communicate to a reader arriving at it alone.
+   */
+  const entries = read(TASKS)
+    .split(/\r?\n\s*\r?\n/)
+    .map((entry) => ({ entry, text: entry.replace(/\s+/g, " ") }))
+    .filter(({ text }) => /verify-gateruns\d*/.test(text));
 
-  it("finds the entries it is guarding, so the assertion is not vacuous", () => {
-    // The guard below passes trivially if no entry mentions a temp-only checker. That is the same
-    // vacuity round 7 found in the yaml reader, and it is closed the same way: assert the population first.
+  it("finds the entries it is guarding, so the rule below cannot pass vacuously", () => {
     expect(
-      mentions.length,
-      "no entry names a temp-directory checker, so the disclaimer rule below cannot fail",
+      entries.length,
+      "no entry names a temp-only checker, so the disclaimer rule below cannot fail",
     ).toBeGreaterThan(0);
   });
 
-  it("every mention of a temp-only checker carries its disclaimer nearby", () => {
-    const bare = mentions.filter(({ index }) => {
-      const window = lines.slice(Math.max(0, index - 3), index + 4).join(" ");
-      return !/not in the repository|temp director/i.test(window);
-    });
+  it("every entry naming a temp-only checker says in that same entry that it is not in the repository", () => {
+    const bare = entries.filter(({ text }) => !/not in the repository|temp director/i.test(text));
 
     expect(
-      bare.map(({ index, line }) => `line ${index + 1}: ${line.trim().slice(0, 100)}`),
-      "these entries name a checker that is not in the repository without saying so, so a reader " +
-        "arriving at one of them alone is told a figure was corroborated by a script that does not exist",
+      bare.map(({ text }) => text.slice(0, 120)),
+      "these entries name a checker that is not in the repository without saying so in the same entry, " +
+        "so a reader arriving at one of them alone is told a figure was corroborated by a script that " +
+        "does not exist",
     ).toEqual([]);
   });
 });

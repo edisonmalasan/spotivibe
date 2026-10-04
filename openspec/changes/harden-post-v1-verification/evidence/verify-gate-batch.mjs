@@ -37,10 +37,26 @@
 // as a finding about the tree:
 //   - the executed-test total. It is cross-checked against a second mechanism instead — see phase 2.
 //
-// The `--expect-*` flags are how the first two assertions are parameterised. They default to 181 and 21
-// and are **optional on purpose**: a batch taken on a different tree may legitimately have different
-// numbers, and the honest move is for the caller to say what it expects, not for this script to guess and
-// then report its own guess back as a finding.
+// The `--expect-*` flags parameterise the two figures this script asserts. They default to 182 and 21,
+// and **both defaults are asserted**, not merely reported: a batch taken on a different tree fails until
+// its caller says what it expects. That is the opposite of what this comment claimed until round 12.
+//
+// **Round 12's CRITICAL 4b, corrected in place.** The sentence here used to read that the flags are
+// "optional on purpose... the honest move is for the caller to say what it expects, not for this script to
+// guess and then report its own guess back as a finding" — while the code did precisely that: `?? "182"`,
+// then `found.files === options.files`. A stated philosophy contradicted by the code two lines below it is
+// worse than no philosophy, because a reader deciding whether to trust this script will reason from it.
+//
+// What is actually true, and is now what is written: a *default* is a guess this script makes once, on the
+// caller's behalf, and it is a guess it then asserts. That is defensible — a batch on an unexpected tree
+// should be reported rather than quietly accepted — but it is only defensible while the default and the
+// documentation agree, which is why `evidence-scripts.test.ts` now reads both out of this file and
+// compares them. Commit ed6f9f6 raised the default to 182 and left this sentence saying 181, and nothing
+// in the repository noticed for one full round.
+//
+// The executed-test total is the one figure genuinely left unasserted, because it is the one that moves
+// whenever the suite gains a test, and a hard-coded expectation for it would report itself as a finding
+// about the tree on every ordinary change.
 //
 // ## The five defects this checker's own history contains, kept because each was a real false report
 //
@@ -191,12 +207,25 @@ for (let run = 1; run <= options.runs; run += 1) {
   // `npm error code 1` to one of six otherwise-untouched logs still reported `run1 … asserted ok` and
   // `corroborated`, exit 0.
   //
-  // It was latent rather than exploitable — I measured that a genuinely red gate run has exactly one
-  // `Tests … passed` match and its only `Test Files` line reads `1 failed | 180 passed (181)`, which does
-  // not match the green pattern, so `files` is null and the log is refused. But "the batch would still have
-  // noticed, for a different reason" is not the same claim as "the batch checks the thing it says it
-  // checks", and a criterion whose stated half has no evidence behind it is a criterion with an unmeasured
-  // half. So the driver now writes `gate exit <code>` into the log and this asserts it is 0.
+  // It was latent rather than exploitable — a genuinely red gate run's only `Test Files` line reads
+  // `1 failed | N-1 passed (N)`, which does not match `/Tests?\s+Files\s+(\d+) passed/`, so `files` is null
+  // and the log is refused. Round 12 forced a real failure and confirmed it against captured output:
+  // `files`, `tests`, `budget` and `skipped` all came back null, `exitCode` was `"1"`, and the
+  // failing-summary regex matched. A red run is now caught by **three** independent mechanisms.
+  //
+  // **Two corrections round 12 made to this comment, both because it asserted more than was measured.**
+  // It said a red run "has exactly one `Tests … passed` match" — the measurement is **zero**, because the
+  // red line reads `Tests  1 failed | …` and the `passed`-anchored pattern does not match it. Harmless,
+  // since `tests` is reported rather than asserted and the driver prints `?` when it finds none, but it
+  // was a false statement. And it quoted `1 failed | 180 passed (181)` as a literal; with the suite at
+  // 182 files that line reads `1 failed | 181 passed (182)`. The *claim* survives, the *figures* did not,
+  // and a hard-coded figure in a comment about a moving count is the same failure as a hard-coded figure
+  // in an assertion — so both are now written as `N-1` and `N`.
+  //
+  // None of that is why the repair was made. "The batch would still have noticed, for a different reason"
+  // is not the same claim as "the batch checks the thing it says it checks", and a criterion whose stated
+  // half has no evidence behind it is a criterion with an unmeasured half. The driver now writes
+  // `gate exit <code>` into the log and this asserts it is 0.
   const exitCode = /gate exit(\d+)/.exec(text)?.[1] ?? null;
   // A second summary contradicting the first would also be a log carrying two verdicts. Refused rather than
   // resolved, because which one the gate meant is not decidable from the file.
@@ -384,33 +413,56 @@ if (list.status !== 0 || listedIds === 0) {
   //
   // **The anchor is a RATIO, and that is a measured revision rather than the original plan.**
   //
-  // The first attempt asserted `listedIds === --expect-enumerated` with the constant 2995, which is the
-  // obvious way to pin a figure down. It was measured at once and it does not hold: with **zero tests
-  // added** — `git diff` finds no new `it(` or `test(` in the only test file changed — enumeration moved
-  // 2995 -> 2997, both times across the same 181 files. The two extra entries are:
+  // The first attempt asserted `listedIds === 2995`, which is the obvious way to pin a figure down. It was
+  // measured at once and it does not hold: with **zero tests added** — `git diff` finds no new `it(` or
+  // `test(` — enumeration moved 2995 -> 2997, both times across the same 181 files. The two extra entries
+  // were:
   //
   //     tests/release-gate-install.test.ts > node
   //     tests/release-gate-install.test.ts > lineOf
   //
-  // Top-level entries with no suite segment, named after local identifiers in the edited file. The suite
-  // was then run to settle whether they were tests: `Tests  1 failed | 3319 passed (3320)`, so the
-  // executed total is unchanged and **they are not tests — `vitest list` emitted two non-test lines.**
-  // *Why* it does that is **unverified**; the mechanism was not established, and a guess with a number
-  // attached to it would be worse than an admission.
+  // Top-level entries with no suite segment. Running the suite settled that they are not tests — the
+  // executed total was unchanged — so `vitest list` emitted two non-test lines.
   //
-  // What the measurement does establish is enough to reject the constant. An anchor that moves when
+  // **Round 12's CRITICAL 4c, and this is the correction that matters: the sentence above used to say
+  // those entries were "named after local identifiers in the edited file", and that was refuted by
+  // measurement rather than merely left unverified.** The identifiers were renamed — the `lineOf` const and
+  // its `node` parameter, in `declarationFor`, then in `declaredHow`, then in `reachableComplementArm`,
+  // one per run — and the phantom names did not move. Three further probes (an unused module-scope arrow
+  // with unique const *and* parameter names, and a called one) each left the count unchanged. The names
+  // are **invariant to the identifiers they were alleged to be named after**. A coincidence recorded as a
+  // cause is the exact failure this change has spent twelve rounds removing, committed here in round 11.
+  //
+  // What survives measurement is narrower and sufficient: two non-test lines exist, they inflate
+  // `listedIds` by 2, they are deterministic (6/6 full-suite runs enumerate identically), they are
+  // localised to one file (that file alone lists 73 lines for 71 tests), and they appear on stdout rather
+  // than stderr. **The mechanism remains unverified.** A `formatName` helper that accepts a function and
+  // reads `.name` is *consistent* with the symptom without explaining why these two arrows and not the
+  // three probes, and a `@jridgewell/trace-mapping` lead turned out to be a substring hit on `lineOffset`.
+  // Both are recorded so nobody repeats them; neither is offered as the answer.
+  //
+  // What that measurement does establish is enough to reject the constant. An anchor that moves when
   // nothing was added is a value nobody can maintain, and maintaining it means editing 2995 to 2997 until
-  // it agreed — which is this checker's own recorded defect 3, reached by a different road.
+  // it agreed — which is this checker's own recorded defect 3 reached by a different road. So the anchor is
+  // the **ratio** of enumerated templates to executed tests: a property of the suite rather than of the
+  // enumerator's line discipline, and robust to the jitter in both directions, since ±2 in a 3000-line
+  // count moves the ratio by 0.0006.
   //
-  // So the anchor is the **ratio** of enumerated templates to executed tests: a property of the suite
-  // rather than of the enumerator's line discipline. Both measured holes still fail it decisively —
+  // Both measured holes still fail it decisively —
   //
-  //     a tree holding ONE test   ->   1 / 3320    = 0.0003   (W2)
-  //     a log inflated to 999999  -> 2997 / 999999 = 0.0030   (W4)
+  //     a tree holding ONE test   ->   1 / 3326    = 0.0004   (W2)
+  //     a log inflated to 999999  -> 3003 / 999999 = 0.0030   (W4)
   //
-  // — and the honest batch sits at 2997 / 3320 = 0.903. The floor is 0.8: far enough below 0.90 that
-  // ordinary growth in `.each(` expansion cannot cross it. The ratio cannot exceed 1, because enumeration
-  // is a lower bound by construction.
+  // — and an honest batch sits near 0.90. Two caveats, both measured by round 12 rather than assumed:
+  //
+  //   - The accepted window for the executed total is `[listedIds, listedIds / 0.8]`, so an **overstated**
+  //     total of up to +12.8% is accepted as `corroborated`. That is two orders of magnitude better than
+  //     the 999999 hole it replaced, and it is why the floor is defensible — but it is a band, and the
+  //     honest description of it is a band.
+  //   - The headroom between 0.90 and the 0.8 floor is **11.4%**, and an earlier version of this comment
+  //     called that "far enough below 0.90 that ordinary growth in `.each(` expansion cannot cross it".
+  //     Nothing was measured about how fast `.each(` expansion grows. The claim was unmeasured and is
+  //     withdrawn; 11.4% is what the margin actually is.
   const ANCHOR_FLOOR = 0.8;
   const ratio = listedIds / logTotal;
   const anchored = ratio >= ANCHOR_FLOOR && listedIds <= logTotal;

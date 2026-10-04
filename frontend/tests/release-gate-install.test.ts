@@ -690,17 +690,43 @@ function reachableComplementArm(
     file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
 
   const tests: ts.IfStatement[] = [];
+  // **Round 12's W6: element access counts.** This used to require a dot-access `PropertyAccessExpression`,
+  // so `if (prepared["ok"]) {` — semantically identical, and behaviour-preserving, since `prepared` is
+  // never null — was refused with the message *"nothing inside the dispatch tests `prepared.ok`"*. It
+  // does test `prepared.ok`; this locator simply could not read it.
+  //
+  // That refusal is the same error as a false green with the sign flipped, and it is worse in one
+  // particular way: **it misreports what it saw.** A maintainer who trusts it concludes the file is wrong
+  // and rewrites working code to satisfy a shape, rather than concluding the locator is blind and widening
+  // it. A check that teaches the next person to work around it is worse than no check, because the
+  // workaround is invisible and the locator stays narrow forever.
+  const isOutcomeTest = (node: ts.IfStatement): boolean => {
+    const condition = node.expression;
+    // Both forms accepted, and the subject must be the producer *identifier* — not a call, not an
+    // arbitrary expression that happens to yield an object.
+    if (ts.isPropertyAccessExpression(condition)) {
+      return (
+        condition.name.kind === ts.SyntaxKind.Identifier &&
+        condition.name.text === "ok" &&
+        ts.isIdentifier(condition.expression) &&
+        condition.expression.text === producer
+      );
+    }
+    if (ts.isElementAccessExpression(condition)) {
+      return (
+        ts.isStringLiteral(condition.argumentExpression) &&
+        condition.argumentExpression.text === "ok" &&
+        ts.isIdentifier(condition.expression) &&
+        condition.expression.text === producer
+      );
+    }
+    return false;
+  };
+  const conditionals: ts.IfStatement[] = [];
   const visit = (node: ts.Node): void => {
-    if (ts.isIfStatement(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const subject = node.expression;
-      if (
-        subject.name.kind === ts.SyntaxKind.Identifier &&
-        subject.name.text === "ok" &&
-        ts.isIdentifier(subject.expression) &&
-        subject.expression.text === producer
-      ) {
-        tests.push(node);
-      }
+    if (ts.isIfStatement(node)) {
+      conditionals.push(node);
+      if (isOutcomeTest(node)) tests.push(node);
     }
     ts.forEachChild(node, visit);
   };
@@ -709,10 +735,23 @@ function reachableComplementArm(
   visit(dispatch.thenStatement);
 
   if (tests.length === 0) {
+    // Name what was actually looked at. Round 12 measured this refusal firing on `prepared["ok"]` and
+    // claiming the file tested nothing, which is a statement about the code that is simply false — and a
+    // false statement about someone's code is the one failure mode a diagnostic must not have.
+    const observed =
+      conditionals.length === 0
+        ? "the dispatch contains no conditional at all"
+        : `its ${conditionals.length} condition${conditionals.length === 1 ? " is" : "s are"} ` +
+          conditionals
+            .map(
+              (node) => `'${node.expression.getText(file).split("\n")[0]}' at line ${lineOf(node)}`,
+            )
+            .join(", ");
+
     throw new Error(
-      `refusing to read the cascade's arm: nothing inside the '${producer}.how' dispatch tests ` +
-        `'${producer}.ok', so the file has no outcome test for the cascade to hang off. The cascade call ` +
-        `exists at line ${lineOf(cascadeCall)} but nothing decides whether it runs.`,
+      `refusing to read the cascade's arm: no condition inside the dispatch tests '${producer}.ok' — ` +
+        `${observed}. The cascade call exists at line ${lineOf(cascadeCall)}, so if none of those decides ` +
+        "whether it runs, nothing does.",
     );
   }
   if (tests.length > 1) {

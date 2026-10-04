@@ -1059,3 +1059,38 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     printed over evidence that was skipped** (76/77), and now **a fixture is not the thing it stands in
     for.** Five defects, one shape: something was believed because it was written down, and not because
     anything about it could fail.
+
+79. **A needle-shaped repair makes a finding's test go red, which is indistinguishable from making the
+    finding closed. Make the thing execute instead.**
+    Round 11 shipped `evidence-scripts.test.ts` as four assertions that two files *contain* four message
+    strings. Round 12 disabled the enforcement, left the messages, and watched the suite stay green at 6/6
+    while the shipped checker printed `FAIL log digests: 1 distinct of 6` and then
+    `corroborated: all 6 logs are distinct runs`, exit **0** — verbatim the defect that repair was written
+    for, reintroduced by it.
+    The measurement that settled it is the one to remember, and it is worse than the headline: **the gate
+    was green when the checker was correct too.** A test that greps a file for strings it wrote has no
+    opinion about behaviour in either direction, so it cannot fail for the right reason any more than
+    for the wrong one.
+    - **A gate must run the thing it gates.** The replacement executes the checker seven times over
+      synthetic logs. Each negative case *is* its own witness — there is nothing left to mutate, because
+      the assertion is the mutation. That inverts the cost: a needle gate needs a mutation suite to prove
+      it can fail; an executing gate is its own mutation suite.
+    - **Take needles from executable text, never from the file.** Round 12's second escape was a driver
+      that stopped writing its exit status with the needle left standing in a comment. Strip comments
+      before searching, or require the call — `WriteAllText($logPath, "gate exit$exitCode` — not the
+      substring anywhere near it.
+    - **A refusal that misstates what it saw is a false green with the sign flipped, and it is worse:**
+      a maintainer who trusts it rewrites working code to satisfy a shape instead of widening the
+      locator. Round 12 measured `if (prepared["ok"])` refused with *"nothing here tests
+      `prepared.ok`"*. Name the conditions you actually observed.
+    - **Withdraw a causal claim when it is refuted, even one you wrote a week ago and built a lesson
+      on.** I recorded the phantom `vitest list` entries as *"named after local identifiers"*; renaming
+      those identifiers left the names unmoved. The coincidence was a cause wearing a measurement's
+      clothes. Round 78 warns against recording a plausible cause as a measured one; the harder case is
+      when you *did* measure something real nearby and let it stand as the explanation.
+    And the structural lesson, which is the reason this milestone is being escalated rather than closed:
+    **twelve rounds of shape assertions cannot become a semantic check.** name -> span -> declaration ->
+    dispatch -> complement, each rung real, none the rung that covers the next finding, because the
+    ladder was extended along the axis the last defect was on. The instrument that closes the class is
+    execution. When execution is forbidden by a constraint, the honest move is to escalate, not to add a
+    thirteenth rung and call the class narrower than it is.

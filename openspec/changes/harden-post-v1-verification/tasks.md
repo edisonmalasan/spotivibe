@@ -1939,3 +1939,191 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
     scripts no longer are.
   - Round 9's question is now larger: `readSteps` throws at module scope for three ambiguities, so any of
     them takes down a whole suite file and 180 others stop reporting with it.
+
+## 8.28 Round 12 — the twelfth pass, and the first round to say *stop climbing this ladder*
+
+  **Verdict: REJECT. 4 CRITICAL, 7 WARNING, 4 NIT.** Round 11's own summary line was corrected above;
+  this round's list is W1-W7 plus N1-N4 and it is the list that is worked here.
+
+  **CRITICAL 3 is the one that matters, and it was mine.** Round 11 shipped
+  `frontend/tests/evidence-scripts.test.ts` as four assertions on literal substrings of the checker and
+  driver's own diagnostic messages. Round 12 disabled the *enforcement* and left the *message* standing:
+
+  ```
+  verify-gate-batch.mjs:274   if (!allDistinct) {  ->  if (false && !allDistinct) {
+  ```
+
+  and the gate stayed green at 6/6 while the checker printed, on consecutive lines,
+
+  ```
+  FAIL log digests across the logs: 1 distinct of 6
+  corroborated: all 6 logs are distinct runs, each green, and every asserted figure was found in all of them
+  exit: 0
+  ```
+
+  **Confirmed here independently before any repair**, and the confirming measurement is worse than the
+  report's: the gate is green when the checker is **correct** too. R7a — the checker *as shipped*,
+  against six byte-identical logs — correctly refuses (exit 1, no `corroborated`), and the gate reports
+  6/6. A test that greps a file for strings it wrote has no opinion about behaviour in either direction.
+
+  That is this checker's own recorded **defect 6** — *a phase that cannot run was counted as a pass, and
+  the word `corroborated` was printed under it* — reintroduced by the repair written for it, in this
+  change, in round 11. And it is the same defect class `code()` was written to kill two files over: a
+  needle satisfied by prose. The second instance, R6, was the driver stopping its exit-status write with
+  the needle left standing in a comment — **STILL GREEN**.
+
+  ### The repair: make something execute
+
+  The gate now **runs the checker**, seven times, over synthetic logs in a temp directory, with a stub
+  frontend whose `node_modules/vitest/vitest.mjs` emits a chosen number of enumerated ids. No package is
+  installed, which is why it can run on a machine that has never run an install. Each negative case is
+  its own proof the checker can fail — there is nothing to mutate, because the assertion *is* the
+  mutation:
+
+  ```
+  control: six green, distinct logs                    corroborated, exit 0
+  six byte-identical logs                              refused,    exit 1
+  a log with no `gate exit` line                       refused,    exit 1
+  a log whose gate exited non-zero                     refused,    exit 1
+  a log carrying a second, failing verdict              refused,    exit 1
+  --frontend holding ONE test                          refused,    exit 1
+  all six logs inflated to `Tests 999999 passed`       refused,    exit 1
+  ```
+
+  Measured in both directions against round 12's own attacks:
+
+  ```
+  R7b  checker: distinctness enforcement unreachable     RED   1 failed | 13 passed (14)
+  R6   driver: exit-status write commented out          RED   1 failed | 13 passed (14)
+  C1   control, nothing broken                          expected-green  85 passed (85)
+  ```
+
+  Also closed by the rewrite, each with a measured row: **W2** (the path filter was four Windows shapes;
+  `/home/runner/...` in the driver was STILL GREEN, and CI is `ubuntu-latest`), **W3** (the
+  `tasks.md` pattern required `.mjs`, so `verify-gateruns9` left the population entirely), **W4** (the
+  ±3-line window is proximity, not reference — a disclaimer on the *neighbouring* entry satisfied it),
+  **W5** (the driver now gets a real assertion: the exit status must be written *by the `WriteAllText`
+  call*, taken from comment-stripped executable text), and **N3** (`.find` no longer reads a comment).
+  The `tasks.md` rule's unit is now the **entry** — a blank-line-delimited paragraph — so a mention
+  requires that same entry to say the script is not in the repository. R11 (disclaimer five lines out) is
+  still correctly RED: measured, ±3 was not too narrow, the *pattern* was.
+
+  **CRITICAL 4 — four untrue claims in the two shipped executables, all corrected in place.**
+
+  - **4a** the header said the flags *default to 181 and 21* while the code read `?? "182"`. Commit
+    `ed6f9f6` raised the default and left the sentence, and nothing compared them. `evidence-scripts.test.ts`
+    now reads both out of the checker and compares them, so a documentation edit cannot drift again.
+  - **4b** the same comment claimed the flags are *optional on purpose — the honest move is for the
+    caller to say what it expects, not for this script to guess*, while the script guessed (`?? "182"`)
+    and then asserted its own guess. A stated philosophy contradicted two lines below it is worse than no
+    philosophy, because a reader deciding whether to trust the script reasons from it. Rewritten to say
+    what is true: a default is a guess made once on the caller's behalf and then asserted.
+  - **4c** **this correction withdraws a causal claim I recorded as measured one round ago.** I wrote
+    that the two phantom `vitest list` entries were *"named after local identifiers in the edited file"*.
+    Round 12 refuted that by measurement: renaming the `lineOf` const *and* its `node` parameter, in
+    `declarationFor`, then `declaredHow`, then `reachableComplementArm`, one per run, left the phantom
+    names unmoved; three further probes each left the count unchanged. **The names are invariant to the
+    identifiers they were alleged to be named after.** A coincidence recorded as a cause is the exact
+    failure this change exists to remove, and I committed it here in round 11 while writing lesson 78
+    about not doing that.
+  - **N1/N2** `1 failed | 180 passed (181)` was stale at 182 files, now `N-1 passed (N)`; and the claim
+    that a red run has *exactly one* `Tests … passed` match is **zero**, measured — the red line reads
+    `Tests  1 failed | …` and the passed-anchored pattern does not match it. Round 12 forced a real
+    failure and confirmed the surrounding claim: `files`, `tests`, `budget` and `skipped` all null,
+    `exitCode` `"1"`, failing-summary matched — so a red run is caught by **three** mechanisms, not one.
+
+  **W1 — the 0.8 ratio floor is defensible; two claims attached to it were not.** The accepted window
+  for the executed total is `[listedIds, listedIds/0.8]`, so an **overstated** total of up to **+12.8%** is
+  accepted as `corroborated`; measured boundary 3753 passes, 3754 fails. That is two orders of magnitude
+  better than the 999999 hole it replaced, and the floor is derived from a property rather than fitted to
+  a number, so it is kept. But the comment's *"far enough below 0.90 that ordinary growth in `.each(`
+  expansion cannot cross it"* was **unmeasured**, and the real headroom is 11.4%, not *far*. Withdrawn.
+  Also measured and now fixed: at the boundary the printed figure and the verdict disagree
+  (`= 0.800, floor 0.8` on a `FAIL` line) — `toFixed(3)` rounding against `>=`.
+
+  **W6 — a refusal that misstates what it saw.** `if (prepared["ok"])` is behaviour-preserving and was
+  refused with *"nothing inside the dispatch tests `prepared.ok`"*. It does test `prepared.ok`; the
+  locator could not read it. That refusal is a false green with the sign flipped and it is worse in one
+  way: **a maintainer who trusts it concludes the code is wrong and rewrites working code to satisfy a
+  shape**, rather than concluding the locator is blind and widening it. Element access is now accepted,
+  and the zero-match message **names the conditions it actually observed** instead of asserting an
+  absence. Measured: `prepared["ok"]` is now expected-green 71/71.
+
+  ### CRITICAL 1 and CRITICAL 2 — measured, named, and NOT closed
+
+  Both confirmed here, both with a parseable gate, both **STILL GREEN 71/71**:
+
+  ```
+  R13a  const SKIP_INSTALL = true; if (!SKIP_INSTALL) { <the whole install dispatch> }
+        prepareDependencies never called, cascadeReason never called, environmentBroken never
+        written, no later item short-circuited.  71 passed (71)
+  R13b  if (item.id === "gates-install-retired") { <the whole install dispatch> }
+        same, with no flag at all — a condition nothing can satisfy.      71 passed (71)
+  G5    const prepared = prepareDependencies(...); prepared.ok = true;
+        the value is discarded one line after it is produced, so the else arm never runs
+        and the cascade cannot fire.                                       71 passed (71)
+  ```
+
+  (R13's first attempt opened the guard and never closed it, so `node --check` rejected the file and the
+  row read `RED BUT DID NOT RUN` — a verdict withheld, not a verdict. Re-aimed with both braces.)
+
+  **Why these are not repaired here, and why the next rung is not taken.** `declarationFor`,
+  `dispatchOnHow` and `reachableComplementArm` are *syntactic* instruments: spans, shapes, names, literal
+  comparisons. Every one of them can be defeated by an edit that changes what the code **does** without
+  changing what it **says**, and there is no limit to the supply of those. Twelve rounds have each found
+  the previous round's defect class reproduced inside the previous round's repair, and the pattern is
+  legible: name -> span -> declaration -> dispatch -> complement. Each rung is real; none is the rung
+  that would have covered the next finding, because the ladder was extended along the axis the last
+  defect was on rather than the axis the next one would be on.
+
+  The instrument that closes this class is **executing the gate** — or a taint/flow analysis, which is the
+  same instrument with more machinery. Execution of the gate is **forbidden by a standing constraint on
+  this work**: `npm ci`, `npm run setup` and both archived `release-gate.mjs` copies are never run here,
+  and the gate's own first step is a dependency install. So the closing instrument is unavailable, and
+  the alternative is a thirteenth rung.
+
+  **This is therefore escalated rather than papered over.** It is a scope decision, not a repair:
+
+  1. authorise an execution harness — run the gate with its install step stubbed, and assert on
+     *observed behaviour* (`environmentBroken` set or not) rather than on syntax. This closes the class
+     rather than one instance, and it is new scope for a change already at ~10 000 lines of diff;
+  2. accept CRITICAL 1 and 2 as **named, measured, unclosed residuals** and stop adding shape
+     assertions to this milestone;
+  3. or retire the milestone's claim that this suite makes a false green impossible, and narrow the
+     change to what it can actually deliver.
+
+  Option 3 is the one this record most supports. Twelve rounds have produced a genuinely strong
+  *syntactic* instrument — round 11's locators survived a shadow, a renamed dispatch, an aliased loop, a
+  conditional complement, a deleted call, a wrong field name and a full rename, and round 12 could not beat
+  any of them on their own terms. What it has not produced, and cannot by continuing, is a *semantic* one.
+  A suite that keeps growing a meta-layer per round acquires a meta-layer that must itself be verified:
+  three of this round's eight CRITICAL/WARNING rows are defects in the verification apparatus rather than
+  in the code it verifies. The meta-layer is now growing faster than the thing it verifies.
+
+  ### Also measured, and recorded rather than repaired
+
+  - **W7 — `readSteps` is loud, but not for the reason assumed.** The premise that 180 other files stop
+    reporting is **refuted**: 181 of 182 reported normally, the failure was named, exit non-zero. The real
+    and smaller cost is that `ci-workflow.test.ts`'s tests **silently vanish** (`Tests 3326` -> `3301`)
+    while `Test Files` still reads `182`, so the two figures disagree and nothing says they must.
+  - **Q6, settled by measurement: the captured timeout is not tree size.** `encoding-integrity.test.ts`
+    isolated runs 2.3 s / 2.1 s, file reported 471 ms; full suite, file reported 1639 ms; suite 67.28 s.
+    Tree size explains 471 ms -> 1639 ms, a 3.5x contention factor. The recorded failure was **one test at
+    28320 ms** — ~17x the entire file's loaded runtime and ~12x its own timeout. Nothing about this tree's
+    size produces a 17x stall, and it did not reproduce in three isolated runs or one full run. Whether
+    it was machine load, antivirus or a transient stall is **unverified**.
+  - **Q5, verified against a real red log** — see N1/N2 above. The claim survives; two figures in its
+    supporting sentence did not.
+  - **Q3 — why `vitest list` emits `> node` and `> lineOf` remains unverified.** Deterministic 6/6,
+    localised to one file (73 lines for 71 tests), on stdout not stderr, invariant to the identifiers. A
+    `formatName` helper that accepts a function and reads `.name` is consistent with the symptom without
+    explaining why these two arrows and not the three probes; a `@jridgewell/trace-mapping` lead was a
+    substring hit on `lineOffset`. Both recorded so nobody repeats them; neither offered as the answer.
+
+  ### Open, unchanged
+
+  - **CRITICAL 1 and CRITICAL 2**, above: measured, named, unclosed, escalated.
+  - Two red gate runs, one unexplained; the second's cause is now *not* tree size, by measurement.
+  - No browser verification of any kind. CI unobserved green on this branch.
+  - Root `scripts/` and both archived `release-gate.mjs` copies remain outside every gate; the two
+    evidence scripts no longer are.
