@@ -337,19 +337,30 @@ if (rows.length > 0) {
 // difference between six runs and six runs *of one unchanged tree*, which is the claim the block above
 // was corrected to make.
 //
-// Reported rather than refused: a batch stamped `unknown` on every log is internally consistent and its
-// figures are still corroborated, so failing it would reject evidence that is merely less informative.
-// The single distinct value is printed either way, so a straddling batch cannot pass unnoticed.
+// **Refused, not reported — round 14's WARNING 1, and the comment previously here was wrong about it.**
+// This block said a straddling batch "cannot pass unnoticed", and measured: it printed `WARN`, left
+// `problems` at 0, printed `corroborated:` and **exited 0**. Unnoticed by the criterion means *seen by a
+// human reading the output*. Every other caller of this checker reads only the exit status — this file
+// says so itself a few hundred lines below, about a stale figure: "the exit status is 0, and a caller
+// that only reads the exit status — which is what CI, and every batch entry in tasks.md, does — records
+// a pass." A warning nobody's tooling reads is not a check.
+//
+// So this increments `problems`. The reasoning for refusing rather than warning is the mirror of the
+// `unknown` case below: refusing `unknown` would punish the environment, but a batch naming two commits
+// is a defect in the *evidence*, not in the machine that produced it, and the criterion is stated about a
+// commit. `unknown` is accepted and visible; a straddling batch is accepted by no one.
 if (rows.length > 0) {
   const distinctCommits = [...new Set(rows.map((row) => row.commit))];
   process.stdout.write(
-    `${distinctCommits.length === 1 ? "ok   " : "WARN "}commits named across the logs: ` +
+    `${distinctCommits.length === 1 ? "ok   " : "FAIL "}commits named across the logs: ` +
       `${distinctCommits.join(", ")} (${distinctCommits.length} distinct of ${rows.length})\n`,
   );
   if (distinctCommits.length !== 1) {
+    problems += 1;
     process.stdout.write(
-      "      a batch spanning more than one commit is not six runs of one unchanged tree. The figures may\n" +
-        "        still agree, but the criterion is about a commit, so treat this batch as unattributed.\n",
+      "      a batch spanning more than one commit is not six runs of one unchanged tree, and this is\n" +
+        "        refused rather than warned about. The figures may still agree, but the criterion is\n" +
+        "        about a commit: attribute the batch to neither, or split it.\n",
     );
   }
 }
@@ -467,7 +478,8 @@ if (list.status !== 0 || listedIds === 0) {
   //     tests/release-gate-install.test.ts > lineOf
   //
   // Top-level entries with no suite segment. Running the suite settled that they are not tests — the
-  // executed total was unchanged — so `vitest list` emitted two non-test lines.
+  // executed total was unchanged — so `vitest list` emitted non-test lines. Their exact number is
+  // re-measured below rather than asserted here; see the count correction further down.
   //
   // **Round 12's CRITICAL 4c, and this is the correction that matters: the sentence above used to say
   // those entries were "named after local identifiers in the edited file", and that was refuted by
@@ -478,10 +490,19 @@ if (list.status !== 0 || listedIds === 0) {
   // are **invariant to the identifiers they were alleged to be named after**. A coincidence recorded as a
   // cause is the exact failure this change has spent twelve rounds removing, committed here in round 11.
   //
-  // What survives measurement is narrower and sufficient: two non-test lines exist, they inflate
-  // `listedIds` by 2, they are deterministic (6/6 full-suite runs enumerate identically), they are
-  // localised to one file (that file alone lists 73 lines for 71 tests), and they appear on stdout rather
-  // than stderr. **The mechanism remains unverified.** A `formatName` helper that accepts a function and
+  // What survives measurement is narrower and sufficient: a small number of non-test lines exist, they
+  // inflate `listedIds`, they are deterministic (6/6 full-suite runs enumerate identically), they are
+  // localised to one file, and they appear on stdout rather than stderr.
+  //
+  // **The exact count was re-measured at `9f78ee1` and is now THREE, not two — `> node` appears twice —
+  // and that file now lists 74 lines for 71 executed tests.** Round 14 measured it; the earlier figures
+  // ("two", "inflate by 2", "73 lines") were written when they held and this comment was not revisited
+  // after `evidence-scripts.test.ts` gained five cases. Immaterial to the anchor — 3 in a 3000-line
+  // count moves the ratio by 0.001 against a floor with 0.104 of headroom — and **that immateriality is
+  // the point of writing the ratio rather than the constant.** The stale figures are corrected here
+  // rather than deleted so a reader can see that the count was once anchored and was deliberately
+  // replaced by something that does not move when a test is added.
+  // **The mechanism remains unverified.** A `formatName` helper that accepts a function and
   // reads `.name` is *consistent* with the symptom without explaining why these two arrows and not the
   // three probes, and a `@jridgewell/trace-mapping` lead turned out to be a substring hit on `lineOffset`.
   // Both are recorded so nobody repeats them; neither is offered as the answer.

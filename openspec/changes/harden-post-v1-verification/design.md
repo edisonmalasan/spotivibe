@@ -248,13 +248,16 @@ the product.
 of specific regressions, each mutation-proven, and that two further ways to make it dead code are known,
 measured and documented. It does **not** claim that a false green in this area is impossible.
 
-### 2.12 Scope extension — one defect, in shipped code *on the premise*, and authorised because M21's own criterion found it
+### 2.12 Scope extension — one defect, authorised because M21's own criterion found it
 
-> **Read this heading with its second clause.** At the time of writing the defect was believed to be in
-> shipped code, and the scope extension was granted on that basis. Measurement then placed the cause in the
-> **test's measurement window**, and **no `src/` change was made**. The section is retained, corrected,
-> because the record of what was authorised and what the authorisation turned out to be worth is part of
-> the evidence — not because a shipped-code change exists.
+> **The premise was falsified, and it is recorded here rather than in a heading.** When this section was
+> written the defect was believed to be in **shipped code**, and the extension was granted on that basis.
+> Measurement then placed the cause in the **test's measurement window**, and **no `src/` change was
+> made**. Round 14's NIT 1 is right that a heading-only reader — a table of contents, a grep for
+> `shipped code`, a diff summary — would have extracted the falsified premise from the old heading, so
+> the phrase is gone from the heading and the correction lives here, where it cannot be summarised away.
+> The section is retained because what was authorised, and what the authorisation turned out to be
+> worth, is part of the evidence.
 
 **Decision, 2026-10-05.** M21 §2.10 requires six consecutive green full gate runs. Batch 15, run at the
 final documentation commit `0e65dc8`, was **five of six**. The failing run was

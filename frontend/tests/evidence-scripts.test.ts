@@ -219,8 +219,11 @@ describe("the shipped checker refuses what round 11's gate could only grep for",
   it("does not let a batch straddling two commits pass as six runs of one tree", () => {
     // Six distinct digests prove six distinct byte streams. They do not prove one tree: a batch that
     // spanned a commit boundary could still agree on every figure if the change was inert, and "inert"
-    // is an assumption no reader of a criterion should be asked to make. This is reported rather than
-    // refused, so the failure is visible without rejecting otherwise-sound figures.
+    // is an assumption no reader of a criterion should be asked to make.
+    //
+    // **Refused, exit non-zero** — round 14 measured the previous version printing `WARN`, printing
+    // `corroborated:` and exiting 0. Its own comment called that "cannot pass unnoticed", while every
+    // caller of a checker reads the exit status. The exit status is the part that is read.
     const dir = writeLogs(
       join(scratch, "two-commits"),
       [1, 2, 3, 4, 5, 6].map((run) => greenLog(run, run <= 3 ? "aaa111bbb222" : "ccc333ddd444")),
@@ -231,14 +234,21 @@ describe("the shipped checker refuses what round 11's gate could only grep for",
     expect(verdict.commitLine).toMatch(/aaa111bbb222/);
     expect(verdict.commitLine).toMatch(/ccc333ddd444/);
 
-    // The `WARN` label, not just the count. A mutation that hard-codes the status word while leaving
-    // the count text intact passes a count-only assertion — measured: exactly that mutation came back
-    // STILL GREEN against the count-only version of this test. The clause exists to make a straddling
-    // batch *visible*, and visibility is the label; the count is the detail.
+    // The label, not just the count. A mutation that hard-codes the status word while leaving the count
+    // text intact passes a count-only assertion — measured: exactly that mutation came back STILL GREEN
+    // against the count-only version of this test.
     expect(
       verdict.commitLine,
       "a batch spanning two commits was not flagged: it reported as one unchanged tree",
-    ).toMatch(/^WARN\b/);
+    ).toMatch(/^FAIL\b/);
+
+    // The half that matters most, and the half round 14 found absent: a non-zero exit and no
+    // `corroborated`. A warning that only reaches the console reaches no tool.
+    expect(
+      verdict.exit,
+      "a batch spanning two commits exited 0: every caller reads the exit status, not the warning",
+    ).not.toBe(0);
+    expect(verdict.corroborated, "a straddling batch reached the corroborated verdict").toBe(false);
   });
 
   it("still corroborates a batch stamped `unknown`, because its figures are not thereby false", () => {
@@ -344,23 +354,45 @@ describe("the two evidence scripts are readable by the person told to run them",
       executable,
       "the driver never writes a commit line, so every future batch would be refused by the checker",
     ).toMatch(/WriteAllText\(\$logPath,\s*"gate exit\$exitCode`ncommit \$commit/);
-    // The batch must resolve its commit ONCE, before the loop. Checked as source position rather than
-    // by counting assignments: the honest failure mode is "resolved per run", which would let a batch
-    // that spans a commit boundary stamp all six logs with the last commit it saw, and no assignment
-    // count distinguishes that from resolving once. Text position does.
+    // **The batch must resolve its commit ONCE, outside the run loop.**
     //
-    // An earlier version of this assertion compared the *text* order of `for ($run` against `$commit`,
-    // which is always true and therefore asserted nothing — the loop header necessarily precedes the
-    // loop body. A check that cannot fail is the defect this milestone exists to remove, and this one
-    // shipped in the same shape it was written to prevent.
-    const resolvedAt = executable.indexOf('$commit = "unknown"');
+    // The failure this guards against is a batch resolving per run, which would let six logs spanning a
+    // commit boundary all carry the last HEAD seen — six runs of two trees reported as six of one.
+    //
+    // **Two earlier versions of this assertion were escapable, and round 14 escaped both.**
+    //
+    //   v1 compared the *text* order of `for ($run` against `$commit`. Always true — the loop header
+    //      necessarily precedes the loop body — so it asserted nothing at all.
+    //   v2 compared the *first* `$commit = "unknown"` against `for ($run`, and its comment claimed
+    //      "Text position does" distinguish the failure. It does not: keep a decoy assignment above the
+    //      loop and add a real re-resolution inside the body, and `indexOf` still finds the decoy first.
+    //      Measured STILL GREEN by round 14 against exactly the failure v2's comment named.
+    //
+    // So "text position does" is withdrawn. The property that survives the decoy is **the LAST
+    // assignment before the loop body**: any per-run re-resolution also carries an assignment, and that
+    // one necessarily sits after `for ($run`. Asserted on `lastIndexOf` scoped to the text preceding the
+    // loop, so a decoy cannot satisfy it.
     const loopAt = executable.indexOf("for ($run");
+    expect(loopAt, "the driver has no run loop at all").toBeGreaterThan(-1);
 
-    expect(resolvedAt, "the driver resolves no commit at all").toBeGreaterThan(-1);
+    const beforeLoop = executable.slice(0, loopAt);
+    const lastResolveAt = beforeLoop.lastIndexOf("$commit");
     expect(
-      resolvedAt,
-      "the commit is resolved inside the run loop, so one batch could straddle two commits and report one",
-    ).toBeLessThan(loopAt);
+      lastResolveAt,
+      "the driver resolves no commit before the loop, so every run resolves its own",
+    ).toBeGreaterThan(-1);
+
+    // A re-resolution inside the body. Scoped to the loop's own text rather than the whole file, so an
+    // unrelated later assignment elsewhere in the script cannot fail this — a check that fires on
+    // innocent code is a check a maintainer learns to work around.
+    const loopBody = executable.slice(loopAt);
+    const loopEnd = loopBody.indexOf("\n}");
+    const body = loopEnd === -1 ? loopBody : loopBody.slice(0, loopEnd);
+    expect(
+      /\$commit\s*=[^=]/.test(body),
+      "the commit is re-resolved inside the run loop, so one batch could straddle two commits and " +
+        "report one",
+    ).toBe(false);
   });
 
   it("the driver's printed checker command carries the run count it was given", () => {

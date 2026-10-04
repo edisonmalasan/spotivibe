@@ -2437,14 +2437,21 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   ```
 
   **Two of my own instruments lied while producing that table, and both are recorded because the pattern
-  is the point.** The first run labelled all five `RED BUT DID NOT RUN`: the detector matched
-  `Test Files 1 failed (1)` while vitest prints `Test Files  1 failed | 18 passed (1)` and `1 failed (1)`,
-  so four genuine reds were reported as inconclusive and **the suite reported 0/5 RED with a green
-  control** - a mutation table that looks like a total failure and is really a broken instrument. The
-  second attempt matched `passed \((\d+)\)`, which does not exist on a red file at all, and still reported
-  them as not-run. Reading the parenthesised total directly fixed it. **Third instrument failure of this
-  shape in this milestone, and the same lesson each time: a counter that cannot see the thing it counts
-  is worse than no counter, because it reports a result.**
+  is the point.** The first run labelled all five `RED BUT DID NOT RUN`: the detector's "did the suite
+  load" test matched only one of the two shapes vitest prints, so four genuine reds were reported as
+  inconclusive and **the suite reported 0/5 RED with a green control** - a mutation table that looks like
+  a total failure and is really a broken instrument. The second attempt matched `passed \((\d+)\)`, which
+  **does not match a red file at all** - `Test Files  1 failed (1)` contains no `passed` token - and still
+  reported them as not-run. Reading the parenthesised total directly fixed it: `/\((\d+)\)/` yields `1`
+  for both shapes, **because in the `Test Files` line that figure is the file count**. Round 14 hit the
+  same trap independently and measured it.
+
+  **The composite shape this entry used to quote, `Test Files  1 failed | 18 passed (1)`, does not occur** -
+  round 14 measured the real shapes, and the `18` and the `(1)` belong to different lines: the `Tests`
+  line reads `Tests  1 failed | 18 passed (19)`, where the parenthesised figure is the test count. The
+  lesson above is unchanged and the correction is to say *which line* the total must be read from.
+  **Third instrument failure of this shape in this milestone, and the same lesson each time: a counter
+  that cannot see the thing it counts is worse than no counter, because it reports a result.**
 
   **And one mutation returned STILL GREEN and was right to.** Hard-coding the status word while leaving
   the count text intact passed my straddling-batch test, because that test asserted only
@@ -2464,3 +2471,104 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   believed rather than measured. It also disclosed its own incident — a mutation interrupted before its
   restore, detected, restored with `git checkout --`, tree confirmed clean — rather than quietly
   proceeding. A reviewer who reports its own mishap is worth more than one who reports none.
+
+## 8.32 Batch 17 at `9f78ee1` - six of six green, and **stamped**
+
+  ```
+  commit under test: 9f78ee13c208
+  run 1  exit 0  125s  files 182  tests 3340  motion-budget 21
+  run 2  exit 0  129s  files 182  tests 3340  motion-budget 21
+  run 3  exit 0   99s  files 182  tests 3340  motion-budget 21
+  run 4  exit 0   99s  files 182  tests 3340  motion-budget 21
+  run 5  exit 0   95s  files 182  tests 3340  motion-budget 21
+  run 6  exit 0  101s  files 182  tests 3340  motion-budget 21
+  ```
+
+  Corroborator exit **0**, `corroborated`: six distinct digests, `182` files (asserted), `motion-budget 21`
+  (asserted), `3340` tests (stability only), enumeration `3018/3340 = 0.904` against a 0.8 floor. **And the
+  line batch 16 could not have: `commits named across the logs: 9f78ee13c208 (1 distinct of 6)`.** Six
+  runs of one named tree, which is what `design.md` 2.10 asks for and what no previous batch could say.
+
+  `3335 -> 3340` is the five new `evidence-scripts` cases, confirmed by count: that file had 14 `it(` and
+  now has 19, delta exactly `+5`, `describe()` 4 -> 4, zero removed. Round 14 confirmed this independently,
+  and additionally derived `3013 + 5 = 3018` for the enumerator.
+
+  **A criterion's satisfaction does not outlive the commit it was measured at.** Batch 16 at `a0bf535` was
+  superseded by the commit that changed `evidence-scripts.test.ts`, a file the gate executes, so the count
+  restarted here rather than being carried forward. Round 14 raised exactly this as its WARNING 2.
+
+  Unchanged and unestablished by it: CI unobserved on this branch; no browser verification of any kind;
+  CRITICAL 1 and CRITICAL 2 remain named, measured, **unclosed**; reading 1 of §8.29 applies, since six
+  sequential runs are not a contention test. **Batch logs still live outside the repository**, so the
+  stamp proves which commit a *batch* ran against — it does not make the logs part of the tree.
+
+## 8.33 Round 14 — the new CRITICAL is my own clause, escaped through the failure its comment named
+
+  **Verdict: REJECT. 1 CRITICAL, 2 WARNING, 3 NIT.** Round 14 confirmed the round-13 CRITICAL is genuinely
+  repaired and *true* rather than self-consistent, confirmed the batch independently by re-running the
+  corroborator and by hashing the logs itself, and **rejected on a clause added in the very commit written
+  to close round 13's WARNING 1.**
+
+  **CRITICAL: the "resolve once, outside the loop" pin was escapable, and its comment claiming the check
+  distinguishes the failure was falsified by measurement.** The assertion compared the *first*
+  `$commit = "unknown"` against `for ($run`, and its comment said, in bold-adjacent prose, *"no assignment
+  count distinguishes that from resolving once. **Text position does.**"* Round 14's M6 left the decoy above
+  the loop and added a real per-run re-resolution inside the body — **the exact failure the comment named
+  by name** — and the suite was **19/19 green**.
+
+  **"Text position does" is withdrawn.** `indexOf` finds the decoy first, so text position does not
+  distinguish resolve-once from resolve-per-run whenever a decoy exists. Repaired to assert the property
+  that survives a decoy: **the last assignment preceding the loop body is a real assignment, and no
+  `$commit =` occurs inside the loop body**, the latter scoped to the body's own text so an unrelated later
+  assignment elsewhere in the script cannot fail it.
+
+  **This is the ladder again, one rung along, and the pattern is now predictable enough to name.** The
+  rungs were name → span → declaration → dispatch → complement, each real, none covering the next finding,
+  because each was extended along the axis the last defect was on. Round 13 added a sixth rung — *source
+  position* — and the sixth rung is the one that fails, because position was extended along the axis the
+  previous defect was on (a comment asserting more than its check). **A rung added to survive a known
+  mutation is the rung most likely to have been shaped by that mutation rather than by the property.**
+
+  **WARNING 1: the straddling-commit batch exited 0.** The checker printed `WARN`, left `problems` at 0,
+  printed `corroborated:` and **exited 0** — while its own comment said a straddling batch "cannot pass
+  unnoticed". Measured by round 14 on six synthetic logs. **"Unnoticed" means seen by a human reading the
+  output; every caller of a checker reads the exit status**, which this same file says about a different
+  defect a few hundred lines below. Repaired: the clause now increments `problems` and exits non-zero. The
+  contrast with the `unknown` case is the reasoning, and it holds in both directions — refusing `unknown`
+  punishes the *environment*, refusing a straddling batch refuses *defective evidence*, and the criterion
+  is stated about a commit.
+
+  **WARNING 2: the record said the criterion was met on batch 16's evidence while HEAD had changed a
+  gate-executed test file.** True at HEAD in substance, missing from the tree in fact. Now recorded:
+  batch 17 supersedes batch 16, and §8.32 states why a count does not carry across a commit.
+
+  **NIT 1 — and it is right, and the fix was to remove the phrase rather than the heading.** The §2.12
+  heading still read *"one defect, in shipped code on the premise"*. In running text the falsification is
+  stated immediately beneath it, but a **heading-only** reader — a table of contents, a grep for `shipped
+  code`, a diff summary — still extracts the falsified premise. The phrase is gone from the heading and the
+  correction is in the blockquote, where a summary cannot reach it. **A correction that can be summarised
+  away from its own heading has not been made.**
+
+  **NIT 2 — a stale count in the checker's own comment, which is the mistake that file names.** It read
+  "two non-test lines", "inflate `listedIds` by 2", "73 lines for 71 tests". Measured at `9f78ee1`: three
+  (`> node` twice), 74 lines. Corrected in place with the old figures kept alongside, **because the
+  immateriality is the argument for the ratio**: 3 in a 3000-line count moves it by 0.001 against 0.104 of
+  headroom. The stale figure had not been revisited after the file gained five cases — which is precisely
+  the failure the ratio replaced, recurring in the comment that documents the ratio.
+
+  **NIT 3** — this entry's own quoted vitest output shape, corrected in place above. The lesson was
+  independently confirmed by round 14; only the quoted string was wrong.
+
+  **What round 14 got right, and it is the second time:** it found a claim that could not fail, by
+  constructing the failure the claim's own comment said it excluded. It re-ran every check rather than
+  trusting my figures, confirmed the `3335 -> 3340` delta was `+5` and zero removed, derived `3013 + 5 =
+  3018` for the enumerator, hashed the logs itself, and disclosed that all seven of its mutation runs
+  restored byte-exactly with the tree clean. **It also declined to escalate its own WARNING 1 to CRITICAL
+  on the grounds that the shipped driver cannot produce such a batch** — a fair distinction between a live
+  defect and a reachable one, and stated as reasoning rather than as a favour.
+
+  **What round 14 could not verify, recorded rather than argued:** that batch 17's logs came from a gate run
+  rather than being synthesised. The `commit` stamp is **self-reported by the driver**, and no stamp written
+  by the thing it describes can establish provenance — it binds a batch to a commit, it does not make the
+  logs part of the tree or prove they were not written by hand. That limit is real, it is not repaired by
+  any stamp, and the logs remain outside the repository.
