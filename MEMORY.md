@@ -1094,3 +1094,25 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     ladder was extended along the axis the last defect was on. The instrument that closes the class is
     execution. When execution is forbidden by a constraint, the honest move is to escalate, not to add a
     thirteenth rung and call the class narrower than it is.
+
+80. **Six green runs does not establish reliability when the failure rate under load is 2 in 10.**
+    Batch 15 ran the gate six times at the final documentation commit; five were green. The sixth
+    failed on an exact-count assertion (`expected [ ...(2) ] to deeply equal [ { top: 150, ... } ]`), in
+    a file this branch does not touch - `git diff origin/main...HEAD` on it and on the component is
+    empty.
+    The reproduction is the transferable part, because the shape is the lesson and not the file:
+    **0 failures in 40 isolated runs, 2 failures in 10 concurrent ones, identical signature.** A
+    criterion that re-runs the suite sequentially measures the machine's idle behaviour, and an
+    assertion counting invocations against a shared counter is exactly the kind that holds when nothing
+    else is running. Round 12 reached the same discriminator for a different test's timeout. Two
+    findings, one shape: *correct when the machine is idle, wrong when it is busy.*
+    - **A sequential re-run is a weaker instrument than it looks.** It multiplies wall-clock time and
+      multiplies confidence, and neither is proportional to what it measures. If the thing guarded
+      against is load-sensitive, the guard has to run under load or it is guarding against something
+      else.
+    - **Do not let a criterion's satisfaction outlive the commit it was measured at.** Batch 14
+      satisfied it at `ed6f9f6`; batch 15, after comment-only edits, did not. Reporting batch 14's
+      figures at a later head would have been a true number about a tree that no longer existed.
+    - **Check your own counter.** The concurrent run first reported `0 failed` over output plainly
+      containing an assertion failure, because the tally matched `(N) failed` while vitest prints
+      `1 failed | 6 passed`. Prefer reading captured output over summarising it.

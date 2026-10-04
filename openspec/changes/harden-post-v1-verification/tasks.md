@@ -2161,3 +2161,120 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   install dispatch, or discarding the install's result before the `.ok` test. This is a known,
   reproducible false green in the repository's own verification machinery. It is accepted, not fixed and
   not forgotten, and it is not covered by this change's acceptance criterion — which is worded to say so.
+
+## 8.29 Batch 15 - the criterion is NOT met, and the run that broke it has a narrowed cause
+
+  **Five of six green. `design.md` 2.10's criterion is six consecutive green full gate runs, so it is
+  not satisfied at `0e65dc8`.** Batch 14 satisfied it at `ed6f9f6`; between those two commits this
+  branch changed one test file's header comment, one test's assertions, one evidence script's comments,
+  and four documents. Nothing in that list can plausibly cause what failed, and the measurement below
+  says so rather than assuming it.
+
+  ```
+  run 1  exit 0  149s  files 182  tests 3334  motion-budget 21
+  run 2  exit 1  135s  files 181  tests 3334  motion-budget 21   <-- FAILED
+  run 3  exit 0  145s  files 182  tests 3334  motion-budget 21
+  run 4  exit 0  189s  files 182  tests 3334  motion-budget 21
+  run 5  exit 0  130s  files 182  tests 3334  motion-budget 21
+  run 6  exit 0  127s  files 182  tests 3334  motion-budget 21
+  ```
+
+  **The failure, verbatim from `run2.log`:**
+
+  ```
+  FAIL  tests/lyrics/lyricsPanel.test.tsx > LyricsPanel - following yields to the listener
+        > scrolls the active line into view while following
+  AssertionError: expected [ ...(2) ] to deeply equal [ { top: 150, behavior: 'smooth' } ]
+
+  - Expected  [ { behavior: 'smooth', top: 150 } ]
+  + Received  [ { behavior: 'smooth', top: 150 }, { behavior: 'smooth', top: 150 } ]
+
+  at tests/lyrics/lyricsPanel.test.tsx:406
+  ```
+
+  Note the shape. The assertion is `expect(scrollCalls.slice(before)).toEqual([...])` - an **exact
+  count** of scroll calls issued after a marker index. The received array holds the *same* call twice,
+  identical in both fields, which is not what a layout regression produces and not a wrong position.
+
+  ### Reproduced, and load is the discriminator - measured, not assumed
+
+  ```
+  40 consecutive isolated runs of the single test               0 failed
+  10 concurrent instances of the single test, 10-way parallel  2 failed, identical signature
+  ```
+
+  The concurrent run's own tally line was wrong on the first attempt - the regex matched `(N) failed`
+  while vitest prints `1 failed | 6 passed`, so it read 0 over output that plainly carried the
+  assertion. The figure above is the corrected count, taken from the output rather than the summary. A
+  counter that reports zero failures over a captured failure is worse than no counter: it converts a
+  caught bug into an uncaught one and reports success while doing it.
+
+  So the condition is **contention, not isolation** - the same discriminator round 12 reached for the
+  `encoding-integrity` timeout. Two findings, one shape: a test that is correct when the machine is idle
+  and wrong when it is busy.
+
+  ### M21 did not cause it
+
+  ```
+  git log --oneline -3 -- frontend/tests/lyrics/lyricsPanel.test.tsx   -> 6e11917 (M19), 20d69a1, 214bd12
+  git log --oneline -3 -- frontend/src/features/lyrics/LyricsPanel.tsx -> 20d69a1, 214bd12, 2cac646
+  git diff --stat origin/main...HEAD -- <both files>                      -> empty
+  ```
+
+  **Neither file is touched by this branch.** The defect is pre-existing from M16/M19 work, and the
+  six-green criterion is what made it visible. That is the criterion working, not failing.
+
+  ### Cause: narrowed, NOT established - and deliberately not fixed
+
+  What the measurement supports. `LyricsPanel.tsx:91-96` runs the scroll in an effect keyed on
+
+  ```ts
+  useEffect(() => { ... scrollActiveLineIntoView(activeIndex); },
+    [following, state.kind, activeIndex, scrollActiveLineIntoView]);
+  ```
+
+  and `scrollActiveLineIntoView` is a `useCallback` whose sole dependency is `reducedMotion`, which
+  `usePrefersReducedMotion` supplies as a **boolean** via `useSyncExternalStore` - referentially stable
+  while the preference is unchanged. The callback identity is therefore not the moving part, and a
+  second scroll call requires either one of `following` / `state.kind` / `activeIndex` to change a
+  second time, or the effect to run twice for one change. Under `act()` the second is not expected, and
+  I have not established which it is.
+
+  What I did **not** establish and am not going to guess at: which dependency moved, whether `state.kind`
+  transits (`timed` -> something -> `timed`) when a lyrics fetch resolves out of order under load, or
+  whether React flushed the effect twice. **Mechanism: unverified.**
+
+  **Not fixed, by this change's own rule.** `design.md` 2.6: an intermittently failing test SHALL have
+  its cause established and recorded before a change is made to it, and re-running until it passes is
+  not evidence. The cause is not established, so no fix is claimed. This is a **fourth** intermittent
+  failure, joining the three in scope; those three have recorded causes and this one does not yet.
+
+  It is also **out of M21's scope**: `LyricsPanel` is shipped product code and this milestone alters no
+  shipped behaviour. It surfaced here because the criterion runs the suite six times under load, which is
+  the point of the criterion.
+
+  ### What the criterion means now
+
+  It is **not met at `0e65dc8`**, and the milestone does not merge on a claim that it is. Where M21
+  honestly stands:
+
+  - batch 14 (`ed6f9f6`): 6/6 green, corroborated, exit 0 - the criterion was satisfied at that commit;
+  - batch 15 (`0e65dc8`): **5/6**, broken by a load-sensitive assertion in a file this branch does not
+    touch, reproduced at 2/10 concurrent and 0/40 isolated;
+  - so the criterion is currently **unsatisfied**, for a cause outside this change's scope and outside
+    its authorship.
+
+  Three readings are available, and this record does not pick one silently:
+
+  1. **A defect in the criterion's reach.** Six sequential runs miss a 2-in-10-under-load failure. The
+     criterion is a *reliability* criterion, and one that passes 5 times in 6 while missing a
+     reproducible 20% failure rate under load has not established reliability.
+  2. **A defect in the product**: `LyricsPanel` emits a duplicate smooth scroll on a
+     contention-affected activation. Harmless in effect - the second call scrolls to the same place -
+     but it is a duplicate, and a listener who has not asked for reduced motion gets a second
+     animation they did not ask for.
+  3. **A defect in the test**: an exact-count assertion against a shared counter, whose measurement
+     window can legitimately include a second activation.
+
+  All three are open. Establishing which is the next action, and it belongs to whoever takes M16/M19's
+  follow-up work rather than to this milestone.

@@ -169,6 +169,19 @@ corroborate, now itself gated by execution rather than by grepping its own sourc
 measured, documented ways to defeat it. **Not:** immunity of the gate to a disabled caller. See
 `openspec/changes/harden-post-v1-verification/design.md` §2.11.
 
+**M21's own completion criterion is not currently met.** `design.md` 2.10 requires six consecutive
+green full gate runs. Batch 14 satisfied it at `ed6f9f6` (6/6, corroborated, exit 0). **Batch 15, run
+at the final documentation commit `0e65dc8`, was 5 of 6.** The failure was
+`tests/lyrics/lyricsPanel.test.tsx > scrolls the active line into view while following` -
+`expected [ ...(2) ] to deeply equal [ { top: 150, behavior: 'smooth' } ]`, the same scroll call issued
+twice. Neither that test nor `LyricsPanel.tsx` is touched by this branch (`git diff origin/main...HEAD`
+on both is empty), so the criterion surfaced a pre-existing defect rather than causing one.
+Reproduced at **0 failures in 40 isolated runs** and **2 in 10 concurrent ones** - contention, not
+isolation. The mechanism is **unverified**, so under M21's own rule no fix is claimed and none is in
+scope: `LyricsPanel` is shipped product code. Three readings stay open - the criterion does not reach
+a 20%-under-load failure, the panel emits a duplicate smooth scroll, or the test's exact-count
+assertion is wrong. Recorded at `tasks.md` 8.29.
+
 Also open and unaffected by that decision: no live-browser verification of anything, and two red gate
 runs whose second cause is now measured *not* to be tree size.
 
