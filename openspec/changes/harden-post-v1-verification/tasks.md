@@ -543,3 +543,53 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   gate. `release-gate-install.test.ts` (+1068 lines) has still not been mutation-attacked by any round —
   five rounds in, and it remains the largest unattacked surface in the diff. The fixture-presence gap
   noted above is open by decision, not by oversight.
+
+- [x] 8.16 **Six consecutive green gate runs, fifth measurement, at `f4b5cb1` after round 5's repairs.**
+  8.3 was met at `bdb0dba`, 8.10 at `cdc0fb0`, 8.12 at `9a5634e`, and 8.14's six runs at `68860cb`.
+  None of them executes round 5's `stripWholeLineComments`, `assertNoBlockScalars`, `workflowScalar`,
+  the three synthetic witnesses, the two non-goal scan witnesses, or the corrected `motion-budget`
+  header, so none of them measured this commit. The tree was committed and unmodified for the whole
+  batch — `git status --short` empty at `f4b5cb1` before it started, and **nothing may edit a repository
+  file while a batch runs**: 8.3's batch failed run 6 on `format:1` for exactly that reason.
+
+  | run | exit | seconds | files | tests | motion-budget | skipped | parse |
+  |---|---|---|---|---|---|---|---|
+  | 1 | 0 | 121 | 181 | 3297 | 21 | 0 | ok |
+  | 2 | 0 | 98 | 181 | 3297 | 21 | 0 | ok |
+  | 3 | 0 | 95 | 181 | 3297 | 21 | 0 | ok |
+  | 4 | 0 | 96 | 181 | 3297 | 21 | 0 | ok |
+  | 5 | 0 | 98 | 181 | 3297 | 21 | 0 | ok |
+  | 6 | 0 | 99 | 181 | 3297 | 21 | 0 | ok |
+
+  Every run is the root `npm run gate`. All six report **181 test files / 3297 tests, 0 failed, 0
+  skipped**, and `tests/motion-budget.test.ts` reports **21 in every run** — the figure that separates
+  this from a run where its six size rules skipped, which is indistinguishable at the exit code. One
+  suite total, one file count, one budget count across the batch. 3297 rather than 3292 because round 5
+  added five tests; the corroboration checker's expected figure was updated with them, because a checker
+  asserting a stale expectation would fail for a reason that has nothing to do with the logs.
+
+  **Corroborated from the six logs by separate code, which asserts its markers exist before reading any
+  number.** All three markers found in all six logs; 181 / 3297 / 21 agreed; **zero NUL bytes and zero
+  U+FFFD in every log** — so no log is UTF-16 or lossy, confirmed from outside the script that wrote
+  them. That checker's v1 reported the logs contained none of the counts when they contained all of them
+  (it neither stripped ANSI nor asserted the marker first); v2 is carried forward **unchanged in method**
+  for that reason, because rewriting a checker that has already been wrong once, in the same round that
+  repairs other checks, is how it becomes wrong again unnoticed.
+
+  **One retargeting checker was itself wrong and is recorded as such.** The script that produced this
+  table initially asserted the file no longer mentions `68860cb`, which is wrong — the new header must
+  mention it, because the claim being made is "the previous six runs were at `68860cb` and did not
+  measure this commit". It fired on correct output and reported a failure it could not distinguish from
+  a real one: the same shape as the 8.12 checker that reported missing counts where the counts were
+  present. Narrowed to check the old *header* is gone, the new one present, the prior batch named as
+  prior, and the log directory moved. This is the sixth time this branch has produced a checker that
+  reports something it did not establish, and the second time the fix was to narrow the check rather
+  than widen it.
+
+  **Batch script body carried forward unchanged**, on the same reasoning. Its two previously-fixed
+  defects remain in place: `[char]27` rather than PowerShell 6's `` `e `` for ANSI stripping (Windows
+  PowerShell 5.1 has no `` `e ``, which had left escapes in the text), and
+  `[System.IO.File]::WriteAllText` with UTF-8 rather than `Tee-Object` (which writes UTF-16LE on 5.1, so
+  the parse read NULs and "Test Files" was not *findable* — and a string that cannot be searched looks
+  exactly like a string with no results in it). A run whose counts cannot be parsed is still reported as
+  `PARSE FAILURE`, never as a run that reported no counts.
