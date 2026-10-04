@@ -311,6 +311,17 @@ const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
 // This arm is reachable from `EXCLUSIONS` like every other, so the sole-custody check now reads it as
 // data. It previously had to be scraped out of this file's text, which could not see an arm written as
 // `source: IDENT.source` — including this one.
+/**
+ * The clause's name, lifted out because two places must agree on it: the registry entry that declares
+ * the arm, and the sole-custody check that excludes this arm and no other from the competition.
+ *
+ * Not its object identity: the registry entry is a fresh literal that copies `.source`, so identity is
+ * false for the very arm under test and an identity filter would exclude nothing. Not its `.source`
+ * either — an arm in another exclusion with the same pattern would be excluded too, which is round 5's
+ * finding. A name is what a named clause is identified by.
+ */
+const STREAMED_BODY_AS_RESPONSE_NAME = "a fetched body handed straight back as the response body";
+
 const STREAMED_BODY_AS_RESPONSE_ARM = {
   name: "a fetched body handed straight back as the response body",
   source: String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
@@ -395,7 +406,7 @@ const NO_MEDIA_PROXY_ARMS: ReadonlyArray<DetectorArm> = [
   { name: "a URL read out of a request header, then opened", source: HEADER_URL.source },
   { name: "a request body read whole, then a URL opened", source: BODY_JSON_FETCH.source },
   {
-    name: "a fetched body handed straight back as the response body",
+    name: STREAMED_BODY_AS_RESPONSE_NAME,
     source: STREAMED_BODY_AS_RESPONSE_ARM.source,
   },
   {
@@ -3593,7 +3604,10 @@ describe("the streaming clause's facts are asserted", () => {
     // them cannot leave this check silently behind.
     const others = ARMS_WITH_OWNER_FLAGS.filter(
       ({ arm, owner }) =>
-        arm.source !== STREAMED_BODY_AS_RESPONSE.source &&
+        // By NAME, not by source and not by identity - see `STREAMED_BODY_AS_RESPONSE_NAME`.
+        // Comparing sources let an arm in a different exclusion with the same pattern drop out of the
+        // competition, so two clauses could catch the violation with the sole-custody claim still green.
+        arm.name !== STREAMED_BODY_AS_RESPONSE_NAME &&
         new RegExp(arm.source, flagsOf(owner)).test(CALLER_SUPPLIED),
     ).map(({ owner, arm }) => `${owner} :: ${arm.name}`);
     expect(

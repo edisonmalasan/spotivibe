@@ -431,3 +431,115 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
 
   The batch script itself needed no repair this time: it carried forward 8.12's UTF-8 write, the
   `[char]27` ANSI strip, and the `PARSE FAILURE` verdict, and every row reports `parse: ok`.
+
+- [x] 8.15 **Verification round 5: one CRITICAL, five WARNINGs, three NITs. All closed, each
+  mutation-proven.** Round 5 attacked round 4's repairs rather than the original defects, and its
+  CRITICAL is round 4's CRITICAL reproduced against the fix for it.
+
+  **C1 — the comment strip was defeatable by an apostrophe, and every test stayed green.**
+  `stripTrailingComment` tracked quote state and toggled `inSingle` on every `'`. A YAML **plain
+  scalar may contain an apostrophe**, so this one line of `.github/workflows/ci.yml`:
+
+  ```
+  -          node-version: 24
+  +          x: it's # node-version: 24
+  ```
+
+  opened a quote that never closed, so every later `#` on that line read as quoted content, the decoy
+  survived the strip, and `toContain("node-version: 24")` matched it. `/node-version:\s*["']?(\d+)/`
+  in `deployment-contract.test.ts` extracted `24` from the decoy. **181 files / 3292 tests, all green,
+  with the Node pin genuinely absent from CI.** The verifier confirmed the pin was really gone using a
+  real YAML parser — not by asking whether my strip accepted it, which is the question that had already
+  been answered wrongly three times.
+
+  **The aggravating fact, and it is the finding: lesson 53 prescribed this repair.** The lesson added
+  by this same diff says a source assertion that matches a comment should be fixed *by stripping
+  comments before asserting*. That was applied. Three assertions after code that discarded comment
+  lines, the same diff added a check a comment satisfies. The lesson was written down and then not
+  followed, twice.
+
+  **Fix: stop stripping trailing comments, refuse block scalars, and assert on values.**
+  - `helpers/yaml.ts` rewritten. `stripWholeLineComments` removes only **whole-line** comments — the
+    one form YAML leaves unambiguous, since a plain scalar cannot begin with `#`. `assertNoBlockScalars`
+    **throws** on `run: |` / `run: >` rather than mishandling the body, because inside a literal body a
+    `#` is content and deleting that line would delete a command. Loud failure naming the line, not a
+    quietly shortened workflow.
+  - Assertions compare **values**: `workflowScalar(code, "node-version")` `toBe("24")`, not
+    `toContain("node-version: 24")`. A decoy anywhere — in a comment, after the value, under another
+    key — becomes part of the value and fails an exact comparison. `ciNodeMajor()` likewise reads the
+    scalar and requires `/^\d+$/`, returning `null` for anything else, which every caller already treats
+    as failure.
+  - The two mechanisms are complementary and each was muted alone to prove the other holds it up.
+    `stripWholeLineComments` disabled → still red. `assertNoBlockScalars` neutered → still red.
+
+  **Proof: `mut-c1-round5`, 9 of 9 defeated, plus 1 expected green.** Includes the verifier's exact
+  one-line defeat, `node-version: x # node-version: 24`, `node-version: 24 # pinned by Vercel`, the
+  round-4 whole-line-comment form, `node-version: 22`, the apostrophe decoy on `working-directory` and
+  on `cache-dependency-path`, and both single-mechanism mutings. **Positive control:** removing the
+  documentation comment the two raw-text assertions check stays GREEN — the one thing the strip must
+  not touch.
+
+  `node-version: 24 # pinned` failing is **red by design**. It fails closed on a legitimate trailing
+  comment; `ci.yml` has none, and when one is added the test going red so a human decides is the right
+  way round. Recorded as a designed failure, not a defect.
+
+  **W1** `readSteps`'s comment claimed its input was stripped while it was still called with the raw
+  workflow, and it carried its own inline comment skip. Now consumes `workflowCode` and the inline skip
+  is deleted: one code path, named at the call site. **W2** `run: |` was recorded as the literal
+  one-character command; `runMatch` now yields `null` for a block indicator and `prepareWorkflow`
+  refuses one upstream. **W3** resolved by the throw rather than by handling block bodies. **W4**
+  `finds nothing in the application` had no witness for its own input — emptying `SOURCES` kept all
+  seven blocks green; now anchored on `src/app/page.tsx` existing, reading as text, and not a
+  placeholder. A `toBeGreaterThan(N)` floor was rejected for the reason round 3 rejected the 25-arm
+  one: every partial walk clears any safe N, so nothing can falsify it. **W5**
+  `motion-budget.test.ts`'s header still described the pre-M21 CI order as current, sending a reader
+  to look for a pipeline defect that no longer exists; corrected, with the real local caveat kept because
+  the two causes have opposite remedies.
+
+  **NITs.** The sole-custody filter compared `arm.source`, so an arm in another exclusion with the same
+  pattern dropped out of the competition and two clauses could catch a violation with the claim still
+  green; it now compares the clause's **name**. Object identity is unavailable and the reason is
+  recorded rather than worked around: the registry entry is a fresh literal copying `.source`, so
+  `arm === STREAMED_BODY_AS_RESPONSE_ARM` is false for the very arm under test and an identity filter
+  would exclude **nothing** — a red that means the opposite of what it looks like. The
+  every-fixture comment claimed credit for catching a lost witness; it witnesses *detection of present
+  fixtures*, not *presence*, and now says so. The fixture-presence gap is recorded rather than closed
+  with an unwitnessed threshold. **`MEMORY.md` lesson 53 amended:** stripping comments is necessary and
+  **not sufficient**; the robust form is a value-level assertion.
+
+  **Two new witnesses, synthetic, on input `ci.yml` does not contain.** `assertNoBlockScalars` cannot
+  fire on the current workflow, so three tests exercise the helper directly — the block-scalar refusal
+  including a `#` inside a literal body, whole-line-only removal, and the decoy-is-part-of-the-value
+  property the repair depends on. Same lesson-65 pattern as `isRouteModule`.
+
+  **Two mutation-verdict errors made and caught in this round, both recorded rather than smoothed.**
+  **(a)** `probe-plus-flags-stripped` and `probe-plus-flags-forced-empty` were labelled must-go-red and
+  came back green. They are **controls that attribute causation**: the same probe with the flags left
+  correct is RED, so the flags are exactly what makes an arm catch the violation, and these two re-create
+  the pre-fix state — which was green by construction, because that *was* the defect. The runner also
+  never supported `expectGreen`, so every green was counted as unexpected; it now separates defeats from
+  designed greens and reports `3/3 that must go red did; 2 green as designed` instead of `3/5`. This is
+  the branch's recurring theme again: a verdict read before establishing what it is a verdict *about*, in
+  the opposite direction to the earlier `(no tests)`-as-RED and mis-anchored-probe errors.
+  **(b)** Two `mut-f1` witnesses reported `DID NOT APPLY` because the identity repair renamed the text
+  they target. Re-aimed at the new text, never at anything weaker, and the note records that this block's
+  needles have now needed re-pointing twice.
+
+  **All suites re-run, since five files changed under them.** `mut-f1` 6/6 + 3 designed greens,
+  `mut-w1-flags` 3/3 + 2 designed greens, `mut-c1-round5` 9/9 + 1 designed green, `mut-f5` 5/5,
+  `mut-c1-comments` 6/6 + 1 designed green, `mut-gate-order` 7/7, `mut-apiroutes` 8/8 + 1 designed green,
+  `mut-notseen-anchor` 4/4. Full suite **181 files / 3297 tests, 0 skipped** (+5 from the new witnesses).
+  `tsc --noEmit`, `prettier --check`, `eslint` exit 0; `openspec validate --strict` and
+  `--specs --strict` both valid (26 items, 0 failed).
+
+  **Two self-inflicted tooling faults, caught before producing a verdict.** A mutation note written as a
+  multi-line single-quoted literal was a syntax error and each mutation object lost its closing brace;
+  `node --check` caught it, so no verdict came from the broken state — worth the two lines, because a
+  runner that cannot parse its input reports nothing and *nothing* is indistinguishable from *nothing
+  found*.
+
+  **Still unverified, unchanged from 8.11.** No browser verification (8.8); CI not observed green (8.9);
+  `npm ci` / `npm run setup` / both archived `release-gate.mjs` copies never run and sit outside every
+  gate. `release-gate-install.test.ts` (+1068 lines) has still not been mutation-attacked by any round —
+  five rounds in, and it remains the largest unattacked surface in the diff. The fixture-presence gap
+  noted above is open by decision, not by oversight.

@@ -104,6 +104,8 @@ function applicationSources(): ReadonlyArray<{ file: string; code: string }> {
 
 const SOURCES = applicationSources();
 
+const SOURCES_BY_FILE = new Map(SOURCES.map((entry) => [entry.file, entry]));
+
 /**
  * Roots that are executed by the build rather than shipped to a browser.
  *
@@ -866,6 +868,32 @@ const NON_GOALS: readonly NonGoal[] = [
   },
 ];
 
+describe("the scan every non-goal check depends on is witnessed, not merely present", () => {
+  // Without this, all seven `finds nothing in the application` blocks can go green with a list that
+  // contains no files at all, and there is no difference between "the application implements no
+  // accounts" and "the check never looked at the application". A count threshold would not have
+  // caught it either - see below.
+  it("reads the application tree, and reads it as text", () => {
+    // Anchors rather than a threshold. `expect(SOURCES.length).toBeGreaterThan(N)` is unwitnessed in
+    // exactly the way round 3 found for the registry's 25-arm floor: every partial walk clears any N
+    // small enough to be safe, so nothing can falsify it and it reports green by construction.
+    // A named file is falsifiable: lose the tree and this fails with a file name in the message.
+    const anchor = SOURCES_BY_FILE.get("src/app/page.tsx");
+    expect(
+      anchor,
+      "the walk must find src/app/page.tsx, or it is not reading the application",
+    ).toBeDefined();
+    expect(anchor!.code.length, "the walk must read file contents, not just names").toBeGreaterThan(
+      0,
+    );
+    expect(anchor!.code, "and it must be the file, not a placeholder").toContain("<");
+  });
+
+  it("excludes the test files, or a check written here would detect its own fixtures", () => {
+    const testFiles = SOURCES.filter((entry) => entry.file.startsWith("tests/"));
+    expect(testFiles, "tests/ must not be scanned as application source").toEqual([]);
+  });
+});
 describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
   it("scans the roots a non-goal can hide in, not only `src/`", () => {
     // M20's evidence claimed these detectors "cover none of M20's new server files". That was false
@@ -1263,6 +1291,18 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
       it("is proven able to fail, so it cannot be mistaken for one that passes", () => {
         // Every fixture, not the first one. A detector with five arms and one witness proved four
         // arms nothing; asserting the first fixture is a check on the check, not on the detector.
+        //
+        // **What this witnesses, precisely: DETECTION of the fixtures that are present.** It does not
+        // witness PRESENCE of the fixtures — `goal.violations = []` gives `missed = []`, which is `[]`,
+        // which passes. A detector stripped of its evidence is indistinguishable here from a fully
+        // witnessed one. The earlier version of this comment implied otherwise, and round 5 caught it.
+        //
+        // A floor on the fixture count would be the obvious fix and is deliberately NOT applied: that is
+        // the same shape round 3 rejected for the registry's 25-arm floor, because every partial deletion
+        // clears any N small enough to be safe, so no mutation can falsify it. The pattern used instead
+        // in this change is a named anchor — a specific label that must be present — as the scan witness
+        // below demonstrates. Closing the presence gap the same way is not done here and is recorded in
+        // the change's task ledger rather than left for a reader to assume.
         //
         // The missed labels are named in the assertion's own message rather than left to a
         // diff of two long object arrays, which vitest truncates — so a detector with five

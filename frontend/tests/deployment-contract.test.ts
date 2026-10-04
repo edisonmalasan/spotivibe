@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { stripYamlComments } from "./helpers/yaml";
+import { prepareWorkflow, workflowScalar } from "./helpers/yaml";
 import { validateEnv } from "@/server/env";
 
 /**
@@ -233,12 +233,19 @@ function pinnedMajor(range: string | undefined): string | null {
 /** The Node major the CI workflow verifies, read from the workflow rather than restated. */
 function ciNodeMajor(): string | null {
   const workflow = readFileSync(join(FRONTEND, "..", ".github", "workflows", "ci.yml"), "utf8");
-  // Stripped, not raw: `# node-version: 24` matches the pattern below, so a commented-out pin read as a
-  // real one and the entire engines / package.json / workflow agreement held while nothing was pinned at
-  // all - the runner would have used its own default Node. The same hole as `ci-workflow.test.ts`, and
-  // deliberately the same helper: fixing one file and not the other would only have moved it.
-  const code = stripYamlComments(workflow);
-  return /node-version:\s*["']?(\d+)/.exec(code)?.[1] ?? null;
+  // Prepared, then read as a VALUE. Three rounds of the same defect are behind this line:
+  //   - round 4: the raw text matched `# node-version: 24`, so commenting out the pin left every test
+  //     green while the runner would have used its own default Node;
+  //   - round 5: the first repair stripped trailing comments by tracking quotes, and a plain scalar may
+  //     contain an apostrophe, so `x: it's # node-version: 24` opened a quote that never closed and the
+  //     decoy survived - again with every test green;
+  //   - and a regex over the remaining text would still find the *first* `node-version:` and pull digits
+  //     out of whatever follows it, decoy or not.
+  // So the scalar is read and must be exactly the major. Anything else - absent, a decoy in a trailing
+  // comment, a range - returns `null`, which every caller already treats as a failure.
+  const code = prepareWorkflow(workflow);
+  const value = workflowScalar(code, "node-version");
+  return value !== null && /^\d+$/.test(value) ? value : null;
 }
 
 describe("the build that runs is the build that was tested (M15 task 4.2)", () => {

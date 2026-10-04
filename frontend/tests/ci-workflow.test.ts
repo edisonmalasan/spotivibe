@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { stripYamlComments } from "./helpers/yaml";
+import {
+  assertNoBlockScalars,
+  prepareWorkflow,
+  stripWholeLineComments,
+  workflowScalar,
+} from "./helpers/yaml";
 
 /**
  * The CI workflow's step order.
@@ -61,9 +66,11 @@ function readSteps(yaml: string): Step[] {
   let current: Step | null = null;
 
   for (const line of lines) {
-    // Comments are stripped once, up front, by `stripYamlComments`, and `readSteps` works on that.
-    // It used to skip comment lines here inline while three assertions later read the un-stripped
-    // text - so the file knew to distrust comments and then did not. One code path, no second opinion.
+    // The input is already stripped by `prepareWorkflow` at the call site, so this function does not
+    // check for comments. It used to skip them here inline while three assertions later read the
+    // RAW text - the file knew to distrust comments and then did not - and when the strip was fixed, the
+    // comment here was left claiming a guarantee the call no longer provided. One code path, and the
+    // path is named at the call site rather than described from a distance.
     if (line.trim() === "") continue;
 
     const indent = line.length - line.trimStart().length;
@@ -90,9 +97,13 @@ function readSteps(yaml: string): Step[] {
       continue;
     }
 
-    const runMatch = /^\s*run:\s*(.+?)\s*$/.exec(line);
+    const runMatch = /^\s*run:\s*(.*)$/.exec(line);
     if (runMatch && current) {
-      current.run = runMatch[1]!;
+      // A block scalar (`run: |` / `run: >`) would match this as the literal command `|`, recording a
+      // one-character command for a multi-line script. `prepareWorkflow` refuses block scalars before
+      // we get here, so reaching that value means the guard was bypassed; recording it as empty is
+      // falsifiable by any assertion that requires a command, where `|` would silently pass some of them.
+      current.run = /^[|>][-+0-9]*$/.test(runMatch[1]!.trim()) ? null : runMatch[1]!.trim();
       continue;
     }
 
@@ -109,18 +120,72 @@ function readSteps(yaml: string): Step[] {
 const workflow = readFileSync(WORKFLOW, "utf8");
 
 /**
- * The workflow with comments removed. Any assertion that the workflow *does* something must use
- * this: a comment is the workflow saying what it does not do, so `# node-version: 24` satisfies a
- * `toContain("node-version: 24")` on the raw text. That was a live hole - commenting out the Node pin
- * left all 3292 tests green - and `deployment-contract.test.ts` carried the same one via a regex.
+ * The workflow prepared for reading: whole-line comments gone, block scalars refused outright.
  *
- * `workflow` stays raw for exactly one assertion, which checks that the workflow *explains* its
- * build-before-test ordering. There the comment is the subject, and stripping it would assert nothing.
+ * Two rounds of the same defect sit behind this. Round 4: `toContain("node-version: 24")` on the raw
+ * text was satisfied by `# node-version: 24`, so commenting out the Node pin left 3292/3292 green.
+ * Round 5: the first repair stripped *trailing* comments by tracking quotes, and a plain scalar may
+ * contain an apostrophe — `x: it's # node-version: 24` opened a quote that never closed, so the decoy
+ * survived and all 3292 tests stayed green again.
+ *
+ * So this does not strip trailing comments, and the assertions below compare **values** via
+ * `workflowScalar` instead of substrings. A decoy in a trailing comment is then part of the value and
+ * fails an exact comparison: `node-version: x # node-version: 24` reads as `"x # node-version: 24"`,
+ * not `"24"`. That fails closed on a legitimate trailing comment, which `ci.yml` has none of; when one
+ * is added the test goes red and a human decides, which is the right way round.
+ *
+ * `workflow` stays raw for exactly one test, which checks that the workflow *explains* its
+ * build-before-test ordering and the budget it mentions. There the comment is the subject.
  */
-const workflowCode = stripYamlComments(workflow);
-const steps = readSteps(workflow);
+const workflowCode = prepareWorkflow(workflow);
+const steps = readSteps(workflowCode);
 const indexOfStep = (needle: string): number =>
   steps.findIndex((step) => (step.run ?? "").includes(needle));
+
+describe("the workflow reader is witnessed on input the real workflow does not contain", () => {
+  // Each of these guards is a claim about a shape `ci.yml` does not currently have. Without a
+  // synthetic witness they are all trivially green, and a guard that has never been seen to fire is
+  // indistinguishable from no guard.
+  it("refuses a block scalar rather than deleting its body", () => {
+    expect(() => assertNoBlockScalars("        run: |\n          npm test\n")).toThrow(
+      /block scalar/,
+    );
+    expect(() => assertNoBlockScalars("        run: >-\n          npm test\n")).toThrow(
+      /block scalar/,
+    );
+    // The case that motivated refusing rather than stripping: inside a literal body a `#` is content,
+    // so removing that line would delete a real command.
+    const withHashInBody = ["        run: |", "          # not a comment, a command", ""].join(
+      "\n",
+    );
+    expect(() => assertNoBlockScalars(withHashInBody)).toThrow(/block scalar/);
+    expect(() => assertNoBlockScalars("        run: npm test\n")).not.toThrow();
+  });
+
+  it("removes whole-line comments and nothing else", () => {
+    const yaml = [
+      "# a whole-line comment",
+      "        node-version: 24",
+      '        run: echo "it\'s # not a comment"',
+      "   # indented whole-line comment",
+    ].join("\n");
+    expect(stripWholeLineComments(yaml)).toBe(
+      ["        node-version: 24", '        run: echo "it\'s # not a comment"'].join("\n"),
+    );
+  });
+
+  it("reads a scalar as the whole rest of the line, so a trailing decoy is part of the value", () => {
+    // The property the value-level assertions depend on. If this ever returned `"24"` for a decoy, the
+    // whole repair would be back to a substring match wearing a value comparison's clothes.
+    expect(workflowScalar("        node-version: 24", "node-version")).toBe("24");
+    expect(workflowScalar("        node-version: x # node-version: 24", "node-version")).toBe(
+      "x # node-version: 24",
+    );
+    expect(workflowScalar("        node-version: 24 # pinned", "node-version")).toBe("24 # pinned");
+    expect(workflowScalar('        cache: "a#b"', "cache")).toBe("a#b");
+    expect(workflowScalar("        node-version: 24", "absent-key")).toBeNull();
+  });
+});
 
 describe("every gate that runs these steps builds before it tests", () => {
   // ## Why the release gate is in this file
@@ -251,9 +316,14 @@ describe("the CI workflow's steps", () => {
     // Not re-derived here: `tests/deployment-contract.test.ts` already asserts that `engines.node`,
     // `package.json` and this workflow agree, and it proves itself by rejecting a pin Vercel
     // cannot build. Duplicating it would be a second place for the value to drift.
-    expect(workflowCode).toContain("node-version: 24");
-    expect(workflowCode).toContain("cache-dependency-path: frontend/package-lock.json");
-    expect(workflowCode).toContain("working-directory: frontend");
+    // Compared as **values**, not as substrings. `node-version: 24` present *somewhere* in the file is
+    // not the claim; `node-version`'s value being `24` is. A substring check is what let a comment
+    // satisfy the assertion twice, and a value check cannot be satisfied by text after the value.
+    expect(workflowScalar(workflowCode, "node-version")).toBe("24");
+    expect(workflowScalar(workflowCode, "cache-dependency-path")).toBe(
+      "frontend/package-lock.json",
+    );
+    expect(workflowScalar(workflowCode, "working-directory")).toBe("frontend");
   });
 
   it("states why the build comes first, in the workflow rather than only in a test comment", () => {
@@ -265,7 +335,7 @@ describe("the CI workflow's steps", () => {
     // two halves, not that it runs anything about it - there is no executable reference to it. Moving it
     // to `workflowCode` would have looked like fixing the strip and would have deleted the check.
     expect(workflow).toContain("motion-budget.test.ts");
-    // Raw text on purpose: this asserts the workflow *says* why the build precedes the tests, so the
+    // Raw text, and these are the only two assertions in the file that read `workflow`. Both check that
     // comment is the subject here. Every other content assertion in this file reads `workflowCode`.
     expect(workflow).toContain("The build runs **before** the tests");
   });

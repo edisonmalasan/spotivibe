@@ -621,11 +621,26 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     they matched the explanatory comment describing the bug rather than the code. One compared the
     index of `routerPaused = true` against the index of `Fetch.enable` — and the comment written to
     describe that exact bug mentions `Fetch.enable` first, so the check was reading the prose. Another
-    matched the old broken guard, which its comment quotes verbatim. **Fix this by stripping comments
-    before asserting, and better, by extracting the decision into a function and asserting on what it
-    returns.** A returned value cannot be satisfied by a sentence; a string index can. This is the
-    seventh time this repository has produced the same defect, which is why it is worth memorising as
-    a reflex rather than a lesson.
+    matched the old broken guard, which its comment quotes verbatim. **Fix this by extracting the decision
+    into a function and asserting on what it returns.** A returned value cannot be satisfied by a
+    sentence; a string index can.
+    **AMENDED - "strip the comments first" is necessary and NOT sufficient, and this lesson is what
+    M21 got wrong twice.** The original wording prescribed stripping comments before asserting. That was
+    applied, and the comment still satisfied the assertion: `# node-version: 24` passed a
+    `toContain("node-version: 24")` (round 4), and then `x: it's # node-version: 24` passed it again
+    (round 5) because the repair stripped *trailing* comments by tracking quote state and **a YAML
+    plain scalar may contain an apostrophe** - so the quote opened and never closed. All 3292 tests
+    green both times. A hand-rolled comment stripper is only as correct as the parser it is standing in
+    for, and it is not one.
+    **The part that generalises: assert on the VALUE, not on text containing it.** Read
+    `node-version`'s scalar and require it to equal `24`. Then a decoy anywhere - in a comment, after
+    the value, in a second key - is part of what you compared, and fails. Stripping comments and
+    comparing values are complementary: the strip handles the one form the language makes unambiguous (a
+    whole-line comment, since a plain scalar cannot begin with `#`), and the value comparison handles
+    everything a strip cannot reason about. Either alone was beaten here.
+    This is the seventh time this repository has produced the same defect, which is why it is worth
+    memorising as a reflex rather than a lesson. It is also the first time the reflex was written down and
+    then not followed two rounds running - so the lesson is now about the value, not the strip.
 54. **A check that asserts an identifier *appears somewhere* is not a check.** M21's cascade guard
     asserted the name `environmentBroken` was in the gate's source. Replacing the condition with
     `false` left it green while the gate went back to reporting sixteen failures where there is one.
