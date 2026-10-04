@@ -1193,3 +1193,56 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   possible at any point in this round (only Edge installed, no automation dependency), so every check that
   needs a real browser remains unverified rather than passing. CI has still not been observed green on
   this branch.
+
+  ### Post-commit correction — batch 9 was stale on a *documentation* file, and batch 10 exists because of it
+
+  The batch above was measured at `e26ea2a`, which is where round 9's source repair landed. The task entry
+  and lessons 67-72 then landed at `fe43949`, which looked exempt: documentation is not source code, and no
+  gate step runs `MEMORY.md`.
+
+  **It is read.** `tests/encoding-integrity.test.ts:164` decodes `MEMORY.md` among the root files it
+  checks, so the commit that recorded round 9's results changed an input to the gate and batch 9 was
+  measuring a `MEMORY.md` that no longer existed. Found by grepping for the filename rather than by
+  assuming docs were exempt.
+
+  **The test suite decides which files are inputs, and it decided this one was.** The rule this change has
+  applied eight times — *a criterion measured against a tree that has since changed is not a measurement of
+  the current tree* — makes no exception for files that are "only" documentation, and an exception made
+  on that basis is indistinguishable from forgetting.
+
+  ## The tenth batch — six consecutive green full gate runs at `fe43949`
+
+  ```
+  run  exit  seconds  files  tests  motion-budget  skipped  parse
+  1    0     122      181    3312   21                      ok
+  2    0     121      181    3312   21                      ok
+  3    0     121      181    3312   21                      ok
+  4    0     117      181    3312   21                      ok
+  5    0     114      181    3312   21                      ok
+  6    0     120      181    3312   21                      ok
+  ```
+
+  Corroborated independently from the six logs (`verify-gateruns10.mjs`, exit 0): 181 files and 3312 tests
+  in every log, motion-budget 21 in every log, no NULs and no `U+FFFD` in any of them (a UTF-16 log and a
+  lossy log both read as *markers absent*, not as *markers absent*), and enumeration holding at 2987 against
+  execution at 3312 with the gap steady at 325 for the fourth batch running.
+
+  **Amending this task file after the batch is safe, and that is a checked claim rather than an assumed
+  one:** no test reads `tasks.md` or the active change directory — the only `openspec/changes` paths under
+  `frontend/` are imports of the *archived* `release-gate.mjs`'s `lib/*.mjs`, which this amendment does not
+  touch. The claim was established by grep before the edit, not by the reasoning that documentation is
+  inert — which is the same reasoning that made batch 9 stale.
+
+  ## The timing question, one batch later
+
+  Batch 8 ran in 95-102 s. Batch 9 ran in 119-205 s and this entry first recorded the cause as **not
+  established**: the only file containing AST parsing runs in 2.1-2.8 s of a ~130 s gate, so the extraction
+  could not account for it. Batch 10 runs **the same AST code** in 114-122 s.
+
+  Two things follow, and only two:
+
+  - **The AST extraction is not the cause** — now supported by a control rather than by an argument. Batch
+    10 is the same code with an 8-second spread, where batch 9 had an 86-second spread. That is consistent
+    with a transient environmental cost and **does not identify what it was**.
+  - **The cause remains unverified.** A tighter spread is corroboration, not an explanation, and recording
+    it as the explanation would be the same false-report shape this change has spent nine rounds removing.
