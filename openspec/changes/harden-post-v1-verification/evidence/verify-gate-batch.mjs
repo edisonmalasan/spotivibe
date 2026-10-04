@@ -367,22 +367,35 @@ if (rows.length > 0) {
       `${distinctCommits.map((c) => c ?? "ABSENT").join(", ")} ` +
       `(${distinctCommits.length} distinct of ${rows.length})\n`,
   );
-  if (distinctCommits.length !== 1) {
+  // **Two conditions, and the order matters.** Absence is tested FIRST, because a partly-absent batch also
+  // has more than one distinct value and would otherwise be explained as a straddling batch — which is
+  // round 17's NIT 1, measured: five commits plus one absent printed "a batch spanning more than one
+  // commit". The status word was right (`FAIL`), the `ABSENT` was visible and the exit was non-zero, so it
+  // was cosmetic rather than a false green. It was still the wrong sentence for the evidence in front of
+  // the reader, and a check that explains the wrong thing teaches the reader to ignore it.
+  if (!allPresent) {
+    // **Round 17's WARNING 1: this branch was commented "unreachable in practice", and it is not.** The
+    // comment argued from `problems` already being 7, which proves the *consequence* of an absent commit
+    // rather than its *absence* — a non-sequitur — and round 17 executed the branch by feeding it the
+    // all-absent batch the new negative test builds. "In practice" was satisfied routinely. The branch is
+    // kept because it earns its place on the merits: it states in the summary line the fact the six
+    // per-row `ASSERTED MISMATCH` lines above already carry.
+    problems += 1;
+    const absentCount = rows.filter((row) => row.commit === null).length;
+    process.stdout.write(
+      absentCount === rows.length
+        ? "      no log names a commit, so there is nothing to agree about. Each row above reports\n" +
+            "        ASSERTED MISMATCH; this line states the same fact in the summary a reader scans.\n"
+        : `      ${absentCount} of ${rows.length} logs name no commit, so the batch does not agree on one.\n` +
+            "        Each affected row above reports ASSERTED MISMATCH. Re-run the batch rather than\n" +
+            "        reading the agreement in the remaining logs as if it covered all six.\n",
+    );
+  } else if (distinctCommits.length !== 1) {
     problems += 1;
     process.stdout.write(
       "      a batch spanning more than one commit is not six runs of one unchanged tree, and this is\n" +
         "        refused rather than warned about. The figures may still agree, but the criterion is\n" +
         "        about a commit: attribute the batch to neither, or split it.\n",
-    );
-  } else if (!allPresent) {
-    // Unreachable in practice — `problems` is already 7 from the per-row `ASSERTED MISMATCH` above — and
-    // kept anyway so the two conditions cannot drift into agreement. A branch that is dead today and
-    // wrong tomorrow is how the exit-status clause behaved once already: correct in every run anyone
-    // happened to execute, and carrying a path no run had taken.
-    problems += 1;
-    process.stdout.write(
-      "      no log names a commit, so there is nothing to agree about. Each row above reports\n" +
-        "        ASSERTED MISMATCH; this line states the same fact in the summary a reader scans.\n",
     );
   }
 }

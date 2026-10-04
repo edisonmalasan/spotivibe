@@ -139,10 +139,16 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `APPLY` (PR #100 open) | M16–M20 |
 
-**M21 status, 2026-10-04 — Apply in progress, and its central claim has been narrowed.** Proposal merged
-as `6f86211`; Apply is PR #100. Twelve rounds of independent verification have run; the first eleven
-returned REJECT, and the twelfth found 4 CRITICAL, 7 WARNING and 4 NIT. Every round found the *previous
-round's* defect class reproduced inside the previous round's own repair.
+**M21 status, 2026-10-05 - Apply in progress, and its central claim has been narrowed.** Proposal merged
+as `6f86211`; Apply is PR #100. **Seventeen rounds** of independent verification have run: rounds 1-15
+returned REJECT, round 16 returned ACCEPT/MERGEABLE and round 17 returned MERGEABLE/ACCEPT, neither with
+a CRITICAL. Every rejecting round found the *previous round's* defect class reproduced inside the previous
+round's own repair.
+> **Round 17's WARNING 5: this paragraph said twelve rounds, and that was a stale count contradicting this
+> same document seventy lines below**, which reported round 16's ACCEPT. It understated, so it manufactured
+> no false green - but it was the kind of number written down once and never recounted, in a milestone
+> whose ROADMAP names exactly that as its defect family. Recounted, and the count now moves with the work
+> rather than lagging it.
 
 **The claim this milestone made — that its suite makes a false green impossible — has been retired by
 decision, not by success.** Two one-line edits still make the release gate's install cascade dead code
@@ -186,14 +192,28 @@ four of the effect's dependencies are inert: the trace is byte-identical whether
 The test had read its marker at `scrollCalls.length = 0` in 8 of 8 isolated runs.
 
 Fixed in the test alone - flush pending effects, discard what they recorded, then take the marker.
-`git diff --stat -- src/` is empty: **no shipped code changed**, because a production fix would have
-suppressed the panel's legitimate first centring. The assertion's exact count is unchanged. A regression
-test pins it, and its first version was measured to be decorative before being rewritten.
+`git diff --stat -- frontend/src/` shows one file, `useListeningRecorder.ts`, adding `flushListeningRecorder()`:
+**no shipped panel or hook behaviour changed**, because a production fix would have suppressed the
+panel's legitimate first centring. The assertion's exact count is unchanged. A regression test pins it,
+and its first version was measured to be decorative before being rewritten.
+> **Round 17 caught that the check above was vacuous.** It read `git diff --stat -- src/`, and **there is
+> no root `src/` in this repository** - the command is trivially true and would have stayed true through
+> any edit to the application. That is the purest form of this milestone's subject: a check that cannot
+> fail. Re-scoped to `frontend/src/`, where it reports a real change, and that change is read below rather
+> than glossed.
 
 **Batch 16, at `a0bf535`: 6 of 6 green, corroborated, exit 0** - six distinct log digests, 182 files,
 3335 tests, motion-budget 21, enumeration 3013/3335 = 0.903 against a 0.8 floor. Round 13 reproduced the
 regression evidence independently (5/5 red without the discipline, 5/5 green with it) and rejected only
 the record, which was corrected in the same round. Recorded at `tasks.md` 8.29 and 8.30.
+> **Batch 16 is SUPERSEDED and is not current criterion evidence.** Round 17's NIT 3: this file presented
+> batch 16 as the criterion's evidence and never marked it superseded, while batches 17-20 were absent
+> from it entirely - so a reader of `ROADMAP.md` alone would take batch 16 as current, and
+> `run-gate-batch.ps1` states in-tree that batch 16's logs predate the commit stamp the checker requires.
+> The live chain is at `tasks.md` 8.29, 8.30, 8.34, 8.36 and 8.38, each stating its own supersession.
+> **This is the fourth recurrence of the same finding** - a record not marked superseded is worse than no
+> record, because it looks current - and it survived five rounds because each fix was applied at the site
+> the previous round named rather than searched for globally.
 
 Rounds 14 and 15 then each returned REJECT on a clause I had added to fix the previous round's CRITICAL -
 the fifth and sixth instances of this milestone's own defect family in *this change's verification
@@ -216,7 +236,16 @@ Round 15 also caught that its own predecessor's comment correction was wrong on 
 count for one file while leaving "localised to one file" standing, and re-measuring across the whole
 population found a second contributing file, sum 4 not 3. Round 16 caught the same shape in my count of
 the rungs themselves: "seven rungs, seven escapes" sat above an eight-row table, and no reading of it
-reproduced seven rungs. Both were numbers written down rather than counted.
+reproduced seven rungs. Both were numbers written down rather than counted. Round 17 found two more of
+the same shape - an annotation I added to close a stale-figure finding that itself contained an
+unverified line number, and two counts of the same batch sequence that disagreed about whether any red
+run ever occurred. **Every one of the five was caught by asking a verifier to check a pointer rather than
+to trust it, and none was caught by writing them carefully.**
+
+**The current criterion evidence is batch 20, at `90c2496`, recorded at `tasks.md` 8.38** - six of six
+green, corroborated, exit 0, 182 files, 3341 tests, motion-budget 21, enumeration 3019/3341 = 0.904
+against a 0.8 floor, verified independently of the shipped corroborator by round 17 (six distinct
+whole-file SHA-256, six distinct durations, executed total 3341 measured at HEAD).
 
 What that does **not** establish: CI is still unobserved on this branch; there is still no live-browser
 verification of anything; the two accepted residuals remain named, measured and **unclosed**; and the

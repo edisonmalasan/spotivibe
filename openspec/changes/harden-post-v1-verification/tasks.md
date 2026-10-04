@@ -2121,12 +2121,20 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
     > across the whole suite: **two** files have a positive delta, `release-gate-install.test.ts` listed 74 /
     > executed 71 (+3) and `lyrics-induced-violations.test.ts` listed 18 / executed 17 (+1), summing to 4 -
     > so "localised to one file" is false and 73 is itself stale. Round 14 corrected the count in the
-    > checker and 8.33's narrative; **round 16's NIT 2 found this second site, 210 lines earlier in the
+    > checker and 8.33's narrative; **round 16's NIT 2 found this second site, far earlier in the
     > same file, where the correction never landed.** See `evidence/verify-gate-batch.mjs` for the
     > current figures. Annotated rather than rewritten, because a superseded entry is evidence of what was
     > believed and when, and quietly editing it destroys that. **This is round 14's NIT 1 - *a correction
     > that can be summarised away from its own site has not been made* - arriving at the same figure in a
     > third place, which is the measure of how hard it is to catch every copy of a number.**
+    > > **Round 17's WARNING 2: the annotation above carried its own unverified figure, and it is gone.** It
+    > > read *"210 lines earlier"*. Round 17 measured every distance between the four sites of this figure
+    > > in this file — 718, 714, 455 — and **210 matches none of them.** So the annotation written to close
+    > > a stale-figure finding contained a stale line-number figure, in a change whose ROADMAP names
+    > > *"numbers written down rather than counted"* as the defect family of this very milestone. There was
+    > > no reason to put a distance in at all: "this second site, far earlier in the same file" says
+    > > everything true and nothing unverifiable. **A number is not a claim because it is precise, and the
+    > > temptation to add one to an annotation is the same reflex that produced the original error.**
     A `formatName` helper that accepts a function and reads `.name` is consistent with the symptom without
     explaining why these two arrows and not the three probes; a `@jridgewell/trace-mapping` lead was a
     substring hit on `lineOffset`. Both recorded so nobody repeats them; neither offered as the answer.
@@ -2350,10 +2358,14 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   > **A correction that can be summarised away from its own heading has not been made** — the sentence
   > above is round 14's NIT 1, fixed in `design.md`'s heading and missed here.
   >
-  > The criterion was met at `a0bf535` and is not claimed here. Current evidence is §8.36, at the merge
-  > commit. **A criterion's satisfaction does not outlive the commit it was measured at**, and this
-  > section is retained because the sequence 14 → 15 → 16 → 17 → 18 → 19 is itself the evidence for that
-  > rule: five restarts, three of them caused by documentation commits, none of them by a red run.
+  > The criterion was met at `a0bf535` and is not claimed here. **Round 17's WARNING 4: this pointer used to
+  > read "Current evidence is §8.36, at the merge commit", which §8.36's own heading contradicted three
+  > lines into it — that batch is at `7855f08` and the merge commit is `90c2496`.** A live pointer in the
+  > tree naming a record the tree itself calls stale is worse than no pointer, because it looks current.
+  > The pointer is now to §8.38, and each batch entry states its own supersession rather than relying on a
+  > reader to follow the chain. **A criterion's satisfaction does not outlive the commit it was measured
+  > at**, and this section is retained because the sequence of batches is itself the evidence for that
+  > rule.
 
   Run at the commit that fixed §8.29's cause, from a fresh log directory, driving six `npm run gate` passes.
   The count restarted here: pre-fix runs are not evidence about the tree the fix produces.
@@ -2617,7 +2629,14 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   and the driver. The count does not carry across a commit; §8.29's rule applies to every batch, not
   only the ones that were red.
 
-## 8.35 Round 15 — REJECT, and the seventh rung is the one that broke
+## 8.35 Round 15 - REJECT, and the last of the resolve-once rungs is the one that broke
+
+  > **The heading previously read "the seventh rung is the one that broke", which endorsed a rung count
+  > this section retracts nineteen lines below.** Round 17 filed it as NIT 2 and, separately, as WARNING 3
+  > for the same sentence surviving in the closing paragraph. The correct count is **three rungs, seven
+  > escapes**, derived in this section; "seventh" was round 16's own unreproducible phrasing, carried into
+  > a heading where nothing could correct it. **A heading is the one line in a document that every later
+  > reader sees first, and it is the hardest line in the document to amend once written.**
 
   **Verdict: REJECT. 1 CRITICAL, 2 WARNING, 2 NIT.** Round 14's CRITICAL was confirmed genuinely repaired —
   round 15 ran round 14's exact escape and got RED — and the batch was confirmed independently. **The
@@ -2734,9 +2753,10 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   **Still unverified and recorded as such:** that any batch's logs came from a gate run rather than being
   synthesised — the `commit` stamp is self-reported by the thing it describes, and no stamp written by the
   driver can establish its own provenance. CI unobserved on this branch. No browser verification of any
-  kind. CRITICAL 1 and CRITICAL 2 remain named, measured, **unclosed**. And the ladder has seven rungs
-  behind it, of which the last three each broke within a single round; the claim that an eighth would not
-  be needed is therefore not made.
+  kind. CRITICAL 1 and CRITICAL 2 remain named, measured, **unclosed**. And the resolve-once ladder had
+  **three rungs, seven escapes** behind it, of which R2 and R3 each broke within a single round — which
+  is why the repair is data flow rather than a fourth rung, and why **no claim is made that a syntactic
+  pin would now suffice.**
 
 ## 8.36 Batch 19 at `7855f08` - six of six green, corroborated, and the criterion is met at the merge commit
 
@@ -2760,14 +2780,21 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   (56.49, 55.91, 65.85, 67.62, 66.30, 66.38s); `motion-budget` 21 in all six; and an executed total it
   measured itself at HEAD of **3340**, matching the batch.
 
-  **The full sequence, because five restarts is itself the evidence for the rule.** Batch 14 (`ed6f9f6`)
+  **The sequence, because the restarts are themselves the evidence for the rule.** Batch 14 (`ed6f9f6`)
   6/6; batch 15 (`0e65dc8`) **5/6**, red on a real defect; batch 16 (`a0bf535`) 6/6; batch 17 (`9f78ee1`)
-  6/6; batch 18 (`6e817d4`) 6/6; batch 19 (`7855f08`) 6/6. **Only one of those five restarts was caused
-  by a red run** - the other four were caused by *documentation and tooling* commits, each of which
-  invalidated the count for the same reason: a criterion's satisfaction may not outlive the commit it was
-  measured at. **That is a cost of this milestone's own standard, and it is recorded rather than
-  presented as diligence.** A reader deciding whether this process is worth its price should have the
-  number.
+  6/6; batch 18 (`6e817d4`) 6/6; batch 19 (`7855f08`) 6/6; batch 20 (`90c2496`) 6/6. **Six restarts, and
+  exactly one was caused by a red run** - the other five were caused by *documentation and tooling*
+  commits, each of which invalidated the count for the same reason: a criterion's satisfaction may not
+  outlive the commit it was measured at. **That is a cost of this milestone's own standard, and it is
+  recorded rather than presented as diligence.** A reader deciding whether this process is worth its price
+  should have the number.
+  > **Two counts of this same sequence disagreed inside this change, and round 17 caught the disagreement
+  > by checking the pointer rather than trusting it.** §8.30's SUPERSEDED block said *"five restarts, three
+  > of them caused by documentation commits, **none of them by a red run**"*, which contradicts the
+  > paragraph above — batch 15 was 5/6 red on a real defect. Both cannot be true, and the false one was the
+  > more flattering. The corrected count above is the one each batch's own log supports. **A sequence
+  > counted twice and disagreeing about whether anything ever failed is the `73 lines` defect with a
+  > process narrative attached**, and it survived five rounds because both counts read plausibly.
 
 ## 8.37 Round 16 - ACCEPT / MERGEABLE, no CRITICAL, and the repair confirmed by execution
 
@@ -2854,3 +2881,115 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   self-reported by the driver and binds a batch to a commit without proving the logs came from a gate
   run. CI unobserved on this branch. No browser verification of any kind. CRITICAL 1 and CRITICAL 2
   remain named, measured, **unclosed**, and no document re-claims that false greens are impossible.
+
+## 8.38 Batch 20 at `90c2496` - six of six green, corroborated, and the criterion is met at `90c2496`
+
+  ```
+  commit under test: 90c2496256d3
+  run 1  exit 0   86s  files 182  tests 3341  motion-budget 21
+  run 2  exit 0   84s  files 182  tests 3341  motion-budget 21
+  run 3  exit 0   84s  files 182  tests 3341  motion-budget 21
+  run 4  exit 0   84s  files 182  tests 3341  motion-budget 21
+  run 5  exit 0   83s  files 182  tests 3341  motion-budget 21
+  run 6  exit 0   84s  files 182  tests 3341  motion-budget 21
+  ```
+
+  Corroborator exit **0**, `corroborated`: six distinct digests, `commits named across the logs:
+  90c2496256d3 (1 distinct of 6)`, `182` files (asserted), `motion-budget 21` (asserted), `3341` tests
+  (stability only), enumeration `3019/3341 = 0.904` against a 0.8 floor.
+
+  Round 17 verified it **with its own script and no use of `verify-gate-batch.mjs`**: line 1 `gate
+  exit0` and line 2 `commit 90c2496256d3` in all six, equal to HEAD's short-12 SHA; **six distinct**
+  whole-file SHA-256, computed over both raw bytes and ANSI-stripped text; six distinct durations
+  (54.31, 54.13, 54.48, 54.10, 53.71, 54.03s); `motion-budget` 21 read from the per-file line in every
+  run; `Test Files 182` / `Tests 3341` in all six; 0 NUL bytes and 0 U+FFFD in all six. It also
+  noticed that thirteen lines per log match `failed` and are test-*fixture* stderr appearing
+  identically in all six - **a `failed` match is not evidence of a failure, which is why every
+  detector in this change tests the summary lines by shape rather than by substring.**
+
+  **Supersession, stated here because round 17's WARNING 4 was its absence.** Batch 19 (8.36) was
+  measured at `7855f08` and is superseded by `90c2496`, which changed a gate-executed test file and the
+  checker. Batch 18 (8.34) was measured at `6e817d4` and is superseded by `7855f08`. Batch 17 (8.32) at
+  `9f78ee1` is superseded by `6e817d4`. Batch 16 (8.30) at `a0bf535` is superseded by `9f78ee1`.
+  **A record that does not state its own supersession is worse than no record, because it looks
+  current** - and this change learned that four separate times before writing the chain down once.
+
+  **On where a batch record belongs.** I proposed recording the criterion's batch in the PR #100 body,
+  on the reasoning that an in-tree record creates a commit which invalidates the batch it certifies.
+  Round 17 rejected the conclusion while accepting the premise, and it is right: the premise is a real
+  circularity, and the conclusion was a rationalisation. `tasks.md` 8.30's SUPERSEDED block was a
+  **live pointer in the tree naming a record the tree itself called stale**, and moving the record to a
+  PR body would have left that pointer dangling while discarding the sequence it depends on. The
+  self-consistent form was already in the tree at 8.34 - record the batch, and state in the same section
+  that the commit which follows supersedes it - and this entry is that form. **It never claims to be
+  current, so it does not invalidate itself.**
+
+## 8.39 Round 17 - MERGEABLE / ACCEPT, no CRITICAL, and it rejected my reasoning rather than my code
+
+  **Verdict: MERGEABLE / ACCEPT. No CRITICAL, five WARNING, three NIT.** The second consecutive
+  non-REJECT round, and the first to find nothing behavioural. It stated plainly that it was not
+  manufacturing a CRITICAL - which is the disposition this milestone needed by round 17 and did not get
+  until then.
+
+  **It confirmed the round-15 repair sound, in its own words:** the property is enforced by data flow
+  rather than detected, R1-R3 red on the three mutations that must fail, `Set-Variable` STILL GREEN on
+  the one that must not, and **no overreach found in the narrowed W1 text.** It added a fourth mutation
+  I had not tried - `row.commit !== undefined` instead of `!== null` - which is RED, and that answers the
+  question the round-16 finding left open: **`allPresent` is a check about parsed values, not a spelling
+  test about the driver's text**, because an absent commit is explicitly `null` and `!== undefined` lets
+  it through. The negative case never reads the driver at all; it synthesises logs and runs the checker.
+
+  **WARNING 1 - a comment claimed unreachable code, and the verifier executed it.** I wrote that the
+  `!allPresent` branch was "unreachable in practice", arguing from `problems` already being 7. That
+  argument proves the *consequence* of an absent commit, not its *absence* - a non-sequitur - and round
+  17 reached the branch by feeding it the all-absent batch the new negative test builds, which is a
+  routine input here. **This is warning 4's own shape one branch down, in the one file whose header is a
+  catalogue of the defects this checker's history contains.** The branch is kept because it earns its
+  place on the merits, and the comment now says so.
+
+  **NIT 1 - a partly-absent batch explained itself as straddling.** Five logs naming one commit and one
+  naming none has two distinct values, so the straddling branch described a batch that spans commits as
+  one that does. Cosmetic: `FAIL`, `ABSENT` visible, exit non-zero, never a false green. Repaired by
+  testing absence FIRST, with a message that states how many logs are affected, and pinned by a second
+  negative case that asserts the *explanation* - plus an assertion on the straddling case that its own
+  explanation survives the reorder. **A reorder that fixed the new case by swallowing the old one would
+  otherwise have left the suite green.**
+
+  **WARNING 2 - my annotation for warning NIT 2 carried its own unverifiable figure.** It read "210
+  lines earlier"; round 17 measured every distance between the four sites of that figure - 718, 714,
+  455 - and **210 matches none of them.** The number is gone. **A number is not a claim because it is
+  precise, and the urge to add one to an annotation is the same reflex that produced the error it was
+  correcting.**
+
+  **WARNING 3 - "seven rungs" survived in the section that retracts it**, and in 8.35's heading. Both
+  amended in place. Round 17 also caught a contradiction I had not seen: two counts of the same batch
+  sequence, in the same file, disagreeing about **whether any red run ever occurred** - 8.30 said none, and
+  8.36 said one, and 8.36 was right because batch 15 is recorded 5/6. **Two counts of one sequence that
+  disagree about whether anything failed is the `73 lines` defect with a process narrative attached**, and
+  it survived five rounds because both numbers read plausibly.
+
+  **WARNING 5 - `ROADMAP.md` still said twelve rounds**, contradicting its own line seventy below, which
+  reported round 16's ACCEPT. It understated, so no false green - but it was a number written once and
+  never recounted.
+
+  **The vacuous check, which round 17 found by reading it literally.** `ROADMAP.md` stated
+  `git diff --stat -- src/` is empty, as evidence that no shipped code changed. **There is no root `src/`
+  in this repository.** The command is trivially true and would have stayed true through any edit to the
+  application - the purest form of this milestone's subject, a check that cannot fail. Re-scoped to
+  `frontend/src/`, where it reports one real change (`useListeningRecorder.ts`, +26 lines,
+  `flushListeningRecorder()`), and that change is now described rather than glossed. It reads the
+  existing `writeChain` instead of a 2000 ms polling deadline, has a test consumer, and is a real API -
+  **so the honest statement is one shipped file changed and the panel's behaviour did not, not that
+  nothing changed.**
+
+  **It voided two of its own measurements rather than reporting them.** Its first mutation battery used
+  `--reporter=basic`, which this vitest rejects, so the *control also went red* and all five rows were
+  discarded. Its first "header after the loop" mutation duplicated the line instead of moving it - a
+  semantic no-op that came back green - and was redone properly. **A verifier that discards its own rows
+  and says so is doing the thing this milestone asks for and no round before it did.**
+
+  **Still unverified and recorded as such:** batch 19's and earlier batches' recorded figures - their logs
+  were not supplied to round 17 and it declined to repeat them unverified. The provenance of any batch's
+  logs. CI unobserved on this branch. No browser verification of any kind. CRITICAL 1 and CRITICAL 2
+  remain named, measured, **unclosed**. And `openspec verify` does not exist as a subcommand, so the
+  verification-workflow step this change mandates has never been run as specified.

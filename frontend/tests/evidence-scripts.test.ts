@@ -105,6 +105,14 @@ interface Verdict {
   corroborated: boolean;
   digestLine: string;
   commitLine: string;
+  /**
+   * The sentence the checker printed UNDER the commit line — the explanation, not the verdict.
+   *
+   * Captured separately because round 17's NIT 1 was not a wrong status word but a wrong *explanation*: a
+   * partly-absent batch said `FAIL` and exited non-zero while describing itself as spanning commits. An
+   * assertion that can only see `commitLine` cannot see that class of defect at all.
+   */
+  commitNote: string;
   problems: string | null;
 }
 
@@ -115,11 +123,24 @@ function runChecker(logDir: string, frontend: string, extra: readonly string[] =
     { encoding: "utf8", env: process.env },
   );
   const output = ((result.stdout ?? "") + (result.stderr ?? "")).replace(/\x1b\[[0-9;]*m/g, "");
+  const lines = output.split("\n");
+  const commitAt = lines.findIndex((line) => /commits named/.test(line));
+  // The explanation is the indented block immediately below the commit line. It is found by shape — an
+  // indented, non-marker line following it — and NOT by a fixed index, because the checker's output grows
+  // rows and a positional read silently starts reporting a different clause's text.
+  const noteLines: string[] = [];
+  for (let i = commitAt + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!/^\s+\S/.test(line) || /^(ok|FAIL|WARN)\s/.test(line.trim())) break;
+    noteLines.push(line.trim());
+    if (noteLines.join(" ").length > 400) break;
+  }
   return {
     exit: result.status,
     corroborated: /^corroborated:/m.test(output),
-    digestLine: (output.split("\n").find((line) => /log digests/.test(line)) ?? "").trim(),
-    commitLine: (output.split("\n").find((line) => /commits named/.test(line)) ?? "").trim(),
+    digestLine: (lines.find((line) => /log digests/.test(line)) ?? "").trim(),
+    commitLine: (lines[commitAt] ?? "").trim(),
+    commitNote: noteLines.join(" "),
     problems: /(\d+) problem\(s\) unresolved/.exec(output)?.[1] ?? null,
   };
 }
@@ -249,6 +270,14 @@ describe("the shipped checker refuses what round 11's gate could only grep for",
       "a batch spanning two commits exited 0: every caller reads the exit status, not the warning",
     ).not.toBe(0);
     expect(verdict.corroborated, "a straddling batch reached the corroborated verdict").toBe(false);
+
+    // And the explanation, so reordering the two conditions to fix round 17's NIT 1 cannot silently
+    // cannibalise this message. Before round 17 both cases took one branch; now they take different ones,
+    // and a reorder that satisfied the new case by swallowing the old one would leave this suite green.
+    expect(
+      verdict.commitNote,
+      "a genuinely straddling batch lost its explanation to the absent-commit branch",
+    ).toMatch(/spanning more than one commit/);
   });
 
   it("still corroborates a batch stamped `unknown`, because its figures are not thereby false", () => {
@@ -300,6 +329,44 @@ describe("the shipped checker refuses what round 11's gate could only grep for",
 
     expect(verdict.exit, "a batch naming no commit exited 0").not.toBe(0);
     expect(verdict.corroborated, "a batch naming no commit reached the corroborated verdict").toBe(
+      false,
+    );
+  });
+
+  it("explains a partly-absent batch as absent rather than as straddling", () => {
+    // **Round 17's NIT 1, measured.** Five logs naming one commit and one naming none has *two* distinct
+    // values, so the straddling branch claimed the batch spanned more than one commit — which is not what
+    // the evidence showed. The status word was `FAIL`, the absent value rendered `ABSENT`, and the exit
+    // non-zero, so it was cosmetic and never a false green. It was still the wrong sentence in front of
+    // the reader, and a check that explains the wrong thing teaches the reader to ignore it.
+    //
+    // Asserting the *explanation* is the whole point. A status-word-only assertion passed while this
+    // wording was wrong — the same lesson as the straddling case's `/^FAIL\b/`: the label alone is not the
+    // claim, and asserting only the label is how a wrong explanation survives review.
+    const dir = writeLogs(
+      join(scratch, "partly-absent"),
+      [1, 2, 3, 4, 5, 6].map((run) =>
+        run === 6 ? greenLog(run).replace(/^commit .*$/m, "run 6") : greenLog(run, "a0bf535123456"),
+      ),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-partly-absent", 3003));
+
+    expect(verdict.commitLine).toMatch(/^FAIL\b/);
+    expect(verdict.commitLine).toMatch(/ABSENT/);
+    expect(verdict.commitLine).toMatch(/2 distinct of 6/);
+
+    expect(
+      verdict.commitNote,
+      "a partly-absent batch was explained as spanning commits, which is not what the evidence showed",
+    ).toMatch(/1 of 6 logs name no commit/);
+    expect(
+      verdict.commitNote,
+      "a partly-absent batch was explained as spanning commits",
+    ).not.toMatch(/spanning more than one commit/);
+
+    expect(verdict.problems, "a partly-absent batch was not counted as a problem").not.toBe("0");
+    expect(verdict.exit, "a partly-absent batch exited 0").not.toBe(0);
+    expect(verdict.corroborated, "a partly-absent batch reached the corroborated verdict").toBe(
       false,
     );
   });
