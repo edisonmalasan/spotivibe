@@ -383,6 +383,140 @@ function branchSource(source: string, marker: string): string | null {
   return nodeSource(file, matching[0]);
 }
 
+/**
+ * Every call to `callee` in the file, refusing zero and refusing two or more.
+ *
+ * Same shape as `itemSource` and `branchSource`, for the same reason. `callee` is matched as the callee
+ * *expression*, not as a substring, so the import specifier at the top of the gate — which names
+ * `prepareDependencies` without calling it — is not one of these. A locator that counted the import would
+ * report a call the file does not make, which is the same category of error as reporting a `run:` the
+ * reader never saw.
+ */
+function callsTo(file: ts.SourceFile, callee: string): ts.CallExpression[] {
+  const matching: ts.CallExpression[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === callee
+    ) {
+      matching.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return matching;
+}
+
+/** The one call to `callee`, refusing zero and refusing two or more, naming where each was. */
+function soleCall(file: ts.SourceFile, callee: string): ts.CallExpression {
+  const matching = callsTo(file, callee);
+  if (matching.length === 0) {
+    throw new Error(
+      `refusing to read the wiring: the gate never calls '${callee}'. Whatever the assertions below say ` +
+        "about it, the file does not do it.",
+    );
+  }
+  if (matching.length > 1) {
+    throw new Error(
+      `refusing to read the wiring: '${callee}' is called ${matching.length} times (lines ` +
+        `${matching
+          .map((node) => file.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+          .join(", ")}). ` +
+        "Which call feeds the cascade is not decidable from the file.",
+    );
+  }
+  return matching[0]!;
+}
+
+/**
+ * The name a call's result is bound to — the `prepared` in `const prepared = prepareDependencies(…)`.
+ *
+ * Refuses when the call's result is not bound to a plain identifier, because every downstream name this
+ * is compared against comes from such a binding. A call whose result is discarded, or bound to a property
+ * or a destructured pattern, means the wiring is shaped differently and the comparison below would be
+ * vacuous rather than wrong.
+ */
+function boundVariableName(file: ts.SourceFile, call: ts.CallExpression): string {
+  const declaration = call.parent;
+  if (
+    declaration === undefined ||
+    !ts.isVariableDeclaration(declaration) ||
+    declaration.initializer !== call ||
+    !ts.isIdentifier(declaration.name)
+  ) {
+    throw new Error(
+      "refusing to read the wiring: the call's result is not bound to a plain identifier, so the name " +
+        "the cascade reads cannot be established from the file.",
+    );
+  }
+  return declaration.name.text;
+}
+
+/** The first argument of a call, refusing unless it is a bare identifier. */
+function firstArgumentName(file: ts.SourceFile, call: ts.CallExpression): string {
+  const [argument] = call.arguments;
+  if (argument === undefined || !ts.isIdentifier(argument)) {
+    throw new Error(
+      "refusing to read the wiring: the first argument of line " +
+        `${file.getLineAndCharacterOfPosition(call.getStart()).line + 1} is not a bare identifier.`,
+    );
+  }
+  return argument.text;
+}
+
+/**
+ * The one loop that iterates `name`, refusing zero, refusing two or more, and **refusing a loop that
+ * iterates something derived from it.**
+ *
+ * That last clause is the whole point. Round 10's CRITICAL rewrote `for (const item of ITEMS)` into
+ * `for (const item of ITEMS.filter((candidate) => candidate.id !== "gates-install"))`, which leaves the
+ * identifier in the file and the loop intact while removing the install item from the gate entirely. A
+ * locator that only asked "is there a loop over ITEMS?" would answer yes and be wrong; requiring the
+ * iterated expression to *be* the identifier is what makes the difference between the two visible.
+ */
+function soleLoopOver(file: ts.SourceFile, name: string): ts.ForOfStatement {
+  const matching: ts.ForOfStatement[] = [];
+  const derived: ts.ForOfStatement[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isForOfStatement(node)) {
+      if (ts.isIdentifier(node.expression)) {
+        if (node.expression.text === name) matching.push(node);
+      } else if (node.expression.getText(file).includes(name)) {
+        derived.push(node);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+
+  if (derived.length > 0) {
+    throw new Error(
+      `refusing to read the gate's iteration: ${derived.length} loop(s) iterate something *derived* from ` +
+        `'${name}' rather than '${name}' itself — line ` +
+        `${derived
+          .map((node) => file.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+          .join(
+            ", ",
+          )}: ${derived[0]!.expression.getText(file)}. An item can be filtered out of the gate by ` +
+        "that, and the identifier staying in the file is not evidence that any item is still reached.",
+    );
+  }
+  if (matching.length === 0) {
+    throw new Error(
+      `refusing to read the gate's iteration: no loop iterates '${name}', so no declared item runs.`,
+    );
+  }
+  if (matching.length > 1) {
+    throw new Error(
+      `refusing to read the gate's iteration: '${name}' is iterated ${matching.length} times (lines ` +
+        `${matching
+          .map((node) => file.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+          .join(", ")}).`,
+    );
+  }
+  return matching[0]!;
+}
 /** A `run` that pretends to install, by writing a usable tree into whatever staging directory it is given. */
 function fakeInstall(fail = false) {
   return vi.fn((_command: string, _args: string[], cwd: string) => {
@@ -691,9 +825,242 @@ describe("the AST extraction that replaced the two lazy windows", () => {
   });
 });
 
+describe("the wiring locators are witnessed on refusals, not only on the file", () => {
+  // **Round 10, and this describe exists because `mut-round10` found it missing.** Round 10's NIT was a
+  // guard defended by a comment for a full round while no test reached it — and the answer to that finding
+  // was to add locators with refusals of their own and *no witnesses*, reproducing the exact defect in the
+  // very same file. `mut-round10` caught it in its first run: muting `soleCall`'s refuse-on-zero and
+  // `soleLoopOver`'s derived-clause both reported STILL GREEN, because nothing ever fed either locator the
+  // input it exists to refuse.
+  //
+  // So every refusal below is witnessed. Not because the refusals are in doubt — they are four lines each —
+  // but because **a refusal nobody exercises is indistinguishable from a comment**, which is the sentence
+  // round 10's own NIT disproved for a round. The ladder's rule is that a helper must be able to say "I am
+  // not sure"; a helper that cannot reach its own uncertainty cannot say it.
+
+  const GATE = [
+    "import { prepareDependencies, cascadeReason } from './lib/install.mjs';",
+    "const ITEMS = [{ id: 'gates-install', how: 'install' }];",
+    "function main() {",
+    "  for (const item of ITEMS) {",
+    "    if (item.how === 'install') {",
+    "      const prepared = prepareDependencies({ frontendDir: FRONTEND });",
+    "      if (!prepared.ok) environmentBroken = cascadeReason(prepared);",
+    "    }",
+    "  }",
+    "}",
+  ].join("\n");
+
+  it("refuses to read a call that is not there, rather than reporting zero", () => {
+    // **The row that came back STILL GREEN.** `soleCall` has three outcomes — one, none, several — and the
+    // assertions on the real gate only ever exercise the first. Without this, `refusing to read the wiring`
+    // was unreachable code with a doc comment describing it as load-bearing.
+    expect(soleCall(parseGate(GATE), "prepareDependencies")).toBeDefined();
+
+    // Zero. The gate that never prepares anything is the CRITICAL this locator was written for, so the
+    // refusal names the helper rather than reporting an empty array.
+    const neverCalls = GATE.replace(
+      "prepareDependencies({ frontendDir: FRONTEND })",
+      "{ ok: true }",
+    );
+    expect(() => soleCall(parseGate(neverCalls), "prepareDependencies")).toThrow(
+      /never calls 'prepareDependencies'/,
+    );
+
+    // Two. Refused with both locations named, because "which call feeds the cascade" is exactly the
+    // question the refusal exists to refuse.
+    const callsTwice = GATE.replace(
+      "      const prepared = prepareDependencies({ frontendDir: FRONTEND });",
+      "      const prepared = prepareDependencies({ frontendDir: FRONTEND });\n" +
+        "      const alsoPrepared = prepareDependencies({ frontendDir: FRONTEND });",
+    );
+    expect(() => soleCall(parseGate(callsTwice), "prepareDependencies")).toThrow(
+      /'prepareDependencies' is called 2 times \(lines \d+, \d+\)/,
+    );
+
+    // And a *reference* is not a call. `cascadeReasons = [cascadeReason]` names the helper without calling
+    // it, so a substring-based locator would refuse a correct file — recorded here because that is the
+    // mistake a reader of `callsTo` is most likely to imagine it makes, and it does not.
+    const referenced = `${GATE}\nconst cascadeReasons = [cascadeReason];`;
+    expect(callsTo(parseGate(referenced), "cascadeReason")).toHaveLength(1);
+  });
+
+  it("refuses a loop that iterates something derived from the array", () => {
+    // **The second row that came back STILL GREEN**, and the subtler of the two. Muting this clause does
+    // not let `ITEMS.filter(...)` through — `soleLoopOver` then finds zero bare loops and throws a
+    // different, worse refusal. So the *check* survives while the *diagnosis* is lost: the failure message
+    // would say "there is no loop over ITEMS" about a file that has a loop over a filtered ITEMS, sending
+    // whoever has to fix it looking for a missing loop.
+    const filtered = GATE.replace(
+      "for (const item of ITEMS)",
+      "for (const item of ITEMS.filter(Boolean))",
+    );
+    expect(() => soleLoopOver(parseGate(filtered), "ITEMS")).toThrow(
+      /iterate something \*derived\* from 'ITEMS'/,
+    );
+
+    // The control: the derived expression is quoted in the refusal, so the message names what it saw
+    // rather than only what it expected.
+    expect(() => soleLoopOver(parseGate(filtered), "ITEMS")).toThrow(/ITEMS\.filter\(Boolean\)/);
+  });
+
+  it("refuses zero loops, two loops, and a result bound to something other than a name", () => {
+    expect(soleLoopOver(parseGate(GATE), "ITEMS")).toBeDefined();
+
+    // Zero loops: the gate declares items and never runs any.
+    expect(() =>
+      soleLoopOver(
+        parseGate(GATE.replace("for (const item of ITEMS)", "for (const x of [1])")),
+        "ITEMS",
+      ),
+    ).toThrow(/no loop iterates 'ITEMS'/);
+
+    // Two loops: refused, and the locations named.
+    const twice = GATE.replace(
+      "  for (const item of ITEMS) {",
+      "  for (const item of ITEMS) {\n    report();\n  }\n  for (const item of ITEMS) {",
+    );
+    expect(() => soleLoopOver(parseGate(twice), "ITEMS")).toThrow(/'ITEMS' is iterated 2 times/);
+
+    // A call whose result is not bound to a plain identifier means the downstream name cannot be
+    // established, so the comparison would be vacuous rather than wrong — which is worse, because a
+    // vacuous assertion and a passing one read the same in a log.
+    const unbound = GATE.replace(
+      "const prepared = prepareDependencies({ frontendDir: FRONTEND });",
+      "log(prepareDependencies({ frontendDir: FRONTEND }));",
+    );
+    expect(() =>
+      boundVariableName(parseGate(unbound), soleCall(parseGate(unbound), "prepareDependencies")),
+    ).toThrow(/not bound to a plain identifier/);
+
+    // And a consumer that is handed something other than a bare name — a fabricated consumer would make the
+    // wiring comparison answer a question nobody asked.
+    const indirect = GATE.replace("cascadeReason(prepared)", "cascadeReason({ ok: false })");
+    expect(() =>
+      firstArgumentName(parseGate(indirect), soleCall(parseGate(indirect), "cascadeReason")),
+    ).toThrow(/not a bare identifier/);
+
+    // The control for the whole describe: on an unmodified gate both halves resolve, which is what makes
+    // the six refusals above refusals rather than the only possible outcome.
+    const file = parseGate(GATE);
+    const prepareCall = soleCall(file, "prepareDependencies");
+    const cascadeCall = soleCall(file, "cascadeReason");
+    expect(firstArgumentName(file, cascadeCall)).toBe(boundVariableName(file, prepareCall));
+  });
+
+  it("descends, because the real gate's loop happens to sit at the top level", () => {
+    // **The gap this row found, and it is the same one twice.** Round 10's verifier established that
+    // `namedArrayLiterals`' *top-level* restriction was unwitnessed; here the opposite was true of
+    // `soleLoopOver`'s recursion. The archived gate's `for (const item of ITEMS)` is a **top-level
+    // statement** (line 418, column 0), so `ts.forEachChild(file, visit)` reaches it in one hop and the
+    // `ts.forEachChild(node, visit)` inside `visit` never runs. Deleting that line changed nothing —
+    // `mut-round10` measured it, and the locator's descent was recursive in appearance and shallow in fact.
+    //
+    // **A walk that is deeper than the tree it is pointed at looks exactly like a walk that is not.**
+    // Which is the third time this round that a refusal or a descent existed, was described as
+    // load-bearing, and turned out to be unreachable — after N1 and after the two refusals above. The
+    // pattern is the finding: *describing a mechanism and exercising a mechanism are different acts, and
+    // only the second one can fail.*
+    const nested = [
+      "const ITEMS = [{ id: 'one', how: 'command' }];",
+      "export function main() {",
+      "  if (globalThis.ready) {",
+      "    for (const item of ITEMS) {",
+      "      report(item.how);",
+      "    }",
+      "  }",
+      "}",
+    ].join("\n");
+
+    const loop = soleLoopOver(parseGate(nested), "ITEMS");
+    expect(nodeSource(parseGate(nested), loop.statement)).toContain("report(item.how)");
+
+    // And the descent must not be *over*-reaching either: a loop over a different array, nested just as
+    // deeply, is not this locator's business, and a locator that counted it would be guessing. The first
+    // version of this case added a loop over `OTHER` and then expected the refuse-on-several refusal -
+    // which is incoherent, because a loop over `OTHER` is not a second loop over `ITEMS`. It asserted a
+    // contradiction and failed, and the fix was to say what it meant rather than to weaken the locator.
+    const withOther = `${nested}\nfunction other() {\n  for (const entry of OTHER) {\n    report();\n  }\n}`;
+    // Compared as *text*, not as nodes. `toBe` on two separately parsed files' nodes compares object
+    // identity, which is false by construction even when both locators found the same statement - a check
+    // that can only fail is not a control.
+    expect(nodeSource(parseGate(withOther), soleLoopOver(parseGate(withOther), "ITEMS"))).toBe(
+      nodeSource(parseGate(nested), loop),
+    );
+
+    // Now a second `ITEMS` loop, also nested: refused, with both locations named.
+    const withTwo = `${withOther}\nfunction third() {\n  for (const entry of ITEMS) {\n    report();\n  }\n}`;
+    expect(() => soleLoopOver(parseGate(withTwo), "ITEMS")).toThrow(/'ITEMS' is iterated 2 times/);
+  });
+});
+
 describe("the gate script itself", () => {
   // Comments removed for the same reason as the router assertions below.
   const gate = code(readFileSync(join(EVIDENCE, "release-gate.mjs"), "utf8"));
+
+  // **Round 10's two CRITICALs, and the rung they added to the ladder.** Rounds 4-9 each found the
+  // previous round's defect class one level further along, and all of them found *textual* problems: a
+  // value read from the wrong place, a key attributed to the wrong owner, an item located by a pattern.
+  // Round 10's findings are neither. Both are about **wiring** — a producer that exists, and a consumer
+  // that exists, with nothing asserting they are connected:
+  //
+  //     naming a thing       ->  which one is it?    ->  the node's own span   (round 9)
+  //     attributing a key    ->  whose key is this?  ->  direct child by indent (round 9)
+  //     WIRING IT            ->  is the value consumed here the one produced over there?
+  //                            ->  compare producer to consumer, refuse either (round 10)
+  //
+  // Both halves of this cascade existed and were individually tested. `prepareDependencies` had eight
+  // behaviour tests, `cascadeReason` had four, and the file contained the assignment that joins them —
+  // while nothing asked whether the gate *called* the first, or *iterated* to reach it. Eight tests for
+  // a function and zero for its call site is not thorough coverage. It is the shape round 6 named at
+  // this same file — an extraction that is not the one in use is inert — applied to the other helper.
+
+  it("wires the install outcome to the cascade, rather than only naming both halves", () => {
+    // The claim: **the value `cascadeReason` is handed is the value `prepareDependencies` returned.**
+    //
+    // Round 10 proved the check that stood here insufficient. `expect(gate).toContain("environmentBroken
+    // = cascadeReason(prepared);")` is satisfied by *any* binding of the name `prepared` — including a
+    // fabricated object literal. With `prepared.ok` a literal `true` the `else` arm at the gate's line
+    // 474 becomes unreachable, `environmentBroken` is never assigned, and no later item is ever
+    // short-circuited: the cascade cannot fire, and 3312 tests cannot tell.
+    //
+    // So the two halves are compared *to each other* rather than matched as text. A text match can be
+    // satisfied by a name; only the comparison can be satisfied by the wiring.
+    const file = parseGate(gate);
+
+    // Zero calls is a refusal, not an absence: `soleCall` throws naming what it expected to find.
+    const prepareCall = soleCall(file, "prepareDependencies");
+    const cascadeCall = soleCall(file, "cascadeReason");
+
+    expect(firstArgumentName(file, cascadeCall)).toBe(boundVariableName(file, prepareCall));
+  });
+
+  it("iterates every declared item, so the install one cannot be filtered out", () => {
+    // The claim, and round 10's second CRITICAL: **the gate runs the items it declares.**
+    //
+    // Rewriting the gate's loop as
+    //
+    //     for (const item of ITEMS.filter((candidate) => candidate.id !== "gates-install")) {
+    //
+    // leaves the identifier in the file, leaves a loop, and removes the install item from the gate — so
+    // no iteration takes the `how: "install"` branch and `environmentBroken` is never written. The
+    // cascade dies for the same reason as above, by a completely different edit, with the same result:
+    // 3312/3312 green.
+    //
+    // `itemSource` proves the item is *declared*. Nothing proved it was *reached*, and those are
+    // different claims — one is about the data, the other about the control flow that consumes it.
+    const file = parseGate(gate);
+
+    const loop = soleLoopOver(file, "ITEMS");
+    expect(loop.expression.getText(file)).toBe("ITEMS");
+
+    // And it must be the loop that *dispatches* on the item, not an unrelated traversal: a gate that
+    // iterated ITEMS and then ignored each item would satisfy the line above.
+    // `ForOfStatement` carries its body as `statement` — the `IterationStatement` shape, not the
+    // `body` of `ForStatement`. Reaching for `body` is the same wrong-name mistake round 9 made with
+    // `IfStatement.condition`, and the compiler caught it rather than the reviewer.
+    expect(nodeSource(file, loop.statement)).toContain("item.how");
+  });
 
   it("no longer runs npm ci over the working tree", () => {
     // A guard on the guard. The replacement logic lives in `lib/install.mjs` and is tested above;
@@ -754,8 +1121,26 @@ describe("the gate script itself", () => {
     // **Half two, structurally.** The gate must actually *call* it. Narrow on purpose: the behaviour
     // lives in the function and is pinned above, so this only has to notice the gate stopping the
     // call — which is the one thing the unit tests cannot see, because they do not run the gate.
-    expect(gate).toContain("environmentBroken = cascadeReason(prepared);");
-    expect(gate).not.toMatch(/environmentBroken\s*=\s*(?!cascadeReason)["'`]/);
+    //
+    // **Round 10's CRITICAL found that the sentence above claimed more than the two lines below
+    // enforced.** They assert the *assignment* `environmentBroken = cascadeReason(prepared);` — the
+    // second half of the wiring — and never asserted what `prepared` **is**. So replacing the line that
+    // produces it,
+    //
+    //     const prepared = prepareDependencies({ frontendDir: FRONTEND });
+    //
+    // with a fabricated `{ ok: true, … }` literal left every assertion here passing: `prepared.ok` is
+    // then literally true, the `else` arm below is unreachable, `environmentBroken` is never written,
+    // and the cascade that forty lines and two separate mechanisms exist to guard can never fire.
+    // **105/105 targeted, 3312/3312 across the suite, with the gate preparing nothing.**
+    //
+    // The lesson is the ladder's again, one rung below the last: the suite asserted that a name *flows*
+    // somewhere and not that the name *is* the thing it claims to be. Naming a thing, attributing a key,
+    // and — the rung this round added — **wiring a value to its consumer** are three different questions,
+    // and only the middle two had witnesses. The wiring is asserted in the two `it` blocks above, named
+    // "wires the install outcome to the cascade" and "iterates every declared item"; they are separate
+    // from this one so that a red run can say *which* claim broke, since the two are different findings
+    // about different lines.
 
     // And the presentation, which is the half a reader sees. `NOT RUN` rather than `FAIL`, because a
     // missing `tsc` is not a finding about the code and recording it as one would put a defect in the

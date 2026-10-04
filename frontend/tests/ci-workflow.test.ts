@@ -67,6 +67,9 @@ function readSteps(yaml: string): Step[] {
 
   let inSteps = false;
   let stepsIndent = 0;
+  // How many `steps:` blocks the document declares. Not derivable from `inSteps`, which is false again
+  // once a block is left — that is precisely why two blocks used to be concatenated rather than refused.
+  let stepsBlocks = 0;
   let current: Step | null = null;
   // The indent of the current step's direct children — the indent of the first non-blank line after its
   // `- name:` line. Derived rather than assumed as `stepIndent + 2` so the reader does not encode one
@@ -85,6 +88,24 @@ function readSteps(yaml: string): Step[] {
 
     const stepsMatch = /^(\s*)steps:\s*$/.exec(line);
     if (stepsMatch) {
+      // **Round 10's N2, second half.** Two `steps:` blocks used to be absorbed: the reader set
+      // `inSteps = true` again and concatenated both lists into one array, so a step from a second job
+      // was indistinguishable from a step of the first. Concatenation is the shape every finding in this
+      // change has had — two answers about one document — except that here it produced one answer from two
+      // documents and reported it as one.
+      //
+      // `jobRunDefaults` already refuses two *jobs*; this is the same trade for the same reason, and a
+      // helper that silently merges two step lists cannot answer "which step runs the lint gate" for a
+      // workflow that has two answers to it.
+      stepsBlocks += 1;
+      if (stepsBlocks > 1) {
+        throw new Error(
+          `line ${index + 1}: a second 'steps:' block. The reader used to set 'inSteps' again and ` +
+            "concatenate both lists, so steps from two jobs arrived as one list and no assertion could " +
+            "say which job a step belonged to. Refusing is the same trade 'jobRunDefaults' makes for two " +
+            "jobs, and for the same reason.",
+        );
+      }
       inSteps = true;
       stepsIndent = stepsMatch[1]!.length;
       continue;
@@ -93,7 +114,26 @@ function readSteps(yaml: string): Step[] {
     if (!inSteps) continue;
 
     // A line at or left of `steps:` that is not a step entry has left the block.
+    //
+    // **Round 10's N2, and the sharpest example in the file of prose describing more care than the code
+    // took.** The `run:` refusal further down describes itself as refusing "a 'run:' key that is not a
+    // direct child of a step" — and the *shallower* case used to vanish right here. This line exited the
+    // block before the refusal could see the key, so a `run:` at or left of `steps:`'s own indent was
+    // silently dropped, by the one code path whose entire job is deciding when the block ends.
+    //
+    // So the reader was described more carefully than it behaved, in an error message a future editor
+    // would reasonably rely on. It now refuses instead: a `run:` key at or left of the block belongs to
+    // no step, and a reader that cannot say which step owns it must stop looking rather than go on.
     if (indent <= stepsIndent && !/^\s*-\s/.test(line)) {
+      if (/^\s*run:/.test(line)) {
+        throw new Error(
+          `line ${index + 1}: a 'run:' key at indent ${indent}, at or left of the 'steps:' block at ` +
+            `indent ${stepsIndent}. It belongs to no step: the step above is ` +
+            `'${current?.name ?? "(none)"}' and its direct children are at indent ` +
+            `${childIndent ?? "(unknown)"}. Leaving the block here used to drop this line silently, which ` +
+            "is exactly the case the refusal below claims to cover.",
+        );
+      }
       inSteps = false;
       continue;
     }
@@ -158,9 +198,21 @@ function readSteps(yaml: string): Step[] {
       }
 
       // A block scalar (`run: |` / `run: >`) would match this as the literal command `|`, recording a
-      // one-character command for a multi-line script. `prepareWorkflow` refuses block scalars before
-      // we get here, so reaching that value means the guard was bypassed; recording it as empty is
-      // falsifiable by any assertion that requires a command, where `|` would silently pass some of them.
+      // one-character command for a multi-line script. `prepareWorkflow` refuses block scalars before we
+      // get here, so reaching that value means the guard was bypassed.
+      //
+      // **Round 10's N1: the sentence that used to sit here was backwards, and nothing witnessed the
+      // guard it was defending.** It claimed that recording the value as empty is "falsifiable by any
+      // assertion that requires a command, where `|` would silently pass some of them". It would not pass
+      // any of them: `stepsRunning` compares the whole command with `===`, so a step whose command is the
+      // literal `|` matches no gate command and every ordering assertion **fails**. A comment that
+      // misdescribes the mechanism it justifies is worse than no comment, because a reader checking it
+      // concludes the guard is unnecessary — and here it nearly was, because the branch was unreachable
+      // from every test.
+      //
+      // The guard is right and is now witnessed, by feeding `readSteps` a block scalar directly. The
+      // witness matters more than the correction: for one round this line was defended by a sentence
+      // about it rather than by a case that reached it.
       current.run = /^[|>][-+0-9]*$/.test(runMatch[1]!.trim()) ? null : runMatch[1]!.trim();
       continue;
     }
@@ -579,6 +631,116 @@ describe("the workflow reader is witnessed on input the real workflow does not c
       "        run: npm run lint",
     ].join("\n");
     expect(readSteps(withArgs)[0]!.run).toBe("npm run lint");
+  });
+
+  it("refuses a `run:` that lands outside the block, instead of dropping it in silence", () => {
+    // **Round 10's N2, and the case the existing refusal claimed to cover.** The error thrown for a
+    // nested `run:` says it refuses "a 'run:' key that is not a direct child of a step" — but the
+    // *shallower* case never reached that refusal. The block-exit above returned before it, so a `run:`
+    // at or left of `steps:`'s indent was dropped and the reader carried on with the steps it had.
+    //
+    // The consequence was not a wrong value; it was a reader that was described more carefully than it
+    // behaved, in the one message a future editor would consult. Every shape below fails closed for
+    // today's assertions, because the exact-name list elsewhere in this file pins the step names — which
+    // is exactly why it survived nine rounds: **nothing in the suite needed the dropped line to be
+    // present in order to fail.**
+    const shallow = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Lint",
+      "        run: npm run lint",
+      "    run: npm run build",
+    ].join("\n");
+    expect(() => readSteps(shallow)).toThrow(/belongs to no step/);
+
+    // The same key at the very left margin, and to the left of `steps:` itself.
+    const atColumnZero = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Lint",
+      "run: npm ci",
+    ].join("\n");
+    expect(() => readSteps(atColumnZero)).toThrow(/belongs to no step/);
+
+    // Two `steps:` blocks used to be concatenated into one list, so steps from two jobs arrived as one
+    // list and no assertion could say which job a step belonged to. `jobRunDefaults` already refuses two
+    // jobs; this is the same trade for the same reason.
+    const twoBlocks = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Lint",
+      "        run: npm run lint",
+      "  deploy:",
+      "    steps:",
+      "      - name: Deploy",
+      "        run: vercel deploy",
+    ].join("\n");
+    expect(() => readSteps(twoBlocks)).toThrow(/second 'steps:' block/);
+
+    // And the control, so none of the three throws is firing because the reader rejects everything: a
+    // block that ends at a *shallower non-`run:`* key is ordinary YAML, and must still end the block
+    // silently rather than refuse.
+    const ordinary = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Lint",
+      "        run: npm run lint",
+      "    timeout-minutes: 10",
+    ].join("\n");
+    const read = readSteps(ordinary);
+    expect(read).toHaveLength(1);
+    expect(read[0]!.run).toBe("npm run lint");
+  });
+
+  it("does not record a block scalar as a one-character command", () => {
+    // **Round 10's N1.** `prepareWorkflow` refuses block scalars, so this guard was unreachable from every
+    // test — mutating it away left the suite green. Its justifying comment also claimed the guard was
+    // *unnecessary*, on the grounds that a recorded `|` would "silently pass some" assertions; it would
+    // have failed all of them, since the comparison is `===` on the whole command.
+    //
+    // So: the witness that should have existed for a round, built after the fact rather than before,
+    // which is the only way it can be built now.
+    const blockScalar = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Lint",
+      "        run: |",
+      "          npm run lint",
+      "          npm run build",
+    ].join("\n");
+
+    // `null`, not `"|"` — and null is the same value a step with no command carries, which is what makes
+    // it honest: the reader has no command for this step rather than a one-character one.
+    expect(readSteps(blockScalar)[0]!.run).toBeNull();
+
+    // The folded form, and an explicit indentation indicator, since the guard's regex allows both.
+    for (const indicator of [">", ">-", "|2-"]) {
+      const folded = [
+        "jobs:",
+        "  quality-gates:",
+        "    steps:",
+        "      - name: Lint",
+        `        run: ${indicator}`,
+        "          npm run lint",
+      ].join("\n");
+      expect(readSteps(folded)[0]!.run).toBeNull();
+    }
+
+    // The control: an ordinary command that merely *contains* a pipe is still a command. Without this the
+    // guard could be satisfied by refusing anything with a `|` in it, which would be a different defect.
+    const piped = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Pipe",
+      "        run: cat file | grep x",
+    ].join("\n");
+    expect(readSteps(piped)[0]!.run).toBe("cat file | grep x");
   });
 
   it("keeps its place in the file across a blank line", () => {
