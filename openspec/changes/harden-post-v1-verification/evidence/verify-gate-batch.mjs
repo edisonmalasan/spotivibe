@@ -351,9 +351,21 @@ if (rows.length > 0) {
 // commit. `unknown` is accepted and visible; a straddling batch is accepted by no one.
 if (rows.length > 0) {
   const distinctCommits = [...new Set(rows.map((row) => row.commit))];
+  // **Round 16's WARNING 4: this line printed `ok` when every commit was absent.** `new Set([null, null,
+// …])` has size 1, so a batch in which *no* log names a commit read as one agreeing commit. The run was
+  // still caught — every row reports `ASSERTED MISMATCH` and `problems` is 7 — so it was never a false
+  // green. It is nonetheless the exact shape this project has twice promoted to CRITICAL: **a check
+  // printing `ok` while the thing it checks is absent**, and a reader scanning this one line saw `ok`.
+  //
+  // The status word is therefore derived from what is *known*, not from how many values there are. An
+  // absent commit is `FAIL` here even when it is the only value, and `unknown` — present but
+  // uninformative — stays `ok`, because presence is required and informativeness is not.
+  const allPresent = rows.every((row) => row.commit !== null);
+  const label = !allPresent ? "FAIL " : distinctCommits.length === 1 ? "ok   " : "FAIL ";
   process.stdout.write(
-    `${distinctCommits.length === 1 ? "ok   " : "FAIL "}commits named across the logs: ` +
-      `${distinctCommits.join(", ")} (${distinctCommits.length} distinct of ${rows.length})\n`,
+    `${label}commits named across the logs: ` +
+      `${distinctCommits.map((c) => c ?? "ABSENT").join(", ")} ` +
+      `(${distinctCommits.length} distinct of ${rows.length})\n`,
   );
   if (distinctCommits.length !== 1) {
     problems += 1;
@@ -361,6 +373,16 @@ if (rows.length > 0) {
       "      a batch spanning more than one commit is not six runs of one unchanged tree, and this is\n" +
         "        refused rather than warned about. The figures may still agree, but the criterion is\n" +
         "        about a commit: attribute the batch to neither, or split it.\n",
+    );
+  } else if (!allPresent) {
+    // Unreachable in practice — `problems` is already 7 from the per-row `ASSERTED MISMATCH` above — and
+    // kept anyway so the two conditions cannot drift into agreement. A branch that is dead today and
+    // wrong tomorrow is how the exit-status clause behaved once already: correct in every run anyone
+    // happened to execute, and carrying a path no run had taken.
+    problems += 1;
+    process.stdout.write(
+      "      no log names a commit, so there is nothing to agree about. Each row above reports\n" +
+        "        ASSERTED MISMATCH; this line states the same fact in the summary a reader scans.\n",
     );
   }
 }

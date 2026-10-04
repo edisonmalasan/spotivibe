@@ -268,6 +268,42 @@ describe("the shipped checker refuses what round 11's gate could only grep for",
     expect(verdict.corroborated, "an unknown commit is less informative, not untrue").toBe(true);
   });
 
+  it("does not print `ok` for a batch in which no log names a commit", () => {
+    // **Round 16's WARNING 4.** The commit clause read
+    //   `distinctCommits.length === 1 ? "ok   " : "FAIL "`
+    // and `new Set([null, null, null, null, null, null]).size === 1`, so a batch where *nothing named a
+    // commit* printed `ok   commits named across the logs:  (1 distinct of 6)`. Round 16 correctly
+    // recorded that this was never a false green — every row reports `ASSERTED MISMATCH` and `problems`
+    // was 7 — and equally correctly that **a check printing `ok` while the thing it checks is absent** is
+    // the exact shape this project has twice promoted to CRITICAL. A reader scanning one line saw `ok`.
+    //
+    // The absence is written as a second line with no `commit ` prefix, which is a shape the shipped driver
+    // never produces. Writing `greenLog(run, null)` instead would have produced the literal text
+    // `commit null`, which the checker *would* read as a commit — the case would then have tested nothing
+    // while reporting a pass, which is the failure this file exists to remove.
+    const dir = writeLogs(
+      join(scratch, "no-commit"),
+      [1, 2, 3, 4, 5, 6].map((run) => greenLog(run).replace(/^commit .*$/m, `run ${run}`)),
+    );
+    const verdict = runChecker(dir, stubFrontend("fe-no-commit", 3003));
+
+    // The label, not just the count — the same reason the straddling case above asserts `/^FAIL\b/`: a
+    // hard-coded status word passes a count-only assertion, and that exact mutation is measured STILL GREEN
+    // against a count-only version.
+    expect(
+      verdict.commitLine,
+      "a batch naming no commit printed a passing status word: absence is not agreement",
+    ).toMatch(/^FAIL\b/);
+
+    // The absent value must be *visible*, so a reader is not left inferring agreement from an empty list.
+    expect(verdict.commitLine).toMatch(/ABSENT/);
+
+    expect(verdict.exit, "a batch naming no commit exited 0").not.toBe(0);
+    expect(verdict.corroborated, "a batch naming no commit reached the corroborated verdict").toBe(
+      false,
+    );
+  });
+
   it("refuses a log carrying a second, failing verdict", () => {
     // A log with two verdicts is not decidable from the file, so it is refused rather than resolved.
     const dir = writeLogs(
@@ -371,14 +407,31 @@ describe("the two evidence scripts are readable by the person told to run them",
     //
     // So the driver no longer *can* mis-stamp: it freezes the commit into `$header` once, above the loop,
     // and the per-run write consumes `$header` verbatim. Re-resolving `$commit` inside the loop is
-    // therefore **inert**, not detected — the data flow enforces the property, so there is nothing left for
-    // a spelling test to miss.
+    // therefore **inert**, not detected — the data flow enforces it, so there is nothing left for a
+    // spelling test to miss.
     //
-    // What IS checkable is asserted below: the header carries a commit line, and the corroborator treats
-    // its absence as fatal and a straddling batch as refused. What remains invisible is *how* the driver
-    // arrives at that string, and it is stated here so a reader is not left assuming otherwise. A file
-    // with no stated blind spot reads as a proof — that was round 11's finding about this repository's
-    // 71-test header, and it is why this section exists.
+    // **That sentence is narrower than it first read, and round 16 narrowed it by measurement.** It was
+    // written as "whatever syntax is used to do it", which is refuted: assigning `$header` *itself* from
+    // a loop-dependent value is not an assignment to `$commit` and nothing here enumerates it. Round 16
+    // built exactly that variant and this suite was `STILL GREEN`. It is not a behaviour defect — the
+    // shipped driver does not do it, and the corroborator refuses the variant's logs with exit 1, because
+    // six logs stamped `run1`…`run6` are six distinct commits. **The precise claim, which the two
+    // executions below establish, is this:**
+    //
+    //   1. Reassigning `$commit` by any spelling cannot change what is written.   (data flow)
+    //   2. Writing a per-run-varying commit cannot survive corroboration.         (distinctness)
+    //
+    // Two layers, and the second is why the first does not have to be exhaustive. The claim that nothing
+    // is left for a spelling test to miss was true of `$commit` and false of `$header`; only the first
+    // was written down. **The unscoped version of a true claim is the defect this milestone keeps
+    // finding, and it is worth noticing that this one was in the sentence explaining why it could not
+    // happen.**
+    //
+    // What IS checkable is asserted below: the header carries a commit line, the per-run write consumes
+    // `$header` and not `$commit`, and the freeze precedes the loop. What remains invisible is *how* the
+    // driver arrives at that string, and it is stated here so a reader is not left assuming otherwise. A
+    // file with no stated blind spot reads as a proof — that was round 11's finding about this
+    // repository's 71-test header, and it is why this section exists.
 
     // Observable, and falsifiable: the stamp's shape as written. This is the assertion that would fail if
     // the stamp were dropped, and it is the one the corroborator's own rule depends on.

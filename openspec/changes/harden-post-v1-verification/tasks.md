@@ -2115,8 +2115,19 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   - **Q5, verified against a real red log** — see N1/N2 above. The claim survives; two figures in its
     supporting sentence did not.
   - **Q3 — why `vitest list` emits `> node` and `> lineOf` remains unverified.** Deterministic 6/6,
-    localised to one file (73 lines for 71 tests), on stdout not stderr, invariant to the identifiers. A
-    `formatName` helper that accepts a function and reads `.name` is consistent with the symptom without
+    on stdout not stderr, invariant to the identifiers.
+    > **BOTH FIGURES ABOVE WERE CORRECTED AFTER THIS ENTRY WAS WRITTEN, and are kept only because this is
+    > a historical record.** It read *"localised to one file (73 lines for 71 tests)"*. Measured per file
+    > across the whole suite: **two** files have a positive delta, `release-gate-install.test.ts` listed 74 /
+    > executed 71 (+3) and `lyrics-induced-violations.test.ts` listed 18 / executed 17 (+1), summing to 4 -
+    > so "localised to one file" is false and 73 is itself stale. Round 14 corrected the count in the
+    > checker and 8.33's narrative; **round 16's NIT 2 found this second site, 210 lines earlier in the
+    > same file, where the correction never landed.** See `evidence/verify-gate-batch.mjs` for the
+    > current figures. Annotated rather than rewritten, because a superseded entry is evidence of what was
+    > believed and when, and quietly editing it destroys that. **This is round 14's NIT 1 - *a correction
+    > that can be summarised away from its own site has not been made* - arriving at the same figure in a
+    > third place, which is the measure of how hard it is to catch every copy of a number.**
+    A `formatName` helper that accepts a function and reads `.name` is consistent with the symptom without
     explaining why these two arrows and not the three probes; a `@jridgewell/trace-mapping` lead was a
     substring hit on `lineOffset`. Both recorded so nobody repeats them; neither offered as the answer.
 
@@ -2331,7 +2342,18 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   so cannot rule out a contention-only failure. That is a property of the criterion rather than a defect in
   it, and it is recorded rather than argued away.
 
-## 8.30 Batch 16 at `a0bf535` - six of six green, corroborated, and the criterion is MET
+## 8.30 Batch 16 at `a0bf535` - six of six green, corroborated, and the criterion was MET **at that commit**
+
+  > **SUPERSEDED — and amended in this heading, not only in a cross-reference further down.** Round 16's
+  > WARNING 3 is right that this heading read "the criterion is MET" in the present tense while batch 16
+  > had been superseded by four later commits, and that the supersession lived 162 lines away in §8.32.
+  > **A correction that can be summarised away from its own heading has not been made** — the sentence
+  > above is round 14's NIT 1, fixed in `design.md`'s heading and missed here.
+  >
+  > The criterion was met at `a0bf535` and is not claimed here. Current evidence is §8.36, at the merge
+  > commit. **A criterion's satisfaction does not outlive the commit it was measured at**, and this
+  > section is retained because the sequence 14 → 15 → 16 → 17 → 18 → 19 is itself the evidence for that
+  > rule: five restarts, three of them caused by documentation commits, none of them by a red run.
 
   Run at the commit that fixed §8.29's cause, from a fresh log directory, driving six `npm run gate` passes.
   The count restarted here: pre-fix runs are not evidence about the tree the fix produces.
@@ -2602,21 +2624,37 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   rejection was on the clause added in the commit written to close round 13's WARNING 1, again.**
 
   **CRITICAL: the replacement clause was escapable four more ways, and its new comment overclaimed in the
-  same way the withdrawn one had.** Rounds 13, 14 and 15 each tried to assert, by reading the driver's
-  text, that the commit is resolved once outside the loop. Seven syntactic rungs, seven escapes, each a
-  *different* parse-valid PowerShell rewrite:
+  same way the withdrawn one had.** Rounds 14 and 15 each tried to assert, by reading the driver's text,
+  that the commit is resolved once outside the loop.
 
-  | round | the rung | the escape |
+  **The counts below are stated as counted, because the previous phrasing was not.** This entry first said
+  *"Seven syntactic rungs, seven escapes"* above an eight-row table, and round 16's NIT 1 is right that no
+  reading of that table reproduces seven rungs. It does not, because **there were three rungs and seven
+  escapes**, and "seven" was doing duty for both. Round 16 recorded which convention was intended as
+  `unverified`; rather than pick one by assertion, both numbers are now derived from the lists below:
+
+  | # | the rung | what it got wrong |
   |---|---|---|
-  | 13 | `contains("commit $commit")` | commenting the write out |
-  | 14 | `for ($run` after the first `$commit =` | always true; asserted nothing |
-  | 14 | first `$commit = "unknown"` before `for ($run`, comment claiming "Text position does" | a decoy above the loop plus a real re-resolution inside |
-  | 15 | last `$commit` before the loop, plus no `$commit =` in the body | `Set-Variable -Name commit` |
-  | 15 | same | `Set-Item -Path variable:commit` |
-  | 15 | same | `${commit} =` |
-  | 15 | same | a decoy `for ($run` owning the textual scan |
-  | 15 | same | a column-0 `}` truncating any text-scanned body |
-  | 15 | same | the pre-loop *assignment* deleted, leaving only a `Write-Host` mention |
+  | R1 (round 14) | text order of `for ($run` against `$commit` | **vacuous** — the loop header necessarily precedes the loop body, so it asserted nothing |
+  | R2 (round 14) | first `$commit = "unknown"` precedes `for ($run`; comment claimed "Text position does" | `indexOf` finds a decoy first |
+  | R3 (round 15) | `lastIndexOf("$commit")` before the loop, and no literal `$commit =` in the body text | a **spelling** test, not an assignment test |
+
+  | # | escape | defeats |
+  |---|---|---|
+  | 1 | decoy `$commit` above the loop, real re-resolution inside | R2 |
+  | 2 | `Set-Variable -Name commit` | R3 |
+  | 3 | `Set-Item -Path variable:commit` | R3 |
+  | 4 | `${commit} =` | R3 |
+  | 5 | a decoy `for ($run` owning the textual scan | R3 |
+  | 6 | a column-0 `}` truncating any text-scanned body | R3 |
+  | 7 | the pre-loop *assignment* deleted, leaving only a `Write-Host` mention | R3 |
+
+  **R1 is the one worth keeping.** It is counted as a rung because it was written as one, and it is in the
+  table because a clause that was *always true* is the purest instance of this milestone's subject: R1
+  passed every run and would have passed every mutation, which is the stronger form of "cannot fail" — it
+  did not merely escape a mutation, it had no mutation to escape. Round 13's `contains("commit $commit")`
+  clause is **not** counted: it asserted that the stamp is written at all, not where it is resolved, and
+  conflating the two is what produced the unreproducible number in the first place.
 
   **The reason is structural, not insufficient effort: PowerShell can assign a variable many ways, and no
   spelling test can enumerate them.** Round 15's own words for it — the clause "is a spelling test, not an
@@ -2699,3 +2737,120 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   kind. CRITICAL 1 and CRITICAL 2 remain named, measured, **unclosed**. And the ladder has seven rungs
   behind it, of which the last three each broke within a single round; the claim that an eighth would not
   be needed is therefore not made.
+
+## 8.36 Batch 19 at `7855f08` - six of six green, corroborated, and the criterion is met at the merge commit
+
+  ```
+  commit under test: 7855f083190a
+  run 1  exit 0   97s  files 182  tests 3340  motion-budget 21
+  run 2  exit 0   88s  files 182  tests 3340  motion-budget 21
+  run 3  exit 0   97s  files 182  tests 3340  motion-budget 21
+  run 4  exit 0  109s  files 182  tests 3340  motion-budget 21
+  run 5  exit 0   99s  files 182  tests 3340  motion-budget 21
+  run 6  exit 0  107s  files 182  tests 3340  motion-budget 21
+  ```
+
+  Corroborator exit **0**, `corroborated`: six distinct digests, `commits named across the logs:
+  7855f083190a (1 distinct of 6)`, `182` files (asserted), `motion-budget 21` (asserted), `3340` tests
+  (stability only), enumeration `3018/3340 = 0.904` against a 0.8 floor.
+
+  Round 16 corroborated it **independently of the shipped script**: line 1 `gate exit0` and line 2
+  `commit 7855f083190a` in all six, equal to HEAD's short SHA; six distinct whole-file SHA-256
+  (`bf83f6ee`, `bb97d58f`, `6df7f876`, `69395a2b`, `81a68979`, `f1865151`); six distinct durations
+  (56.49, 55.91, 65.85, 67.62, 66.30, 66.38s); `motion-budget` 21 in all six; and an executed total it
+  measured itself at HEAD of **3340**, matching the batch.
+
+  **The full sequence, because five restarts is itself the evidence for the rule.** Batch 14 (`ed6f9f6`)
+  6/6; batch 15 (`0e65dc8`) **5/6**, red on a real defect; batch 16 (`a0bf535`) 6/6; batch 17 (`9f78ee1`)
+  6/6; batch 18 (`6e817d4`) 6/6; batch 19 (`7855f08`) 6/6. **Only one of those five restarts was caused
+  by a red run** - the other four were caused by *documentation and tooling* commits, each of which
+  invalidated the count for the same reason: a criterion's satisfaction may not outlive the commit it was
+  measured at. **That is a cost of this milestone's own standard, and it is recorded rather than
+  presented as diligence.** A reader deciding whether this process is worth its price should have the
+  number.
+
+## 8.37 Round 16 - ACCEPT / MERGEABLE, no CRITICAL, and the repair confirmed by execution
+
+  **Verdict: ACCEPT / MERGEABLE. No CRITICAL, four WARNING, three NIT.** The verifier stated plainly that
+  it did not find a CRITICAL and was not manufacturing one. That is the first round in five to return
+  anything but REJECT.
+
+  **It confirmed the round-15 CRITICAL is closed, and closed the right way**, by execution rather than by
+  reading. It copied the driver to a mirror tree with only the gate invocation stubbed, ran it under
+  Windows PowerShell against a fake `git` returning the sentinel `PRETREE000000`, and read the stamp back
+  for five variants - baseline, `Set-Variable -Name commit`, `Set-Item -Path variable:commit`,
+  `${commit} =`, and plain `$commit =`. **All five stamped `commit PRETREE000000` on every run.**
+
+  **The two controls are what make that result mean anything, and they are the part of the report worth
+  keeping.** First: with the freeze removed and the write reading `$commit`, the stamp became
+  `commit MIDBATCH999999` - so "unmoved" is a real observation and not a blind instrument. Second: with
+  `Set-Variable` injected, the driver printed `after Set-Variable, commit=[MIDBATCH111111]
+  header=[commit PRETREE000000]` - the escape genuinely fires at runtime and `$header` is what holds.
+  **A verdict that cannot be shown wrong is worth nothing, and here the same probe produced both outcomes
+  depending on the variant.**
+
+  Its judgement, recorded as its own words: *the repair is now sound precisely because the property is
+  enforced by data flow rather than detected. This is not "the ladder has moved".*
+
+  **WARNING 1 - a comment overreach written while claiming to have stopped writing them.**
+  `evidence-scripts.test.ts` said *"the data flow enforces the property, so there is nothing left for a
+  spelling test to miss."* Round 16's mutation E - `$header` assigned per run from a loop-dependent
+  value - is exactly a spelling-test-missable defect and came back `STILL GREEN`. Not a behaviour defect:
+  the shipped driver does not do it, and the corroborator refuses E's logs with exit 1, because six logs
+  stamped `run1`...`run6` are six distinct commits. But a completeness claim a specific parse-valid
+  rewrite defeats. **Narrowed to the two claims that are actually established**, and the narrowing is
+  the interesting part: the sentence is true of `$commit` and false of `$header`, and only the first was
+  written down. **The unscoped version of a true claim is this milestone's defect, and it appeared in the
+  sentence explaining why it could not happen.**
+
+  **WARNING 2 - batch 19 was recorded nowhere.** Round 15's WARNING 2, recurring one round later on the
+  same axis. Closed by 8.36.
+
+  **WARNING 3 - 8.30's heading still read "the criterion is MET" in the present tense**, superseded only
+  by a cross-reference 162 lines later. That is round 14's NIT 1 verbatim - *a correction that can be
+  summarised away from its own heading has not been made* - fixed in `design.md` and missed here. The
+  heading is amended in place, and the six-batch sequence is recorded under it, because **five
+  restarts, only one of them caused by a red run, is the evidence for the rule the heading was breaking.**
+
+  **WARNING 4 - the checker printed `ok` when every commit was absent.** `new Set([null, ...]).size === 1`,
+  so a batch in which no log names a commit read as one agreeing commit. The run was still caught - six
+  `ASSERTED MISMATCH` rows, `problems` 7, exit 1 - so it was never a false green, and the verifier said
+  so rather than escalating. But **a check printing `ok` while the thing it checks is absent** is the
+  exact shape this project has twice promoted to CRITICAL. Repaired: the status word is derived from what
+  is *known* rather than from how many values there are, an absent commit reads `FAIL`, and `unknown`
+  stays `ok` because presence is required and informativeness is not.
+
+  Round 16 also found **two mutations that are green here and red in the corroborator** - E, and a freeze
+  moved into a function re-entered per run, whose logs carry an empty commit line and are refused with
+  seven problems. It reported these as a **two-layered defence with both layers pinned by execution
+  elsewhere in the same file**, rather than as escapes. That is the distinction this milestone spent
+  fifteen rounds failing to draw on its own apparatus: *undetected by this check* is not *unmitigated*.
+
+  **NIT 1 - "seven rungs, seven escapes" was not reproducible from the eight-row table beside it.** The
+  verifier recorded which convention was intended as `unverified`, correctly. Rather than pick one by
+  assertion, both numbers are now derived from lists: **three rungs, seven escapes**, with round 13's
+  `contains("commit $commit")` clause excluded because it asserted that the stamp is written *at all*,
+  not where it is resolved - conflating the two is what produced the unreproducible number. R1 is kept in
+  the table because a clause that was **always true** is the purest instance of this milestone's subject:
+  it passed every run and would have passed every mutation, which is a stronger form of "cannot fail"
+  than escaping one.
+
+  **NIT 2 - a second site of the stale `73 lines for 71 tests` figure**, in 8.28, round 12's record.
+  Round 14's correction landed in the checker and in 8.33's narrative and not here. Annotated rather than
+  rewritten, because 8.28 is a superseded entry and rewriting a historical record is worse than
+  annotating it.
+
+  **NIT 3 - round 16's own instrument, disclosed by it.** Its first log capture via `Tee-Object` was
+  UTF-16LE - the exact trap `run-gate-batch.ps1:22-25` documents. Decoded and re-measured; no figure
+  affected. **A verifier that reports its own mishap is worth more than one that reports none, and this
+  is the second round in a row to do it.**
+
+  **What round 16 got right that the previous three did not:** it declined to manufacture a CRITICAL; it
+  named the two controls that made its central measurement meaningful; it distinguished "green here, red
+  in the corroborator" from an escape instead of counting either as a defect; and it reported the
+  corruption of its own capture before using any figure from it.
+
+  **What it could not verify, recorded as such:** batch 19's provenance - the `commit` stamp is
+  self-reported by the driver and binds a batch to a commit without proving the logs came from a gate
+  run. CI unobserved on this branch. No browser verification of any kind. CRITICAL 1 and CRITICAL 2
+  remain named, measured, **unclosed**, and no document re-claims that false greens are impossible.

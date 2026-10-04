@@ -84,17 +84,29 @@ $summary = @()
 # presence and not informativeness - see its own comment for why refusing `unknown` would be wrong.
 # **Set ONCE, above the loop, and frozen into `$header`. Rounds 13-15 are why the freezing matters.**
 #
-# Rounds 13, 14 and 15 each tried to pin "resolved once, outside the loop" by reading this file's text, and
+# Rounds 14 and 15 each tried to pin "resolved once, outside the loop" by reading this file's text, and
 # each pin was escaped by a *different* parse-valid rewrite: moving the resolution inside the loop, a decoy
-# `$commit` above it, `Set-Variable -Name commit`, `${commit} =`, a decoy `for ($run`, and a column-0
-# closing brace that truncates any text-scanned loop body. Seven syntactic rungs, seven escapes, and the
-# reason is structural rather than a matter of not trying hard enough: **PowerShell can assign a variable
-# many ways, and no spelling test can enumerate them.**
+# `$commit` above it, `Set-Variable -Name commit`, `Set-Item -Path variable:commit`, `${commit} =`, a decoy
+# `for ($run`, and a column-0 closing brace that truncates any text-scanned loop body. **Three syntactic
+# rungs, seven escapes** - and this comment first said "seven rungs, seven escapes" above an eight-row
+# table, which round 16's NIT 1 correctly found unreproducible. The reason the count matters is that a
+# ladder is a thing you can point at and count; an uncountable one cannot be shown to have grown.
+# The reason the escapes stop is structural rather than a matter of not trying hard enough:
+# **PowerShell can assign a variable many ways, and no spelling test can enumerate them.**
 #
 # So nothing here asserts where this resolution happens. The string is built ONCE and the per-run write
-# consumes `$header` verbatim. Re-resolving `$commit` inside the loop now **cannot affect the logs at all**,
-# whatever syntax is used to do it — not "is detected", but "is inert". The property is enforced by the
-# data flow rather than asserted about the syntax, which is what the seven previous rungs failed to do.
+# consumes `$header` verbatim. Reassigning `$commit` inside the loop now **cannot affect the logs at all**,
+# whatever syntax is used to do it — not "is detected", but "is inert". The data flow enforces it rather
+# than a check asserting it about the syntax, which is what the three previous rungs failed to do.
+#
+# **Scope, narrowed by round 16's WARNING 1 and its mutation E.** The sentence above is true of `$commit`
+# and of nothing else. Assigning `$header` *itself* from a loop-dependent value is not an assignment to
+# `$commit`, nothing here enumerates it, and round 16 built that variant and this suite stayed green. It is
+# not a defect in this driver, which does not do it — and it does not survive verification either, because a
+# batch whose six logs are stamped `run1`…`run6` names six commits and `verify-gate-batch.mjs` refuses it
+# with a non-zero exit. **Two layers: the data flow makes reassigning `$commit` inert, and the
+# corroborator's commit-distinctness rule makes a per-run-varying stamp unusable. Neither layer is
+# claimed to be exhaustive, and neither is claimed to be the only one.**
 #
 # Round 15 is recorded as the reason. It is also the reason `tests/evidence-scripts.test.ts` no longer
 # tries to check the position of this resolution at all: the check that would fail is one that cannot be

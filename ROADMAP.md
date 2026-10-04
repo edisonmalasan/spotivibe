@@ -197,20 +197,26 @@ the record, which was corrected in the same round. Recorded at `tasks.md` 8.29 a
 
 Rounds 14 and 15 then each returned REJECT on a clause I had added to fix the previous round's CRITICAL -
 the fifth and sixth instances of this milestone's own defect family in *this change's verification
-apparatus*. Rounds 13-15 each tried to assert, by reading the batch driver's source text, that the commit
-is stamped once outside the run loop: **seven syntactic rungs, seven escapes**, each a different
+apparatus*. Rounds 14-15 each tried to assert, by reading the batch driver's source text, that the commit
+is stamped once outside the run loop: **three syntactic rungs, seven escapes**, each a different
 parse-valid PowerShell rewrite (`Set-Variable -Name commit`, `Set-Item variable:commit`, `${commit} =`,
-a decoy loop, a column-0 brace). The reason is structural - **no spelling test can enumerate every way a
-language assigns a variable** - and it is the same conclusion §2.11 reached for the archived gate's
-install cascade, arriving a second time.
+a decoy loop, a column-0 brace, a deleted assignment). The reason is structural - **no spelling test can
+enumerate every way a language assigns a variable** - and it is the same conclusion §2.11 reached for the
+archived gate's install cascade, arriving a second time.
 
-**Repaired by data flow rather than an eighth rung.** The driver now freezes the commit into a string
+**Repaired by data flow rather than a fourth rung.** The driver now freezes the commit into a string
 once, above the loop, and the per-run write consumes that string; reassigning the variable mid-batch is
 therefore *inert rather than detected*. Measured both ways: four mutations that must fail do, and each of
 round 15's escape routes leaves the written stamp at its pre-loop value **when the variant is executed as
-PowerShell**, not merely undetected. Round 15 also caught that its own predecessor's comment correction
-was wrong on arrival - it fixed the count for one file while leaving "localised to one file" standing, and
-re-measuring across the whole population found a second contributing file.
+PowerShell**, not merely undetected. Round 16 re-measured this independently, with the control that makes
+it mean something - its probe *does* see a moved stamp once the freeze is removed, and *did* see `$commit`
+reassigned at runtime while `$header` held - and returned **ACCEPT / MERGEABLE with no CRITICAL**.
+
+Round 15 also caught that its own predecessor's comment correction was wrong on arrival - it fixed the
+count for one file while leaving "localised to one file" standing, and re-measuring across the whole
+population found a second contributing file, sum 4 not 3. Round 16 caught the same shape in my count of
+the rungs themselves: "seven rungs, seven escapes" sat above an eight-row table, and no reading of it
+reproduced seven rungs. Both were numbers written down rather than counted.
 
 What that does **not** establish: CI is still unobserved on this branch; there is still no live-browser
 verification of anything; the two accepted residuals remain named, measured and **unclosed**; and the
