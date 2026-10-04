@@ -25,7 +25,13 @@ the prose drifts away from the code.
 
 ## What Changes
 
-**The gate stops being able to lie.**
+**The gate stops being able to lie about the state of the tree.**
+
+*Corrected in round 12.* This read "**The gate stops being able to lie**", unqualified. It is now false,
+and was false before this line was written: a rollout flag wrapped around the install dispatch, or one
+line that discards the install's result, makes the entire cascade dead code while every test in the
+repository reports green. Both were measured. The gate's *own* diagnostics are what this milestone makes
+honest; its immunity to a disabled caller is not claimed. See `design.md` §2.11.
 
 - The release gate's `gates-install` step no longer runs `npm ci` over the working tree. It installs
   into a staged directory, or refuses to run while `node_modules` is in use.
@@ -60,6 +66,13 @@ the prose drifts away from the code.
 
 **The checks that cannot fail, stop not being able to.**
 
+*Qualified in round 12.* This is true of the checks named below — each is now witnessed by a mutation
+that turns it red — and it is **not** a claim about the checks as a category. Twelve rounds of
+verification each found a check that could not fail, including in the apparatus written to fix the
+previous round's: round 11's own evidence gate asserted on four message substrings and was green when
+the checker it covered was both broken *and* correct. A repair that makes a finding's test go red is
+not the same as a repair that closes the finding.
+
 - The load-bearing clause check is extended beyond the three M20 detectors, or the remaining
   detectors are renamed to state what they actually cover. `download-non-goals.test.ts` has seven
   detectors whose must-fail fixtures are whole-pattern, which structurally cannot show that any
@@ -77,8 +90,12 @@ the prose drifts away from the code.
 - `verification.md`'s claim that `applicationSources()` "covers none of M20's new server files" is
   **false as written**. `download-non-goals.test.ts:52` walks all of `src/`, and every M20 server file
   is under `src/`. The real gaps are the missing roots, which is a narrower and different claim.
-- `W4` is cited in the carried-forward list and **defined nowhere in the repository**. Either the
-  definition is restored or the citation is removed. It is currently a task nobody can execute.
+- ~~`W4` is cited in the carried-forward list and **defined nowhere in the repository**.~~ **This
+  claim was false.** `W4` is defined, at `archive/2026-09-30-add-podcasts/tasks.md:120` — a finding
+  belonging to the *podcasts* change. So the carried-forward item was not unresolvable, which made it
+  worse than unresolvable: a bare `W4` looks resolvable and quietly resolves to another change's
+  finding. The finding stands in a corrected form — the citation is ambiguous, not dangling — and is
+  dispositioned at `tasks.md` 6.2 and `MEMORY.md` lessons 56 and 63.
 
 **Documentation describes the product as built.**
 
@@ -103,12 +120,20 @@ alters tests, CI ordering, the gate, and documentation, and nothing a user can s
 
 ### New Capabilities
 
-- `verification-integrity`: The repository's own checks are required to be provable — a gate that
-  cannot distinguish one broken install from sixteen unrelated failures, a CI job whose ordering
-  determines whether a budget runs at all, a probe that mutates the tree another test is reading, and
-  an intermittently failing test whose failure is indistinguishable from a real regression. This is
-  a new capability because `release-validation` governs the *product's* exclusions and the release
-  contract; it does not govern whether the machinery performing that validation is itself sound.
+- `verification-integrity`: The repository's own checks are required to be **witnessed** — each one shown
+  failing on a violating input, and each one's known blind spots recorded rather than left for a reader
+  to assume away. A gate that cannot distinguish one broken install from sixteen unrelated failures, a CI
+  job whose ordering determines whether a budget runs at all, a probe that mutates the tree another test
+  is reading, and an intermittently failing test whose failure is indistinguishable from a real
+  regression. This is a new capability because `release-validation` governs the *product's* exclusions
+  and the release contract; it does not govern whether the machinery performing that validation is
+  itself sound.
+
+  *Terminology narrowed in round 12.* This originally read "required to be **provable**", and that word
+  is not available. Twelve rounds of verification established that the repository's checks are
+  *witnessed*, not *proved*: each has a mutation that turns it red, and each still has named ways to
+  defeat it. "Provable" would have been the aspirational version of a claim this milestone cannot make,
+  which is the exact failure the capability exists to prevent.
 
 ### Modified Capabilities
 
@@ -121,6 +146,13 @@ alters tests, CI ordering, the gate, and documentation, and nothing a user can s
 
 - **No shipped behaviour changes.** `src/` is untouched except where a test-only bug and a real bug
   are indistinguishable and the investigation proves they are the latter.
+- **`src/` does gain one export, and it is not a behaviour change.** Task 4.1 removed a fixed
+  2000 ms poll from `tests/podcast-playback-history.test.ts` by awaiting the recorder's write chain
+  instead, which is impossible from outside the module: the chain was module-global and unexported.
+  `flushListeningRecorder()` is now exported from `src/features/history/useListeningRecorder.ts`.
+  It is a `flush` over state the module already owns, it adds no capability, and nothing in the
+  application calls it — the sole caller is the test. This was left unrecorded here, which made
+  "no shipped behaviour changes" a claim a reader could not check; it is now the one place to check.
 - **CI ordering changes** in `.github/workflows/ci.yml` — the one edit that affects every future run.
 - **The release gate changes**, and becomes safe to run. It is currently invoked only by hand and by
   no manifest, which is why its `npm ci` has gone unnoticed since M15.

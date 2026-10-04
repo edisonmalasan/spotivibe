@@ -79,6 +79,16 @@ pre-warmed cache.
 | the parked 1×1 YouTube player advances playback | The IFrame API is blocked by CSP in the tooling available here. **This item has been unverified since M4 and remains unverified now.** |
 | no unexpected production console errors | A console belongs to a browser session. |
 | desktop and compact/mobile layouts render correctly | A judgement about rendered pixels, not a status code. |
+> **Corrected in M21 — the *reason* in the row above is wrong; the *status* is not.** The
+> application ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and
+> permits `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the
+> frame and the IFrame API script; the CSP claim described a limitation of the tooling used to
+> check, not of the deployed application. The real obstacle was that **no browser automation was
+> available** — only Edge is installed, and both live origins sit behind Vercel Deployment
+> Protection, which is not circumvented. The row's own conclusion stands unchanged: this item
+> **remains unverified**. Correction, and the decision to leave archived records as written:
+> `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 The first deployment therefore clears every check this repository knows how to automate, and
 leaves the browser-only list open — which is where it has been since M4.

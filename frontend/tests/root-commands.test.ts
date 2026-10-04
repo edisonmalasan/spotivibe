@@ -183,6 +183,87 @@ describe("every root command reaches the application package (M15 tasks 3.1, 3.3
   });
 });
 
+describe("the root gate builds before it tests, and says why", () => {
+  // **This ordering is load-bearing, and the cost of getting it wrong is invisible.**
+  //
+  // `tests/motion-budget.test.ts`'s size rules need a build report and skip without one. With
+  // `test` before `build`, a gate run reports that file green — its headline is a budget — while
+  // six of its rules never execute. Measured both ways by moving `.next` aside: **21 passed with a
+  // build, 15 passed and 6 skipped without one.**
+  //
+  // The same defect was found and fixed three times over: in `.github/workflows/ci.yml`, in the
+  // archived release gate, and then here. `ci-workflow.test.ts` asserts the first; the gate's own
+  // test file asserts the second. Nothing asserted the third, which is how it survived the other
+  // two being fixed — a repair applied everywhere except the one place nobody re-read.
+  //
+  // So the order is asserted from the script itself rather than from the documentation beside it,
+  // and the reason is asserted to be written down. The reason matters as much as the order: an
+  // unexplained `&&` chain reads like tidiness, and tidying is exactly how it gets reverted.
+
+  const gate = (): string => root().scripts?.gate ?? "";
+
+  it("runs the build before the tests", () => {
+    const script = gate();
+    expect(script, "the root manifest must still define a gate").toContain("run build");
+    expect(script, "the root manifest must still run the tests").toContain(" frontend test");
+    // Both must be present for the comparison below to mean anything; asserting that first means a
+    // script that dropped one entirely fails with a specific message rather than an index error.
+    expect(
+      script.indexOf("run build"),
+      "the gate must build, or the bundle-size budget has no report to read",
+    ).toBeGreaterThan(-1);
+    expect(
+      script.indexOf(" frontend test"),
+      "the gate must test, or it is not a gate",
+    ).toBeGreaterThan(-1);
+    expect(
+      script.indexOf("run build"),
+      "the gate tested before it built: six of motion-budget's seven groups would skip, silently",
+    ).toBeLessThan(script.indexOf(" frontend test"));
+  });
+
+  it("runs lint, formatting and types before either", () => {
+    // The cheap checks first is a separate property from build-before-test: a type error found
+    // after a two-minute build is a two-minute wait spent to learn something available in seconds.
+    const script = gate();
+    const build = script.indexOf("run build");
+    for (const [name, needle] of [
+      ["lint", "run lint"],
+      ["format:check", "run format:check"],
+      ["typecheck", "run typecheck"],
+    ] as const) {
+      const at = script.indexOf(needle);
+      expect(at, `the gate must still run ${name}`).toBeGreaterThan(-1);
+      expect(at, `the gate must run ${name} before it builds`).toBeLessThan(build);
+    }
+  });
+
+  it("does not install, so the gate cannot destroy the tree it is validating", () => {
+    // `npm ci` deletes `node_modules` before installing. The recorded incident is an `EPERM` on a
+    // native module held by a running dev server, which left 19 packages, no `.bin`, and a `next`
+    // without its `package.json`. The gate is the last thing that should ever do that, and it is
+    // also the thing a person is most tempted to make self-sufficient.
+    expect(gate(), "the gate must not run an install").not.toMatch(/npm ci|run setup/);
+  });
+
+  it("writes down the reason next to the order, so the order is not tidied back", () => {
+    const agents = readFileSync(join(REPO, "AGENTS.md"), "utf8");
+    expect(agents, "AGENTS.md must state the gate's order").toMatch(
+      /npm run gate[^\n]*build -> test/,
+    );
+    expect(
+      agents,
+      "AGENTS.md must say the order is load-bearing, or a reader has no way to know it is a " +
+        "decision rather than a preference",
+    ).toMatch(/builds before it tests, and that order is load-bearing/);
+    // And the measured comparison, so the claim is checkable rather than asserted.
+    expect(
+      agents,
+      "AGENTS.md must record the two counts that make the ordering's effect measurable",
+    ).toMatch(/21\s*passed with a build[\s\S]*?15 passed and 6 skipped without one/);
+  });
+});
+
 describe("a root command reaches the application's own tooling (M15 task 3.4)", () => {
   it("the formatter is the application's, so a root format formats the application", () => {
     const application = JSON.parse(readFileSync(join(FRONTEND, "package.json"), "utf8")) as {

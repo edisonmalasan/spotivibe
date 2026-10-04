@@ -104,6 +104,32 @@ export function resetListeningRecorder(): void {
   openStep = null;
 }
 
+/**
+ * Wait until every write the recorder has queued has been committed.
+ *
+ * Writes are serialized through {@link writeChain} and there is no debounce or timer on the path,
+ * so awaiting the chain is *sufficient* rather than a hopeful wait: once it settles, the repository
+ * has been called for every step recorded so far, and a subsequent read sees them all.
+ *
+ * ## Why this exists
+ *
+ * `tests/podcast-playback-history.test.ts` waited for recorded events by **polling with a 2000 ms
+ * deadline**, and failed intermittently under load — roughly one run in three on a busy machine. The
+ * deadline was standing in for the chain, so its adequacy depended on how slow the surrounding
+ * suite happened to be. Raising the number would have made the flake rarer without making it
+ * impossible, which is the same as not fixing it.
+ *
+ * This is a real API rather than a test-only hook: anything that needs the history to be complete
+ * before it reads it — an export, a backup, a flush before the page goes away — has the same need.
+ */
+export async function flushListeningRecorder(): Promise<void> {
+  // Hydration first: a write queued behind it waits on it, so awaiting the chain alone would be
+  // correct here but reading this in the other order makes the dependency obvious rather than
+  // incidental.
+  await historyReady;
+  await writeChain;
+}
+
 /** Read the newest stored event once, so a replayed track is not re-recorded. */
 function ensureHistoryReady(): Promise<void> {
   if (!historyReady) {

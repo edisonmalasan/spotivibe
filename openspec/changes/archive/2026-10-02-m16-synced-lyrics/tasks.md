@@ -36,6 +36,15 @@
 - [x] 6.1 Run the quality gates from the repository root under Node 24 — verify: each exits `0`, with the interpreter version recorded.
 - [ ] 6.2 Run the release gate and confirm no existing item regressed — verify: the gate's pass/fail/not-run counts are recorded and compared against the pre-change baseline.
 - [ ] 6.3 State plainly what could not be verified here: the YouTube IFrame API is blocked by CSP in this environment, so **the position plumbing is verified but the following is not observed in a real browser** — verify: the claim is recorded as a limit in the change's evidence, not as a pass.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 <!--
   Tick state, recorded 2026-10-02 on Node v24.21.0. 17 of 19 ticked.
@@ -65,6 +74,15 @@
   and it was — evidence/README.md records that the YouTube IFrame API is blocked by CSP here, so the
   position *plumbing* is verified but the following is NOT observed in a real browser. Ticking the
   box would read as a browser verification having happened, which is the opposite of what it says.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
   6.2's release gate is recorded as run; see evidence/README.md for its pass/fail/not-run counts
   against the pre-change baseline.

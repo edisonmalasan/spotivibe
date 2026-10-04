@@ -128,8 +128,25 @@ file's presence.
 #### Scenario: A test asserts on a temporary file it created
 
 - **WHEN** a guard needs a file to exist in order to be tested
-- **THEN** the file is created in a location the application tree does not contain, so that no other
-  test can observe it by accident
+- **THEN** the file is created at a path the guard under test walks, because a probe placed where the
+  guard cannot see it would make that guard prove nothing
+- **AND** every reader of the source tree tolerates a file that vanished between being listed and
+  being read, and treats any other read failure as fatal
+- **AND** the tolerating reader reports each vanished file, and its caller asserts that no file was
+  reported, so a run that does lose a file fails rather than quietly reading fewer files than it
+  believes
+
+> **M21 Apply, 2026-10-04 — this scenario was rewritten because it did not describe what was
+> implemented.** As first written it required the file to be created outside the application tree, and
+> `design.md` §2.5 recorded that as the decision. The code does the opposite: the probe stays at
+> `src/features/sharing/ProbeM19Motion.tsx`, because the guard under test asserts on the application
+> sources and needs a file at a source path to be exercised at all. Independent verification, CRITICAL
+> C7, found the spec and the design both advertising a decision the code had reversed.
+>
+> The rewrite keeps the requirement the scenario was reaching for — one guard must not break because
+> another test wrote a file — and states it as a property of the *reader* rather than as a location
+> rule. See `design.md` §2.5 for why tolerating a vanished file needs no excluded-directory constant,
+> and therefore has no second spelling that can drift.
 
 ### Requirement: An intermittently failing test is diagnosed before it is fixed
 

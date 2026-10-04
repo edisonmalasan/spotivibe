@@ -137,7 +137,192 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `DONE` | M18 |
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
-| **M21** | Post-v1 integration, regression validation, documentation | `NEXT` | M16–M20 |
+| **M21** | Post-v1 integration, regression validation, documentation | `APPLY` (PR #100 open) | M16–M20 |
+
+**M21 status, 2026-10-05 - Apply in progress, and its central claim has been narrowed.** Proposal merged
+as `6f86211`; Apply is PR #100. **Seventeen rounds** of independent verification have run: rounds 1-15
+returned REJECT, round 16 returned ACCEPT/MERGEABLE and round 17 returned MERGEABLE/ACCEPT, neither with
+a CRITICAL. Every rejecting round found the *previous round's* defect class reproduced inside the previous
+round's own repair.
+> **Round 17's WARNING 5: this paragraph said twelve rounds, and that was a stale count contradicting this
+> same document seventy lines below**, which reported round 16's ACCEPT. It understated, so it manufactured
+> no false green - but it was the kind of number written down once and never recounted, in a milestone
+> whose ROADMAP names exactly that as its defect family. Recounted, and the count now moves with the work
+> rather than lagging it.
+
+**The claim this milestone made — that its suite makes a false green impossible — has been retired by
+decision, not by success.** Two one-line edits still make the release gate's install cascade dead code
+while all 71 tests in `release-gate-install.test.ts` report green:
+
+```js
+const SKIP_INSTALL = true;
+if (!SKIP_INSTALL) { if (item.how === "install") { /* the whole dispatch */ } }
+
+const prepared = prepareDependencies({ frontendDir: FRONTEND });
+prepared.ok = true;
+```
+
+Both were measured on the real gate with `node --check` passing. They are not fixed, and the reason is
+structural rather than pending: the instrument that closes this class is *executing the gate* and
+observing whether `environmentBroken` is set, or a taint/flow analysis, and executing the gate is
+forbidden for this work because its first step is a dependency install. What remains available is more
+syntactic predicates, and **sixteen rejecting rounds** show each one is answered by the next round — name,
+then span, then declaration, then dispatch, then complement, never the rung that covers the next finding.
+> **Round 18's NIT 3: this sentence said "twelve rounds" while line 143 of the same file said
+> "Seventeen rounds", twenty-six lines above.** Round 17 corrected line 143 and left this one, so the
+> defect survived the fix by being one paragraph away from where the fix was applied. It understates, so
+> it manufactures no false green. **Counting a sequence is the one task in this change that has been
+> reliable less often than expected, and it is the task every other finding here is about.**
+
+**What M21 therefore delivers:** the gate's install cascade pinned against a named, mutation-proven list
+of regressions; the batch evidence checker that runs the gate six times and refuses anything it cannot
+corroborate, now itself gated by execution rather than by grepping its own source; and two known,
+measured, documented ways to defeat it. **Not:** immunity of the gate to a disabled caller. See
+`openspec/changes/harden-post-v1-verification/design.md` §2.11.
+
+**M21's completion criterion is met.** `design.md` 2.10 requires six consecutive green full gate runs.
+Batch 14 satisfied it at `ed6f9f6`. Batch 15, at `0e65dc8`, was **5 of 6** - and the sixth is the useful
+part. It failed `tests/lyrics/lyricsPanel.test.tsx > scrolls the active line into view while following`
+with `expected [ ...(2) ] to deeply equal [ { top: 150, behavior: 'smooth' } ]`, the same scroll call
+issued twice. At `0e65dc8` neither that test nor `LyricsPanel.tsx` was touched by this branch, so the
+criterion surfaced a pre-existing defect rather than causing one. **The milestone's own bar found a real
+bug before it found nothing.**
+
+Scope was extended by the owner to diagnose and repair it. **The cause was in the test, not the panel,
+and it is established by measurement rather than narrowed.** `layout()` mutates the global geometry stub,
+and `scrollActiveLineIntoView` reads it when the effect *flushes* rather than when it is scheduled - so
+flushing before `layout()` gives delta `0` and an early return (1 call, passes), and flushing after gives
+delta `150` and a second call inside the window (fails). Which branch runs is a scheduler decision. All
+four of the effect's dependencies are inert: the trace is byte-identical whether the run passes or fails.
+The test had read its marker at `scrollCalls.length = 0` in 8 of 8 isolated runs.
+
+Fixed in the test alone - flush pending effects, discard what they recorded, then take the marker.
+`git diff --stat -- frontend/src/` shows one file, `useListeningRecorder.ts`, adding `flushListeningRecorder()`:
+**no shipped panel or hook behaviour changed**, because a production fix would have suppressed the
+panel's legitimate first centring. The assertion's exact count is unchanged. A regression test pins it,
+and its first version was measured to be decorative before being rewritten.
+> **Round 17 caught that the check above was vacuous.** It read `git diff --stat -- src/`, and **there is
+> no root `src/` in this repository** - the command is trivially true and would have stayed true through
+> any edit to the application. That is the purest form of this milestone's subject: a check that cannot
+> fail. Re-scoped to `frontend/src/`, where it reports a real change, and that change is read below rather
+> than glossed.
+
+**Batch 16, at `a0bf535`: 6 of 6 green, corroborated, exit 0** - six distinct log digests, 182 files,
+3335 tests, motion-budget 21, enumeration 3013/3335 = 0.903 against a 0.8 floor. Round 13 reproduced the
+regression evidence independently (5/5 red without the discipline, 5/5 green with it) and rejected only
+the record, which was corrected in the same round. Recorded at `tasks.md` 8.29 and 8.30.
+> **Batch 16 is SUPERSEDED and is not current criterion evidence.** Round 17's NIT 3: this file presented
+> batch 16 as the criterion's evidence and never marked it superseded, while batches 17-20 were absent
+> from it entirely - so a reader of `ROADMAP.md` alone would take batch 16 as current, and
+> `run-gate-batch.ps1` states in-tree that batch 16's logs predate the commit stamp the checker requires.
+> The live chain is at `tasks.md` 8.30, 8.32, 8.34, 8.36 and 8.38, each stating its own supersession.
+> **Round 18's NIT 4: this sentence listed 8.29 among them and said "each".** 8.29 does not state a
+> supersession — it needs none, since its own heading reads "the criterion is NOT met" and cannot be
+> mistaken for current evidence — so the "each" was false while the entry it wrongly included was
+> harmless. **It was found by checking a list against its items rather than by reading the sentence**, which
+> is the only method that has ever caught this family.
+> **This is the fourth recurrence of the same finding** - a record not marked superseded is worse than no
+> record, because it looks current - and it survived five rounds because each fix was applied at the site
+> the previous round named rather than searched for globally.
+
+Rounds 14 and 15 then each returned REJECT on a clause I had added to fix the previous round's CRITICAL -
+the fifth and sixth instances of this milestone's own defect family in *this change's verification
+apparatus*. Rounds 14-15 each tried to assert, by reading the batch driver's source text, that the commit
+is stamped once outside the run loop: **three syntactic rungs, seven escapes**, each a different
+parse-valid PowerShell rewrite (`Set-Variable -Name commit`, `Set-Item variable:commit`, `${commit} =`,
+a decoy loop, a column-0 brace, a deleted assignment). The reason is structural - **no spelling test can
+enumerate every way a language assigns a variable** - and it is the same conclusion §2.11 reached for the
+archived gate's install cascade, arriving a second time.
+
+**Repaired by data flow rather than a fourth rung.** The driver now freezes the commit into a string
+once, above the loop, and the per-run write consumes that string; reassigning the variable mid-batch is
+therefore *inert rather than detected*. Measured both ways: four mutations that must fail do, and each of
+round 15's escape routes leaves the written stamp at its pre-loop value **when the variant is executed as
+PowerShell**, not merely undetected. Round 16 re-measured this independently, with the control that makes
+it mean something - its probe *does* see a moved stamp once the freeze is removed, and *did* see `$commit`
+reassigned at runtime while `$header` held - and returned **ACCEPT / MERGEABLE with no CRITICAL**.
+
+Round 15 also caught that its own predecessor's comment correction was wrong on arrival - it fixed the
+count for one file while leaving "localised to one file" standing, and re-measuring across the whole
+population found a second contributing file, sum 4 not 3. Round 16 caught the same shape in my count of
+the rungs themselves: "seven rungs, seven escapes" sat above an eight-row table, and no reading of it
+reproduced seven rungs. Both were numbers written down rather than counted. Round 17 found two more of
+the same shape - an annotation I added to close a stale-figure finding that itself contained an
+unverified line number, and two counts of the same batch sequence that disagreed about whether any red
+run ever occurred. **Every one of the five was caught by asking a verifier to check a pointer rather than
+to trust it, and none was caught by writing them carefully.**
+
+**How to check the criterion at the merge commit — a rule, not a pointer.** `design.md` §2.10 requires
+six consecutive green full gate runs at the tree being merged. Verify it with two commands and nothing
+from this file:
+
+```bash
+# the six logs of the batch, all stamped with one commit:
+head -2 <logdir>/run1.log … run6.log      # line 1 `gate exit0`, line 2 `commit <sha>`
+# and that commit's tree is the tree the merge carries:
+git merge-base --is-ancestor origin/main <batch-commit>   # exit 0 ⇒ the merge adds no tree change
+git rev-parse <batch-commit>^{tree}                       # == the merge commit's tree
+```
+
+**The live batch is the one whose stamped commit has the merge commit's TREE** — not whose commit *SHA*
+equals it, because a merge commit is a new commit and no batch can ever be measured at it. The batches
+already run are at `tasks.md` 8.29, 8.30, 8.34, 8.36, 8.38, 8.40 and 8.42, each stating its own
+supersession; the criterion batch itself is recorded in **PR #100's body**, and §8.42 says why.
+> **This rule was wrong twice in two consecutive commits, and the second error is the interesting one,
+> because the first repair is what created it.** The first version required an in-tree entry whose commit
+> *SHA* equalled the merge commit's — unsatisfiable, since a merge commit is new. The repair moved the
+> invariant from SHA to TREE, which fixed that, and in doing so created a rule that is circular instead:
+> **any in-repo record of a batch is itself a commit, so its tree can never equal the batched tree.** A rule
+> demanding such a record can only ever be unsatisfied, and obeying it re-runs the batch forever.
+>
+> **This is why the criterion batch's record cannot live in the tree. That is arithmetic, not a
+> rationalisation** — and it is worth distinguishing from round 17's finding, which was that I had
+> *additionally* left a live pointer naming a stale record. The pointer was the removable defect; the
+> circularity was not removable by any wording. The repair for both is the same: the tree carries the
+> **rule that verifies** the criterion, and the batch's own record lives in the PR body, which is not a
+> repository file and so cannot invalidate the commit it certifies.
+>
+> **A reader can now check the merge gate without trusting this file's arithmetic.** If the rule's two
+> commands disagree, the criterion is not met at the merge commit and the batch must be re-run there —
+> and the fix for a failing criterion is a batch, not an edit to this paragraph. **A rule whose failure is
+> repairable only by editing the rule is not a rule.**
+> **Round 18 accepted this paragraph's rule, and the rule was unsatisfiable — so this is the one repair
+> in this milestone that its own final verifier did not catch.** It read "whichever entry's commit equals
+> `main`'s merge commit". **A merge commit is a new commit: its SHA is by construction not any batch's
+> SHA**, so the rule evaluated to *never* and this file asserted that the criterion can never be met at
+> the merge commit. The same paragraph also claimed "this is the last place in this file that will need
+> amending on this account" — false in the strongest way available, and false on the sentence immediately
+> following the claim.
+>
+> **The tree is the invariant, not the commit, and the distinction is the whole repair.** Measured:
+> `git merge-base --is-ancestor origin/main HEAD` exits 0, so a clean merge of PR #100 adds no tree
+> change and the merge commit's tree equals the branch head's tree — `e3c8bcd891c1845aa827925c9493162f0bcb1500`
+> at `bcebb1e`. The batch is evidence about a *tree*; the criterion was always about a tree ("six runs of
+> one unchanged tree", in the corroborator's own words). Stating it in terms of the commit identity rather
+> than the tree identity is what made it unsatisfiable, and it is the same substitution this milestone has
+> been auditing in prose all along: **a claim about the artefact, stated as a claim about its label.**
+> **This paragraph replaces a pointer, and the replacement is the finding.** It used to read "the current
+> criterion evidence is batch 20, at `90c2496` ... executed total 3341 measured at HEAD", and round 18
+> measured HEAD at 3342 - so a stale executed total sat next to the word "HEAD", in the document whose own
+> line 214 calls this "the fourth recurrence of the same finding". **A pointer to a moving target has to
+> be updated every time the target moves, which means it is wrong by default and only briefly right.** A
+> rule that identifies the live entry cannot go stale, so this is the last place in this file that will
+> need amending on this account. The same overreach then migrated here from `tasks.md`, where round 17 had
+> just fixed it - **a claim does not stop being wrong because it was moved to a file with fewer readers.**
+
+Latest measured batch: **22**, at `bcebb1e` - six of six green, corroborated, exit 0, 182 files, 3342
+tests, motion-budget 21, enumeration 3020/3342 = 0.904 against a 0.8 floor, six distinct whole-log
+digests, every log stamped `commit bcebb1e7f28b`.
+> **This sentence was "Latest recorded batch: 21, at `b931c7c`" and was one batch stale the moment it was
+> written, because round 18's finding was repaired in a commit that had not been batched yet.** It is
+> kept as a *pointer to the newest measurement* only because the rule above now identifies the live batch
+> independently, so this sentence can be stale without misleading anyone about the criterion. That is the
+> difference between a pointer and a rule, demonstrated on the pointer I had just replaced.
+
+What that does **not** establish: CI is still unobserved on this branch; there is still no live-browser
+verification of anything; the two accepted residuals remain named, measured and **unclosed**; and the
+`commit` stamp binds a batch to a commit but cannot establish that the logs came from a gate run rather
+than being written by hand. Six sequential runs are also not a contention test.
 
 **M20 outcome, 2026-10-03.** Proposal merged as `eb76cfc`; Apply as PR #96 / `9b61e72`; spec sync as
 PR #97 / `91f47a1`. The `download` capability is 8 requirements and 31 scenarios, and
@@ -148,8 +333,15 @@ detectors whose clauses could each be deleted with the whole suite green (27 of 
 file that had never been inside the encoding scan because `\.git` also matched `.github`, and two
 arms that matched the token as documented rather than as it appears in code. None was a defect in
 shipped behaviour; all were rules that said less than they appeared to. M21 inherits the rest —
-including 47 of 52 deletable clauses in `download-non-goals.test.ts`, whose scan covers none of
-M20's new server files.
+including the deletable clauses in `download-non-goals.test.ts`.
+
+> **M21 correction, 2026-10-04.** The clause of that sentence that said the scan "covers none of M20's
+> new server files" was **false**. `applicationSources()` walks all of `src/`, and every server file M20
+> added lives under `src/server/download/`, so all of them were covered by that scan the whole time.
+> The real gap ran the other way: `public/`, `scripts/` and `next.config.ts` were never scanned at all.
+> M21 widened the roots and asserted the widening took effect. The "47 of 52" figure was also never
+> measured — M21 measured the one detector whose clauses can be enumerated and found 5 of 6 deletable,
+> now 0 of 6. See the marked correction in the M20 archive's `evidence/verification.md`.
 
 **Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external
 provider, a parser, a playback-position binding) and it proves the Now Playing surface can grow.
@@ -186,6 +378,15 @@ Three things M16 established that the rest of the post-v1 work inherits:
 observed in a real browser** — the YouTube IFrame API is blocked by CSP in this environment — and the
 M16 release gate could not be used as a comparison, which is how the destructive-install finding below
 was found. Both are in M21's scope.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 The work that followed M15 was not a milestone. It was the one defect M15's own release
 process was built to find, found before the first deploy rather than during it:
@@ -222,7 +423,7 @@ The work after that was a **deliberate reversal of M4's visible-player decision*
 | Item | Why it is not a milestone | Where it is recorded |
 |---|---|---|
 | ~~The Vercel deployment itself~~ — **CLOSED 2026-10-02** | Deployed to `https://spotivibe-web.vercel.app` and verified: 8 automated checks green against the live origin (headers present through the CDN, `sw.js` updateable, manifest and its four icons valid, `/api/search` returning real provider results, rate limiting answering `429` with `Retry-After`, all eleven routes answering). The browser-only list — offline reload, live playback, the parked player, console errors, layout — is **still open** and was never claimed as passing. | `openspec/changes/archive/2026-10-02-first-production-deployment.md`; `frontend/docs/DEPLOYMENT.md` |
-| Whether a parked 1×1 iframe keeps advancing in a live browser | The IFrame API is blocked by CSP in this environment, so no browser run can confirm it. The largest open item in the parked-player change. | `2026-10-02-lyrix-style-hidden-player` evidence README, "Not verified" |
+| Whether a parked 1×1 iframe keeps advancing in a live browser | **Still unverified**, and the recorded *reason* for it was wrong until M21: it was written as "the IFrame API is blocked by CSP in this environment", but the application ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`), so its own policy permits the frame. The real obstacle is that **no browser automation was available** — only Edge is installed, and the production and Preview origins sit behind Vercel Deployment Protection. So the item's status is unchanged and its stated cause is corrected; nothing about the player is newly claimed. | `2026-10-02-lyrix-style-hidden-player` evidence README, section "Not verified, and not claimed"; correction in `2026-10-02-m17-home-discovery` evidence README, same section name |
 | Reverting the parked player before any public deployment | The parked configuration is right for a personal instance and wrong for a public one. | `frontend/docs/DEPLOYMENT.md`; the `playback` spec's departure requirement |
 | Real multi-instance rate limiting | The limiter is per-instance in memory, so its effective ceiling multiplies by instance count on serverless. Never observed under load. | M15's archived `tasks.md`, "permanently unverified" |
 | Firefox / Android / iOS | Only Edge is installed here, and the automation protocol is Chrome DevTools-based. | M15's archived `tasks.md` |
@@ -1995,6 +2196,15 @@ UI states. Reduced-motion behaviour. Provider scoring and its negative cache.
 **Browser verification.** Active-line highlight advancing against a real position source, and
 auto-scroll following. **Not verifiable in this environment** (IFrame API blocked by CSP) — the
 position *plumbing* is verified in jsdom, the *following* is not.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 **Completion criteria.** Lyrics appear on Now Playing for a track that has them, in the correct
 format, and the panel is indistinguishable in structure from the rest of the surface. All four

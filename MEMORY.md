@@ -350,6 +350,15 @@ followed the user onto Home, because the host lives in the shell so navigating u
 **The largest open item is unverified and unticked:** whether a 1×1 `opacity: 0` iframe actually
 keeps advancing position in a live browser. The IFrame API is blocked by CSP here, so no run can
 confirm it. Geometry and the tab stop were measured *before* the fixes; there is no re-run after.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 ## Hard-won lessons
 1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
@@ -607,3 +616,503 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     commit**, so the commit lands on the branch by construction rather than by decision; and after any
     merge, run `git branch --show-current` and expect `main`, which is the state to leave. Not
     reverted, because reverting a merged push is the more destructive operation; recorded here instead.
+53. **A source assertion that has to be kept from matching a comment is one edit away from matching
+    it again.** Three of M21's own new assertions failed against *unmodified* code, all the same way:
+    they matched the explanatory comment describing the bug rather than the code. One compared the
+    index of `routerPaused = true` against the index of `Fetch.enable` — and the comment written to
+    describe that exact bug mentions `Fetch.enable` first, so the check was reading the prose. Another
+    matched the old broken guard, which its comment quotes verbatim. **Fix this by extracting the decision
+    into a function and asserting on what it returns.** A returned value cannot be satisfied by a
+    sentence; a string index can.
+    **AMENDED - "strip the comments first" is necessary and NOT sufficient, and this lesson is what
+    M21 got wrong twice.** The original wording prescribed stripping comments before asserting. That was
+    applied, and the comment still satisfied the assertion: `# node-version: 24` passed a
+    `toContain("node-version: 24")` (round 4), and then `x: it's # node-version: 24` passed it again
+    (round 5) because the repair stripped *trailing* comments by tracking quote state and **a YAML
+    plain scalar may contain an apostrophe** - so the quote opened and never closed. All 3292 tests
+    green both times. A hand-rolled comment stripper is only as correct as the parser it is standing in
+    for, and it is not one.
+    **The part that generalises: assert on the VALUE, not on text containing it.** Read
+    `node-version`'s scalar and require it to equal `24`. Then a decoy anywhere - in a comment, after
+    the value, in a second key - is part of what you compared, and fails. Stripping comments and
+    comparing values are complementary: the strip handles the one form the language makes unambiguous (a
+    whole-line comment, since a plain scalar cannot begin with `#`), and the value comparison handles
+    everything a strip cannot reason about. Either alone was beaten here.
+    This is the seventh time this repository has produced the same defect, which is why it is worth
+    memorising as a reflex rather than a lesson. It is also the first time the reflex was written down and
+    then not followed two rounds running - so the lesson is now about the value, not the strip.
+    **AMENDED AGAIN (round 6) - "a decoy anywhere" was false, and the false part was the load-bearing
+    part.** Value comparison defeats a decoy on the same line or after it. It does not defeat a decoy on
+    an EARLIER LINE ELSEWHERE, because reading a value means first deciding *which* `node-version` was
+    meant, and the implementation resolved that by taking the first match in the document. So
+    `node-version: 24` in a job-level `env:` block beat the real pin in `setup-node`'s `with:`, the real
+    pin could be set to `22`, and 181 files / 3297 tests stayed green. Confirmed with a real YAML parser,
+    not by the absence of an error - which is the only way to confirm an absence.
+    **The rule that survives: A BARE KEY IS AMBIGUOUS, AND POSITION IS EXACTLY WHAT A DECOY MANIPULATES.**
+    "Which `node-version` did you mean?" is a question, and answering it by order of appearance is
+    answering it on the decoy's behalf. So a value must be read from a **scope** - the mapping that owns
+    it: `stepWith(workflow, "Setup Node.js")` for the pin, `jobRunDefaults` for `working-directory` -
+    and a **repeated key inside that scope must be refused, not resolved**. Refusing is the whole trick:
+    it is the one answer that cannot be wrong in the decoy's favour.
+    Three properties, each of which a previous round thought was the whole fix:
+    - comments are not the problem; **text containing the value** is;
+    - nor is it **text at all**; it is **which occurrence**;
+    - so the ladder is: strip whole-line comments -> compare values -> **scope the lookup and refuse
+      duplicates**. Each rung was sufficient against the round before it and insufficient against the
+      next. `scalarValue` refuses duplicate keys; `blockAfter` must refuse duplicate *container* keys too,
+      or the same defect survives one level up - which is exactly how round 6's own suite found it.
+    The pattern generalises past YAML. Any lookup that answers "which one?" by order is one edit away
+    from answering it for whoever planted the decoy.
+54. **A check that asserts an identifier *appears somewhere* is not a check.** M21's cascade guard
+    asserted the name `environmentBroken` was in the gate's source. Replacing the condition with
+    `false` left it green while the gate went back to reporting sixteen failures where there is one.
+    Only the mutation proof found it, and only because the mutation was written to delete the
+    *condition* rather than the word. **Write the mutation against the decision, not the spelling.**
+55. **Measure an inherited claim before repeating it.** M21 set out to correct two M20 records and
+    found three claims false in the process: that the coarse §2.7 clause "flags the approved M20
+    shape as a false positive" (it matches 0 of 233 real files — the approved route streams
+    `payload.stream`, not `.body`); that `download-non-goals`' `applicationSources()` "covers none of
+    M20's new server files" (it walks all of `src/`, so it covered every one); and my *own*
+    exploration's claim that `exclusions-diff.md` carried stale `77` counts (both occurrences are
+    correct history — I had the wrong current value in mind). **A correction can be as false as the
+    claim it replaces**, so correcting a claim into a *different* false claim sends the next reader
+    to fix the wrong thing. Check the direction of the error, not just its existence.
+56. ~~**`W4` is cited in M20's carried-forward list and defined nowhere in the repository.**~~
+    **CORRECTED — this claim was false, and the lesson it was recorded for is not the one it
+    teaches.** `W4` **is** defined: `archive/2026-09-30-add-podcasts/tasks.md:120`, a finding from the
+    *podcasts* change, not from M20's or M21's. See lesson 63 for how the false claim was made and
+    what it cost. The text is struck rather than deleted, because deleting a wrong lesson would leave
+    no trace that the file was ever wrong about it — and this file's whole subject is that a wrong
+    claim left standing is read and acted on.
+    **What survives, and is the real lesson:** a carried-forward item that names a defect by a bare
+    number nobody can resolve is not a task, it is a rumour with a number on it. `W4` *was* resolvable,
+    which is what made it worse: it resolved to a finding belonging to a different change, so a reader
+    following it would go and fix the wrong thing with total confidence. **Do not invent the definition
+    to make the list resolve** — that advice was right and is kept; it was the claim of absence that
+    was wrong, not the response to one.
+57. **Widening a scan's roots re-scopes everything that consumes it.** Adding `public/`, `scripts/`
+    and `next.config.ts` to `download-non-goals` immediately failed two *other* assertions in the
+    same file — legitimately: a fixture case names `offlineDownload` because it is a case about it,
+    and `scripts/measure-client-bundle.mjs` names the extractor because reporting whether it reached a
+    client bundle is its purpose. The repair was to scope those two assertions to *shipped code*
+    through a fixed root list, not to delete either file. **Exclude by an asserted literal list, never
+    by `startsWith("scripts/")`**, which silently grows to cover any future sibling — and assert the
+    exclusion is a strict subset, or an exclusion that covers everything leaves the assertions
+    passing vacuously.
+58. **A gate whose first step can destroy the working tree cannot be the thing that validates one.**
+    The release gate ran `npm ci`, which deletes `node_modules` before installing, so a failed
+    install (an `EPERM` on a native module held by a running dev server) left 19 packages, no `.bin`,
+    and a `next` without its `package.json` — and then every later item failed for a reason that was
+    not the code. **`npm ci --dry-run` would not have caught it**: the failure was filesystem
+    contention over files a dry run never opens, so it would have reproduced the absence of the
+    incident rather than its cause. Completeness must also not be read off the exit code — that
+    incident exited `0` while leaving `.bin` empty.
+59. **A paused request that is never continued hangs rather than errors, so the failure surfaces far
+    from its cause.** The end-to-end router awaited `Fetch.enable` and only then set its ready flag,
+    and the handler returned without continuing anything that arrived in the window. Every such
+    request hung, the caller waited out its own timeout, and the run failed somewhere downstream of
+    the real cause — which is why it read as an intermittent failure rather than a bug. **When a
+    browser-driven harness is flaky, suspect a dropped request before suspecting the application.**
+60. **`format:check` was skipped in the same command block that ran the other three gates.** M21
+    committed a file Prettier would reject, because the block ran lint and committed without
+    formatting first. Running three of four gates is not running the gate. **Run the formatter before
+    committing, not after.**
+61. **A false obstacle is worse than an honest missing capability, because a false one stops anyone
+    from looking for the capability.** Six archived records from M4 to M17 explained the unverified
+    parked player as "the IFrame API is blocked by CSP". The application ships
+    `frame-src 'self' https://www.youtube.com`, so its own policy permits the frame; the real obstacle
+    was that no browser automation existed. Recorded as *blocked by policy*, the item would have sat
+    there indefinitely looking like a decision nobody was allowed to revisit. **When a record blames
+    the environment, check whether the environment is actually the blocker before leaving the
+    explanation standing** — and keep policy and behaviour separate, since `frame-src` permitting a
+    frame says nothing about whether a 1×1 `opacity: 0` iframe advances.
+62. **A mutation needle that matches nothing, and one that matches something harmless, look
+    identical: both leave the suite green.** Two of M21's mutations were mis-specified and read as
+    weak checks — one replaced only a fixture's `label` and left its `code` in place, another removed
+    one "does not see" from a scope that had a second one further along. **Always assert the needle is
+    present before applying it, and report `DID NOT APPLY` separately from `STILL GREEN`.** Also: a
+    multi-line *string literal* joined with real newlines is a parse error that vitest reports at the
+    line of the string rather than at the mistake, and an anchor written with `\n` will not match a
+    CRLF file — which reads as a missing anchor rather than a line-ending mismatch.
+63. **A claim about a negative is the most expensive kind of claim, because being wrong about it is
+    invisible from where you stand.** M21 asserted "`W4` is not defined anywhere in the repository" and
+    opened task 6.2 to restore the definition. `W4` was defined the whole time, at
+    `archive/2026-09-30-add-podcasts/tasks.md:120` — a finding from the *podcasts* change. The search
+    had been for a definition *belonging to this change*, and the absence was reported as the absence
+    of any. **When a negative claim is load-bearing, name the search that would falsify it.** Worse, the
+    real defect is a *collision* rather than a gap: two changes both number findings `W1, W2, W4, W5,
+    W6`, so a bare `W4` looks resolvable and quietly resolves to the wrong finding. An undefined
+    reference is visibly broken; a colliding one misleads. **Prefer a namespaced identifier to a
+    number that is only unique by accident.** Independent verification caught this by re-running the
+    search instead of accepting the claim — which is the whole argument for having a verifier, in one
+    concrete instance rather than as a principle.
+64. **A parser that cannot find what it is looking for is not evidence that it is
+    absent — and the two failures look identical from the outside.** M21 re-measured six consecutive
+    green gate runs and the per-run counts came back empty for all six. The natural reading was "the
+    gate did not report its counts". It had, in every run. `Tee-Object` writes **UTF-16LE** on Windows
+    PowerShell 5.1, the parser read the logs as UTF-8, and half the characters were NULs — so
+    `"Test Files"` was not *findable* in the string. A UTF-8 read of UTF-16 data does not throw; it
+    returns a plausible-looking string in which every later `includes` quietly answers false. (A second,
+    independent bug sat on top: the ANSI strip used a PowerShell `\`e\`` escape, which is PowerShell 6+,
+    so Windows PowerShell left the escape sequences in place.) Two defects that both produce "no
+    results", neither of which is a finding about the system under test.
+    **Never let a measurement tool report absence.** Assert that the thing you are reading is present
+    before concluding it is missing, detect the encoding rather than assuming it, and report a run that
+    yields nothing as a *parse failure* so it cannot be filed as a result. The counts were re-derived
+    from the same six logs rather than by re-running the gate — re-running would have measured a
+    second thing and quietly replaced a failed measurement with a passing one.
+
+65. **A repair can empty a check it never mentions, and a check with no witness is worse than no check.**
+    M21 replaced a scraper with data read from a registry. Two things followed that nothing caught at
+    the time. First, a leftover `new RegExp(arm)` where `arm` was now an *object* rather than a string:
+    `new RegExp` does not throw on an object, it coerces to `"[object Object]"` - a valid regex - so a
+    "does every arm compile" filter silently classified every arm as compilable. The suite was green.
+    `tsc` was the only thing that objected, because an object is not a `RegExp`. Second, and worse: after
+    fixing that, the filter was *still* unwitnessed. Reverting the fix left 153/153 green, because every
+    declared arm really does compile - and it must, since arms are compiled at module scope, so a malformed
+    pattern throws during import and no assertion is ever reached. Deleting the filter's only call site
+    (`arms.filter(() => false)`) also left the suite green.
+    **That last fact is the lesson.** A guard whose subject can be deleted with no observable change is
+    decoration, and decoration in a test suite is worse than an honest gap because it reads as coverage.
+    The honest repair was to delete the filter, the predicate it called, and three synthetic tests of that
+    predicate whose only remaining caller was itself - a helper asserting that `new RegExp` throws on bad
+    input, which is a tautology wearing a test's clothes. What replaced them was not more assertions but a
+    note on `DetectorArm.source`, where the mistake is actually made.
+    Three rules that came out of it: **after a repair, re-run the mutation suite for the file you touched,
+    not just the new check**; **keep the type checker in the loop, because it catches what a green suite
+    cannot**; and **when you find a guard that cannot fail, delete it rather than keep it as insurance.**
+    Also worth keeping from the same round: `new RegExp` accepting an object is not a type error at runtime,
+    so any check of the form "does this compile" written over a value that might be an object is vacuous
+    until the parameter is typed `string`. And a mutation result of *no tests ran* is a mutant that failed
+    at import - not a check firing. It is reported as `RED BUT DID NOT RUN`, never as a defeat, because
+    the difference between those two is the difference between a proof and a lie.
+
+66. **Every level of a scoped lookup is itself a scoped lookup, so every level must refuse. `findIndex`
+    cannot express "I am not sure", so it always answers — and its answer is available to whoever
+    placed the earlier block.**
+    Four rounds in a row (4, 5, 6, 7) found the same defect class **one level above** where the previous
+    round fixed it, in this repository's own code, in repairs made by this same branch. The ladder:
+    - round 4: the assertion matched a comment. Fix: strip whole-line comments.
+    - round 5: the strip tracked quote state, and a plain scalar may contain an apostrophe. Fix: compare
+      **values** instead of text containing them.
+    - round 6: the value read returned the **first** match anywhere, so an earlier decoy won. Fix: read
+      from a **scope** (`stepWith`, `jobRunDefaults`) and refuse duplicate keys inside it.
+    - round 7: the thing that decides **which mapping is the scope** was still `findIndex` on a bare
+      key. A second job carrying `working-directory` won; the real job's `defaults:` was never read; CI
+      behaved identically; 3302 tests stayed green.
+    **Each rung was sufficient against the round before it and insufficient against the next. No rung was
+    wrong — each was the strongest available fix for the defect it was written for.** So the lesson is
+    not "be more careful". It is a property of the shape:
+    ```
+    reading a value      →  which occurrence?     →  scope + refuse duplicates
+    choosing the scope   →  which mapping?        →  refuse ambiguity
+    walking the mapping  →  which depth?          →  direct child, not subtree
+    naming a thing       →  which one is it?      →  refuse duplicates, and assert uniqueness
+    ```
+    **Four levels, one rule: `null` for zero, a throw naming the lines for two or more, and no
+    "first match wins" anywhere.** `findIndex`, `.find`, `[0]` and `\|\| first` are all the same
+    answer wearing different syntax. This is why the repair for round 7 deleted `findIndex` from the file
+    entirely rather than adding a check beside it: **a helper whose signature cannot express uncertainty
+    will always be certain, and being certain is the defect.**
+    Two corollaries worth keeping:
+    - **The scope selector is the load-bearing part, and it is the part a doc comment describes rather
+      than enforces.** `jobRunDefaults` had said "of *the single job*" in prose for a round while
+      reading whichever job came first. A stated assumption is not a constraint.
+    - **A witness must exercise the shape that failed.** Rounds 5 and 6 fed the reader a single line and
+      proved trailing-decoy handling, which was never the hole. Multi-line input reproducing the actual
+      defeat is what found scope, repetition, and depth — three of the four levels above.
+
+67. **Unifying the comparison does not unify the attribution. A reader's scope is *which thing owns this
+    key*, and that question lives one level below the one you just fixed.**
+    Rounds 4, 5, 6 and 7 each found the previous round's defect class one rung further up (lesson 66).
+    Round 8 found the next rung down, in this branch's own repair: `indexOfStep` compared by `.includes`
+    where the gate count compared by equality — two mechanisms for one question — and unifying it into
+    `stepsRunning` fixed the *comparison* while leaving the *attribution* positional. `readSteps` recorded
+    whatever `run:` line came next as "the step above it", with no indentation test at all, so an `env:`
+    variable named `run` became a step's command. Proven live, composed with the real lint gate becoming
+    `|| true`: **21/21 in the file, 3306/3306 across the suite, with the lint gate unable to fail CI.**
+    Round 9 found the rung below that one: a `run:` at a step's own indent is still the wrong key if the
+    file nests it somewhere else. The rule extends the ladder by one line:
+    ```
+    naming a thing       →  which one is it?      →  refuse duplicates
+    attributing a key    →  whose key is this?    →  direct child by indent, or refuse
+    ```
+    Six levels now, one rule. The shape of the ladder is the lesson: **if the last repair was "pick the
+    right value", the next defect is "read the value from the right place", and the repair after that is
+    "make sure the place is the place you think it is."** Each is invisible to the test that motivated the
+    previous one.
+
+68. **A doc comment that names a hazard is not a repair of it. Prose about a hazard is not a constraint.**
+    `keyLinesIn`'s comment said, in the past tense, that the function "returns indexes into `lines`, so a
+    caller need not re-derive the offset… an index off by one yields `null`, and `null` reads as *this
+    workflow has no such scope*". Then it returned `at + 1 + offset` into a body list from which blank
+    lines had been skipped — so it did exactly the thing it described, and every index after the first
+    blank line in a block was wrong. The comment was *correct*; the code contradicted it.
+    The consequence was worse than a wrong value: one blank line before `defaults:` made `jobRunDefaults`
+    answer `null` for a workflow that sets `working-directory`, and the assertion reported **the job must
+    set a default working directory** — a confident false claim about a file, because the helper could not
+    tell it had lost its place in it. Fixed by having the block walker return **indexes** and never
+    deriving an index from text. Lesson 66 already said a stated assumption is not a constraint; this is the
+    sharper form: **the assumption can be correctly derived in the comment and still be violated in the
+    code, and the comment's correctness is what makes the violation invisible to review.**
+
+69. **A mutation row built from a paraphrase of the code it claims to remove is a row that verifies the
+    paraphrase.**
+    Round 9's row for the blank-line defect re-introduced the offset arithmetic as
+    `nestedBlocks(…).map((_, offset) => at + 1 + offset).filter(KEY_LINE.test(lines[index]))`. The committed
+    code does the opposite: it tests `KEY_LINE` against the **correct** line while recording the **wrong**
+    index. The paraphrase shifted both, happened not to reproduce the failure, and the row reported
+    `STILL GREEN` — which, in a suite where a green row is a claim about a mechanism, is a confident false
+    claim about the repair. Replaced with the committed body **verbatim**, which reproduced it immediately.
+    The general rule: when a mutation is meant to remove a specific implementation, take the implementation
+    from the commit (`git show HEAD~1:path`) rather than from memory. **Memory is a paraphrase, and a
+    paraphrase is a different program.**
+
+70. **A RED whose mechanism is unexplained is a verdict without evidence.** Two of round 9's rows reported
+    `RED` with `caught by: (none)` and a suite total of 78 instead of 101, because the new refusal throws
+    and the reader is called at module scope — so `ci-workflow.test.ts` **could not load at all**. That is
+    the strongest fail-closed outcome available (the refusal names the line, the step, and both indents),
+    and it is *not* the same evidence as an assertion failing: no assertion ran. It now has its own
+    reported verdict, `RED, FILE COULD NOT LOAD`, counted as satisfying "must go red" but never folded into
+    `RED`. Likewise a harness that cannot name which test caught a mutation is a harness that has recorded
+    a result it cannot explain.
+
+71. **A position in a stream is not an identity — twice, in the same harness.** Selecting vitest's run
+    summary by taking the **first** `Tests` match reported "78 passed" for rows that ran 101 (vitest prints
+    an interim line for the failing file first); taking the **last** reported `(1 ⎯⎯⎯)`, because the tail
+    is a per-failure detail line. The summary is now selected **by shape** — the line ending in a
+    parenthesised total. Same shape as lesson 66's refusal rule, applied to output instead of YAML: if
+    several things match, you do not get to pick by position; you identify by a property that distinguishes
+    them, and if none does, that is a finding.
+
+72. **When a claim's extent is being inferred from text, no content anchor can repair it — stop inferring.**
+    Round 7 answered "the lazy regex window may have drifted" by adding an **extent anchor**: exactly one
+    `id:` key in the window. Round 9 defeated that anchor in **both directions** at once.
+    - **Widening, falsely counted.** An `id:` inside a *string value*, or a second `id:`-shaped token that
+      is not an item boundary, increments a count. The window can cover two items and still read `1`.
+    - **Narrowing, not counted at all.** The anchor was a **lower bound**, so a window cut short passed.
+      The `gates-install` item's last real field is `how:` — everything after it is comments, stripped
+      before reading — so truncating anywhere after `how:` satisfies every content assertion. Measured:
+      **168 characters of a 1358-character item**, and the assertion whose stated purpose is "the window
+      must cover exactly this item" reported that it did.
+    An anchor is a guess about a guess, and a one-sided anchor reads as a symmetric one. The repair was to
+    **delete the inference**: `typescript` is already a dependency of the type check, so the item's text is
+    the object literal's own span, and there is no extent left to get wrong. Four of round 9's seven
+    designed-green rows are the old defeats (re-indented brace, duplicate `id:`-shaped token, a field
+    containing `},`) and they are now green **because the check no longer depends on formatting at all** —
+    a suite where they went red would be asserting the formatting, which was never the claim.
+
+73. **A criterion measured against a tree that has since changed is not a measurement of the current tree —
+    and "documentation" is not a category the exemption can use.**
+    M21's release criterion is six consecutive green full gate runs. It has been re-measured ten times, and
+    eight of those re-runs were for the same reason: a repair landed after the batch, so the batch was
+    measuring a tree that no longer existed.
+    The ninth re-run was different, and the difference is the whole lesson. The repair was *documentation* —
+    the `tasks.md` entry and the `MEMORY.md` lessons recording the batch's own results — and every instinct
+    said a docs commit cannot invalidate a gate, because no gate step executes a markdown file.
+    `tests/encoding-integrity.test.ts:164` decodes `MEMORY.md` among the root files it checks. So the commit
+    that *recorded* the results changed an input to the gate, and the batch was measuring a `MEMORY.md` that
+    no longer existed. Found by grepping for the filename, not by reasoning about it.
+    Two rules:
+    - **The test suite decides which files are inputs, and grep decides which files those are.** Never infer
+      it from what a file *is*. A markdown file read by a test is a gate input; a TypeScript file no test
+      reads is not.
+    - **"Only documentation changed" is a claim about the tree, and it is the same class of claim as "only
+      formatting changed"** — which this branch also got wrong, when Prettier reformatted
+      `tests/helpers/yaml.ts`, a mutation target of two suites, and both suites were re-run against the
+      formatted file before any figure was believed. **A formatter is a repair, and a repair invalidates the
+      suites beneath it.**
+    The awkward consequence is worth stating rather than engineering around: this lesson cannot be recorded
+    without invalidating the batch it describes, so it is recorded in the **final** documentation commit with
+    the last batch run after it. **A rule that exempts itself from its own application is not a rule.**
+
+74. **Describing a mechanism and exercising a mechanism are different acts, and only the second one can
+    fail.**
+    Round 10's NIT was a block-scalar guard defended by a comment for a full round while no test reached it.
+    The finding's *repair* was to add new locators with refusals of their own — and the repair reproduced the
+    defect in the same file, one round after diagnosing it. `mut-round10`'s first run caught it: two rows
+    came back STILL GREEN when they had to go red, because nothing fed either locator the input it exists to
+    refuse.
+    Then a third, sharper instance. `soleLoopOver` walks the AST with `ts.forEachChild(node, visit)` inside
+    `visit`, which looks recursive. The archived gate's `for (const item of ITEMS)` is a **top-level**
+    statement, so `forEachChild(file, visit)` reaches it in one hop and the recursive call never runs on the
+    real file. Deleting it changed nothing. **A walk that is deeper than the tree it is pointed at looks
+    exactly like a walk that is not.**
+    The pattern across all three is the finding worth keeping:
+    - a guard defended by prose instead of a witness (NIT);
+    - a refusal that no input can reach (two `STILL GREEN` rows);
+    - a descent that no tree is deep enough to need (`RED BUT DID NOT RUN` absent, but the same shape).
+    So the discipline that actually catches this is not review, and not reading the comment carefully. It is
+    **one mutation row per refusal and per descent, written at the moment the refusal is written** — not a
+    round later, and not by whoever notices the absence first. A refusal with no row that mutes it is a
+    comment, and comments are exactly what this whole change has been finding in place of checks.
+    The corollary for reporting: the rows that found my own defects are **kept in the suite**, with the story
+    in their note. A harness that quietly drops the row which caught its author's mistake is the harness this
+    change exists to distrust.
+
+75. **A guard keyed on a word will misfire on any test whose subject is that word — and the round-6
+    calibration bug will find a new costume to wear.**
+    Round 6 caught the mutation harness's transform-crash guard keyed on vitest's *passed* count instead of
+    its total, so `Test Files 1 failed | 2 passed (3)` read as `2 < 3` and **fifteen real defeats became
+    `RED BUT DID NOT RUN` at once.** Caught only because fifteen simultaneous class changes is unmissable
+    where one would not have been.
+    Round 10 found the same guard mis-calibrated a second time, in a new costume: it keyed on the bare word
+    `SyntaxError` anywhere in vitest's output. But `release-gate-install.test.ts` has a test whose *subject*
+    is a syntax error — `it("parses, and its helper modules parse")` — so a legitimate failure of that test
+    arrives carrying the word `SyntaxError` in its assertion message, and the harness called it a crash of
+    its own code. Measured on the row that exposed it: `SyntaxError` present, `Transform failed` /
+    `Failed to parse source` / `Unhandled Error` all absent, **113 tests executed and 1 failed**, verdict
+    `RED BUT DID NOT RUN`.
+    The rule: **key a guard on the tool's own signature, never on a word that appears in the data it is
+    watching.** A test that fails *because* it detected the thing you are grepping for will always be
+    misread by a grep. And when a verdict disagrees with the measurement printed directly beneath it, treat
+    that as a finding about the harness rather than a mystery — here it was the only sign that anything was
+    wrong at all, because the row *also* had a real defect underneath it.
+    Related, from the same round: **a needle aimed by pattern at a 780-line artifact is a guess about
+    structure.** One control tried to close a brace by matching `  }\n  if (item.how === "install") {` and
+    matched an *inner* brace, leaving `continue;` outside any iteration statement. Two earlier versions of
+    that same control were wrong for different reasons — one renamed an item the suite pins by exact id, one
+    added an item and tripped the inventory check at `ci-workflow.test.ts:918`. Three failures, one lesson:
+    **a control that fails tells you the control was mis-aimed, and deleting it instead costs the suite one
+    honest data point and one chance to notice.** The version that finally worked needed no structural
+    knowledge at all, because the decoy it inserted brought its own braces with it.
+
+76. **A checker that reports agreement while its independent mechanism could not run is the exact defect
+    it was written to catch — and existence is not function.**
+    Round 10's W2 repair shipped the two evidence scripts into the repository so a reader would not have to
+    take the word of the tool that produced the six logs. The eleventh batch was their first use as shipped,
+    and it found two defects in them:
+    - the driver walked up **three** parents where reaching the repository root from `evidence/` takes four,
+      so it printed a `--frontend` path pointing at a directory that does not exist;
+    - following that printed path, the checker reported its enumeration phase as `UNAVAILABLE, not as
+      agreement`, then printed **`corroborated:`** and **exited 0**.
+    The second is the whole lesson. The independent phase is what makes the check independent; if it cannot
+    run, the corroboration did not happen. And it is worse than a stale number, because **every consumer
+    that reads only the exit status sees a pass** — which is what CI does, and what every batch entry in this
+    change's records had been doing for eleven entries.
+    Three rules:
+    - **Existence is the cheapest check and the one most often reported as though it were the substantive
+      one.** `git grep -l gateruns` returning two filenames reads exactly like a passing verification and is
+      not one. It proved the files were present; it proved nothing about them working.
+    - **Test a shipped tool the way its reader will use it**: copy the command it prints and paste it. That
+      is the only step that found either defect, and it took seconds. A script never invoked by anyone but
+      its author is untested code wearing the costume of evidence, and the costume is the dangerous part.
+    - **Distinguish skipping a check from swallowing its failure.** The checker's own recorded history already
+      had a *skipped* phase (gated behind a summary line `vitest list` never emits). The new bug looked
+      identical in the output — `n/a` instead of `ok` — and was the opposite: the phase ran and the failure
+      was absorbed. Same symptom, different bug; conflating them would have left the new one in place while
+      the old one was believed fixed.
+    And the general form, which is lesson 74 again one level out: **a report that mixes what was checked with
+    what was skipped must not print a single word of verdict over both.** "Corroborated" is a claim about the
+    whole run. When one phase is missing, the run has no verdict, and saying so is the only honest output.
+
+77. **A checker is loud about evidence it could not find and silent about evidence it never looked at - and
+    the silence is the defect.**
+    Round 10's evidence scripts had two defects found by pasting the command the driver prints. That is a
+    *use* test, and it found both - but a use test is bounded by the happy path. Attacking each phase with a
+    deliberately broken input found a third the use test could not reach: the corroborator read
+    `run1.log`..`runN.log` and never enumerated the directory, so `--runs 2` against six logs silently
+    ignored four of them and then printed `corroborated: ... all 2 logs`.
+    Asserting *more* runs than exist was caught. Asserting *fewer* was not, and **the asymmetry is the whole
+    finding**: the check complains about missing evidence and says nothing about unexamined evidence, while
+    the word "all" in the verdict is a claim about the batch rather than about the subset that was read.
+    - **Count the things you were given, not the things you asked for.** A checker driven by a caller-supplied
+      count must also compare it against what is actually there, in both directions.
+    - **Name the two failure modes differently.** *Absent* logs are missing evidence; *excess* logs are
+      evidence nobody read. Same `FAIL`, opposite remedy, and a reader who conflates them is told to go and
+      run a batch that has already been run.
+    - **Keep a control in the same measurement.** Three of the five broken cases were caught before the
+      repair, so the fix is only half the claim; the other half is that it did not break the honest case. A
+      repair that closes a hole by tightening a tool until it refuses everything is this same defect with the
+      sign flipped, and only an unmodified control tells the two apart.
+    And the general form, which keeps recurring now that it has been reached three times in one week:
+    **describing a mechanism and exercising a mechanism are different acts** (74), **a guard keyed on a word
+    rather than a signature will misfire on any test whose subject is that word** (75), **existence is not
+    function** (76), and **a verdict must not be printed over evidence that was skipped** (76's tail). Four
+    separate defects, one shape: something was believed because it was written down, and not because
+    anything about it could fail.
+
+78. **A witness built from a synthetic fixture cannot test a locator whose blind spot is the difference
+    between the fixture and the real artifact.**
+    Round 10 shipped eight locator witnesses, all derived from hand-written arrays of strings, and every
+    mutation either substituted one line or appended a new top-level declaration. Round 11's two CRITICALs
+    survived all eight: one inserted a declaration *into an existing scope between producer and consumer*,
+    the other bound a filtered array to another name. The witnesses were complete relative to the locator's
+    vocabulary and blind outside it - **not a missing witness, a wrong universe.** No count of additional
+    synthetic fixtures would have found either.
+    - **Aim the witness at the real artifact.** A hand-written stand-in is regular in ways the real file is
+      not, and it is written by the same hand as the locator, so it cannot surprise it.
+    - **Keep a red baseline, and treat it as voiding the whole run.** Twice this round the probe reported
+      rows "behaving as designed" while the file did not parse and while `IfStatement.statement` should
+      have been `thenStatement`. Every other row was meaningless. This is why `RED BUT DID NOT RUN` and
+      `RED, FILE COULD NOT LOAD` stay distinct classes instead of collapsing into "failed".
+    - **A mutation that does not remove what it claims to remove verifies nothing**, whatever colour it
+      returns. One row deleted a word and left the disclaimer on the next line, then reported the gate as
+      broken.
+    - **Anchor on a ratio, not a constant, when the constant measures someone else's tool.** Pinning
+      `vitest list` to 2995 failed immediately: with zero tests added it read 2997, the two extras being
+      top-level entries named after local identifiers. The suite run settled that they were not tests
+      (executed total unchanged at 3320) and **why `vitest list` emits them remains unverified** - but the
+      measurement was enough to reject the constant, which is what mattered.
+    And the family, now reached from four directions in one change: **describing a mechanism and
+    exercising one are different acts** (74), **existence is not function** (76), **a verdict must not be
+    printed over evidence that was skipped** (76/77), and now **a fixture is not the thing it stands in
+    for.** Five defects, one shape: something was believed because it was written down, and not because
+    anything about it could fail.
+
+79. **A needle-shaped repair makes a finding's test go red, which is indistinguishable from making the
+    finding closed. Make the thing execute instead.**
+    Round 11 shipped `evidence-scripts.test.ts` as four assertions that two files *contain* four message
+    strings. Round 12 disabled the enforcement, left the messages, and watched the suite stay green at 6/6
+    while the shipped checker printed `FAIL log digests: 1 distinct of 6` and then
+    `corroborated: all 6 logs are distinct runs`, exit **0** — verbatim the defect that repair was written
+    for, reintroduced by it.
+    The measurement that settled it is the one to remember, and it is worse than the headline: **the gate
+    was green when the checker was correct too.** A test that greps a file for strings it wrote has no
+    opinion about behaviour in either direction, so it cannot fail for the right reason any more than
+    for the wrong one.
+    - **A gate must run the thing it gates.** The replacement executes the checker seven times over
+      synthetic logs. Each negative case *is* its own witness — there is nothing left to mutate, because
+      the assertion is the mutation. That inverts the cost: a needle gate needs a mutation suite to prove
+      it can fail; an executing gate is its own mutation suite.
+    - **Take needles from executable text, never from the file.** Round 12's second escape was a driver
+      that stopped writing its exit status with the needle left standing in a comment. Strip comments
+      before searching, or require the call — `WriteAllText($logPath, "gate exit$exitCode` — not the
+      substring anywhere near it.
+    - **A refusal that misstates what it saw is a false green with the sign flipped, and it is worse:**
+      a maintainer who trusts it rewrites working code to satisfy a shape instead of widening the
+      locator. Round 12 measured `if (prepared["ok"])` refused with *"nothing here tests
+      `prepared.ok`"*. Name the conditions you actually observed.
+    - **Withdraw a causal claim when it is refuted, even one you wrote a week ago and built a lesson
+      on.** I recorded the phantom `vitest list` entries as *"named after local identifiers"*; renaming
+      those identifiers left the names unmoved. The coincidence was a cause wearing a measurement's
+      clothes. Round 78 warns against recording a plausible cause as a measured one; the harder case is
+      when you *did* measure something real nearby and let it stand as the explanation.
+    And the structural lesson, which is the reason this milestone is being escalated rather than closed:
+    **twelve rounds of shape assertions cannot become a semantic check.** name -> span -> declaration ->
+    dispatch -> complement, each rung real, none the rung that covers the next finding, because the
+    ladder was extended along the axis the last defect was on. The instrument that closes the class is
+    execution. When execution is forbidden by a constraint, the honest move is to escalate, not to add a
+    thirteenth rung and call the class narrower than it is.
+
+80. **Six green runs does not establish reliability when the failure rate under load is 2 in 10.**
+    Batch 15 ran the gate six times at the final documentation commit; five were green. The sixth
+    failed on an exact-count assertion (`expected [ ...(2) ] to deeply equal [ { top: 150, ... } ]`), in
+    a file this branch does not touch - `git diff origin/main...HEAD` on it and on the component is
+    empty.
+    The reproduction is the transferable part, because the shape is the lesson and not the file:
+    **0 failures in 40 isolated runs, 2 failures in 10 concurrent ones, identical signature.** A
+    criterion that re-runs the suite sequentially measures the machine's idle behaviour, and an
+    assertion counting invocations against a shared counter is exactly the kind that holds when nothing
+    else is running. Round 12 reached the same discriminator for a different test's timeout. Two
+    findings, one shape: *correct when the machine is idle, wrong when it is busy.*
+    - **A sequential re-run is a weaker instrument than it looks.** It multiplies wall-clock time and
+      multiplies confidence, and neither is proportional to what it measures. If the thing guarded
+      against is load-sensitive, the guard has to run under load or it is guarding against something
+      else.
+    - **Do not let a criterion's satisfaction outlive the commit it was measured at.** Batch 14
+      satisfied it at `ed6f9f6`; batch 15, after comment-only edits, did not. Reporting batch 14's
+      figures at a later head would have been a true number about a tree that no longer existed.
+    - **Check your own counter.** The concurrent run first reported `0 failed` over output plainly
+      containing an assertion failure, because the tally matched `(N) failed` while vitest prints
+      `1 failed | 6 passed`. Prefer reading captured output over summarising it.

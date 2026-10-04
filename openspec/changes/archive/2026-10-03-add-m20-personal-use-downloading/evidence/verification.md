@@ -909,6 +909,96 @@ and `.coverage` were added so a report directory under either name is still skip
   a change of the same size as this pass, which belongs in its own commit with its own review.
 - W1, W2, W4, W5, W6 and the coarse-clause shape from §11.
 
+---
+
+## M21 correction to this section
+
+Two claims above are wrong, and they are corrected here rather than inherited. This block is marked
+rather than folded into the text above, because `verification.md` is archived: a bare edit would
+leave a reader unable to tell a correction from an original claim, and the entire reason to correct
+a record is that prose drifts from code.
+
+### The `applicationSources()` claim was false, and the real gap was the opposite one
+
+The claim — that the scan "covers none of M20's new server files" — is **false**.
+`applicationSources()` walked all of `src/` (line 52 at the time), and every server file M20 added
+lives under `src/server/download/`, so all of them were covered by that scan the whole time.
+
+The direction of the error matters, because the two corrections are not interchangeable. "These
+files are not covered" sends a reader to write a test. "These roots are not scanned" sends a reader
+to widen a list. Rewriting the false claim as a different false claim would have preserved the defect
+in new words, which is the outcome this whole change exists to prevent.
+
+**What the real gap was.** Three roots outside `src/`, which the walk never reached:
+`public/` — `public/sw.js` is executable code that opens caches, and a service worker caching a
+download response is a managed offline library with no `src/` involvement at all; `scripts/` — build
+tooling that runs before anything ships; and `next.config.ts` — where a `Cache-Control` for extracted
+audio or a permissive `connect-src` would be written.
+
+**Fixed in M21**, by widening the scanned roots. Widening it surfaced two further real findings,
+both of which were legitimate code rather than violations: `scripts/lyrics-induced-violations.cases.mjs`
+names `offlineDownload` because it is a fixture case about it, and `scripts/measure-client-bundle.mjs`
+names `@distube/ytdl-core` because reporting whether the extractor reached a client bundle is its
+purpose. Two assertions whose subject is what reaches a client chunk now run over shipped code
+specifically, with build tooling excluded through a fixed root list. All seven non-goal detectors
+still scan `scripts/`, because a build script that fetched media violates a non-goal exactly as much
+as application code does.
+
+### The clause count was never measured, and the `anyOf` figure is now
+
+"47 of 52" was recorded without a per-detector measurement, so the number was an estimate wearing a
+measurement's clothes.
+
+M21 measured the only detector whose arms can be enumerated from outside the literal — the `anyOf`
+"Accounts or auth" detector, 6 arms — and found **5 of 6 deletable with the suite green**. The
+single fixture did not cover them by accident: it writes `access_token: session.token` and
+`password }` *unquoted*, while the token and password arms both require a quoted literal.
+
+Five witnesses were added, one per arm, and the figure is now **0 of 6 deletable**. The arms are
+distinct spellings — a library import, a token key, an `Authorization` header, a `credentials` field,
+a `password` field — so each earns a witness. Where a detector's clauses are synonyms rather than
+distinct spellings, the repair is to name its scope, not to add near-identical fixtures.
+
+**Still unmeasured:** the other six detectors build their pattern as a single regex literal with `|`
+alternatives inline. Counting those means re-parsing the literal, which measures the parser rather
+than the detector. No figure is claimed for them, and `download-non-goals.test.ts` says so in its own
+comments so a later reader does not mistake silence for a zero.
+
+### `W4` is cited above, and the correction below is itself wrong
+
+**This heading said `W4` was "not defined anywhere in the repository". That was false.**
+
+`W4` **is** defined, at `openspec/changes/archive/2026-09-30-add-podcasts/tasks.md:120`:
+
+> | W4 | Task 3.2 claimed the key rule was "proven on the real handler"; both checks are static scans.
+> | Reworded, and the detectors are now proven against a violating snippet. |
+
+It is a finding from the **podcasts** change, about a keyboard-shortcut rule claimed to be proven on a
+real handler when both checks were static scans. It has nothing to do with this change.
+
+So the defect is not a missing definition. It is a **collision**: two unrelated changes both number
+their findings `W1`, `W2`, `W4`, `W5`, `W6`, and a bare `W4` in a carried-forward list resolves to
+whichever file a reader opens first. That is a real and arguably worse problem than an undefined
+reference, because an undefined one is visibly broken while a colliding one looks perfectly resolvable
+and quietly resolves to the wrong finding.
+
+**Task 6.2 resolved by disambiguation, not by invention.** No definition was written, because the
+finding already existed and inventing a second one would have manufactured a defect rather than
+recorded one. The `W1, W2, W4, W5, W6` list at line 910 is left exactly as M20 wrote it — an archived
+record should show what was believed at the time — and this block sits beside it.
+
+Two things follow, and only the first is done here:
+
+1. **Done:** the label is disambiguated to the podcasts change's `W4`, so a reader can find it.
+2. **Not done, and recorded as such:** the numbering scheme itself is still ambiguous. Finding IDs
+   are scoped to a change and carry no namespace, so this collision will recur. Fixing it means
+   qualifying carried-forward references everywhere they appear, which is a change to how findings are
+   cited across several archives and is **outside M21's scope**. It is recorded here rather than
+   silently expanded into.
+
+Independent verification, WARNING W5, is what caught the false claim; a reviewer checking the claim
+rather than accepting it is the entire reason this block now says something true.
+
 ### Gates at this commit
 
 Unchanged from the table above except where re-run: this pass touches two test files and three

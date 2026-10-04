@@ -114,7 +114,17 @@ function applicationSources(): Array<{ file: string; code: string; raw: string }
 interface DetectorArm {
   /** What the clause is for, in words. */
   name: string;
-  /** The clause's own regular expression source, without flags. */
+  /**
+   * The clause's own regular expression source, without flags.
+   *
+   * Always compile `arm.source`, never `arm`. `new RegExp(someObject)` does not throw: it coerces
+   * the object to the string `"[object Object]"`, which is a valid regex. A "does every arm compile"
+   * check written that way reports every arm as compilable whatever the pattern is, and the suite
+   * stays green — only `tsc` objects, because `DetectorArm` is not a `RegExp`. That check has since
+   * been removed rather than fixed: each arm is compiled at module scope, so a malformed pattern
+   * throws during import and never reaches an assertion. Module load is the enforcement, and a
+   * second guard that provably cannot fire is not insurance.
+   */
   source: string;
 }
 
@@ -240,6 +250,93 @@ const HEADER_URL = callerSuppliedUrlArm(
 const BODY_JSON_FETCH = /request\s*\.\s*json\s*\(\s*\)[\s\S]{0,480}?fetch\s*\(/;
 
 /**
+ * A fetched body handed straight back as the response body.
+ *
+ * ## Measured, not assumed — and an inherited claim about this clause was wrong
+ *
+ * A previous record stated that this clause "flags the approved M20 shape as a false positive *and*
+ * is the only clause catching the caller-path-segment violation". M21 checked both halves. **The
+ * first is false.** The approved download route streams `payload.stream`, not `x.body`, so the
+ * clause does not match it — it matches **0 of the 233** real files under `src/`.
+ *
+ * The second half is true, and it is now measured rather than repeated: this clause is the **only**
+ * one of the suite's arms that catches a caller-supplied URL fetched and handed straight back.
+ * ("31" is struck rather than deleted: the suite declares 35 arms, and until this round the check
+ * compared only 32 of them — three of the 35 it did see were prose from this file's own doc comments,
+ * and four real arms written as `source: IDENT.source` were invisible to it. The number was never
+ * right, and it was quoted twice as though it had been counted.)
+ * `callerSuppliedUrlArm` does not reach it, because that arm looks for a URL read *out of* the
+ * caller and then opened, and a path-parameter construction does not spell it that way.
+ *
+ * ## Why it is kept
+ *
+ * With no false positives in the real tree and sole custody of a permanent-exclusion violation,
+ * deleting it would trade a clause that costs nothing for a hole nothing else covers. That is a bad
+ * trade at any ratio, and it is the opposite of the trade the false claim would have implied.
+ *
+ * ## What its real limitation is, and how that is known
+ *
+ * An earlier version of this paragraph claimed the clause "matches on `.body` specifically, so it
+ * cannot see a stream-through written as `.stream` — which is precisely how the *approved* route is
+ * written". Independent verification checked that mechanism against the route rather than accepting
+ * it, and **it is not the mechanism**. Two facts, both checked:
+ *
+ * - `src/app/api/download/[videoId]/route.ts` contains **no `fetch(` at all**, so a clause that
+ *   requires `fetch\s*\(` cannot match it whatever it does about `.body`.
+ * - It also contains no `.body`, and its response argument is not `x.stream` either: it is
+ *   `new Response(holdUntilSettled(payload.stream, permit.release), …)` — a *call*, not a property
+ *   read. Widening the clause to accept `.stream` as well as `.body` leaves it matching the route
+ *   not at all.
+ *
+ * So the real limitation is the required `fetch(...)` hand-back shape: the approved route obtains its
+ * upstream stream by a different mechanism and never fetches-then-returns in this file. The clause
+ * catches the forbidden caller-supplied-URL fetch-and-hand-back and does not reach the approved route.
+ * It errs toward flagging and the application happens not to trip it, which is a better position than
+ * the reverse: an allowlist entry that is never needed is cheap, and a permanent exclusion with no
+ * clause reaching it is not.
+ *
+ * The correction matters more than the conclusion, because the paragraph's job was to stop the next
+ * reader believing a mechanism that had never been checked. A right answer for a wrong reason invites
+ * the next edit to "fix" the reason and break the answer.
+ *
+ * `the streaming clause's facts are asserted` below makes all of this a checked fact rather than a
+ * comment that can go stale.
+ */
+// Declared as its own named object rather than inline in the arm list, because the compiled constant
+// below is built from it and the sole-custody check needs to recognise this clause among the others by
+// identity. While it lived only as a compiled constant, that identity filter had nothing to exclude, so
+// it was dead code and replacing it with `true` changed nothing — a check that examines the suite minus
+// this clause without saying so.
+//
+// This arm is reachable from `EXCLUSIONS` like every other, so the sole-custody check now reads it as
+// data. It previously had to be scraped out of this file's text, which could not see an arm written as
+// `source: IDENT.source` — including this one.
+/**
+ * The clause's name, lifted out because two places must agree on it: the registry entry that declares
+ * the arm, and the sole-custody check that excludes this arm and no other from the competition.
+ *
+ * Not its object identity: the registry entry is a fresh literal that copies `.source`, so identity is
+ * false for the very arm under test and an identity filter would exclude nothing. Not its `.source`
+ * either — an arm in another exclusion with the same pattern would be excluded too, which is round 5's
+ * finding. A name is what a named clause is identified by.
+ */
+const STREAMED_BODY_AS_RESPONSE_NAME = "a fetched body handed straight back as the response body";
+
+const STREAMED_BODY_AS_RESPONSE_ARM = {
+  name: "a fetched body handed straight back as the response body",
+  source: String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
+} as const;
+
+// Built from the arm rather than written out a second time, so the regex the tests exercise and the
+// text the scraper reads cannot drift apart. A second copy of a regex is a second thing to keep
+// correct, and the drift would be invisible.
+// Flags come from the detector this arm belongs to, not from a literal. Built flagless, this regex
+// behaved differently from the `NO_MEDIA_PROXY_PATTERN` it is a clause of, and both the
+// "matches the violation" and the "no other arm catches it" assertions below were then reasoning
+// about a regex the suite never actually runs.
+const STREAMED_BODY_AS_RESPONSE = new RegExp(STREAMED_BODY_AS_RESPONSE_ARM.source, "i");
+
+/**
  * §2.5 clause 2's detector, as named clauses. Split for the same reason as the other two: the
  * fourth review deleted four of the ten with the suite green.
  */
@@ -309,8 +406,8 @@ const NO_MEDIA_PROXY_ARMS: ReadonlyArray<DetectorArm> = [
   { name: "a URL read out of a request header, then opened", source: HEADER_URL.source },
   { name: "a request body read whole, then a URL opened", source: BODY_JSON_FETCH.source },
   {
-    name: "a fetched body handed straight back as the response body",
-    source: String.raw`fetch\s*\([^)]*\)[\s\S]{0,240}?new\s+Response\s*\(\s*[\w$]+\.body`,
+    name: STREAMED_BODY_AS_RESPONSE_NAME,
+    source: STREAMED_BODY_AS_RESPONSE_ARM.source,
   },
   {
     name: "a buffered response handed back as a new Response",
@@ -1684,6 +1781,31 @@ function isForbiddenMediaRoute(file: string): boolean {
   return namesMediaCapability(file) || isUnapprovedDownloadRoute(file);
 }
 
+describe("arm names identify clauses, so the registry gives each one a distinct name", () => {
+  // Mechanism 2 of the sole-custody pair. Without this, that filter's conjunction of name and source
+  // still misses two clauses identical in both - both catch the violation, and both are excluded, so
+  // `others` stays empty with two clauses doing the work.
+  //
+  // Over the whole registry rather than per exclusion. The round-6 mutation put the colliding arm
+  // inside one array, but the reason names are consulted at all is that arms are compared *across*
+  // exclusions - so uniqueness across all of them is the property the comparison depends on.
+  it("gives every arm in the registry a distinct name", () => {
+    const byName = new Map<string, string[]>();
+    for (const { arm, owner } of ARMS_WITH_OWNER_FLAGS) {
+      byName.set(arm.name, [...(byName.get(arm.name) ?? []), owner]);
+    }
+    const collisions = [...byName]
+      .filter(([, owners]) => owners.length > 1)
+      .map(([name, owners]) => `${name} (${owners.join(", ")})`);
+    expect(
+      collisions,
+      "arm names identify clauses, so an arm sharing a name would be excluded from the sole-custody " +
+        "competition along with the clause under test - two clauses could then catch the violation " +
+        "with the sole-custody claim still green. Give each arm its own name.",
+    ).toEqual([]);
+  });
+});
+
 describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
   it("covers every exclusion the roadmap states as permanent", () => {
     // A guard on the guard: if this list shrank, the sweep below would silently stop
@@ -1846,7 +1968,6 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
         const flags = exclusion.pattern.flags;
         const full = new RegExp(arms.map((arm) => arm.source).join("|"), flags);
         const stripped = exclusion.violations.map((violation) => stripComments(violation.code));
-        const dependedOn = new Set<string>();
 
         // Every dead clause is collected before anything is asserted. Asserting inside the loop would
         // report one dead clause per run and hide the rest, and a check that needs twenty runs to
@@ -1878,14 +1999,20 @@ describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
           // The reduction must be a real reduction: if dropping the arm changes nothing about the
           // pattern, the arithmetic below would silently pass. Asserting the arm really is gone is
           // what stops a probe of this test from lying.
+          //
+          // Compared in NORMALISED form on both sides. `full.source` is `RegExp.prototype.source`,
+          // which escapes `/` - so comparing it against the raw `arm.source` reported any arm
+          // containing a bare slash as a fake reduction, failing closed but blaming the wrong thing.
+          // Normalising the arm with the same call that builds the joined pattern keeps both sides
+          // in one representation, and they cannot drift because they come from the same source.
+          const armAsCompiled = new RegExp(arm.source).source;
           const reductionIsReal =
-            full.source.includes(arm.source) && !reduced.source.includes(arm.source);
+            full.source.includes(armAsCompiled) && !reduced.source.includes(armAsCompiled);
           if (!reductionIsReal) brokenReductions.push(arm.name);
 
-          const lost = stripped.some((code, index) => {
+          const lost = stripped.some((code) => {
             const wasCaught = full.test(code);
             const stillCaught = reduced.test(code);
-            if (wasCaught && !stillCaught) dependedOn.add(exclusion.violations[index].label);
             return wasCaught && !stillCaught;
           });
           if (!lost) {
@@ -3358,5 +3485,197 @@ describe("every clause this change removed is published, not quietly dropped", (
         `the table cites tests/${name}, which does not exist`,
       ).toBe(true);
     }
+  });
+});
+
+/** Every declared arm, paired with the exclusion that owns it, so its flags can be read. */
+const ARMS_WITH_OWNER_FLAGS = EXCLUSIONS.flatMap((exclusion) =>
+  (exclusion.arms ?? []).map((arm) => ({ arm, owner: exclusion.label })),
+);
+
+/** The flags the named exclusion's detector is actually built with. */
+function flagsOf(label: string): string {
+  const exclusion = EXCLUSIONS.find((candidate) => candidate.label === label);
+  if (!exclusion) {
+    throw new Error(`no exclusion is labelled "${label}"; the arm list and the registry disagree`);
+  }
+  return exclusion.pattern.flags;
+}
+
+describe("the streaming clause's facts are asserted", () => {
+  /**
+   * The clause's justification, checked rather than asserted in prose.
+   *
+   * This clause is kept on the strength of a claim, and a previous version of that claim was wrong.
+   * A justification written only in a comment is exactly what goes stale when the code changes
+   * underneath it — which is how a clause kept for a false reason survives review after review.
+   *
+   * Four things are asserted:
+   *
+   *   1. It matches **nothing** in the real `src/` tree. This is the fact that was previously
+   *      believed false, and asserting it is what stops someone "fixing" the clause to remove a
+   *      false positive that does not exist.
+   *   2. It **does** match a caller-supplied URL fetched and handed straight back.
+   *   3. **No other arm** catches that violation, so this clause is not redundant.
+   *   4. It does **not** match the approved route's actual shape, which is why it costs nothing
+   *      today and what its real limitation is.
+   */
+  const DOWNLOAD_ROUTE = join(FRONTEND, "src", "app", "api", "download", "[videoId]", "route.ts");
+  const routeSource = readFileSync(DOWNLOAD_ROUTE, "utf8");
+
+  /** The forbidden shape, written the way the permanent exclusion describes it. */
+  const CALLER_SUPPLIED = `
+    export async function GET(request: Request, { params }: { params: { id: string } }) {
+      const upstream = await fetch(\`https://example.test/\${params.id}\`);
+      return new Response(upstream.body, { status: upstream.status });
+    }
+  `;
+
+  it("does not match the approved route, which streams rather than forwarding a body", () => {
+    // The half of the inherited claim that was false. If this ever becomes true, the clause *is*
+    // producing a false positive and someone should decide what to do about it deliberately.
+    expect(
+      STREAMED_BODY_AS_RESPONSE.test(routeSource),
+      "the approved route streams payload.stream, so this clause does not match it; if it now " +
+        "does, the false-positive question is real and needs a decision rather than a comment",
+    ).toBe(false);
+    expect(routeSource, "the premise, read from the real file").toContain(
+      "holdUntilSettled(payload.stream",
+    );
+  });
+
+  it("matches a caller-supplied URL fetched and handed straight back", () => {
+    expect(
+      STREAMED_BODY_AS_RESPONSE.test(CALLER_SUPPLIED),
+      "this is the violation the clause exists to catch",
+    ).toBe(true);
+  });
+
+  it("is the only arm that catches it, so deleting it opens a hole nothing else covers", () => {
+    // ## Read as data, not scanned out of this file's text
+    //
+    // This block has now tried three ways to obtain "the suite's own arms", and the first two
+    // failed in ways worth keeping, because both were *green*.
+    //
+    // **Scraping with a non-greedy match.** The original pattern stopped at the *first* backtick.
+    // Ten arms contain one inside a character class, so each was truncated to a fragment, and a
+    // `catch { return false }` classified every fragment as "not catching". Adding a matching
+    // alternative to the truncated googlevideo arm left this test green with sole custody gone.
+    //
+    // **Scanning with a correct closing-backtick rule.** That fixed the truncation and not the real
+    // problem, which is that parsing a value out of source text is a second implementation of a
+    // value this file already holds in scope. The scan could not see an arm declared as
+    // `source: IDENT.source` — its opener required a quote character straight after `source:` —
+    // and four arms are written that way. It also matched spans of **prose in this file's own doc
+    // comments**, so the vacuity guard below was partly satisfied by English.
+    //
+    // The decisive detail, and the reason a count could never have caught it: the scan returned
+    // **35 entries and the registry holds 35 arms.** The same number, with different contents —
+    // prose standing in for real arms, and four real arms missing. **A check on a count cannot see
+    // a substitution.** So the coverage assertion below compares against the registry rather than
+    // against a constant, and the arms are read directly rather than recovered from text.
+    //
+    // Nothing is parsed, so neither failure mode can recur: a backtick inside an arm is just a
+    // character, and a doc comment is not data.
+    const arms = EXCLUSIONS.flatMap((exclusion) => exclusion.arms ?? []);
+
+    // The coarse floor, because `length > 20` alone is satisfied by a collection that has lost arms.
+    // **Unwitnessed, and recorded rather than dressed up:** the registry holds 35 arms, so every
+    // partial read still clears 25 and no mutation can falsify this threshold. It is a backstop behind
+    // the equality assertion below, not a load-bearing check.
+    expect(
+      arms.length,
+      "the arms must have been found, or this assertion is vacuous",
+    ).toBeGreaterThan(25);
+    // Equality with the registry, which is what the round-3 `scrapeArms` defect needed: a hand-written
+    // list silently drops a table, and that is caught here.
+    //
+    // **What this does NOT do, stated because the previous comment claimed it did:** `arms` *is*
+    // `EXCLUSIONS.flatMap(...)` and this total is `EXCLUSIONS.reduce(...)`, so the two are equal for
+    // every possible `EXCLUSIONS`. This assertion cannot fail because an arm was added to or removed
+    // from the registry - both sides move together. It catches a change to the *reading*, and nothing
+    // else. An arm disappearing from the registry is caught by the membership assertion below; an arm
+    // becoming redundant is caught by the load-bearing delete-a-clause check. Claiming this assertion
+    // covers those would be the same defect as the assertion being vacuous, only quieter.
+    expect(
+      arms.length,
+      "the arms read here must be every arm the registry declares, or this check examines a subset " +
+        "of the suite while its comment claims to examine all of it",
+    ).toBe(EXCLUSIONS.reduce((total, exclusion) => total + (exclusion.arms?.length ?? 0), 0));
+
+    // **The clause under test must be in the set at all.** Without this the identity filter below is
+    // dead code: if this arm were ever dropped from the registry the filter would have nothing to
+    // exclude and this assertion would quietly become "no *other* arm catches it" — which is a
+    // different claim, stated the same way. Replacing that filter with `true` changed nothing and the
+    // suite stayed green; that looked like a defeat and was in fact a no-op, which is worse, because
+    // it would have been filed as one.
+    //
+    // Asserted positively so the gap cannot reopen, and compared by `source` because `arms` now holds
+    // the declared objects rather than scraped strings. Comparing the compiled `source` rather than
+    // object identity is deliberate: it also fails if this arm is rewritten to a *different* regex
+    // that happens to sit in the list, which identity would wave through.
+    const sources = arms.map((arm) => arm.source);
+    expect(
+      sources,
+      "the clause under test is not among the registry's arms, so the identity filter below is dead " +
+        "code and this assertion examines the suite minus the clause without saying so",
+    ).toContain(STREAMED_BODY_AS_RESPONSE.source);
+
+    // Each arm compiled with **its own exclusion's flags**. Every arm-bearing exclusion builds its
+    // detector with "i", and this used to compile them bare - so an arm whose pattern only reached a
+    // caller-supplied URL under `i` looked like it caught nothing, and the sole-custody claim held
+    // while two arms could catch the same violation. Defeated with exactly that arm before the fix.
+    // Flags are read from the owning exclusion rather than written here, so an exclusion that changes
+    // them cannot leave this check silently behind.
+    const others = ARMS_WITH_OWNER_FLAGS.filter(
+      ({ arm, owner }) =>
+        // By NAME **and** source together - see `STREAMED_BODY_AS_RESPONSE_NAME`.
+        //
+        // Three rounds on this one line. Comparing sources (round 4) let an arm in a different
+        // exclusion with the same pattern drop out, so two clauses could catch the violation with the
+        // sole-custody claim green. Comparing names alone (round 5) excluded EVERY arm carrying that
+        // name, and nothing enforced name uniqueness - so a second arm with the same name and a
+        // different source was excluded too, which round 6 defeated with a whole suite green.
+        //
+        // Names are labels, not identities; a label is an identity only if it is unique. The
+        // uniqueness assertion above is what makes this conjunction sound, and the conjunction is what
+        // makes it hold without that assertion. Either alone leaves a hole.
+        !(
+          arm.name === STREAMED_BODY_AS_RESPONSE_NAME &&
+          arm.source === STREAMED_BODY_AS_RESPONSE_ARM.source
+        ) && new RegExp(arm.source, flagsOf(owner)).test(CALLER_SUPPLIED),
+    ).map(({ owner, arm }) => `${owner} :: ${arm.name}`);
+    expect(
+      others,
+      "if another arm now catches this too, this clause is redundant and the sole-custody claim " +
+        "in its comment is stale",
+    ).toEqual([]);
+  });
+
+  it("matches nothing in the real source tree", () => {
+    // Asserted by walking the tree rather than by a recorded number, so it stays true as the
+    // application changes instead of needing to be re-measured. A clause that grows a false positive
+    // fails here rather than being discovered by whoever next reads an allowlist.
+    const offenders = sourceFiles(SRC)
+      .map((file) => ({
+        file: relative(FRONTEND, file).split("\\").join("/"),
+        code: readFileSync(file, "utf8"),
+      }))
+      .filter((entry) => STREAMED_BODY_AS_RESPONSE.test(entry.code))
+      .map((entry) => entry.file);
+    expect(
+      offenders,
+      "this clause has begun matching application code; that is a decision to make, not a drift " +
+        "to absorb",
+    ).toEqual([]);
+  });
+
+  it("is proven able to fail", () => {
+    // The regex is the only thing under test, so it is exercised against a shape it must *not*
+    // match. A clause that matched everything would satisfy every assertion above.
+    expect(
+      STREAMED_BODY_AS_RESPONSE.test("const x = 1; return new Response(body);"),
+      "a hand-built Response with no fetch in front of it is not the streaming shape",
+    ).toBe(false);
   });
 });

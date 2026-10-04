@@ -129,6 +129,45 @@ wrong. `TimeShelf` needed the gate precisely because its band label depends on t
   existing `mb-8`/`gap-8` rhythm, not seen.
 - **No hydration-mismatch check in a real browser.** The claim rests on `renderToStaticMarkup`
   emitting nothing plus `useSyncExternalStore`'s documented behaviour, and on the build artifact.
-- **The parked 1×1 IFrame player remains unobserved** — unchanged since M4 and blocked by CSP.
+- **The parked 1×1 IFrame player remains unobserved** — unchanged since M4. See the correction
+  below: "blocked by CSP" names the wrong reason, though the conclusion is unchanged.
+
+---
+
+## M21 correction to this line: the reason was wrong, the conclusion was not
+
+This line, and five other archived records from M4 through M17, say the parked player is unobservable
+because "the YouTube IFrame API is blocked by CSP in this environment".
+
+**The conclusion is correct. The stated cause is not.**
+
+`frontend/next.config.ts:72` ships:
+
+    frame-src 'self' https://www.youtube.com
+
+and line 29 declares `CLIENT_FRAME_ORIGINS = ["https://www.youtube.com"]` specifically so that
+`https://www.youtube.com/embed/...` is a permitted frame. The application's own Content Security
+Policy **permits the frame**; `public/sw.js` passes the player origin through rather than
+intercepting it.
+
+So CSP is not what prevented a confirming browser run. What actually prevented it: **no browser
+automation was available.** Only Edge is installed with no automation dependency, and both the
+production origin and the per-commit Preview origins sit behind Vercel Deployment Protection, which
+is not circumvented here.
+
+Two things are therefore deliberately *not* claimed, because neither follows from reading the policy:
+
+- That a parked 1×1 `opacity: 0` iframe **does** keep advancing. Reading `frame-src` cannot establish
+  that; only a run can.
+- That the recorded Edge measurements from M4 **still hold** after the geometry and tab-order fixes.
+  Those were measured *before* the fixes and have never been re-measured.
+
+What would settle it: one browser run against a deployed build with the parked geometry in place,
+reading `getCurrentTime()` across a known interval. That remains outstanding, and is recorded as
+outstanding rather than as blocked-by-policy — a false obstacle is worse than an honest missing
+capability, because a false one stops anyone from looking for the capability.
+
+The other five occurrences are left as written, because an archived record should show what was
+believed when it was written. This block sits beside them rather than in them.
 - Task 6.2's compact-viewport property is asserted by unit-level layout assertions, not by a
   screenshot.

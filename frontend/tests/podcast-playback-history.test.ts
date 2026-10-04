@@ -4,6 +4,7 @@ import { getLocalData } from "@/data/localData";
 import type { ListeningEventRecord, SessionSnapshot, Track } from "@/data/repositories";
 import {
   attachListeningRecorder,
+  flushListeningRecorder,
   resetListeningRecorder,
 } from "@/features/history/useListeningRecorder";
 import {
@@ -62,15 +63,41 @@ beforeEach(() => {
   resetListeningRecorder();
 });
 
-/** Wait until the history dataset holds exactly `count` events. */
-async function waitForEvents(count: number, timeoutMs = 2000): Promise<ListeningEventRecord[]> {
-  const data = await getLocalData();
-  const deadline = Date.now() + timeoutMs;
-  let events = await data.listeningHistory.list();
-  while (events.length < count && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    events = await data.listeningHistory.list();
-  }
+/**
+ * The recorded events, after every write the recorder has queued has been committed.
+ *
+ * ## Why this awaits instead of polling
+ *
+ * This used to poll with a 2000 ms deadline:
+ *
+ *     const deadline = Date.now() + timeoutMs;
+ *     while (events.length < count && Date.now() < deadline) { …await sleep(20)… }
+ *
+ * and failed intermittently under load — roughly one run in three on a busy machine. The deadline
+ * was standing in for the recorder's serialized write chain, so whether it was long enough depended
+ * on how slow the surrounding suite happened to be. That is a flaky test wearing a timeout, and
+ * raising the number would have made it rarer without making it impossible.
+ *
+ * `flushListeningRecorder()` awaits the chain itself. There is no debounce or timer on the write
+ * path, so once it settles every recorded step has been committed and the read below sees them all.
+ * The wait is now bounded by the work rather than by a budget, which is the difference between a
+ * deterministic wait and a hopeful one.
+ *
+ * `count` is asserted **exactly**, and this was the last thing here still describing a polling
+ * world. It read `toBeGreaterThanOrEqual`, which is the shape a bounded poll needs — you cannot know
+ * whether the thing you are waiting for has arrived or is merely outnumbered, so "at least" is the
+ * only honest bound. Once the chain has settled there is nothing in flight, so "at least" stopped
+ * being honesty and became slack: an extra event written by the same step, a duplicate write, or a
+ * second recording of the same episode all passed, while the surrounding comments described an exact
+ * count the assertion never required. The claim and the check have to be the same claim.
+ */
+async function waitForEvents(count: number): Promise<ListeningEventRecord[]> {
+  await flushListeningRecorder();
+  const events = await (await getLocalData()).listeningHistory.list();
+  expect(
+    events.length,
+    `expected exactly ${count} committed event(s); the recorder's chain settled with ${events.length}`,
+  ).toBe(count);
   return events;
 }
 
@@ -162,7 +189,8 @@ describe("a played podcast episode is recorded in the existing dataset", () => {
     // The step's measurements land when the step ends — here, by advancing to the
     // next episode — and they are what make the play countable rather than a
     // zero-second touch. Advancing also records the *second* episode, so the
-    // dataset holds two events by the time the patch has been applied.
+    // dataset holds exactly two events once the chain settles — `waitForEvents`
+    // asserts that count exactly, not as a lower bound.
     usePlayerStore.getState()._setDuration(3 * HOUR);
     usePlayerStore.getState()._setPosition(120);
     usePlayerStore.getState().next();

@@ -26,11 +26,21 @@ import { code, sourceFiles } from "./helpers/motionSource";
  * are gzipped at level 9, which is what a CDN applies.
  *
  * **A caveat stated rather than hidden.** A build is required for these checks to mean
- * anything. In CI the suite runs *before* `next build`, so on a cold checkout
- * `.next/static/chunks` does not exist and the measured assertions are **skipped with a
- * printed reason** rather than reported as passes. The assertions that do not need a build —
- * the recorded figure, the manifest rule — run unconditionally, so the "no animation
+ * anything, and without one `.next/static/chunks` does not exist, so the measured assertions are
+ * **skipped with a printed reason** rather than reported as passes. The assertions that do not need
+ * a build — the recorded figure, the manifest rule — run unconditionally, so the "no animation
  * library" half of the decision is enforced on every run.
+ *
+ * **This paragraph previously said the skip was CI's normal state** — "In CI the suite runs
+ * *before* `next build`, so on a cold checkout the measured assertions are skipped". That was true
+ * in M19 and M21 changed it, because a budget whose rules skip in CI is not a budget. The build now
+ * runs first in `.github/workflows/ci.yml` and in the archived release gate, and
+ * `tests/ci-workflow.test.ts` asserts that ordering so it cannot regress.
+ *
+ * The distinction is kept rather than dropped, because the two causes have opposite remedies. A CI
+ * skip meant a pipeline defect; a local skip means you have not run `npm run build`. The count that
+ * tells them apart is this file's own: **21 tests** when the size rules ran, **15 passed plus 6
+ * skipped** when they did not, and those are indistinguishable from each other at the exit code.
  */
 
 // Keep every literal in a variable — Vite rewrites an inline
