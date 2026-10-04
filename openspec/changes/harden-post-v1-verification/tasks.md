@@ -286,3 +286,57 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   `ci-workflow.test.ts` (+239 lines) or `MEMORY.md` lessons 53-55, so those are unexamined by
   adversarial reading. Its five GREENs in `download-non-goals.test.ts` were coverage-kill mutants its
   branches already exercise, and it correctly did not count them as findings.
+
+- [x] 8.12 **Six consecutive green gate runs, repeated at `9a5634e` after the pass-3 repairs.**
+  8.3 was met at `bdb0dba` and 8.10 at `cdc0fb0`; neither covers F1-F5 or the two defects those
+  repairs created. Re-run on 8.3's own reasoning rather than inherited: a criterion measured against a
+  tree that has since changed is not a measurement of the current tree. The tree was committed and
+  unmodified for the whole batch (`git status --short` empty at `9a5634e` before it started).
+
+  | run | exit | seconds | files | tests | motion-budget | skipped | parse |
+  |---|---|---|---|---|---|---|---|
+  | 1 | 0 | 108 | 181 | 3292 | 21 | 0 | ok |
+  | 2 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 3 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 4 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 5 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 6 | 0 | 95 | 181 | 3292 | 21 | 0 | ok |
+
+  Every run is the root `npm run gate` - lint, `format:check`, typecheck, build, test. All six report
+  **181 test files / 3292 tests, 0 failed, 0 skipped**, and all six are distinct-free: one suite total,
+  one file count, one budget count, across the batch. `tests/motion-budget.test.ts` reports **21 tests
+  in every run**, which is the figure that makes these runs evidence rather than six green lights: its
+  six size rules skip without a build report, and 15 passed + 6 skipped is what a run with no build
+  gives - indistinguishable from a full run at the exit code.
+
+  **The capture tooling was repaired before this batch, not after it failed.** 8.10's first capture
+  produced no counts because `Tee-Object` wrote UTF-16LE while the parser read UTF-8, and the ANSI
+  strip used a PowerShell `` `e `` escape that 5.1 does not have. Both are fixed here: output is
+  captured to a variable and written with `[System.IO.File]::WriteAllText` as UTF-8, so the bytes
+  parsed are the bytes emitted, and `[char]27` replaces the unavailable escape.
+
+  **The mistake that produced the wrong conclusion is now structurally impossible.** A run whose
+  counts cannot be parsed is reported as a **PARSE FAILURE** and ends the streak. It is never reported
+  as a run that reported no counts, because those are different claims and only one of them is about
+  the gate. Every row above carries `parse: ok`, so each figure was positively found rather than
+  inferred from an absence.
+
+  **The figures were then re-read from the six logs by separate code, and that check was wrong first.**
+  Trusting the batch script's own console output would repeat lesson 64 one level up, since the script
+  parsed the logs it also wrote. An independent re-read reported that the logs contained **none** of the
+  counts. They contained all of them. The checker had not stripped ANSI, so the bytes read
+  `Test Files ESC[2m181 passed`, and an escape sequence is not whitespace - `Test Files\s+(\d+) passed`
+  does not match it. The counts were present and findable throughout, and the checker reported absence
+  without ever asserting that its marker existed. That is the one check lesson 64 asks for, and this
+  round's own verification of its own measurement is what skipped it.
+
+  Fixed by locating each marker as a **string** first and only reading a number from a region already
+  known to contain it, so "no number" can no longer be reported as "no marker". Re-run, it finds all
+  three markers in all six logs and corroborates 181 / 3292 / 21 with zero `skipped`, zero NUL bytes
+  and zero replacement characters - so the logs are neither UTF-16 nor lossy, and the batch script's own
+  UTF-8 fix is confirmed from outside the script.
+
+  **This is the third time in this change that a tool reported an absence that was not there** (the
+  UTF-16LE logs, the `` `e `` escape, and now this), and in all three the system under test was fine.
+  The rule that survives is the narrow one: assert that what you are reading is present before you
+  conclude that it is missing.
