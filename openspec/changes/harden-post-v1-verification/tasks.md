@@ -322,6 +322,9 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   inferred from an absence.
 
   **The figures were then re-read from the six logs by separate code, and that check was wrong first.**
+  That code is `evidence/verify-gate-batch.mjs` today; when these figures were taken it was a
+  temp-directory script, **not in the repository**, so this entry records a method a reader could not
+  have re-run. The figures stand - they were measured - but the corroboration was self-reported.
   Trusting the batch script's own console output would repeat lesson 64 one level up, since the script
   parsed the logs it also wrote. An independent re-read reported that the logs contained **none** of the
   counts. They contained all of them. The checker had not stripped ANSI, so the bytes read
@@ -568,7 +571,9 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   added five tests; the corroboration checker's expected figure was updated with them, because a checker
   asserting a stale expectation would fail for a reason that has nothing to do with the logs.
 
-  **Corroborated from the six logs by separate code, which asserts its markers exist before reading any
+  **Corroborated from the six logs by separate code - `evidence/verify-gate-batch.mjs`, which at the
+  time of writing was a temp-directory file **not in the repository** - which asserts its markers exist
+  before reading any
   number.** All three markers found in all six logs; 181 / 3297 / 21 agreed; **zero NUL bytes and zero
   U+FFFD in every log** — so no log is UTF-16 or lossy, confirmed from outside the script that wrote
   them. That checker's v1 reported the logs contained none of the counts when they contained all of them
@@ -760,7 +765,9 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   every run, which is the load-bearing half — 15 passed + 6 skipped is the no-build figure, so a run
   without a build would report 15 here.
 
-  **Corroborated from the logs, not from the batch's own summary.** `verify-gateruns6.mjs` reads all six
+  **Corroborated from the logs, not from the batch's own summary.** `evidence/verify-gate-batch.mjs` reads all six. (The script by that name when this entry
+  was written was `verify-gateruns6.mjs`, which existed only in a temp directory and **is not in the
+  repository** - so a reader could not have re-run it. The shipped file is the one named here.)
   logs and finds every marker (`Test Files`, `Tests `, `tests/motion-budget.test.ts`), 0 NUL bytes and 0
   U+FFFD replacement characters in each — so no log is UTF-16 or lossy — and asserts each total is
   distinct across the six. **The checker locates each marker as a string before reading any number from
@@ -915,7 +922,11 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   AGENTS.md-mandated verification-workflow step remains unverified.
 
 - [x] 8.20 **Six consecutive green full gate runs at `9f1dc2a`, after round 7's repairs, corroborated
-  from the six logs by separate code that then had to be corrected twice to mean anything.**
+  from the six logs by separate code that then had to be corrected twice to mean anything.** That
+  separate code is `evidence/verify-gate-batch.mjs` today; at the time of each of those entries it was
+  a temp-directory script, **not in the repository**, and the entries above are therefore claims a
+  reader could not have re-run. Measured is not the same as re-runnable, and only the second one is
+  checkable by someone else.
 
   8.3 was met at `bdb0dba`, 8.10 at `cdc0fb0`, 8.12 at `9a5634e`, 8.14's six runs at `68860cb`, 8.16's
   at `f4b5cb1`, and 8.18's at `4d31728`. **None of those executes round 7's `keyLinesIn` /
@@ -945,7 +956,9 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
 
   ## The corroborator, and the two ways it was wrong first
 
-  `verify-gateruns7.mjs` reads all six logs. Each marker (`Test Files`, `Tests `,
+  `evidence/verify-gate-batch.mjs` reads all six logs. (At the time of writing that was
+  `verify-gateruns7.mjs`, a temp-directory file **not in the repository**; the method described here
+  is the shipped checker's, and it has been corrected three times since - see 8.25.) Each marker (`Test Files`, `Tests `,
   `tests/motion-budget.test.ts`) is located **as a string before any number is read from its region**, 0
   NUL bytes and 0 U+FFFD per log, and every total identical across the six. Unlike run 6's checker, it does
   **not** hard-code the expected test total: a hard-coded expectation that is wrong about the tree reports
@@ -1069,8 +1082,20 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   **The parenthesised file total does not move: it is 181 either way.** The string
   `Test Files 181 passed (181)` never appears in the refused state, so it cannot be the figure that
   distinguishes the two. The figures that actually distinguish them are the **exit status** (non-zero) and
-  the **executed-test count** (3312 → 3289, −23) — both of which the corroborator already recorded, which
-  is why the batch would still have noticed.
+  the **executed-test count** (3312 → 3289, −23) — and **neither of which `evidence/verify-gate-batch.mjs` recorded at the time.** That is
+  measured, not inferred: with all six logs carrying every green figure plus a trailing
+  `npm error code 1`, the checker still reported `run1 ... asserted ok` and `corroborated`, exit 0;
+  and with all six logs rewritten to claim `Tests  999999 passed`, it reported that figure as
+  agreed, exit 0. So the half of the criterion that says *green* had no evidence behind it anywhere,
+  and this sentence named a file that ships as its reason.
+  The conclusion was still right, on grounds this sentence did not give: a genuinely red gate run has
+  one `Tests ... passed` match and its only `Test Files` line reads
+  `Test Files  1 failed | 180 passed (181)`, which does not match the green pattern at all, so its
+  figures are refused rather than agreed.
+  Round 11 closed both gaps in the checker - the driver now writes `gate exit <code>` into every log
+  and the checker refuses a log without one - at which point this sentence is true as written. It is
+  left standing rather than deleted, because **correcting a claim in place keeps the history** and a
+  reader who remembers the old claim deserves to find out it was wrong and why.
 
   So the *conclusion* was right and arrived at by the wrong route, and the difference matters: I asserted a
   mechanism and then added an assertion to the corroborator believing it, so for one round the checker
@@ -1247,7 +1272,8 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   6    0     120      181    3312   21                      ok
   ```
 
-  Corroborated independently from the six logs (`verify-gateruns10.mjs`, exit 0): 181 files and 3312 tests
+  Corroborated independently from the six logs (`evidence/verify-gate-batch.mjs`, exit 0; at the time of writing a temp-directory script,
+  `verify-gateruns10.mjs`, **not in the repository** and therefore not re-runnable by a reader): 181 files and 3312 tests
   in every log, motion-budget 21 in every log, no NULs and no `U+FFFD` in any of them (a UTF-16 log and a
   lossy log both read as *markers absent*, not as *markers absent*), and enumeration holding at 2987 against
   execution at 3312 with the gap steady at 325 for the fourth batch running.
@@ -1369,7 +1395,8 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   Eleven entries in this file described their figures as *corroborated from the six logs by separate code*,
   naming a script each time. `git grep -l gateruns` returned nothing, and a recursive filename search over
   the repository and the agent workspace found nothing either: **every batch entry was self-reported by the
-  tool that produced it** - the arrangement `verify-gateruns7.mjs` was created to replace, reintroduced one
+  tool that produced it** - the arrangement `verify-gateruns7.mjs` was created to replace (itself a
+  temp-directory file, **not in the repository**), reintroduced one
   level up. A claim of independent corroboration nobody else can run is a second script by the same author
   agreeing with the first.
 
@@ -1698,3 +1725,217 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
     scripts' case is the sharpest, since their entire purpose is to be run by a reader.
   - Round 9's open question, now larger: `readSteps` throws at module scope for three ambiguities rather than
     one, so any of them takes down a whole suite file and 180 others stop reporting with it.
+
+## 8.27 Round 11 - the eleventh independent pass, and what it found inside round 10's repair
+
+  **Verdict: REJECT.** 2 CRITICAL, 6 WARNING, 4 NIT. (The report's own summary line said *five* WARNING
+  and its list ran W1 through W6. The list is what is repaired and what is recorded; the discrepancy in
+  the summary is left visible rather than smoothed, because a verdict whose own arithmetic disagrees with
+  its own contents is worth a reader knowing about.)
+
+  Both CRITICALs were **confirmed here before any repair**, at 71/71 targeted with the gate's cascade
+  dead, from a byte copy taken with `git hash-object` before the first mutation:
+
+  - **C1 - the wiring comparison compared identifier *spellings*.** It read the producer's bound name off
+    `call.parent` and the consumer's argument text and asserted the two strings were equal. Two different
+    declarations spelled alike satisfy that. **One inserted line** into the cascade arm -
+    `const prepared = { ok: true, detail: "installed" };` - makes the consumer read a nearer declaration.
+  - **C2 - `soleLoopOver`'s *derived* clause was a substring test on the iterand's text.** An alias defeats
+    it: `const ORDERED = ITEMS.filter(...)` plus a vestigial bare-`ITEMS` loop satisfies every locator,
+    including `expression === "ITEMS"` and a body containing `item.how`. **This is round 10's CRITICAL C2
+    verbatim**, which the record says was measured at 3312/3312 green.
+
+  Both are round 10's own defect class reproduced inside round 10's repair. Round 11's contribution was not
+  the findings - it was the explanation of how they survived a fully witnessed locator:
+
+  > every one of round 10's eight locator witnesses was derived from a **synthetic fixture**, a hand-written
+  > array of strings, and every mutation either substituted one line or appended a **new top-level
+  > declaration**. Not one inserted a declaration into an existing scope between the producer and the
+  > consumer. The witnesses were complete relative to the locator's vocabulary and blind outside it.
+
+  So the witness set had a **wrong universe**, not a gap - and no number of additional synthetic fixtures
+  would have found it. Every new witness below is aimed at the **real** archived `release-gate.mjs`.
+
+  ### The repairs
+
+  - **C1**: the comparison is now between **declarations** (`declarationFor`, resolving outward through the
+    scope chain), not between strings. A shadowing declaration is a different declaration.
+  - **C2 + W1 + S1-S5, one question each**:
+    - `dispatchOnHow` - the loop must contain a dispatch comparing a field of its **own loop variable**
+      against the item's **declared** `how` (`declaredHow` reads the declaration rather than a literal
+      typed beside the assertion, so the two cannot drift apart silently). Catches the alias, the decoy
+      loop, and the renamed condition.
+    - `reachableComplementArm` - the cascade must sit in the **reachable complement** of a plain
+      `<produced>.ok` test, and a conditional in the complement position is refused by name. This is the
+      survivor round 11 named against the C1 repair: `} else if (false) {` leaves every binding, dispatch
+      and loop correct and only makes the arm unreachable, which is round 10's C1 in new clothing.
+
+  ### Measured, against the real gate, with controls
+
+  ```
+  baseline (gate unmodified)                     expected-green  71 passed (71)
+  M2 shadow producer inside the cascade arm      RED   1 failed | 70 passed     <- C1
+  M6 aliased filtered array + decoy loop         RED   1 failed | 70 passed     <- C2
+  M3 dispatch literal renamed to "bootstrap"      RED   1 failed | 70 passed     <- W1
+  M7 inline filtered iterand (round 10's C2)     RED   1 failed | 70 passed
+  M8 the only dispatch compares "command"         RED   1 failed | 70 passed
+  S1 `} else if (false) {`                       RED   1 failed | 70 passed     <- named survivor
+  S2 `if (item.how === "install" && false)`      RED   2 failed | 69 passed     <- named survivor
+  S3 two-step alias through LIST                 RED   2 failed | 69 passed     <- named survivor
+  S4 decoy loop kept, body moved to an alias     RED   2 failed | 69 passed     <- named survivor
+  S5 `&& !SKIP`, SKIP = false                    RED   2 failed | 69 passed     <- see below
+  C1 control: consistent rename prepared->outcome  expected-green  71 passed (71)
+  C2 control: needles only, no semantic change     expected-green  71 passed (71)
+  ```
+
+  **S5 was predicted to survive, and did not.** The row was written down as `STILL GREEN` before it was
+  run, on the reasoning that only a value had changed. It dies for S2's reason: `dispatchOnHow` requires
+  the arm's condition to *be* the `===` comparison, and a `&&` is not that comparison. So the limit is
+  narrower than predicted - the suite cannot evaluate a boolean, but it can refuse a condition it cannot
+  read as the declared dispatch. **Recorded because a predicted survivor that dies is evidence about the
+  repair; a predicted survivor quietly deleted from the plan would have been neither.**
+
+  **The two controls are the load-bearing half.** `declarationFor` makes "two different declarations" the
+  failure condition, and a consistent rename is the mutation that most resembles a maintainer's actual
+  edit. Had it gone red, the repair would have been refusing valid wiring - the same category of error as
+  reporting a `run:` the reader never saw.
+
+  ### Two measurements this round voided itself, and the control that caught both
+
+  Both of the first two runs of the survivor probe reported **rows behaving as designed** while the whole
+  measurement was worthless:
+
+  ```
+  run 1  baseline exit 1, no summary line   -> two template literals closed early; the file did not parse
+  run 2  baseline exit 1, Tests 1 failed | 70 passed (71)
+         -> `IfStatement.statement` does not exist; it is `thenStatement`. tsc: TS2339.
+  ```
+
+  In both cases the **baseline was red**, and a red baseline voids every other row. That is the whole
+  reason the taxonomy keeps `RED BUT DID NOT RUN` and `RED, FILE COULD NOT LOAD` as distinct classes
+  rather than collapsing them into "failed": a row can be red for a reason that has nothing to do with
+  the check, and only an unmodified control distinguishes the two. Two rounds of green rows would
+  otherwise have been recorded as five named survivors killed.
+
+  A third row was wrong for a fourth reason: the W6 witness removed the word `(itself a` and **left the
+  disclaimer standing on the next line**, so it tested nothing and reported the new gate as broken. A
+  mutation that does not remove what it claims to remove verifies nothing, whatever colour it returns.
+
+  ### W2, W3, W4, N1, N3 - the checker this change had itself shipped
+
+  All four were reproduced against the repaired checker, in copies, with two controls:
+
+  ```
+  C1 the six untouched logs as the new driver writes them   expected-green  corroborated, exit 0
+  C2 the same logs verbatim, with no `gate exit` line        FAIL  6 problems, exit 1
+  B12 --frontend is a tree holding ONE test                  FAIL  1 / 3320 = 0.000, floor 0.8, exit 1
+  B13 all six logs inflated to `Tests 999999`                FAIL  2997 / 999999 = 0.003, exit 1
+  B14 run1 copied over run2..run6                            FAIL  1 distinct digest of 6, exit 1
+  B16 green figures with a trailing red summary              FAIL  a second verdict in one log, exit 1
+  ```
+
+  **W2 and W4 are one finding wearing two hats: the second mechanism was bounded and never anchored.** It
+  enforced `listedIds <= logTotal`, which detects an understated log total, is blind to an overstated one,
+  and is satisfied just as well by a tree holding a single test. A figure three thousand times off, and a
+  gap of 997 004, were both printed by the script on the line above the verdict word.
+
+  **The first repair was wrong and was measured to be wrong.** It asserted `listedIds === 2995`. With
+  **zero tests added** - `git diff` finds no new `it(` or `test(` - enumeration moved 2995 -> 2997 across
+  the same 181 files, and the two extra entries are
+
+  ```
+  tests/release-gate-install.test.ts > node
+  tests/release-gate-install.test.ts > lineOf
+  ```
+
+  top-level entries with no suite segment, named after local identifiers in the edited file. The suite was
+  then run to settle it: `Tests  1 failed | 3319 passed (3320)` - the executed total is unchanged, so
+  **they are not tests and `vitest list` emitted two non-test lines.** *Why it does that is* **unverified**;
+  the mechanism was not established and a guess with a number attached would be worse than saying so.
+
+  What that settles is enough to reject the constant: an anchor that moves when nothing was added is a
+  value nobody can maintain, and maintaining it means editing 2995 to 2997 until it agrees - which is this
+  checker's own recorded defect 3 reached by a different road. So the anchor is the **ratio** of
+  enumerated to executed, a property of the suite rather than of the enumerator's line discipline, with a
+  floor of 0.8 against an honest 0.90.
+
+  **W3**: the criterion is six consecutive *green* runs and the exit status had **no artefact anywhere**.
+  The driver's `$exitCode` went to the console; the log received the gate's stdout and nothing else. It
+  now writes `gate exit <code>` as a leading line and the checker **refuses** a log without one. C2 above
+  is the row that shows refusing is a requirement and not a way of refusing everything: the only
+  difference between C1 and C2 is one line the shipped driver now writes.
+
+  **N3**: six byte-identical logs were corroborated as six runs. Agreement between copies is one run
+  counted six times, and copying is the cheapest available way to make a stability criterion vacuous.
+  Distinctness is now asserted on a per-log digest.
+
+  **N1**: the driver printed a checker command with no `--runs`, so the printed interface was correct only
+  for `-Runs 6`. Loud rather than silent, hence a NIT - but an interface that is right only for the default
+  is not an interface.
+
+  ### W5 and W6 - two false claims in this change's own records
+
+  **W5** sat *inside* the sentence round 10 wrote to correct a different false claim: it said the batch
+  checker "already recorded" the exit status and the executed-test count. Measured: it recorded neither.
+  Both of B16 and B13 reached `corroborated` and exit 0. The conclusion was true on grounds the sentence
+  did not give - a genuinely red run's only `Test Files` line reads `1 failed | 180 passed (181)`, which
+  does not match the green pattern - and the grounds it *did* name were about a file that ships.
+
+  **W6** was a *correction* that asserted a fact about the file which the file did not bear out: the
+  eleventh entry claims all eleven earlier entries "now read as" pointing at the shipped checker, while
+  three still named `verify-gaterunsN.mjs` and three more said "by separate code" with no pointer. The
+  correction sat 600 lines *after* the entries it corrected, which is the wrong direction for a reader
+  going forward. Seven entries are amended in place, each naming the shipped checker and stating that the
+  logs are not in the repository.
+
+  **And both are now closed by a gate rather than by an amendment**, because a correction one edit away
+  from the hole it closed is not a correction. `frontend/tests/evidence-scripts.test.ts` asserts that
+  both evidence files exist, that the checker parses (`node --check`), that the driver writes the exit
+  status the checker requires *and* that the checker refuses its absence, that neither script hard-codes a
+  machine path, that the printed command carries `--runs`, and that every mention in `tasks.md` of a
+  temp-only checker carries its disclaimer nearby - with a population assertion first, so the rule cannot
+  pass vacuously. Five mutations, each RED, and an unmodified control, green:
+
+  ```
+  driver stops writing `gate exit`            RED  1 failed | 5 passed (6)
+  checker stops requiring it                  RED  1 failed | 5 passed (6)
+  driver's printed command loses --runs       RED  1 failed | 5 passed (6)
+  checker stops asserting distinct logs       RED  1 failed | 5 passed (6)
+  tasks.md regains a bare mention             RED  1 failed | 5 passed (6)
+  control, nothing broken                     expected-green  6 passed (6)
+  ```
+
+  This closes **N4**, which the verifier graded *not acceptable as it stands*: these two files are the
+  only artefacts in this change a reader is asked to execute, they sit outside `frontend/` and so outside
+  prettier, eslint, tsc and vitest, and round 10 found two defects in them after shipping and round 11
+  found five more. None of the seven would have been caught by the gate. The defence that they had been
+  corrected several times was an argument for a gate, not against one.
+
+  **N2** is closed as a side effect of C1's repair and by dropping the unused parameter: the locator's
+  signature advertised file-awareness it did not have, which is part of why the name-versus-binding
+  confusion behind C1 was easy to miss at the call site.
+
+  ### A second red gate run, this one with a log
+
+  ```
+  Test Files  1 failed | 180 passed (181)
+       Tests  1 failed | 3319 passed (3320)
+  FAIL  tests/encoding-integrity.test.ts > every text file is clean UTF-8 > no file carries a UTF-8 BOM
+  Error: Test timed out in 20000ms.        (actual 28320ms)
+  ```
+
+  Round 10 had one unreproduced red run whose failing test names were never captured. **This is a second,
+  and unlike the first it was written to disk before it was understood.** It is a *timeout*, not an
+  encoding fault: the check reads every file in the tree and took 28.3 s against a 20 s limit, on a run
+  where the environment was reported at 38% and 181 workers were spawned. **Cause unverified** - load is a
+  candidate and a growing tree is a candidate and I have not separated them. It is not closed by any green
+  batch, and it is the second item on this list a reviewer should press on.
+
+  ### Open, unchanged
+
+  - No browser verification of any kind. CI unobserved green on this branch. The unreproduced-and-now-
+    twice-observed red gate run. Both are recorded rather than resolved.
+  - Root `scripts/` and both archived `release-gate.mjs` copies remain outside every gate; the evidence
+    scripts no longer are.
+  - Round 9's question is now larger: `readSteps` throws at module scope for three ambiguities, so any of
+    them takes down a whole suite file and 180 others stop reporting with it.

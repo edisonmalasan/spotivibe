@@ -437,7 +437,7 @@ function soleCall(file: ts.SourceFile, callee: string): ts.CallExpression {
  * or a destructured pattern, means the wiring is shaped differently and the comparison below would be
  * vacuous rather than wrong.
  */
-function boundVariableName(file: ts.SourceFile, call: ts.CallExpression): string {
+function boundVariableName(call: ts.CallExpression): string {
   const declaration = call.parent;
   if (
     declaration === undefined ||
@@ -466,6 +466,290 @@ function firstArgumentName(file: ts.SourceFile, call: ts.CallExpression): string
 }
 
 /**
+ * The declaration a name in `near`'s scope chain resolves to.
+ *
+ * **Round 11's CRITICAL 1.** The wiring check compared identifier *spellings*: it read the producer's bound
+ * name off `call.parent` and the consumer's argument text, and asserted the two strings were equal. That is
+ * satisfied by two *different declarations that happen to be spelled alike*. Inserting one line into the
+ * cascade arm —
+ *
+ *     } else {
+ *       const prepared = { ok: true, detail: "installed" };
+ *
+ * — makes the consumer read a nearer declaration. The strings still match; the cascade is dead. Measured:
+ * 71/71 targeted and 3320/3320 across the suite.
+ *
+ * So the comparison is now between **declarations**, resolved by walking outward from the use site through
+ * the enclosing scope chain, the way the language resolves it. A shadowing declaration is not a near miss;
+ * it is a different declaration, and the two are now distinguishable.
+ *
+ * Refuses rather than guesses, because each of these would make the comparison vacuous rather than wrong:
+ * no enclosing declaration at all, and two declarations of the same name in one scope.
+ */
+function declarationFor(file: ts.SourceFile, name: string, near: ts.Node): ts.VariableDeclaration {
+  const lineOf = (node: ts.Node): number =>
+    file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+
+  let scope: ts.Node | undefined = near.parent;
+  while (scope !== undefined) {
+    const statements = ts.isSourceFile(scope)
+      ? scope.statements
+      : ts.isBlock(scope)
+        ? scope.statements
+        : null;
+
+    if (statements !== null) {
+      const declared = statements
+        .filter((statement): statement is ts.VariableStatement => ts.isVariableStatement(statement))
+        .flatMap((statement) => [...statement.declarationList.declarations]);
+
+      const matches = declared.filter(
+        (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === name,
+      );
+
+      if (matches.length > 1) {
+        throw new Error(
+          `refusing to read the wiring: '${name}' is declared ${matches.length} times in the same scope ` +
+            `(lines ${matches.map(lineOf).join(", ")}), so which one a use at line ${lineOf(near)} reads ` +
+            "is not decidable from the file.",
+        );
+      }
+      if (matches.length === 1) return matches[0]!;
+    }
+    scope = scope.parent;
+  }
+
+  throw new Error(
+    `refusing to read the wiring: no declaration of '${name}' encloses line ${lineOf(near)}. The name is ` +
+      "in scope by some means this locator does not model, so the binding cannot be established.",
+  );
+}
+
+/** Whether `ancestor`'s own span contains `inner`'s — used to prove a statement is *inside* another. */
+function encloses(ancestor: ts.Node, inner: ts.Node): boolean {
+  return inner.getStart() >= ancestor.getStart() && inner.end <= ancestor.end;
+}
+
+/**
+ * The `how` value the item carrying `id` declares, read from the item rather than written beside it.
+ *
+ * This exists so `dispatchOnHow` is asked a question about the *declared* value. Hard-coding `"install"`
+ * next to the assertion would have left round 11's renamed-dispatch escape open in a subtler form: rename
+ * the declared `how` and the literal in the check moves with it automatically, while the gate's dispatch
+ * still has to be changed to match — and nothing would notice that the two had drifted apart until the
+ * branch stopped running. Reading the declaration means the two cannot be changed independently and
+ * silently.
+ */
+function declaredHow(file: ts.SourceFile, id: string): string {
+  const lineOf = (node: ts.Node): number =>
+    file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+  const found: { id: number; how: ts.StringLiteral }[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isObjectLiteralExpression(node)) {
+      const properties = node.properties.filter((property): property is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(property),
+      );
+      const named = (want: string): ts.Expression | undefined =>
+        properties.find(
+          (property) =>
+            ts.isIdentifier(property.name) &&
+            property.name.text === want &&
+            ts.isStringLiteral(property.initializer),
+        )?.initializer;
+
+      const idLiteral = named("id");
+      const howLiteral = named("how");
+      if (idLiteral !== undefined && howLiteral !== undefined) {
+        if ((idLiteral as ts.StringLiteral).text === id) {
+          found.push({ id: lineOf(node), how: howLiteral as ts.StringLiteral });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+
+  if (found.length === 0) {
+    throw new Error(
+      `refusing to read the gate's iteration: no item declares both an id of '${id}' and a string 'how', ` +
+        "so there is no declared value for a dispatch to be compared against.",
+    );
+  }
+  if (found.length > 1) {
+    throw new Error(
+      `refusing to read the gate's iteration: ${found.length} items declare the id '${id}' ` +
+        `(lines ${found.map((entry) => entry.id).join(", ")}), so which one the gate dispatches on is not ` +
+        "decidable.",
+    );
+  }
+  return found[0]!.how.text;
+}
+
+/**
+ * The `if` inside `loop` that dispatches on a field of the loop variable against the literal `how`, refusing
+ * when there is none.
+ *
+ * **Round 11's CRITICAL 2 and WARNING 1, one assertion.** Two separate escapes both left the suite green at
+ * 3320/3320:
+ *
+ *   - an *alias*: `const ORDERED = ITEMS.filter(…)` plus a vestigial bare-`ITEMS` loop. The derived clause is
+ *     a substring test on the iterand's text and `ORDERED` does not contain `ITEMS`; the decoy loop satisfies
+ *     `expression === "ITEMS"` and a body containing `item.how`. This is round 10's CRITICAL C2 verbatim,
+ *     which the record says was measured at 3312/3312 green.
+ *   - a *renamed dispatch*: `item.how === "bootstrap"` while the item declares `how: "install"`. The loop
+ *     iterates the item and dispatches on `item.how`, so both earlier assertions held literally — and nothing
+ *     ever entered the install branch.
+ *
+ * Both are invisible to any question about the loop's *shape* and obvious to a question about its
+ * *behaviour*, so the behaviour is what is asked here: the loop must contain a dispatch comparing a field of
+ * its own loop variable against the item's declared `how`. A decoy loop that merely mentions `item.how` has
+ * no such comparison, and a dispatch that never matches has no such literal.
+ */
+function dispatchOnHow(file: ts.SourceFile, loop: ts.ForOfStatement, how: string): ts.IfStatement {
+  const initializer = loop.initializer;
+  if (
+    !ts.isVariableDeclarationList(initializer) ||
+    initializer.declarations.length !== 1 ||
+    !ts.isIdentifier(initializer.declarations[0]!.name)
+  ) {
+    throw new Error(
+      "refusing to read the gate's iteration: the loop does not bind exactly one plain identifier, so " +
+        "there is no loop variable whose field a dispatch could be reading.",
+    );
+  }
+  const variable = initializer.declarations[0]!.name.text;
+
+  const found: ts.IfStatement[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isIfStatement(node) &&
+      ts.isBinaryExpression(node.expression) &&
+      node.expression.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken &&
+      ts.isPropertyAccessExpression(node.expression.left) &&
+      ts.isIdentifier(node.expression.left.expression) &&
+      node.expression.left.expression.text === variable &&
+      ts.isIdentifier(node.expression.left.name) &&
+      node.expression.left.name.text === "how" &&
+      ts.isStringLiteral(node.expression.right) &&
+      node.expression.right.text === how
+    ) {
+      found.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(loop.statement);
+
+  if (found.length === 0) {
+    throw new Error(
+      `refusing to read the gate's iteration: the loop over ITEMS contains no dispatch comparing ` +
+        `'${variable}.how' to the declared value '${how}'. The item is iterated and 'how' is mentioned, ` +
+        "which is not the same as the install branch being reachable - a decoy loop can satisfy the first " +
+        "two, and a renamed condition can satisfy them too while nothing ever runs.",
+    );
+  }
+  if (found.length > 1) {
+    throw new Error(
+      `refusing to read the gate's iteration: ${found.length} dispatches compare '${variable}.how' to ` +
+        `'${how}' (lines ${found
+          .map((node) => file.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+          .join(", ")}), so which one the cascade belongs to is not decidable.`,
+    );
+  }
+  return found[0]!;
+}
+
+/**
+ * The block inside `dispatch` that the cascade is actually written in, reached through a **`prepared.ok`
+ * test whose complement is a plain block** — refusing, in that order, a test that is not that test, a
+ * missing or doubled complement, and a complement that is another `if` rather than a block.
+ *
+ * **Round 11's named survivor S1, which the declaration comparison above does not catch.** Every wiring
+ * fact can be true and the cascade still dead:
+ *
+ *     } else if (false) {
+ *       environmentBroken = cascadeReason(prepared);
+ *
+ * Producer present, consumer present, *same declaration*, loop iterating `ITEMS`, dispatch comparing the
+ * declared `how`. Every assertion above holds — because the thing missing is not wiring but
+ * **reachability**, and this suite reads structure, not control flow. It is round 10's CRITICAL C1
+ * verbatim in new clothing: that one made `prepared.ok` a literal `true` so this arm was unreachable; this
+ * one makes it a block nobody enters, and the arm is unreachable for a reason no binding can express.
+ *
+ * So the arm must be shown to be the *reachable* complement: the `if` it hangs off has to test
+ * `<produced>.ok` and nothing else, and the complement has to be a block. `else if (anything)` is refused,
+ * because a conditional in the complement position is precisely how an arm hides.
+ */
+function reachableComplementArm(
+  file: ts.SourceFile,
+  dispatch: ts.IfStatement,
+  producer: string,
+  cascadeCall: ts.CallExpression,
+): ts.Block {
+  const lineOf = (node: ts.Node): number =>
+    file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+
+  const tests: ts.IfStatement[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIfStatement(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const subject = node.expression;
+      if (
+        subject.name.kind === ts.SyntaxKind.Identifier &&
+        subject.name.text === "ok" &&
+        ts.isIdentifier(subject.expression) &&
+        subject.expression.text === producer
+      ) {
+        tests.push(node);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  // `thenStatement`, not `statement` — `statement` is the `IterationStatement` shape, and reaching for
+  // the wrong property name twice in one change is exactly what round 9's `IfStatement.condition` slip was.
+  visit(dispatch.thenStatement);
+
+  if (tests.length === 0) {
+    throw new Error(
+      `refusing to read the cascade's arm: nothing inside the '${producer}.how' dispatch tests ` +
+        `'${producer}.ok', so the file has no outcome test for the cascade to hang off. The cascade call ` +
+        `exists at line ${lineOf(cascadeCall)} but nothing decides whether it runs.`,
+    );
+  }
+  if (tests.length > 1) {
+    throw new Error(
+      `refusing to read the cascade's arm: ${tests.length} branches test '${producer}.ok' (lines ` +
+        `${tests.map(lineOf).join(", ")}), so which one's complement the cascade belongs to is not ` +
+        "decidable from the file.",
+    );
+  }
+
+  const complement = tests[0]!.elseStatement;
+  if (complement === undefined) {
+    throw new Error(
+      `refusing to read the cascade's arm: '${producer}.ok' at line ${lineOf(tests[0]!)} has no else arm, ` +
+        "so the failing outcome is never handled and the cascade is dead.",
+    );
+  }
+  if (!ts.isBlock(complement)) {
+    throw new Error(
+      `refusing to read the cascade's arm: the arm after '${producer}.ok' at line ` +
+        `${lineOf(tests[0]!)} is another conditional rather than a block (line ${lineOf(complement)}: ` +
+        `${complement.getText(file).split("\\n")[0]}). A conditional in the complement position is how an ` +
+        "arm goes unreachable while every binding, dispatch and loop still reads correct - and whether " +
+        "it is entered is exactly what this suite cannot execute.",
+    );
+  }
+  if (!encloses(complement, cascadeCall)) {
+    throw new Error(
+      `refusing to read the cascade's arm: the complement of '${producer}.ok' at line ` +
+        `${lineOf(tests[0]!)} is a block at line ${lineOf(complement)}, and the cascade call at line ` +
+        `${lineOf(cascadeCall)} is not inside it.`,
+    );
+  }
+  return complement;
+}
+
+/**
  * The one loop that iterates `name`, refusing zero, refusing two or more, and **refusing a loop that
  * iterates something derived from it.**
  *
@@ -474,6 +758,13 @@ function firstArgumentName(file: ts.SourceFile, call: ts.CallExpression): string
  * identifier in the file and the loop intact while removing the install item from the gate entirely. A
  * locator that only asked "is there a loop over ITEMS?" would answer yes and be wrong; requiring the
  * iterated expression to *be* the identifier is what makes the difference between the two visible.
+ *
+ * **Round 11 measured how far that clause actually reaches, and the answer is: not far enough.** It is a
+ * substring test on the iterand's source text, so every derivation that *mentions* the array is caught
+ * (`ITEMS.filter(…)`, `[...ITEMS]`, `ITEMS.slice()`, `Object.values(ITEMS)` — all RED) and a derivation that
+ * does not is not. Binding the filtered array to another name defeats it outright. That is why
+ * `dispatchOnHow` exists and is asked of the loop this returns: a question about the loop's shape cannot see
+ * an alias, and only the dispatch can.
  */
 function soleLoopOver(file: ts.SourceFile, name: string): ts.ForOfStatement {
   const matching: ts.ForOfStatement[] = [];
@@ -929,9 +1220,9 @@ describe("the wiring locators are witnessed on refusals, not only on the file", 
       "const prepared = prepareDependencies({ frontendDir: FRONTEND });",
       "log(prepareDependencies({ frontendDir: FRONTEND }));",
     );
-    expect(() =>
-      boundVariableName(parseGate(unbound), soleCall(parseGate(unbound), "prepareDependencies")),
-    ).toThrow(/not bound to a plain identifier/);
+    expect(() => boundVariableName(soleCall(parseGate(unbound), "prepareDependencies"))).toThrow(
+      /not bound to a plain identifier/,
+    );
 
     // And a consumer that is handed something other than a bare name — a fabricated consumer would make the
     // wiring comparison answer a question nobody asked.
@@ -945,7 +1236,7 @@ describe("the wiring locators are witnessed on refusals, not only on the file", 
     const file = parseGate(GATE);
     const prepareCall = soleCall(file, "prepareDependencies");
     const cascadeCall = soleCall(file, "cascadeReason");
-    expect(firstArgumentName(file, cascadeCall)).toBe(boundVariableName(file, prepareCall));
+    expect(firstArgumentName(file, cascadeCall)).toBe(boundVariableName(prepareCall));
   });
 
   it("descends, because the real gate's loop happens to sit at the top level", () => {
@@ -1026,13 +1317,49 @@ describe("the gate script itself", () => {
     //
     // So the two halves are compared *to each other* rather than matched as text. A text match can be
     // satisfied by a name; only the comparison can be satisfied by the wiring.
+    //
+    // **Round 11 then found that this comparison was itself satisfied by a name.** It compared identifier
+    // *spellings* — the producer's bound name against the consumer's argument text — so two different
+    // declarations spelled alike passed. One inserted line into the cascade arm was enough:
+    //
+    //     } else {
+    //       const prepared = { ok: true, detail: "installed" };
+    //
+    // 71/71 targeted, 3320/3320 across the suite, with the cascade dead. **Comparing strings is still a
+    // comparison of names.** What is compared now is the two *declarations*, each resolved through its own
+    // scope chain, so a shadowing declaration is a different declaration and the assertion says so.
     const file = parseGate(gate);
 
     // Zero calls is a refusal, not an absence: `soleCall` throws naming what it expected to find.
     const prepareCall = soleCall(file, "prepareDependencies");
     const cascadeCall = soleCall(file, "cascadeReason");
 
-    expect(firstArgumentName(file, cascadeCall)).toBe(boundVariableName(file, prepareCall));
+    const produced = declarationFor(file, boundVariableName(prepareCall), prepareCall);
+    const consumed = declarationFor(file, firstArgumentName(file, cascadeCall), cascadeCall);
+
+    const span = (node: ts.Node): string => `${node.getStart()}-${node.end}`;
+    expect(
+      span(consumed),
+      `the consumer's '${firstArgumentName(file, cascadeCall)}' resolves to a different declaration than ` +
+        `the one '${boundVariableName(prepareCall)}' is bound to. Two declarations spelled alike are ` +
+        "not a wiring.",
+    ).toBe(span(produced));
+
+    // **And a wire that is correctly bound can still be dead**, which is the survivor round 11 named
+    // against this very repair (S1: `} else if (false) {`). Nothing above can see it — producer, consumer,
+    // binding, loop and dispatch are all correct, and the only thing wrong is that the arm nobody enters
+    // is the arm the cascade is written in. So the arm is required to be the *reachable complement* of a
+    // plain `<produced>.ok` test, and a conditional there is refused by name.
+    const arm = reachableComplementArm(
+      file,
+      dispatchOnHow(file, soleLoopOver(file, "ITEMS"), declaredHow(file, "gates-install")),
+      boundVariableName(prepareCall),
+      cascadeCall,
+    );
+    expect(
+      arm.getText(file),
+      "the complement block is empty, so the cascade was found in it but nothing is written there.",
+    ).toContain("environmentBroken");
   });
 
   it("iterates every declared item, so the install one cannot be filtered out", () => {
@@ -1060,6 +1387,26 @@ describe("the gate script itself", () => {
     // `body` of `ForStatement`. Reaching for `body` is the same wrong-name mistake round 9 made with
     // `IfStatement.condition`, and the compiler caught it rather than the reviewer.
     expect(nodeSource(file, loop.statement)).toContain("item.how");
+
+    // **Round 11: the line above is a mention, not a dispatch, and measuring how far it reached is what
+    // produced this block.** It is satisfied by `void item.how;` in a vestigial loop that does nothing, and
+    // it is satisfied by a loop whose real dispatch compares `item.how` against a value nothing declares.
+    // Both left the suite green at 3320/3320, and both are invisible to any question about the loop's shape.
+    //
+    // So the loop is asked about its *behaviour*: it must contain a dispatch comparing a field of its own
+    // loop variable against the value the item **declares** — not a literal typed here, because a literal
+    // beside the assertion drifts from the declaration silently, and the drift is the bug.
+    const declared = declaredHow(file, "gates-install");
+    const dispatch = dispatchOnHow(file, loop, declared);
+
+    // And the cascade must be inside *that* dispatch, not merely somewhere in the loop. A gate could
+    // dispatch correctly on the install item and write the cascade somewhere the branch never reaches.
+    expect(
+      encloses(dispatch, soleCall(file, "cascadeReason")),
+      `the dispatch on '${declared}' is at line ` +
+        `${file.getLineAndCharacterOfPosition(dispatch.getStart()).line + 1}, and the cascade is not ` +
+        "inside it, so the loop reaches the install item without ever handing its result to the cascade.",
+    ).toBe(true);
   });
 
   it("no longer runs npm ci over the working tree", () => {

@@ -1031,3 +1031,31 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     function** (76), and **a verdict must not be printed over evidence that was skipped** (76's tail). Four
     separate defects, one shape: something was believed because it was written down, and not because
     anything about it could fail.
+
+78. **A witness built from a synthetic fixture cannot test a locator whose blind spot is the difference
+    between the fixture and the real artifact.**
+    Round 10 shipped eight locator witnesses, all derived from hand-written arrays of strings, and every
+    mutation either substituted one line or appended a new top-level declaration. Round 11's two CRITICALs
+    survived all eight: one inserted a declaration *into an existing scope between producer and consumer*,
+    the other bound a filtered array to another name. The witnesses were complete relative to the locator's
+    vocabulary and blind outside it - **not a missing witness, a wrong universe.** No count of additional
+    synthetic fixtures would have found either.
+    - **Aim the witness at the real artifact.** A hand-written stand-in is regular in ways the real file is
+      not, and it is written by the same hand as the locator, so it cannot surprise it.
+    - **Keep a red baseline, and treat it as voiding the whole run.** Twice this round the probe reported
+      rows "behaving as designed" while the file did not parse and while `IfStatement.statement` should
+      have been `thenStatement`. Every other row was meaningless. This is why `RED BUT DID NOT RUN` and
+      `RED, FILE COULD NOT LOAD` stay distinct classes instead of collapsing into "failed".
+    - **A mutation that does not remove what it claims to remove verifies nothing**, whatever colour it
+      returns. One row deleted a word and left the disclaimer on the next line, then reported the gate as
+      broken.
+    - **Anchor on a ratio, not a constant, when the constant measures someone else's tool.** Pinning
+      `vitest list` to 2995 failed immediately: with zero tests added it read 2997, the two extras being
+      top-level entries named after local identifiers. The suite run settled that they were not tests
+      (executed total unchanged at 3320) and **why `vitest list` emits them remains unverified** - but the
+      measurement was enough to reject the constant, which is what mattered.
+    And the family, now reached from four directions in one change: **describing a mechanism and
+    exercising one are different acts** (74), **existence is not function** (76), **a verdict must not be
+    printed over evidence that was skipped** (76/77), and now **a fixture is not the thing it stands in
+    for.** Five defects, one shape: something was believed because it was written down, and not because
+    anything about it could fail.

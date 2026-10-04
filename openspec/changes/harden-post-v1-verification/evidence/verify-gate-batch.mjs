@@ -63,6 +63,7 @@
 //    because of that, not because encoding is interesting.
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -86,7 +87,7 @@ function parseArguments(argv) {
   if (positional.length !== 1) {
     process.stderr.write(
       "usage: node verify-gate-batch.mjs <log-directory> " +
-        "[--expect-files N] [--expect-budget N] [--frontend <path>]\n",
+        "[--expect-files N] [--expect-budget N] [--runs N] [--frontend <path>]\n",
     );
     process.exit(2);
   }
@@ -182,19 +183,66 @@ for (let run = 1; run <= options.runs; run += 1) {
   };
 
   const markersPresent = Object.values(markers).every((at) => at !== null);
+
+  // **Round 11's WARNING 3: the criterion is "six consecutive GREEN runs", and the exit status had no
+  // artefact anywhere.** Every figure above is read from vitest's summary, and a run that prints a full
+  // green summary and *then* exits non-zero satisfies all of them — the driver's `$exitCode` went to the
+  // console and the log received the gate's stdout and nothing else. Measured: appending a red summary and
+  // `npm error code 1` to one of six otherwise-untouched logs still reported `run1 … asserted ok` and
+  // `corroborated`, exit 0.
+  //
+  // It was latent rather than exploitable — I measured that a genuinely red gate run has exactly one
+  // `Tests … passed` match and its only `Test Files` line reads `1 failed | 180 passed (181)`, which does
+  // not match the green pattern, so `files` is null and the log is refused. But "the batch would still have
+  // noticed, for a different reason" is not the same claim as "the batch checks the thing it says it
+  // checks", and a criterion whose stated half has no evidence behind it is a criterion with an unmeasured
+  // half. So the driver now writes `gate exit <code>` into the log and this asserts it is 0.
+  const exitCode = /gate exit(\d+)/.exec(text)?.[1] ?? null;
+  // A second summary contradicting the first would also be a log carrying two verdicts. Refused rather than
+  // resolved, because which one the gate meant is not decidable from the file.
+  const failingSummary = /Tests\s+[^\n]*\d+ failed/.exec(text)?.[0] ?? null;
+
   const assertedHold =
-    found.files === options.files && found.budget === options.budget && found.skipped === null;
+    found.files === options.files &&
+    found.budget === options.budget &&
+    found.skipped === null &&
+    exitCode === "0" &&
+    failingSummary === null;
   if (!markersPresent || !assertedHold || nulBytes > 0 || replacement > 0) problems += 1;
 
-  rows.push({ run, nulBytes, replacement, markersPresent, assertedHold, ...found });
+  // **Round 11's NIT 3: six byte-identical logs were corroborated as six runs.** The agreement check below
+  // establishes that the *figures* match, which cannot distinguish six runs from one run copied six times —
+  // and copying is the cheapest available way to make a stability criterion vacuous. A digest per log makes
+  // "six runs" mean six distinct byte streams. Hashing the whole log is right here: real runs differ in
+  // their timing lines, which is precisely the variation the criterion is claiming to have observed.
+  const digest = createHash("sha256").update(text).digest("hex").slice(0, 12);
+
+  rows.push({ run, nulBytes, replacement, markersPresent, assertedHold, digest, ...found });
 
   process.stdout.write(
     `run${run}  ${String(bytes.length).padStart(6)}B  NULs ${nulBytes}  U+FFFD ${replacement}  ` +
       `markers ${markersPresent ? "all found" : "MISSING"}  ` +
       `files ${found.files}  tests ${found.tests ?? "?"} (reported, not asserted)  ` +
       `budget ${found.budget}  skipped ${found.skipped ?? "none"}  ` +
+      `exit ${exitCode ?? "ABSENT"}  sha ${digest}  ` +
       `${assertedHold ? "asserted ok" : "ASSERTED MISMATCH"}\n`,
   );
+
+  if (exitCode === null) {
+    process.stdout.write(
+      "        the log carries no `gate exit <code>` line, so the gate's own exit status cannot be read.\n" +
+        "        Logs must come from the shipped run-gate-batch.ps1, which writes it. This is a problem,\n" +
+        "        not a gap to be tolerated: the criterion is six GREEN runs.\n",
+    );
+  } else if (exitCode !== "0") {
+    process.stdout.write(`        the gate reported exit ${exitCode}, so this run is not green.\n`);
+  }
+  if (failingSummary !== null) {
+    process.stdout.write(
+      `        the log also carries a failing summary - ${JSON.stringify(failingSummary)} - so it holds ` +
+        "two verdicts and which one the gate meant is not decidable from the file.\n",
+    );
+  }
 
   if (!markersPresent) {
     for (const [label, at] of Object.entries(markers)) {
@@ -211,6 +259,25 @@ for (let run = 1; run <= options.runs; run += 1) {
 if (rows.length !== options.runs) {
   process.stdout.write(`\nFAIL only ${rows.length} of ${options.runs} logs were present\n`);
   problems += 1;
+}
+
+// **NIT 3, asserted rather than described.** The comment below this block claimed the claim was "N runs of
+// one unchanged tree"; the check established only that the figures agree, and agreement cannot tell six runs
+// from one run copied six times. So distinctness is asserted on the bytes.
+if (rows.length > 0) {
+  const distinctDigests = new Set(rows.map((row) => row.digest));
+  const allDistinct = distinctDigests.size === rows.length;
+  process.stdout.write(
+    `${allDistinct ? "ok   " : "FAIL "}log digests across the logs: ${distinctDigests.size} distinct of ` +
+      `${rows.length}\n`,
+  );
+  if (!allDistinct) {
+    process.stdout.write(
+      "      identical logs cannot be six runs. Agreement between copies is not stability; it is one run\n" +
+        "        counted six times.\n",
+    );
+    problems += 1;
+  }
 }
 
 // Every asserted total must be identical across the logs. Asserted without naming a value for `tests`: the
@@ -295,25 +362,87 @@ if (list.status !== 0 || listedIds === 0) {
   );
   problems += 1;
 } else {
-  const consistent = listedIds <= logTotal;
+  // **Round 11's WARNINGs 2 and 4, one repair: the second mechanism was bounded and never anchored.**
+  //
+  // This phase was advertised as making the total "cross-checked against a second mechanism instead", and it
+  // enforced exactly one thing: `listedIds <= logTotal`. That detects an *understated* log total and is
+  // blind to an overstated one, and it is satisfied just as well by a tree containing a single test. Both
+  // were measured:
+  //
+  //   --frontend pointing at an unrelated tree holding ONE test, against the six untouched logs:
+  //     ok   independent enumeration: 1 test templates; the gate log reports 3320 executed (gap 3319)
+  //     corroborated, exit 0
+  //
+  //   all six logs rewritten to claim `Tests  999999 passed (999999)`, nothing else touched:
+  //     ok   Tests across the logs: 999999 (stability only)
+  //     ok   independent enumeration: 2995 templates; the log reports 999999 executed (gap 997004)
+  //     corroborated, exit 0
+  //
+  // A figure three thousand times off, and a gap of 997 004, both printed by this script on the line
+  // immediately above the verdict word. The D2 repair closes neither: that one made the phase fail when it
+  // produced *nothing*, and both of these produce plenty.
+  //
+  // **The anchor is a RATIO, and that is a measured revision rather than the original plan.**
+  //
+  // The first attempt asserted `listedIds === --expect-enumerated` with the constant 2995, which is the
+  // obvious way to pin a figure down. It was measured at once and it does not hold: with **zero tests
+  // added** — `git diff` finds no new `it(` or `test(` in the only test file changed — enumeration moved
+  // 2995 -> 2997, both times across the same 181 files. The two extra entries are:
+  //
+  //     tests/release-gate-install.test.ts > node
+  //     tests/release-gate-install.test.ts > lineOf
+  //
+  // Top-level entries with no suite segment, named after local identifiers in the edited file. The suite
+  // was then run to settle whether they were tests: `Tests  1 failed | 3319 passed (3320)`, so the
+  // executed total is unchanged and **they are not tests — `vitest list` emitted two non-test lines.**
+  // *Why* it does that is **unverified**; the mechanism was not established, and a guess with a number
+  // attached to it would be worse than an admission.
+  //
+  // What the measurement does establish is enough to reject the constant. An anchor that moves when
+  // nothing was added is a value nobody can maintain, and maintaining it means editing 2995 to 2997 until
+  // it agreed — which is this checker's own recorded defect 3, reached by a different road.
+  //
+  // So the anchor is the **ratio** of enumerated templates to executed tests: a property of the suite
+  // rather than of the enumerator's line discipline. Both measured holes still fail it decisively —
+  //
+  //     a tree holding ONE test   ->   1 / 3320    = 0.0003   (W2)
+  //     a log inflated to 999999  -> 2997 / 999999 = 0.0030   (W4)
+  //
+  // — and the honest batch sits at 2997 / 3320 = 0.903. The floor is 0.8: far enough below 0.90 that
+  // ordinary growth in `.each(` expansion cannot cross it. The ratio cannot exceed 1, because enumeration
+  // is a lower bound by construction.
+  const ANCHOR_FLOOR = 0.8;
+  const ratio = listedIds / logTotal;
+  const anchored = ratio >= ANCHOR_FLOOR && listedIds <= logTotal;
+
   process.stdout.write(
-    `${consistent ? "ok   " : "FAIL "}independent enumeration: \`vitest list\` enumerates ${listedIds} ` +
-      `test templates; the gate log reports ${logTotal} executed tests (gap ${logTotal - listedIds})\n`,
+    `${anchored ? "ok   " : "FAIL "}independent enumeration: \`vitest list\` enumerates ${listedIds} ` +
+      `templates against ${logTotal} executed = ${ratio.toFixed(3)}, floor ${ANCHOR_FLOOR}\n`,
   );
-  if (!consistent) problems += 1;
+  if (!anchored) {
+    process.stdout.write(
+      `      the two figures stand at ${ratio.toFixed(3)} of each other. Enumeration is a lower bound, so\n` +
+        "        this cannot detect a small excess — but a tree holding one test and a log claiming a\n" +
+        "        million both land far below the floor, and both were measured passing before this\n" +
+        "        anchor existed.\n",
+    );
+    problems += 1;
+  }
+
   process.stdout.write(
-    "      the gap is expected and is NOT checked for agreement: `vitest list` prints one line per\n" +
-      "      template, and this suite has `.each(` call sites that expand over their tables at run\n" +
-      "      time, so enumeration is a lower bound by construction. Enumerated <= executed is the one\n" +
-      "      directional claim the two mechanisms share, and it is asserted; the difference between them is\n" +
-      "      a difference in what they measure, not a discrepancy in either.\n",
+    "      the residual gap is expected and is NOT checked for agreement: `vitest list` prints one line\n" +
+      "      per template, and this suite has `.each(` call sites that expand over their tables at run\n" +
+      "      time, so enumeration is a lower bound by construction. What is asserted is that the two\n" +
+      "      mechanisms are the same order of magnitude and that the bound holds — two claims, each of\n" +
+      "      which W2 and W4 defeated individually.\n",
   );
 }
 
 process.stdout.write(
   problems === 0
-    ? `\ncorroborated: every asserted figure was found in all ${options.runs} logs, they all agree, ` +
-      "and no log is UTF-16 or lossy\n"
+    ? `\ncorroborated: all ${options.runs} logs are distinct runs, each green, and every asserted figure ` +
+      "was found in all of them, with the independent enumeration anchored and in the same order of " +
+      "magnitude\n"
     : `\n${problems} problem(s) unresolved\n`,
 );
 

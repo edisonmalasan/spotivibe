@@ -82,7 +82,15 @@ for ($run = 1; $run -le $Runs; $run += 1) {
 
     $clean = $raw -replace "$escape\[[0-9;]*m", ""
     $logPath = Join-Path $LogDir "run$run.log"
-    [System.IO.File]::WriteAllText($logPath, $clean, $encoding)
+    # **Round 11's WARNING 3: the criterion is six consecutive GREEN runs, and the exit status had no
+    # artefact anywhere.** `$exitCode` went to the console and the log received the gate's stdout and
+    # nothing else, so the checker could confirm the figures and never the verdict. Measured: a log carrying
+    # every green figure plus a trailing `npm error code 1` was corroborated, exit 0.
+    #
+    # It is written as a leading marker line rather than appended, so it cannot be confused with the gate's
+    # own output and so a reader sees it before reading anything the gate claimed. The checker refuses a log
+    # without one rather than defaulting it, because "absent" and "green" must not collapse.
+    [System.IO.File]::WriteAllText($logPath, "gate exit$exitCode`n$clean", $encoding)
 
     # Markers are located as strings before any number is read from their region. A number parsed out of a
     # region not yet known to contain its marker is how a working log gets reported as an empty one.
@@ -106,4 +114,9 @@ Write-Host "distinct motion-budget:  $((($summary | ForEach-Object { if ($_ -mat
 Write-Host "repository root computed from evidence dir: $repoRoot"
 Write-Host ""
 Write-Host "Now verify the logs with the checker that ships beside this script:"
-Write-Host "  node `"$(Join-Path $PSScriptRoot 'verify-gate-batch.mjs')`" `"$LogDir`" --frontend `"$(Join-Path $repoRoot 'frontend')`""
+# **Round 11's NIT 1: the printed interface omitted `--runs`.** The script's own header calls a printed path
+# an interface that is only correct if something runs it - and it was correct only for `-Runs 6`, because the
+# checker's default is 6. A `-Runs 3` batch printed a command that then failed loudly on four unexamined
+# logs. Loud beats silent, so this was a NIT and not a WARNING, but the interface was wrong for every
+# non-default value, which is the whole of what an interface is for.
+Write-Host "  node `"$(Join-Path $PSScriptRoot 'verify-gate-batch.mjs')`" `"$LogDir`" --frontend `"$(Join-Path $repoRoot 'frontend')`" --runs $Runs"
