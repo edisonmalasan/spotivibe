@@ -1029,3 +1029,167 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   **Not re-measured by this batch, and therefore not claimed:** `npm ci`, `npm run setup`, and both
   archived `release-gate.mjs` copies. `npm run gate` does not invoke them, so `AGENTS.md`'s claim that
   they exit 0 remains inherited from M0 rather than re-measured here.
+
+- [x] 8.22 **Round 9: two CRITICALs and one WARNING in rounds 7-8's own repairs, all repaired and
+  mutation-proven; six consecutive green full gate runs at `e26ea2a`, corroborated from the logs.**
+
+  Round 9's independent verification found the same defect class for the sixth round running, one rung
+  further along the ladder. All three findings were re-confirmed by reading the source before any repair,
+  and **both CRITICALs were worse than reported.**
+
+  ## C1 — `readSteps` attributed any `run:` line to the step above it, with no indentation scope
+
+  An `env:` variable named `run` became a step's command, and `current.run` overwrote rather than
+  refused, so a second `run:` in one step won by position. Proven live, composed with the real lint gate
+  becoming `|| true`: **21/21 in the file, 3306/3306 across the suite, with the lint gate unable to fail
+  CI.** Round 8 unified the *comparison* and left the *attribution* positional — the level directly
+  beneath it. Repaired: a step's `run:` must be a **direct child** of its `- name:` line by indent, a
+  nested one is refused, and two in one step are refused.
+
+  **The refusal is load-bearing in a way no assertion was.** Because the reader is called at module
+  scope, a nested `run:` stops `ci-workflow.test.ts` from loading at all — the strongest fail-closed
+  point available, and *not* the same evidence as an assertion failing. It has its own reported verdict,
+  `RED, FILE COULD NOT LOAD`, because a RED whose mechanism is unexplained is a verdict without evidence.
+  This also gave the batch corroborator something new to guard: a file that cannot load contributes
+  **zero** tests, so `Test Files 181 passed (181)` is now the figure that distinguishes *the tree is
+  happy* from *a reader refused and the suite quietly shrank*.
+
+  ## C2 — `keyLinesIn` derived a line index from text
+
+  `nestedBlocks` skipped blank lines while returning `string[]`, and `keyLinesIn` recovered a line number
+  by adding an offset to `at + 1`. That arithmetic is correct only while the body is a contiguous slice,
+  so **every index after the first blank line in a block was wrong.** Its own doc comment named this
+  hazard in the past tense and then performed the arithmetic.
+
+  The consequence was a confident false claim rather than a wrong value: one blank line before
+  `defaults:` made `jobRunDefaults` answer `null`, and the assertion reported **the job must set a
+  default working directory** for a file that sets one.
+
+  **Worse than reported, and the extra part is the interesting one.** On the suite's own path — after
+  `prepareWorkflow` strips comment lines and renumbers everything a second time — a blank line inside
+  `setup-node`'s `with:` costs **both** the working directory and the Node pin. The raw-text path was
+  fine. **Two independent line-renumbering transforms interacting is where this lived**, and reporting
+  only the raw path would have understated it. Repaired by having the walker return `number[]`, so no
+  index is ever derived from text.
+
+  ## W1 — round 7's extent anchor was a guess about a guess
+
+  Round 7 answered *the lazy regex window may have drifted* with an extent anchor (exactly one `id:`).
+  Round 9 defeated it in **both directions at once**:
+
+  - **Widening, falsely counted.** An `id:` inside a *string value*, or a second `id:`-shaped token that
+    is not an item boundary, increments the count. The window can cover two items and still read `1`.
+  - **Narrowing, not counted at all.** The anchor was a **lower bound**, so a window cut short passed.
+    The `gates-install` item's last real field is `how:` — everything after it is comments, stripped
+    before reading — so truncating anywhere after `how:` satisfies every content assertion. Measured:
+    **168 characters of a 1358-character item**, while the assertion whose stated purpose is *the window
+    must cover exactly this item* reported that it did.
+
+  **A second content anchor cannot repair an inference, so the inference was removed.** `typescript` is
+  already a dependency of the type check, so the item's text is the object literal's own span and the
+  cascade branch is located the same way. Both locators refuse zero and two-or-more. Four of
+  `mut-round9`'s seven designed-green rows are the old defeats, now green **because the check no longer
+  depends on formatting at all** — a suite where they went red would be asserting the formatting, which
+  was never the claim.
+
+  ## `mut-round9` — 9/9 that must go red did, 7 green as designed, 0 did not apply
+
+  ```
+  r9-env-run-decoy-plus-non-blocking-lint      RED, FILE COULD NOT LOAD
+  r9-env-run-decoy-alone                       RED, FILE COULD NOT LOAD
+  r9-guard-removed-plus-the-probe              RED   (caught by the synthetic witness)
+  r9-lint-non-blocking-alone                   RED
+  r9-index-arithmetic-restored-plus-a-blank-line RED
+  r9-two-items-share-one-id                     RED
+  r9-two-branches-name-the-cascade-helper      RED
+  r9-item-refusal-muted-so-the-witness-fails   RED   (caught by the new `describe`)
+  r9-branch-refusal-muted-so-the-witness-fails RED   (caught by the new `describe`)
+  + 7 designed greens: 2 blank-line rows, 3 old W1 defeats, 1 duplicate-token, 1 witness-docs-removed
+  ```
+
+  Two rows exist only to prove the **new synthetic witnesses can fail** — lesson 66's corollary, since a
+  witness that cannot fail is not a witness. Both are caught by exactly the `describe` they target, which
+  the output names. Their needles are two lines long on purpose: `if (matching.length > 1) {` occurs in
+  **both** locators, and a one-line needle would silently mutate whichever came first.
+
+  ## Three errors of mine this round, all kept
+
+  **1. A mutation built from a paraphrase.** Restoring the old offset arithmetic as
+  `nestedBlocks(…).map((_, offset) => at + 1 + offset)` does **not** reproduce C2: the committed code
+  tests `KEY_LINE` against the *correct* line while recording the *wrong* index, and the paraphrase
+  shifted both. The row reported `STILL GREEN` — a confident false claim about my own repair, one step
+  from being recorded as a pass. It reproduced immediately once the committed body was taken **verbatim**
+  from `git show`. **A mutation row built from a paraphrase of the code it claims to remove is a row
+  that verifies the paraphrase.**
+
+  **2. Two summary regexes, both wrong, then one selected by shape.** Taking vitest's *first* `Tests`
+  match reported *78 passed* for rows that ran 101, because vitest prints an interim line for the
+  failing file first; taking the *last* reported `(1 ⎯⎯⎯)`, because the tail is a per-failure detail
+  line. The summary is now selected as the line ending in a parenthesised total. **A position in a
+  stream is not an identity** — lesson 66's rule applied to output instead of YAML.
+
+  **3. An unused `SourceFile` that eslint caught, and that was mine.** `itemSource` parsed the module
+  twice and kept the second result in a variable it never read. Two parses of one document is the shape
+  every finding in this change has had. Fixed by parsing once and passing the `SourceFile` down.
+
+  ## One finding declined
+
+  N2 claimed the *the workflow has exactly one job* requirement is stated nowhere findable. **It is named
+  in a test**: `refuses to pick one of two jobs, rather than reading the first`. Half the finding was
+  wrong, so no message was edited to satisfy it — and `mut-round7`'s `job-ambiguity-refusal-removed`
+  depends on that exact wording. Recorded as half-wrong with the evidence.
+
+  ## Two `mut-round7` rows re-aimed, one expectation inverted
+
+  Round 9 deleted the mechanism both rows attacked, and one became **logically contradictory** with a
+  `mut-round9` row applying the identical edit:
+
+  | row | edit | was | is now |
+  |---|---|---|---|
+  | `install-window-widens-past-its-item` | re-indent the item's closing brace | RED | **GREEN** |
+  | `install-extent-anchor-removed` | mute the extent anchor | `DID NOT APPLY` | **re-aimed** |
+
+  The first is green because nothing widens any more, which is the coverage becoming *unnecessary*;
+  the value of a row that changes verdict is that the change is itself the evidence, provided the new
+  verdict is explained. The second's subject was deleted but its **meaning** survived one mechanism down —
+  *what stops the extraction resolving an ambiguous item by position?* — so it now mutes
+  `itemSource`'s refusal composed with a duplicate `id` placed **first**, the arrangement that makes
+  first-wins read the wrong item. Same meaning, and it is the round-6 defect reintroduced through the
+  round-9 repair: the ladder now runs downward as well as upward. `mut-round7` is 11/11 + 2 designed.
+
+  ## The ninth batch — six consecutive green full gate runs at `e26ea2a`
+
+  ```
+  run  exit  seconds  files  tests  motion-budget  skipped  parse
+  1    0     181      181    3312   21                      ok
+  2    0     119      181    3312   21                      ok
+  3    0     126      181    3312   21                      ok
+  4    0     205      181    3312   21                      ok
+  5    0     182      181    3312   21                      ok
+  6    0     132      181    3312   21                      ok
+  ```
+
+  **3312, not 3306:** six witnesses — two in `ci-workflow.test.ts`, four for the AST locators.
+
+  **The cross-check is the strongest result in this batch.** Independent enumeration rose
+  **2981 -> 2987** alongside execution **3306 -> 3312**: exactly +6, matching the six witnesses added,
+  holding the gap at 325 for the third batch running. Two mechanisms that cannot be compared in absolute
+  terms still have to *move together*, and these did by the number of tests this change actually added.
+
+  ## The run times roughly doubled, and the cause is NOT established
+
+  Batch 8 ran in 95-102 s; batch 9 in 119-205 s. That is reported rather than smoothed. It was
+  **measured** rather than attributed: the only file containing AST parsing, `release-gate-install.test.ts`,
+  runs in 2.1-2.8 s of a ~130 s gate, with vitest attributing ~42% of that to environment and ~26-29% to
+  the tests themselves. Six parses of a ~1000-line file cannot account for ~25 s, so **the AST extraction
+  is not the cause** — and what is, is **unverified**. Recording a plausible cause as though it were
+  measured is the same false-report shape as everything else this change has been removing, and it is
+  cheaper to write *unverified* than to write a guess with a number attached.
+
+  ## Not re-measured by this batch, and therefore not claimed
+
+  `npm ci`, `npm run setup`, and both archived `release-gate.mjs` copies. `npm run gate` does not invoke
+  them, so `AGENTS.md`'s claim that they exit 0 remains inherited from M0. No browser verification was
+  possible at any point in this round (only Edge installed, no automation dependency), so every check that
+  needs a real browser remains unverified rather than passing. CI has still not been observed green on
+  this branch.

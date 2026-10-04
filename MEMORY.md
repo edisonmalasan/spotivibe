@@ -821,3 +821,83 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     - **A witness must exercise the shape that failed.** Rounds 5 and 6 fed the reader a single line and
       proved trailing-decoy handling, which was never the hole. Multi-line input reproducing the actual
       defeat is what found scope, repetition, and depth — three of the four levels above.
+
+67. **Unifying the comparison does not unify the attribution. A reader's scope is *which thing owns this
+    key*, and that question lives one level below the one you just fixed.**
+    Rounds 4, 5, 6 and 7 each found the previous round's defect class one rung further up (lesson 66).
+    Round 8 found the next rung down, in this branch's own repair: `indexOfStep` compared by `.includes`
+    where the gate count compared by equality — two mechanisms for one question — and unifying it into
+    `stepsRunning` fixed the *comparison* while leaving the *attribution* positional. `readSteps` recorded
+    whatever `run:` line came next as "the step above it", with no indentation test at all, so an `env:`
+    variable named `run` became a step's command. Proven live, composed with the real lint gate becoming
+    `|| true`: **21/21 in the file, 3306/3306 across the suite, with the lint gate unable to fail CI.**
+    Round 9 found the rung below that one: a `run:` at a step's own indent is still the wrong key if the
+    file nests it somewhere else. The rule extends the ladder by one line:
+    ```
+    naming a thing       →  which one is it?      →  refuse duplicates
+    attributing a key    →  whose key is this?    →  direct child by indent, or refuse
+    ```
+    Six levels now, one rule. The shape of the ladder is the lesson: **if the last repair was "pick the
+    right value", the next defect is "read the value from the right place", and the repair after that is
+    "make sure the place is the place you think it is."** Each is invisible to the test that motivated the
+    previous one.
+
+68. **A doc comment that names a hazard is not a repair of it. Prose about a hazard is not a constraint.**
+    `keyLinesIn`'s comment said, in the past tense, that the function "returns indexes into `lines`, so a
+    caller need not re-derive the offset… an index off by one yields `null`, and `null` reads as *this
+    workflow has no such scope*". Then it returned `at + 1 + offset` into a body list from which blank
+    lines had been skipped — so it did exactly the thing it described, and every index after the first
+    blank line in a block was wrong. The comment was *correct*; the code contradicted it.
+    The consequence was worse than a wrong value: one blank line before `defaults:` made `jobRunDefaults`
+    answer `null` for a workflow that sets `working-directory`, and the assertion reported **the job must
+    set a default working directory** — a confident false claim about a file, because the helper could not
+    tell it had lost its place in it. Fixed by having the block walker return **indexes** and never
+    deriving an index from text. Lesson 66 already said a stated assumption is not a constraint; this is the
+    sharper form: **the assumption can be correctly derived in the comment and still be violated in the
+    code, and the comment's correctness is what makes the violation invisible to review.**
+
+69. **A mutation row built from a paraphrase of the code it claims to remove is a row that verifies the
+    paraphrase.**
+    Round 9's row for the blank-line defect re-introduced the offset arithmetic as
+    `nestedBlocks(…).map((_, offset) => at + 1 + offset).filter(KEY_LINE.test(lines[index]))`. The committed
+    code does the opposite: it tests `KEY_LINE` against the **correct** line while recording the **wrong**
+    index. The paraphrase shifted both, happened not to reproduce the failure, and the row reported
+    `STILL GREEN` — which, in a suite where a green row is a claim about a mechanism, is a confident false
+    claim about the repair. Replaced with the committed body **verbatim**, which reproduced it immediately.
+    The general rule: when a mutation is meant to remove a specific implementation, take the implementation
+    from the commit (`git show HEAD~1:path`) rather than from memory. **Memory is a paraphrase, and a
+    paraphrase is a different program.**
+
+70. **A RED whose mechanism is unexplained is a verdict without evidence.** Two of round 9's rows reported
+    `RED` with `caught by: (none)` and a suite total of 78 instead of 101, because the new refusal throws
+    and the reader is called at module scope — so `ci-workflow.test.ts` **could not load at all**. That is
+    the strongest fail-closed outcome available (the refusal names the line, the step, and both indents),
+    and it is *not* the same evidence as an assertion failing: no assertion ran. It now has its own
+    reported verdict, `RED, FILE COULD NOT LOAD`, counted as satisfying "must go red" but never folded into
+    `RED`. Likewise a harness that cannot name which test caught a mutation is a harness that has recorded
+    a result it cannot explain.
+
+71. **A position in a stream is not an identity — twice, in the same harness.** Selecting vitest's run
+    summary by taking the **first** `Tests` match reported "78 passed" for rows that ran 101 (vitest prints
+    an interim line for the failing file first); taking the **last** reported `(1 ⎯⎯⎯)`, because the tail
+    is a per-failure detail line. The summary is now selected **by shape** — the line ending in a
+    parenthesised total. Same shape as lesson 66's refusal rule, applied to output instead of YAML: if
+    several things match, you do not get to pick by position; you identify by a property that distinguishes
+    them, and if none does, that is a finding.
+
+72. **When a claim's extent is being inferred from text, no content anchor can repair it — stop inferring.**
+    Round 7 answered "the lazy regex window may have drifted" by adding an **extent anchor**: exactly one
+    `id:` key in the window. Round 9 defeated that anchor in **both directions** at once.
+    - **Widening, falsely counted.** An `id:` inside a *string value*, or a second `id:`-shaped token that
+      is not an item boundary, increments a count. The window can cover two items and still read `1`.
+    - **Narrowing, not counted at all.** The anchor was a **lower bound**, so a window cut short passed.
+      The `gates-install` item's last real field is `how:` — everything after it is comments, stripped
+      before reading — so truncating anywhere after `how:` satisfies every content assertion. Measured:
+      **168 characters of a 1358-character item**, and the assertion whose stated purpose is "the window
+      must cover exactly this item" reported that it did.
+    An anchor is a guess about a guess, and a one-sided anchor reads as a symmetric one. The repair was to
+    **delete the inference**: `typescript` is already a dependency of the type check, so the item's text is
+    the object literal's own span, and there is no extent left to get wrong. Four of round 9's seven
+    designed-green rows are the old defeats (re-indented brace, duplicate `id:`-shaped token, a field
+    containing `},`) and they are now green **because the check no longer depends on formatting at all** —
+    a suite where they went red would be asserting the formatting, which was never the claim.
