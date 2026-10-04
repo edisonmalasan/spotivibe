@@ -3126,3 +3126,54 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
     cause, the `vitest list` phantom-line mechanism, and the `readSteps` loudness trade remain unverified
     or open by decision. The lyrics `2 in 10` / `0 in 40` figures are observations, not proof.
   - Six sequential runs are **not a contention test**, and no batch's provenance is proved by its stamp.
+
+## 8.42 Batch 22 at `bcebb1e`, and the rule that was unsatisfiable
+
+  ```
+  commit under test: bcebb1e7f28b
+  run 1  exit 0   83s  files 182  tests 3342  motion-budget 21
+  run 2  exit 0   84s  files 182  tests 3342  motion-budget 21
+  run 3  exit 0   85s  files 182  tests 3342  motion-budget 21
+  run 4  exit 0   83s  files 182  tests 3342  motion-budget 21
+  run 5  exit 0   85s  files 182  tests 3342  motion-budget 21
+  run 6  exit 0   84s  files 182  tests 3342  motion-budget 21
+  ```
+
+  Corroborator exit **0**, `corroborated`, six distinct whole-log digests, `commits named across the
+  logs: bcebb1e7f28b (1 distinct of 6)`, `182` files asserted, `motion-budget 21` asserted, `3342`
+  tests stability-only, enumeration `3020/3342 = 0.904` against a 0.8 floor.
+
+  **The last finding of the milestone was found by me, after round 18 accepted the change.** Not in a
+  verifier's report: in the five minutes between "the verifier says merge" and merging, while checking
+  the precondition the new rule depended on. `ROADMAP.md` said the live batch is *"whichever entry's
+  commit equals `main`'s merge commit"*. **A merge commit is a new commit — its SHA is by
+  construction not any batch's SHA** — so the rule evaluated to *never*, and the file asserted that
+  M21's completion criterion can never be met at the merge commit. The paragraph also claimed *"this
+  is the last place in this file that will need amending on this account"*, on the sentence directly
+  below the claim.
+
+  **The tree is the invariant, not the commit.** Measured before the merge:
+`git merge-base --is-ancestor origin/main HEAD` exits **0**, so merging PR #100 cleanly adds no tree
+  change, and the merge commit's tree equals `bcebb1e`'s tree,
+  `e3c8bcd891c1845aa827925c9493162f0bcb1500`. The rule is now stated over trees:
+
+  ```bash
+  git rev-parse <batch-commit>^{tree}   ==   git rev-parse <merge-commit>^{tree}
+  ```
+
+  **Why this is the same defect the milestone spent eighteen rounds auditing, in its purest form.** A
+  batch is evidence about a *tree*, and the criterion was always about a tree — "six runs of one
+  unchanged tree", in the corroborator's own words. Stating it over commit identity instead of tree
+  identity is **a claim about the artefact stated as a claim about its label**: true of every batch,
+  useless for every batch, and wrong in the one case that mattered. It is also why round 18 could not
+  catch it: it was asked whether 8.38 was self-consistent, and 8.38 *was*. The unsatisfiable rule was
+  written afterwards, in the file round 18 had already passed, by the repair for round 18's own
+  finding. **A verifier reviews a tree. The next edit happens after the verdict, and that edit gets no
+  review at all** — which is the structural gap this milestone never closed, and the honest reason its
+  own standard could not terminate itself.
+
+  **What would have caught it, and did not exist.** Any post-verdict commit needs a machine check, not
+  a human reading: a rule in prose that must be satisfiable should be satisfiable *by construction* —
+  expressed over an invariant (the tree) rather than over a label (the SHA). Every rule this milestone
+  wrote about *counts* — three rungs, seven escapes, six restarts — had the same exposure and got away
+  with it only because the numbers happened to stay right.

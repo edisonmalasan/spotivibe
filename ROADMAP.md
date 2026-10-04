@@ -254,9 +254,30 @@ to trust it, and none was caught by writing them carefully.**
 
 **How to find the live criterion evidence — a rule, not a pointer.** `design.md` §2.10 requires six
 consecutive green full gate runs. The batches and the commits they were measured at are at `tasks.md`
-8.29, 8.30, 8.34, 8.36 and 8.38, each stating its own supersession. **The live one is whichever entry's
-commit equals `main`'s merge commit for PR #100; if none does, the criterion is not met at the merge
-commit and the batch must be re-run there.**
+8.29, 8.30, 8.34, 8.36, 8.38 and 8.40, each stating its own supersession. **The live one is whichever
+entry was measured at a commit whose TREE equals the merge commit's tree** — not whose commit *SHA*
+equals it, because a merge commit is a new commit and no batch can ever be measured at it:
+
+```bash
+git rev-parse <batch-commit>^{tree}   ==   git rev-parse <merge-commit>^{tree}
+```
+
+If they differ, the criterion is not met at the merge commit and the batch must be re-run there.
+> **Round 18 accepted this paragraph's rule, and the rule was unsatisfiable — so this is the one repair
+> in this milestone that its own final verifier did not catch.** It read "whichever entry's commit equals
+> `main`'s merge commit". **A merge commit is a new commit: its SHA is by construction not any batch's
+> SHA**, so the rule evaluated to *never* and this file asserted that the criterion can never be met at
+> the merge commit. The same paragraph also claimed "this is the last place in this file that will need
+> amending on this account" — false in the strongest way available, and false on the sentence immediately
+> following the claim.
+>
+> **The tree is the invariant, not the commit, and the distinction is the whole repair.** Measured:
+> `git merge-base --is-ancestor origin/main HEAD` exits 0, so a clean merge of PR #100 adds no tree
+> change and the merge commit's tree equals the branch head's tree — `e3c8bcd891c1845aa827925c9493162f0bcb1500`
+> at `bcebb1e`. The batch is evidence about a *tree*; the criterion was always about a tree ("six runs of
+> one unchanged tree", in the corroborator's own words). Stating it in terms of the commit identity rather
+> than the tree identity is what made it unsatisfiable, and it is the same substitution this milestone has
+> been auditing in prose all along: **a claim about the artefact, stated as a claim about its label.**
 > **This paragraph replaces a pointer, and the replacement is the finding.** It used to read "the current
 > criterion evidence is batch 20, at `90c2496` ... executed total 3341 measured at HEAD", and round 18
 > measured HEAD at 3342 - so a stale executed total sat next to the word "HEAD", in the document whose own
@@ -266,10 +287,14 @@ commit and the batch must be re-run there.**
 > need amending on this account. The same overreach then migrated here from `tasks.md`, where round 17 had
 > just fixed it - **a claim does not stop being wrong because it was moved to a file with fewer readers.**
 
-Latest recorded batch: **21**, at `b931c7c` - six of six green, corroborated, exit 0, 182 files, 3342
-tests, motion-budget 21, enumeration 3020/3342 = 0.904 against a 0.8 floor, verified independently of the
-shipped corroborator by round 18 (six distinct whole-file SHA-256, six distinct durations, executed total
-3342 measured at HEAD).
+Latest measured batch: **22**, at `bcebb1e` - six of six green, corroborated, exit 0, 182 files, 3342
+tests, motion-budget 21, enumeration 3020/3342 = 0.904 against a 0.8 floor, six distinct whole-log
+digests, every log stamped `commit bcebb1e7f28b`.
+> **This sentence was "Latest recorded batch: 21, at `b931c7c`" and was one batch stale the moment it was
+> written, because round 18's finding was repaired in a commit that had not been batched yet.** It is
+> kept as a *pointer to the newest measurement* only because the rule above now identifies the live batch
+> independently, so this sentence can be stale without misleading anyone about the criterion. That is the
+> difference between a pointer and a rule, demonstrated on the pointer I had just replaced.
 
 What that does **not** establish: CI is still unobserved on this branch; there is still no live-browser
 verification of anything; the two accepted residuals remain named, measured and **unclosed**; and the
