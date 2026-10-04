@@ -131,25 +131,47 @@ function literal(text: string): string {
 const KEY_LINE = /^\s*(?:-\s*)?(?:["'])?[\w.$-]+(?:["'])?\s*:/;
 
 /**
- * The lines nested under the mapping that starts at `at`, stopping at the first line not indented deeper.
+ * The **indexes** of the lines nested under the mapping that starts at `at`, stopping at the first line not
+ * indented deeper.
  *
  * This is how a mapping ends in YAML without needing to know the whole grammar. It is *not* enough to
- * find a mapping: a nested block is nested too, and `nestedBlocks` is what tells the two apart.
+ * find a mapping: a nested block is nested too, and this is what tells the two apart.
+ *
+ * **Indexes, not lines — round 9's CRITICAL.** This used to return `string[]`, skipping blank lines as it
+ * went, and `keyLinesIn` then recovered a line number by adding an offset to `at + 1`. That arithmetic is
+ * only correct while the body is a contiguous slice, and skipping a blank line makes it not one: **every
+ * index after the first blank in a block was wrong**, silently.
+ *
+ * The consequence was not a wrong answer, it was a *confident wrong answer*. One blank line before
+ * `defaults:` made `jobRunDefaults` answer `null` for a workflow that sets `working-directory: frontend`;
+ * one blank line inside `setup-node`'s `with:` lost the Node pin, on the suite's own path, once
+ * `prepareWorkflow` had also removed comment lines and renumbered everything a second time. The assertion
+ * then reported *the workflow must configure actions/setup-node by name* — a false claim about a file,
+ * because the helper could not tell it had lost its place in it.
+ *
+ * The doc comment below named this hazard exactly, in the past tense, and then performed the arithmetic.
+ * **A hazard described in prose is not a hazard handled.**
  */
-function nestedBlocks(lines: string[], at: number): string[] {
+function nestedBlockIndexes(lines: string[], at: number): number[] {
   const keyIndent = indentOf(lines[at]!);
-  const body: string[] = [];
+  const found: number[] = [];
   for (let next = at + 1; next < lines.length; next += 1) {
     const candidate = lines[next]!;
     if (candidate.trim() === "") continue;
     if (indentOf(candidate) <= keyIndent) break;
-    body.push(candidate);
+    found.push(next);
   }
-  return body;
+  return found;
+}
+
+/** The lines themselves, for callers that genuinely only want text. Never derive an index from this. */
+function nestedBlocks(lines: string[], at: number): string[] {
+  return nestedBlockIndexes(lines, at).map((index) => lines[index]!);
 }
 
 /**
- * The lines of the mapping that starts at `at` that are **keys** — as opposed to block content.
+ * The indexes of the lines of the mapping that starts at `at` that are **keys** — as opposed to block
+ * content.
  *
  * Split out from `nestedBlocks` because the distinction matters and round 7 walked through it. A mapping's
  * body includes everything nested, but only the *shallowest* key lines are its direct children; the rest
@@ -160,13 +182,7 @@ function nestedBlocks(lines: string[], at: number): string[] {
  * nested four levels down is still a key line.
  */
 function keyLinesIn(lines: string[], at: number): number[] {
-  const body = nestedBlocks(lines, at);
-  const bodyStart = at + 1;
-  const found: number[] = [];
-  body.forEach((line, offset) => {
-    if (line.trim() !== "" && KEY_LINE.test(line)) found.push(bodyStart + offset);
-  });
-  return found;
+  return nestedBlockIndexes(lines, at).filter((index) => KEY_LINE.test(lines[index]!));
 }
 
 /**
@@ -178,7 +194,9 @@ function keyLinesIn(lines: string[], at: number): number[] {
  *
  * Returns indexes into `lines`, so a caller need not re-derive the offset. Getting that wrong is silent
  * rather than loud: an index off by one yields `null`, and `null` reads as "this workflow has no such
- * scope" — a claim about the file rather than a symptom of a bug. That is why it is derived here once.
+ * scope" — a claim about the file rather than a symptom of a bug. That is why it is derived here once, and
+ * why `nestedBlockIndexes` returns indexes rather than text: deriving an index from text is where round 9's
+ * CRITICAL lived.
  */
 function directChildKeys(lines: string[], at: number, keyPattern: RegExp): number[] {
   const candidates = keyLinesIn(lines, at);

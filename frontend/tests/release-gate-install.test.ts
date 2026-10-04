@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import ts from "typescript";
 
 import {
   cascadeReason,
@@ -232,6 +233,154 @@ function code(source: string): string {
     i += 1;
   }
   return out;
+}
+
+/**
+ * The source text of one node of `source`, located by a real parse rather than by a pattern.
+ *
+ * **Round 9's W1: the two windows this replaces were `/id:\s*"gates-install"[\s\S]*?\n  \},/` and
+ * `/if \(isShortCircuited…\{[\s\S]*?\n {2}\}/`, and a regex cannot say how far it went.** Round 7 answered
+ * that with an *extent anchor* — exactly one `id:` key — and round 9 defeated the anchor in both directions:
+ *
+ *   - **widening, falsely counted.** An `id:` inside a *string value*, or a second `id:`-shaped token that
+ *     is not an item boundary, increments the count, so the window can cover two items and still read 1.
+ *   - **narrowing, not counted at all.** The anchor was a *lower* bound, so a window cut short passed. The
+ *     `gates-install` item ends at `how: "install"` — everything after it is comments, which `code()` strips
+ *     — so truncating anywhere after `how:` satisfies every content assertion. Measured: **168 characters of
+ *     a 1358-character item, and the assertion whose stated purpose is "the extracted window must cover
+ *     exactly the gates-install item" reported that it did.**
+ *
+ * A second anchor was rejected on purpose. Round 7's lesson says an anchor must test **extent**, not
+ * content — so the *extent itself* has to stop being a guess. `typescript` is already a dependency of the
+ * type check, and a parse gives the node's own span: the item's text is the object's text, by construction,
+ * with no pattern that can stop early or run on.
+ *
+ * `code()` strips comment bodies but replaces each with newlines, so line structure survives and the spans
+ * below index the same text the assertions read.
+ */
+function nodeSource(file: ts.SourceFile, node: ts.Node): string {
+  return file.text.slice(node.getStart(file), node.getEnd());
+}
+
+/**
+ * The parsed gate source.
+ *
+ * One parse, shared by everything below. The first version of `itemSource` parsed the module here *and*
+ * inside `namedArrayLiterals`, kept the second `SourceFile` in a variable it never read, and eslint said
+ * so — which is the correct answer to an unused value. Two parses of one file is not a style problem
+ * here: **two answers about one document is the shape every finding in this change has had**, and a
+ * helper that locates a thing by name should be handed the document, not re-derive it.
+ */
+function parseGate(source: string): ts.SourceFile {
+  return ts.createSourceFile(
+    "release-gate.mjs",
+    source,
+    ts.ScriptTarget.ESNext,
+    true,
+    ts.ScriptKind.JS,
+  );
+}
+
+/** Every `const <name> = [ … ]` array literal in the file, by name. Refuses a duplicate name. */
+function namedArrayLiterals(file: ts.SourceFile): Map<string, ts.ArrayLiteralExpression> {
+  const found = new Map<string, ts.ArrayLiteralExpression>();
+  for (const statement of file.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
+      if (!ts.isArrayLiteralExpression(declaration.initializer)) continue;
+      const name = declaration.name.text;
+      if (found.has(name)) {
+        throw new Error(
+          `refusing to read '${name}': the file declares it twice. A name that does not identify one ` +
+            "thing cannot be used to locate it, and taking the first would be choosing by position.",
+        );
+      }
+      found.set(name, declaration.initializer);
+    }
+  }
+  return found;
+}
+
+/**
+ * The text of the element of the `arrayName` array whose `id:` is `id`.
+ *
+ * Refuses rather than guesses at both levels, for the reason `helpers/yaml.ts` now refuses at every level:
+ * zero matches is `null`, two or more is a throw naming them. An element is found by the value of its `id`
+ * key **within that array**, so an unrelated object literal elsewhere in the file carrying the same `id`
+ * cannot stand in for the item.
+ */
+function itemSource(source: string, arrayName: string, id: string): string {
+  const file = parseGate(source);
+  const array = namedArrayLiterals(file).get(arrayName);
+  if (array === undefined) {
+    throw new Error(
+      `refusing to read '${arrayName}': no top-level array of that name is declared in the file.`,
+    );
+  }
+
+  const matching = array.elements.filter((element) => {
+    if (!ts.isObjectLiteralExpression(element)) return false;
+    const property = element.properties.find(
+      (candidate) =>
+        ts.isPropertyAssignment(candidate) &&
+        ts.isIdentifier(candidate.name) &&
+        candidate.name.text === "id",
+    );
+    return (
+      property !== undefined &&
+      ts.isPropertyAssignment(property) &&
+      ts.isStringLiteral(property.initializer) &&
+      property.initializer.text === id
+    );
+  });
+
+  if (matching.length === 0) {
+    throw new Error(
+      `refusing to read item '${id}': ${arrayName} has no element whose id is that. Every assertion ` +
+        "about it would be vacuous, which is the failure this milestone exists to remove.",
+    );
+  }
+  if (matching.length > 1) {
+    throw new Error(
+      `refusing to read item '${id}': ${matching.length} elements of ${arrayName} carry it (elements ` +
+        `${matching.map((element) => array.elements.indexOf(element)).join(", ")}). The id does not ` +
+        "identify one item, so reading the first would be choosing by position.",
+    );
+  }
+
+  return nodeSource(file, matching[0]);
+}
+
+/**
+ * The text of the single `if` statement whose condition mentions `marker`, or `null` if there is none.
+ *
+ * Same discipline as `itemSource`: zero is `null`, two or more throws naming them. The cascade assertions
+ * are about one branch, and "the first `if` mentioning this" would be the round-9 defect wearing a
+ * different hat.
+ */
+function branchSource(source: string, marker: string): string | null {
+  const file = parseGate(source);
+
+  const matching: ts.IfStatement[] = [];
+  const visit = (node: ts.Node): void => {
+    // `IfStatement.expression` is the condition; `condition` belongs to `IfExpression`, the ternary-like
+    // node. Reaching for the wrong one is what made this fail to type-check the first time.
+    if (ts.isIfStatement(node) && node.expression.getText(file).includes(marker))
+      matching.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+
+  if (matching.length === 0) return null;
+  if (matching.length > 1) {
+    throw new Error(
+      `refusing to read the branch guarded by '${marker}': ${matching.length} 'if' statements name it ` +
+        `(lines ${matching.map((node) => file.getLineAndCharacterOfPosition(node.getStart()).line + 1).join(", ")}). ` +
+        "Which one the assertions below are about is not decidable from the file.",
+    );
+  }
+  return nodeSource(file, matching[0]);
 }
 
 /** A `run` that pretends to install, by writing a usable tree into whatever staging directory it is given. */
@@ -457,6 +606,91 @@ describe("prepareDependencies", () => {
   });
 });
 
+describe("the AST extraction that replaced the two lazy windows", () => {
+  // Round 9's W1 is not that the two windows were unanchored. It is that an anchor added to a window
+  // whose extent is *inferred from text* is a guess about a guess, and a one-sided guess reads as a
+  // symmetric one. Round 7's anchor — exactly one `id:` — counted a second `id:`-shaped token as a
+  // second item, and could not see a window truncated after `how:` because the anchor was a lower bound.
+  // These four assert the two properties the old mechanism could not have had.
+
+  it("cannot be shortened or lengthened by text that only looks like a boundary", () => {
+    // Two `  },` sequences now sit inside the item: one inside a template literal, one real. They are
+    // indistinguishable to a line-based reader, which is why the lazy regex stopped at the first and
+    // covered 168 characters of a 1358-character item while every content assertion still held.
+    const withBrace = [
+      "const ITEMS = [",
+      '  { id: "two", requirement: "second", how: "install", note: `a brace',
+      "  },`",
+      " },",
+      '  { id: "three", how: "command", command: "npm", args: ["ci"] },',
+      "];",
+    ].join("\n");
+
+    const item = itemSource(withBrace, "ITEMS", "two");
+    // Not shortened: the field *after* the fake boundary is still here.
+    expect(item).toContain("note: `a brace");
+    // Not lengthened: the next element is not here. It is given `args: ["ci"]` on purpose — the field
+    // the assertion below forbids — so that a window which ran on to it would fail on the *content* check
+    // too, not merely on a marker. The first version of this witness put `args: ["run", "lint"]` there,
+    // which no assertion objected to, and a witness that cannot fail is not a witness.
+    expect(item).not.toContain('id: "three"');
+    // And the claim the assertions are actually about survives both.
+    expect(item).toMatch(/how:\s*"install"/);
+    expect(item).not.toMatch(/args:\s*\[\s*"ci"/);
+  });
+
+  it("scopes the search to the named array, so an identical id elsewhere cannot stand in", () => {
+    // `UNRELATED` carries `id: "two"` as well. A search that walked every object literal in the file
+    // would find two candidates and refuse — or, resolving by position, report the wrong one. Either
+    // way the assertions below would stop being about the item. Scoping is what makes that impossible,
+    // and this is the row that witnesses the doc comment's claim rather than restating it.
+    const source = [
+      "const ITEMS = [",
+      '  { id: "two", requirement: "second", how: "install" },',
+      "];",
+      'const UNRELATED = { id: "two" };',
+    ].join("\n");
+
+    const item = itemSource(source, "ITEMS", "two");
+    expect(item).toMatch(/how:\s*"install"/);
+    expect(item).not.toContain("UNRELATED");
+    expect(() => itemSource(source, "NO_SUCH_ARRAY", "two")).toThrow(/no top-level array/);
+  });
+
+  it("refuses an ambiguous item rather than reading the first", () => {
+    const duplicated = [
+      "const ITEMS = [",
+      '  { id: "same", how: "install" },',
+      '  { id: "same", how: "command", command: "npm", args: ["run", "lint"] },',
+      "];",
+    ].join("\n");
+
+    // Zero is not an error — `itemSource` throws for zero too, because every assertion about an item
+    // that was not found is vacuous. Both are refusals rather than guesses.
+    expect(() => itemSource(duplicated, "ITEMS", "absent")).toThrow(/no element whose id/);
+    expect(() => itemSource(duplicated, "ITEMS", "same")).toThrow(/2 elements of ITEMS carry it/);
+  });
+
+  it("refuses an ambiguous branch rather than reading the first, and reports zero as null", () => {
+    const single = ["if (isShortCircuited(item, environmentBroken)) {", "  report();", "}"].join(
+      "\n",
+    );
+
+    // Exactly one: the returned text is that statement's own span, so `toBe` on the whole statement is
+    // the extent assertion — the one thing the old `\n {2}\}` regex could not make.
+    expect(branchSource(single, "isShortCircuited(item, environmentBroken)")).toBe(single);
+    expect(
+      branchSource("if (other()) { report(); }", "isShortCircuited(item, environmentBroken)"),
+    ).toBeNull();
+
+    // Two: refused, and the refusal names how many and where.
+    const duplicated = `${single}\n${single}`;
+    expect(() => branchSource(duplicated, "isShortCircuited(item, environmentBroken)")).toThrow(
+      /2 'if' statements name it \(lines 1, 4\)/,
+    );
+  });
+});
+
 describe("the gate script itself", () => {
   // Comments removed for the same reason as the router assertions below.
   const gate = code(readFileSync(join(EVIDENCE, "release-gate.mjs"), "utf8"));
@@ -466,35 +700,20 @@ describe("the gate script itself", () => {
     // without this, deleting the `how: "install"` branch and restoring `command: "npm",
     // args: ["ci"]` would leave every one of those tests green while the gate went back to
     // destroying the tree.
-    // **Round 7's N6: this window is now anchored, because the cascade's beside it already was.**
-    // The lazy `[\s\S]*?\n  \},` assumed this item's closing brace sits at two spaces. Re-indent it and
-    // the window simply runs on to the *next* item's `},`, swallowing it — two mutations in, both GREEN.
-    // The cascade window 60 lines below carries exactly this anchor ("the cascade branch could not be
-    // located, so every assertion about it would be vacuous") because a previous round found it needed
-    // one. One window in this file was anchored and one was not, which is the asymmetry worth closing:
-    // an unanchored extraction is a check that cannot tell "the item says this" from "the extraction
-    // drifted and now covers something else".
-    const installItem = /id:\s*"gates-install"[\s\S]*?\n  \},/.exec(gate)?.[0] ?? "";
-    // **Two anchors, and the second is the one that matters.** `toContain('id: "gates-install"')` on its
-    // own is nearly worthless here: a window that has *widened* to swallow the following item still
-    // contains that string, so the anchor passes on exactly the drift it was added to catch. The
-    // failure mode is a lazy `[\s\S]*?\n  \},` running past a re-indented closing brace to the next
-    // item's, so the anchor has to test the window's **extent**, not its content:
+    // **Round 9's W1 replaced this extraction outright.** It used to be a lazy
+    // `/id:\s*"gates-install"[\s\S]*?\n  \},/`, whose extent was unknowable — see `itemSource`.
     //
-    //   exactly one `id:` key  ⇒  the window covers one item and no more
-    //
-    // Round 7's N6 was that the cascade window 60 lines below carried this and this one did not, and the
-    // asymmetry is why two widenings were green: re-indent either closing brace and the window silently
-    // absorbs the next item.
+    // What is left is *one* anti-vacuity statement, and it is now a statement about a **refusal**: the
+    // helper throws when no element of `ITEMS` carries that id, or when two do. Round 7 answered the same
+    // hole with an extent anchor (count exactly one `id:`), and round 9 defeated that anchor in both
+    // directions — a second `id:`-shaped token counted as a second item, and a window truncated after
+    // `how:` satisfied it because the anchor was a lower bound. There is no second anchor here to
+    // mis-fire, because the extent is no longer inferred from the text.
+    const installItem = itemSource(gate, "ITEMS", "gates-install");
     expect(
       installItem,
       "the gates-install item could not be located, so every assertion about it would be vacuous",
     ).toContain('id: "gates-install"');
-    expect(
-      (installItem.match(/id:\s*"/g) ?? []).length,
-      "the extracted window must cover exactly the gates-install item; if it has widened past that " +
-        "item's closing brace it now includes the next one, and every assertion below is about both",
-    ).toBe(1);
     expect(installItem).not.toMatch(/args:\s*\[\s*"ci"/);
     expect(installItem).toMatch(/how:\s*"install"/);
   });
@@ -554,8 +773,7 @@ describe("the gate script itself", () => {
     // nothing would make every assertion below vacuously true, which is the failure this milestone
     // exists to remove, so the extraction is checked for content and the assertions are made
     // *negative* as well as positive.
-    const cascade =
-      /if \(isShortCircuited\(item, environmentBroken\)\) \{[\s\S]*?\n {2}\}/.exec(gate)?.[0] ?? "";
+    const cascade = branchSource(gate, "isShortCircuited(item, environmentBroken)");
     expect(
       cascade,
       "the cascade branch could not be located, so every assertion about it would be vacuous",
@@ -566,16 +784,12 @@ describe("the gate script itself", () => {
     // `FAIL` in this branch would put sixteen defects in the tally where there is one, which is the
     // thing `release-gate.mjs`'s own comment above the branch says it is avoiding.
     expect(cascade).not.toContain('status: "FAIL"');
-    // And the cascade window gets the *extent* anchor too, for the same reason as the one above: its
-    // `toContain` anchor is satisfied by a window that has widened to include the following branch, so
-    // the content check alone cannot tell "this branch says NOT RUN" from "the extraction drifted and
-    // now covers something else that happens to as well". Round 7 found both windows were unanchored on
-    // extent while only one was anchored at all.
-    expect(
-      (cascade.match(/isShortCircuited\(/g) ?? []).length,
-      "the extracted window must cover exactly the cascade branch; a widened window would satisfy every " +
-        "content assertion below from the code that follows it",
-    ).toBe(1);
+    // Round 7 added an extent anchor here (exactly one `isShortCircuited(`) and round 9 replaced the
+    // extraction instead: `branchSource` locates the one `if` statement whose condition names the helper
+    // and takes that statement's own span, so the window can neither widen past the branch nor stop
+    // inside it. The anchor was a lower bound, which cannot detect stopping early — a defect the
+    // verifier inferred for this window from its shape and did not measure. With no regex, there is no
+    // extent left to infer.
     // And the reason must travel with the skip, or "not run" is an omission rather than a result.
     expect(cascade).toMatch(/steps:\s*\[[\s\S]*?Repair the dependency tree/);
   });

@@ -58,7 +58,8 @@ interface Step {
  * Read the steps of the single job, in order.
  *
  * Indentation is the structure: `steps:` sits under the job, and each step is a `- name:` entry at
- * a deeper indent. `run:` lines belong to the step above them.
+ * a deeper indent. **A step's `run:` is a direct child of its `- name:` line**, which is the rule round 9
+ * added; `run:` lines used to be attributed to "the step above them" purely by position.
  */
 function readSteps(yaml: string): Step[] {
   const lines = yaml.split(/\r?\n/);
@@ -67,8 +68,12 @@ function readSteps(yaml: string): Step[] {
   let inSteps = false;
   let stepsIndent = 0;
   let current: Step | null = null;
+  // The indent of the current step's direct children — the indent of the first non-blank line after its
+  // `- name:` line. Derived rather than assumed as `stepIndent + 2` so the reader does not encode one
+  // workflow's indentation style as a rule.
+  let childIndent: number | null = null;
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     // The input is already stripped by `prepareWorkflow` at the call site, so this function does not
     // check for comments. It used to skip them here inline while three assertions later read the
     // RAW text - the file knew to distrust comments and then did not - and when the strip was fixed, the
@@ -96,24 +101,68 @@ function readSteps(yaml: string): Step[] {
     const nameMatch = /^\s*-\s*name:\s*(.+?)\s*$/.exec(line);
     if (nameMatch && indent > stepsIndent) {
       current = { name: nameMatch[1]!, run: null };
+      childIndent = null;
       steps.push(current);
       continue;
     }
 
+    if (current !== null && childIndent === null && indent > stepsIndent) {
+      childIndent = indent;
+    }
+
     const runMatch = /^\s*run:\s*(.*)$/.exec(line);
-    if (runMatch && current) {
+    if (runMatch) {
+      // **Round 9's CRITICAL: `run:` had no indentation scope at all.** Any `run:` line anywhere under the
+      // open step was recorded as *that step's command*, including one nested inside the step's own `env:`
+      // or `with:`. Proven live, composed with the real gate becoming non-blocking:
+      //
+      //     - name: Checkout
+      //       uses: actions/checkout@v7
+      //       env:
+      //         run: npm run lint      # an ENV VAR, not a command
+      //     …
+      //     - name: Lint
+      //       run: npm run lint || true
+      //
+      // `js-yaml` says step 0 has keys `[name, uses, env]`, has no `run` command at all, and that the lint
+      // step's command is `npm run lint || true`. `readSteps` reported the env var as the Checkout step's
+      // command, so `stepsRunning(steps, "npm run lint")` found exactly one step — a step that runs nothing
+      // — and every ordering assertion held. **21/21 green in the file, 3306/3306 across the suite, with the
+      // lint gate unable to fail CI.**
+      //
+      // Round 8 unified the *comparison* (exact command equality) and left the *attribution* positional,
+      // which is the level directly beneath it. `current` was simply "the most recent `- name:` line" —
+      // the same certainty `findIndex` expressed, in a signature that cannot say "I am not sure".
+      //
+      // The rule now: a step's `run:` is a **direct child** of its `- name:` line, by indent. Deeper is
+      // somebody else's key, and this refuses rather than absorbing it — an `env:` variable called `run` is
+      // exactly the shape that made the old reader certain, and certainty is the defect.
+      const indent = line.length - line.trimStart().length;
+
+      if (current === null || childIndent === null || indent !== childIndent) {
+        throw new Error(
+          `line ${index + 1}: a 'run:' key that is not a direct child of a step. ` +
+            `The step above is '${current?.name ?? "(none)"}' and its direct children are at indent ` +
+            `${childIndent ?? "(unknown)"}; this one is at ${indent}. Absorbing it would read a ` +
+            "mapping nested inside the step -- an 'env:' variable named 'run', say -- as the step's " +
+            "command, and that is the shape round 9's CRITICAL used.",
+        );
+      }
+
+      if (current.run !== null) {
+        throw new Error(
+          `line ${index + 1}: step '${current.name}' declares 'run:' twice. ` +
+            "The later one used to overwrite the earlier, so the step's command was whichever came last " +
+            "in the file rather than the one the step declares.",
+        );
+      }
+
       // A block scalar (`run: |` / `run: >`) would match this as the literal command `|`, recording a
       // one-character command for a multi-line script. `prepareWorkflow` refuses block scalars before
       // we get here, so reaching that value means the guard was bypassed; recording it as empty is
       // falsifiable by any assertion that requires a command, where `|` would silently pass some of them.
       current.run = /^[|>][-+0-9]*$/.test(runMatch[1]!.trim()) ? null : runMatch[1]!.trim();
       continue;
-    }
-
-    // A key that is neither `name` nor `run` ends the previous step's block. `uses:` does this, and
-    // a step with only a `uses:` legitimately has no `run`, so this must not merge two steps.
-    if (/^\s*-\s|^\s{2}\w+:/.test(line) && !runMatch && !nameMatch) {
-      if (/^\s*-\s/.test(line)) current = null;
     }
   }
 
@@ -467,6 +516,122 @@ describe("the workflow reader is witnessed on input the real workflow does not c
     ].join("\n");
     expect(workflowScalar(stepWith(oneStep, "Setup Node.js")!, "node-version")).toBe("20");
     expect(stepWith(oneStep, "No Such Step")).toBeNull();
+  });
+
+  it("reads a step's `run:` only where the step declares it, and refuses the rest", () => {
+    // **Round 9's CRITICAL, reproduced on synthetic input.** `run:` had no indentation scope, so any
+    // `run:` line under the open step became that step's command — including an `env:` variable named
+    // `run`. The proof that it mattered is on the real file, in `mut-round9`; what is built here is the
+    // *shape*, so the rule is stated where it lives rather than only demonstrated against a mutation.
+    const decoy = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Checkout",
+      "        uses: actions/checkout@v7",
+      "        env:",
+      "          run: npm run lint",
+    ].join("\n");
+
+    expect(() => readSteps(decoy)).toThrow(/not a direct child of a step/);
+
+    // Two `run:` keys in one step: the later used to overwrite the earlier, so the command the assertions
+    // compared was whichever came last in the file rather than the one the step declares. A duplicate is
+    // not a choice this reader is allowed to make.
+    const twice = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Lint",
+      "        run: npm run lint",
+      "        run: npm run build",
+    ].join("\n");
+    expect(() => readSteps(twice)).toThrow(/declares 'run:' twice/);
+
+    // Controls, so neither throw above is firing because the reader rejects everything. A step may carry
+    // `uses:` and `run:` together — that is ordinary GitHub Actions — and both are read.
+    const correct = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Checkout",
+      "        uses: actions/checkout@v7",
+      "        env:",
+      "          NODE: 24",
+      "      - name: Lint",
+      "        run: npm run lint",
+    ].join("\n");
+    const read = readSteps(correct);
+    expect(read).toHaveLength(2);
+    expect(read[0]!.run).toBeNull();
+    expect(read[1]!.run).toBe("npm run lint");
+
+    // And a nested sequence inside a step must not swallow the step's own command. The old reader ended a
+    // step's block at *any* `- ` line, so this lost the command entirely; it is here because the fix for
+    // round 9's CRITICAL removed that branch, and a removed branch deserves a witness.
+    const withArgs = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Lint",
+      "        args:",
+      "          --max-warnings=0",
+      "        run: npm run lint",
+    ].join("\n");
+    expect(readSteps(withArgs)[0]!.run).toBe("npm run lint");
+  });
+
+  it("keeps its place in the file across a blank line", () => {
+    // **Round 9's CRITICAL, second form.** `nestedBlocks` skipped blank lines while returning *text*, and
+    // `keyLinesIn` recovered a line number by adding an offset to `at + 1`. That arithmetic is only
+    // correct while the body is a contiguous slice, so every index after the first blank line in a block
+    // was wrong — silently.
+    //
+    // The consequence was not a wrong answer but a *confident wrong answer*: one blank line before
+    // `defaults:` made `jobRunDefaults` answer `null` for a workflow that sets `working-directory`, and
+    // the assertion then reported **the workflow must set a default working directory** — a false claim
+    // about a file, because the helper could not tell it had lost its place in it.
+    const base = [
+      "jobs:",
+      "  quality-gates:",
+      "    defaults:",
+      "      run:",
+      "        working-directory: frontend",
+      "    steps:",
+      "      - name: Setup Node.js",
+      "        uses: actions/setup-node@v7",
+      "        with:",
+      "          node-version: 24",
+    ].join("\n");
+
+    const withBlankLineAfter = (lines: string[], after: string): string => {
+      const at = lines.indexOf(after);
+      expect(
+        at,
+        `the witness line '${after}' is not in the document it is mutating`,
+      ).toBeGreaterThan(-1);
+      return [...lines.slice(0, at + 1), "", ...lines.slice(at + 1)].join("\n");
+    };
+
+    // Three placements, because the failure moves with the blank rather than announcing itself: before the
+    // value being read, before a sibling key, and *inside* the nested block that owns the other value. The
+    // third is the one that also lost the Node pin, and only on the suite's own path — once
+    // `prepareWorkflow` had removed comment lines and renumbered everything a second time.
+    for (const after of ["    defaults:", "        working-directory: frontend", "        with:"]) {
+      const mutated = withBlankLineAfter(base.split("\n"), after);
+      expect(
+        workflowScalar(jobRunDefaults(mutated)!, "working-directory"),
+        `a blank line after '${after}' must not cost the job its working directory`,
+      ).toBe("frontend");
+      expect(
+        workflowScalar(stepWith(mutated, "Setup Node.js")!, "node-version"),
+        `a blank line after '${after}' must not cost the step its Node pin`,
+      ).toBe("24");
+    }
+
+    // Control: the unmutated document reads correctly, so nothing above is passing because the reader
+    // answers `null` to everything.
+    expect(workflowScalar(jobRunDefaults(base)!, "working-directory")).toBe("frontend");
   });
 
   it("reads a step that runs the gate, not one that merely spells it", () => {
