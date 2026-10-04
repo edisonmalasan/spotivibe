@@ -975,3 +975,57 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   **Not re-measured by this batch, and therefore not claimed:** `npm ci`, `npm run setup`, and both
   archived `release-gate.mjs` copies. `npm run gate` does not invoke them, so `AGENTS.md`'s claim that they
   exit 0 remains inherited from M0 rather than re-measured here.
+
+- [x] 8.21 **Six consecutive green full gate runs at `868e658`, after round 8's `indexOfStep` repair,
+  corroborated from the six logs.**
+
+  8.3's batch has now been re-run seven times — at `cdc0fb0`, `9a5634e`, `68860cb`, `f4b5cb1`,
+  `4d31728`, `9f1dc2a` and `868e658` — and on every occasion the reason was the same: **a criterion
+  measured against a tree that has since changed is not a measurement of the current tree.** None of the
+  seven executes round 8's `stepsRunning`, the new `indexOfRunning`, the refuse-on-two ambiguity throw,
+  or the synthetic three-property witness.
+
+  ```
+  run  exit  seconds  files  tests  motion-budget  skipped  parse
+  1    0     102      181    3306   21                      ok
+  2    0     98       181    3306   21                      ok
+  3    0     95       181    3306   21                      ok
+  4    0     97       181    3306   21                      ok
+  5    0     98       181    3306   21                      ok
+  6    0     98       181    3306   21                      ok
+  ```
+
+  **3306, not 3305:** one witness added to `ci-workflow.test.ts`.
+
+  **No repository file was edited while the batch ran**, and the constraint is stated more sharply than
+  before rather than restated: round 8 touched `ci-workflow.test.ts` alone, and that file is the target or
+  the oracle of **eight of the eleven** mutation suites — so a mid-batch edit would not surface as a diff,
+  it would invalidate suites nobody was running.
+
+  ## Two things this batch got wrong on the way, both recorded
+
+  **The first gate invocation was aborted by its own reporting pipeline, and the abort looked like a
+  result.** Piping `npm run gate` into `Select-Object -First 20` closes the pipeline once twenty lines
+  have been read, which kills npm; it reported `exit -1` beside output that looked like ordinary passing
+  test activity. **A broken pipe is indistinguishable from a hang when the output happens to end on a
+  passing line.** Re-run with the output captured to a variable and filtered afterwards: exit 0. Capturing
+  before filtering is now how every gate invocation on this branch works, which is the reason the batch
+  script above was already written that way.
+
+  **The corroborator's `vitest list` phase was corrected three times across rounds 7 and 8**, and all
+  three corrections are kept rather than smoothed: v1 guarded the phase behind a summary line the tool
+  does not print, so a *working* enumeration read as an absent capability (**a precondition stricter than
+  the method turns a working measurement into a missing capability**); v2 counted ` > ` separators rather
+  than ids and then asserted equality against a count it could not legitimately have, because `vitest
+  list` emits one line per test **template** and this suite has 33 `.each(` call sites; v3 asserts only
+  the one directional claim the two mechanisms share. The alternative at every step — tune the pattern
+  until the number matched — is **fitting a checker to the number it was meant to check**.
+
+  **One cross-check this batch does provide.** Enumeration rose 2980 -> 2981 alongside execution
+  3305 -> 3306, holding the gap at exactly 325. Two mechanisms that cannot be compared in absolute terms
+  still have to *move together*, and these did. That is what independent agreement looks like when the
+  quantities differ.
+
+  **Not re-measured by this batch, and therefore not claimed:** `npm ci`, `npm run setup`, and both
+  archived `release-gate.mjs` copies. `npm run gate` does not invoke them, so `AGENTS.md`'s claim that
+  they exit 0 remains inherited from M0 rather than re-measured here.
