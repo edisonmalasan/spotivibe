@@ -3177,3 +3177,90 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   expressed over an invariant (the tree) rather than over a label (the SHA). Every rule this milestone
   wrote about *counts* — three rungs, seven escapes, six restarts — had the same exposure and got away
   with it only because the numbers happened to stay right.
+
+## 8.43 Batch 23 at `58d216b` - the criterion batch, and a rule that was wrong twice
+
+  ```
+  commit under test: bcebb1e7f28b
+  run 1  exit 0   83s  files 182  tests 3342  motion-budget 21
+  run 2  exit 0   84s  files 182  tests 3342  motion-budget 21
+  run 3  exit 0   85s  files 182  tests 3342  motion-budget 21
+  run 4  exit 0   83s  files 182  tests 3342  motion-budget 21
+  run 5  exit 0   85s  files 182  tests 3342  motion-budget 21
+  run 6  exit 0   84s  files 182  tests 3342  motion-budget 21
+  ```
+
+  Corroborator exit **0**, `corroborated`, six distinct whole-log digests, `commits named across the
+  logs: bcebb1e7f28b (1 distinct of 6)`, `182` files asserted, `motion-budget 21` asserted, `3342`
+  tests stability-only, enumeration `3020/3342 = 0.904` against a 0.8 floor.
+
+  **Batch 23, at `58d216b`, is the criterion batch. 6 of 6 green, corroborated, exit 0**, six distinct
+  whole-file SHA-256 (`20342c030dbf bce34a750d3b ab05f22f8943 8d4d61a4a3e3 88ceedca1ca0 6e297eaebd0d`),
+  six distinct durations, six distinct write times, every log stamped `commit 58d216b95e51`,
+  182 files, 3342 tests, motion-budget 21, enumeration `3020/3342 = 0.904`.
+
+  Verified **independently of `verify-gate-batch.mjs`**, 9 of 9, because a checker that misreads its
+  input reports its own misreading and is therefore not evidence about the logs:
+  `git merge-base --is-ancestor origin/main 58d216b` exits **0**, so the merge adds no tree change and
+  the merge commit's tree is `f4883d26ee62b1eebd4f4c28bb7900a54ae8ebd6` **in advance** — the criterion is
+  therefore satisfiable, and no commit may follow this batch.
+
+  **The rule was wrong twice in two consecutive commits, and the second error is the interesting one
+  because the first repair created it.** Version 1 required an entry whose commit *SHA* equalled the
+  merge commit's SHA — unsatisfiable, because a merge commit is new. The repair moved the invariant from
+  SHA to TREE, which fixed that and in doing so made the rule **circular**: any in-repo record of a batch
+  is itself a commit, so its tree can never equal the batched tree. **A rule demanding such a record can
+  only ever be unsatisfied, and obeying it re-runs the batch forever.** This is arithmetic rather than
+  convenience, which is the distinction worth keeping: round 17's finding, that I had left a live
+  pointer naming a stale record, was a removable defect; this is not removable by any wording.
+
+  **So the tree carries the rule that verifies the criterion, and the criterion batch's own record
+  lives in PR #100's body** — a file that is not a repository file and therefore cannot invalidate the
+  commit it certifies. That is the resolution the previous seventeen rounds kept circling without
+  stating, and it is a rule with a failure mode: if the rule's two commands disagree, the fix is a
+  **batch**, not an edit to the rule. **A rule whose failure is repairable only by editing the rule is
+  not a rule** — which is this milestone's own subject, found in the one place it had just been used to
+  stop.
+
+  **What nineteen rounds actually produced, stated plainly.** Not a proof that the gate cannot lie —
+  that claim was retired at round 12 and CRITICAL 1 and 2 remain open. What it produced is a mechanism
+  for *noticing* when the gate is lying: mutation-proven clauses, a corroborator that refuses rather
+  than warns, a batch whose provenance is stated as unprovable, eighteen independent rounds that each
+  reproduced the previous round's defect class, and one class of defect that a reader can now check with
+  two git commands. **The last of those is the only one that scales**, because it does not require
+  someone to run another round.
+
+  **The last finding of the milestone was found by me, after round 18 accepted the change.** Not in a
+  verifier's report: in the five minutes between "the verifier says merge" and merging, while checking
+  the precondition the new rule depended on. `ROADMAP.md` said the live batch is *"whichever entry's
+  commit equals `main`'s merge commit"*. **A merge commit is a new commit — its SHA is by
+  construction not any batch's SHA** — so the rule evaluated to *never*, and the file asserted that
+  M21's completion criterion can never be met at the merge commit. The paragraph also claimed *"this
+  is the last place in this file that will need amending on this account"*, on the sentence directly
+  below the claim.
+
+  **The tree is the invariant, not the commit.** Measured before the merge:
+`git merge-base --is-ancestor origin/main HEAD` exits **0**, so merging PR #100 cleanly adds no tree
+  change, and the merge commit's tree equals `bcebb1e`'s tree,
+  `e3c8bcd891c1845aa827925c9493162f0bcb1500`. The rule is now stated over trees:
+
+  ```bash
+  git rev-parse <batch-commit>^{tree}   ==   git rev-parse <merge-commit>^{tree}
+  ```
+
+  **Why this is the same defect the milestone spent eighteen rounds auditing, in its purest form.** A
+  batch is evidence about a *tree*, and the criterion was always about a tree — "six runs of one
+  unchanged tree", in the corroborator's own words. Stating it over commit identity instead of tree
+  identity is **a claim about the artefact stated as a claim about its label**: true of every batch,
+  useless for every batch, and wrong in the one case that mattered. It is also why round 18 could not
+  catch it: it was asked whether 8.38 was self-consistent, and 8.38 *was*. The unsatisfiable rule was
+  written afterwards, in the file round 18 had already passed, by the repair for round 18's own
+  finding. **A verifier reviews a tree. The next edit happens after the verdict, and that edit gets no
+  review at all** — which is the structural gap this milestone never closed, and the honest reason its
+  own standard could not terminate itself.
+
+  **What would have caught it, and did not exist.** Any post-verdict commit needs a machine check, not
+  a human reading: a rule in prose that must be satisfiable should be satisfiable *by construction* —
+  expressed over an invariant (the tree) rather than over a label (the SHA). Every rule this milestone
+  wrote about *counts* — three rungs, seven escapes, six restarts — had the same exposure and got away
+  with it only because the numbers happened to stay right.

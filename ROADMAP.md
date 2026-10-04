@@ -252,17 +252,40 @@ unverified line number, and two counts of the same batch sequence that disagreed
 run ever occurred. **Every one of the five was caught by asking a verifier to check a pointer rather than
 to trust it, and none was caught by writing them carefully.**
 
-**How to find the live criterion evidence — a rule, not a pointer.** `design.md` §2.10 requires six
-consecutive green full gate runs. The batches and the commits they were measured at are at `tasks.md`
-8.29, 8.30, 8.34, 8.36, 8.38 and 8.40, each stating its own supersession. **The live one is whichever
-entry was measured at a commit whose TREE equals the merge commit's tree** — not whose commit *SHA*
-equals it, because a merge commit is a new commit and no batch can ever be measured at it:
+**How to check the criterion at the merge commit — a rule, not a pointer.** `design.md` §2.10 requires
+six consecutive green full gate runs at the tree being merged. Verify it with two commands and nothing
+from this file:
 
 ```bash
-git rev-parse <batch-commit>^{tree}   ==   git rev-parse <merge-commit>^{tree}
+# the six logs of the batch, all stamped with one commit:
+head -2 <logdir>/run1.log … run6.log      # line 1 `gate exit0`, line 2 `commit <sha>`
+# and that commit's tree is the tree the merge carries:
+git merge-base --is-ancestor origin/main <batch-commit>   # exit 0 ⇒ the merge adds no tree change
+git rev-parse <batch-commit>^{tree}                       # == the merge commit's tree
 ```
 
-If they differ, the criterion is not met at the merge commit and the batch must be re-run there.
+**The live batch is the one whose stamped commit has the merge commit's TREE** — not whose commit *SHA*
+equals it, because a merge commit is a new commit and no batch can ever be measured at it. The batches
+already run are at `tasks.md` 8.29, 8.30, 8.34, 8.36, 8.38, 8.40 and 8.42, each stating its own
+supersession; the criterion batch itself is recorded in **PR #100's body**, and §8.42 says why.
+> **This rule was wrong twice in two consecutive commits, and the second error is the interesting one,
+> because the first repair is what created it.** The first version required an in-tree entry whose commit
+> *SHA* equalled the merge commit's — unsatisfiable, since a merge commit is new. The repair moved the
+> invariant from SHA to TREE, which fixed that, and in doing so created a rule that is circular instead:
+> **any in-repo record of a batch is itself a commit, so its tree can never equal the batched tree.** A rule
+> demanding such a record can only ever be unsatisfied, and obeying it re-runs the batch forever.
+>
+> **This is why the criterion batch's record cannot live in the tree. That is arithmetic, not a
+> rationalisation** — and it is worth distinguishing from round 17's finding, which was that I had
+> *additionally* left a live pointer naming a stale record. The pointer was the removable defect; the
+> circularity was not removable by any wording. The repair for both is the same: the tree carries the
+> **rule that verifies** the criterion, and the batch's own record lives in the PR body, which is not a
+> repository file and so cannot invalidate the commit it certifies.
+>
+> **A reader can now check the merge gate without trusting this file's arithmetic.** If the rule's two
+> commands disagree, the criterion is not met at the merge commit and the batch must be re-run there —
+> and the fix for a failing criterion is a batch, not an edit to this paragraph. **A rule whose failure is
+> repairable only by editing the rule is not a rule.**
 > **Round 18 accepted this paragraph's rule, and the rule was unsatisfiable — so this is the one repair
 > in this milestone that its own final verifier did not catch.** It read "whichever entry's commit equals
 > `main`'s merge commit". **A merge commit is a new commit: its SHA is by construction not any batch's
