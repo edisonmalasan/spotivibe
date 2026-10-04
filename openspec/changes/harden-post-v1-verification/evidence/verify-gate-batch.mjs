@@ -388,12 +388,16 @@ if (rows.length > 0) {
             "        ASSERTED MISMATCH; this line states the same fact in the summary a reader scans.\n"
         : `      ${absentCount} of ${rows.length} logs name no commit, so the batch does not agree on one.\n` +
             "        Each affected row above reports ASSERTED MISMATCH. Re-run the batch rather than\n" +
-            "        reading the agreement in the remaining logs as if it covered all six.\n",
+            `        reading the agreement in the remaining ${rows.length - absentCount} as if it covered all ${rows.length}.\n`,
     );
   } else if (distinctCommits.length !== 1) {
     problems += 1;
+    // "six" below is `rows.length`, parameterised because round 18's WARNING 3 measured a five-log read
+    // --runs 6 with a missing file, where a hard-coded "six" printed inside a sentence about a count.
+    // Round 12 corrected this exact class of figure twice in this same comment block; a figure in prose is
+    // the first thing to go stale when the thing it counts is parameterised.
     process.stdout.write(
-      "      a batch spanning more than one commit is not six runs of one unchanged tree, and this is\n" +
+      `      a batch spanning more than one commit is not ${rows.length} runs of one unchanged tree, and this is\n` +
         "        refused rather than warned about. The figures may still agree, but the criterion is\n" +
         "        about a commit: attribute the batch to neither, or split it.\n",
     );
@@ -498,9 +502,14 @@ if (list.status !== 0 || listedIds === 0) {
   //     ok   independent enumeration: 2995 templates; the log reports 999999 executed (gap 997004)
   //     corroborated, exit 0
   //
-  // A figure three thousand times off, and a gap of 997 004, both printed by this script on the line
-  // immediately above the verdict word. The D2 repair closes neither: that one made the phase fail when it
-  // produced *nothing*, and both of these produce plenty.
+  // A figure **three hundred** times off (999999 / 3326 = 300.7), and a gap of 997 004, both printed by this
+  // script on the line immediately above the verdict word. The D2 repair closes neither: that one made the
+  // phase fail when it produced *nothing*, and both of these produce plenty.
+  // **Round 18's NIT 2: this said "three thousand times off", which is off by 10x.** It was in round 12's
+  // recorded evidence, so the error was inherited rather than introduced — and the honest reading is worse
+  // than a typo: "three thousand" makes the hole sound catastrophic, which flatters the repair. The true
+  // factor, 300x, is still decisively fatal to a constant anchor, which is the only thing the sentence had
+  // to establish.
   //
   // **The anchor is a RATIO, and that is a measured revision rather than the original plan.**
   //
@@ -543,8 +552,13 @@ if (list.status !== 0 || listedIds === 0) {
   // has to be measured over the population it is about — the site of the original error is the one place
   // it is guaranteed to agree with you.
   //
-  // Immaterial to the anchor: 4 in a 3018-line count moves the ratio by about 0.0005 against a floor with
-  // 0.104 of headroom, and **that immateriality is
+  // Immaterial to the anchor: 4 in a 3018-line count moves the ratio by **0.0013** (4/3018) — or 0.0012
+  // against the 3342 executed at HEAD — against a floor the current batch clears by 0.104. **Round 18's
+  // NIT 2: this read "about 0.0005", which is off by 2.4x, and the error again flattered the conclusion
+  // by understating the effect.** A figure written down to support "this is immaterial" is under pressure
+  // toward whichever side makes the sentence work, which is why the correction is made by measuring rather
+  // than by re-reading the sentence and adjusting until it reads plausibly.
+// **That immateriality is
   // the point of writing the ratio rather than the constant.** The stale figures are corrected here
   // rather than deleted so a reader can see that the count was once anchored and was deliberately
   // replaced by something that does not move when a test is added.
@@ -562,7 +576,7 @@ if (list.status !== 0 || listedIds === 0) {
   //
   // Both measured holes still fail it decisively —
   //
-  //     a tree holding ONE test   ->   1 / 3326    = 0.0004   (W2)
+  //     a tree holding ONE test   ->   1 / 3326    = 0.0003   (W2)
   //     a log inflated to 999999  -> 3003 / 999999 = 0.0030   (W4)
   //
   // — and an honest batch sits near 0.90. Two caveats, both measured by round 12 rather than assumed:
@@ -571,10 +585,18 @@ if (list.status !== 0 || listedIds === 0) {
   //     total of up to +12.8% is accepted as `corroborated`. That is two orders of magnitude better than
   //     the 999999 hole it replaced, and it is why the floor is defensible — but it is a band, and the
   //     honest description of it is a band.
-  //   - The headroom between 0.90 and the 0.8 floor is **11.4%**, and an earlier version of this comment
-  //     called that "far enough below 0.90 that ordinary growth in `.each(` expansion cannot cross it".
-  //     Nothing was measured about how fast `.each(` expansion grows. The claim was unmeasured and is
-  //     withdrawn; 11.4% is what the margin actually is.
+  //   - The margin between an honest batch and the 0.8 floor, and an earlier version of this comment called
+//     the headroom "far enough below 0.90 that ordinary growth in `.each(` expansion cannot cross it".
+//     Nothing was measured about how fast `.each(` expansion grows. The claim was unmeasured and is
+//     withdrawn.
+//     **Round 18's NIT 2: this bullet used to read "11.4%" with no definition of the denominator, and
+//     11.4% does not follow from 0.90.** (0.90 − 0.8)/0.90 = 11.11%; /0.80 = 12.50%. 11.4% is what
+//     `(ratio − 0.8)/ratio` gives at a ratio of 0.9030 — which is exactly what batch 16 reported, so the
+//     figure was **not wrong, it was a correct answer to an older input that was never re-derived.** That
+//     is harder to catch than a plain error: it stays true in its own arithmetic and goes stale silently.
+//     Both forms are now stated, and the number that does not move with the suite is the one that carries
+//     the argument: the floor accepts an executed total up to `listedIds / 0.8` = **+25%**, against a
+//     measured honest gap of +8.7% (3020 enumerated against 3342 executed).
   const ANCHOR_FLOOR = 0.8;
   const ratio = listedIds / logTotal;
   const anchored = ratio >= ANCHOR_FLOOR && listedIds <= logTotal;

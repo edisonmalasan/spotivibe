@@ -2360,7 +2360,10 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   >
   > The criterion was met at `a0bf535` and is not claimed here. **Round 17's WARNING 4: this pointer used to
   > read "Current evidence is §8.36, at the merge commit", which §8.36's own heading contradicted three
-  > lines into it — that batch is at `7855f08` and the merge commit is `90c2496`.** A live pointer in the
+  > lines into it — that batch is at `7855f08`, and **no commit on this branch is a merge commit at all**
+  > (`git log -1 --format=%P 7855f08` → one parent `6e817d4`, which is round 18's WARNING 2: the heading
+  > said "the merge commit" and the file said elsewhere that `90c2496` was it, and git says neither).** A
+  > live pointer in the
   > tree naming a record the tree itself calls stale is worse than no pointer, because it looks current.
   > The pointer is now to §8.38, and each batch entry states its own supersession rather than relying on a
   > reader to follow the chain. **A criterion's satisfaction does not outlive the commit it was measured
@@ -2758,7 +2761,7 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   is why the repair is data flow rather than a fourth rung, and why **no claim is made that a syntactic
   pin would now suffice.**
 
-## 8.36 Batch 19 at `7855f08` - six of six green, corroborated, and the criterion is met at the merge commit
+## 8.36 Batch 19 at `7855f08` - six of six green, corroborated, and the criterion was met at `7855f08`
 
   ```
   commit under test: 7855f083190a
@@ -2993,3 +2996,133 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   logs. CI unobserved on this branch. No browser verification of any kind. CRITICAL 1 and CRITICAL 2
   remain named, measured, **unclosed**. And `openspec verify` does not exist as a subcommand, so the
   verification-workflow step this change mandates has never been run as specified.
+
+## 8.40 Batch 21 at `b931c7c` - six of six green, corroborated, and the criterion was met at `b931c7c`
+
+  ```
+  commit under test: b931c7c4b75c
+  run 1  exit 0   85s  files 182  tests 3342  motion-budget 21
+  run 2  exit 0   84s  files 182  tests 3342  motion-budget 21
+  run 3  exit 0   84s  files 182  tests 3342  motion-budget 21
+  run 4  exit 0   83s  files 182  tests 3342  motion-budget 21
+  run 5  exit 0   84s  files 182  tests 3342  motion-budget 21
+  run 6  exit 0   85s  files 182  tests 3342  motion-budget 21
+  ```
+
+  Corroborator exit **0**, `corroborated`: six distinct digests, `commits named across the logs:
+  b931c7c4b75c (1 distinct of 6)`, `182` files (asserted), `motion-budget 21` (asserted), `3342` tests
+  (stability only), enumeration `3020/3342 = 0.904` against a 0.8 floor.
+
+  Round 18 verified it **with its own script and no use of `verify-gate-batch.mjs`**: six distinct
+  whole-file SHA-256; line 1 `gate exit0` and line 2 `commit b931c7c4b75c` in all six, equal to
+  HEAD's short SHA; six distinct durations (54.19, 53.78, 54.12, 53.77, 54.06, 54.90s);
+  `Test Files 182` / `Tests 3342` / `motion-budget 21` in all six; 0 skipped, 0 NUL, 0 U+FFFD; no
+  failing summary in any log. Its own executed total at HEAD: **3342**, and `vitest list` at **3020**
+  ids, ratio **0.90365**.
+
+  **The one partial piece of evidence on a residual that was open for the whole milestone.** The
+  `commit` stamp cannot prove a batch's logs came from a gate run rather than being synthesised, and
+  that residual is not closed by this. Round 18 recorded what the logs *do* carry: a real `next build`
+  Turbopack trace (Next.js 16.3.6), `Generating static pages using 11 workers (21/21)` in every run,
+  the exact five-phase gate chain `lint && format:check && typecheck && build && test`, and per-run
+  distinct `Compiled successfully in {1222, 796, 781, 769, 820, 756} ms` with
+  `Finished TypeScript in {2.5, 2.6, 2.3, 2.4, 2.4, 2.3} s`. **That is evidence the logs came from real
+  runs; it is not proof, and the verifier explicitly declined to claim it closes the residual.** A
+  synthesised log reproducing a Turbopack trace with six distinct compile times is possible, so the
+  honest description is *partially evidenced*, not *closed* — and recording it as closed on the strength
+  of plausibility would be the last and most embarrassing version of this milestone's own defect.
+
+## 8.41 Round 18 - MERGEABLE / ACCEPT, no CRITICAL, and the repair cycle ends here
+
+  **Verdict: MERGEABLE / ACCEPT. No CRITICAL, three WARNING, four NIT.** The third consecutive round
+  with no CRITICAL, and the second with nothing behavioural in it. It also voided two of its own
+  measurements rather than reporting them — a first mutation battery using `--reporter=basic`, which this
+  vitest rejects, so the control went red too and all five rows were discarded.
+
+  **It confirmed 8.38 is genuinely self-consistent rather than a claim that had merely moved.** That was
+  the question asked, because round 17 had caught the identical overreach being relocated between files
+  rather than fixed. It measured the supersession chain through git (`a0bf535`←`88f9780`,
+  `9f78ee1`←`a0bf535`, `6e817d4`←`9f78ee1`, `7855f08`←`6e817d4`, `90c2496`←`7855f08`,
+  `b931c7c`←`90c2496` — strictly linear), confirmed 8.38's heading scopes its claim to a named commit,
+  and **could not make it invent a new problem.** The overreach, it found, had *migrated* to
+  `ROADMAP.md`, which does make a present-tense currentness claim. **A claim does not stop being wrong
+  because it was moved to a file with fewer readers.**
+
+  **WARNING 1 (material-mild) — a pointer to a moving target, which is the structural finding.**
+  `ROADMAP.md` read *"the current criterion evidence is batch 20, at `90c2496` … executed total 3341
+  measured at HEAD"* while HEAD executed **3342**, batch 21 existed at `b931c7c`, and batch 21 appeared
+  in no file at all. Repaired by **replacing the pointer with the rule that identifies the live entry**:
+  the live batch is whichever entry's commit equals the merge commit, and if none does the criterion is
+  not met there and the batch must be re-run. **A pointer has to be updated every time its target moves,
+  which means it is wrong by default and briefly right.** That is why this cycle terminates rather than
+  merely stopping, and it is the one repair in this round that prevents a future recurrence instead of
+  documenting one.
+
+  **WARNING 2 (cosmetic-to-material) — a heading claimed something git contradicts.** 8.36's heading said
+  *"the criterion is met at the merge commit"*; `git log -1 --format=%P 7855f08` returns a single parent,
+  and `90c2496` too. **No commit on this branch is a merge commit**, and 8.30 said `90c2496` was, so one
+  file held two answers and both were wrong. Corrected in both places, with the git evidence recorded
+  rather than the new assertion.
+
+  **WARNING 3 (cosmetic) — a hard-coded count in a sentence about a count.** The partly-absent message
+  said *"as if it covered all six"* while its own count was correctly parameterised, so a five-log read
+  printed `1 of 5 … all six`. Both figures are now `rows.length`-derived. **Round 12 corrected this
+  exact class of stale figure twice in this same comment block**: a figure in prose is the first thing to
+  go stale when the thing it counts is parameterised, and the fix took two dozen rounds to notice the
+  third instance.
+
+  **NIT 2 was the sharpest finding of the round, and it was not one of its own corrections.** Three
+  arithmetic figures in the checker's comment block were wrong: `1 / 3326 = 0.0004` (it is 0.0003),
+  *"4 in a 3018-line count moves the ratio by about 0.0005"* (it is 0.0013, off 2.4x), and *"a figure
+  three thousand times off"* (999999/3326 = 300.7). Two of the three **understated or overstated in ways
+  that flattered their own sentences** — a figure written down to support "this is immaterial" sits under
+  pressure toward whichever side makes the sentence work. The 300x error was **inherited from round 12's
+  recorded evidence**, so the verifier was correcting a defect this change had already accepted as
+  measured. A fourth, the *"11.4%"* headroom, turned out to be **a correct answer to an older input**:
+  `(ratio − 0.8)/ratio` at a ratio of 0.9030 gives 11.4%, and batch 16 reported 0.9034. It was not an
+  arithmetic error at all; it was a figure that stayed true in its own arithmetic and went stale silently,
+  which is harder to catch than a plain mistake. Both definitions are now stated, plus the number that
+  does not move with the suite — the floor accepts an executed total up to **+25%**, against a measured
+  honest gap of **+8.7%**.
+
+  **NIT 4 — a list claimed something about its items, and the claim was checked.** `ROADMAP.md` said the
+  five chain sections each state their own supersession; 8.29 does not, and does not need to, since its
+  heading reads "the criterion is NOT met". **It was found by checking a list against its items rather
+  than by reading the sentence**, which is the only method that has caught this family, every time.
+
+  **Its non-findings are recorded so they are not re-derived as findings later.** P4 is genuinely
+  redundant: removing `problems += 1` from the absent branch leaves all three absence shapes at exit 1
+  with `corroborated` false, because any absent commit already forces `assertedHold` false. A log stamped
+  literally `commit ABSENT` reads as present and prints `ok`, but `run-gate-batch.ps1` sets `$commit` to
+  `"unknown"` or a 12-char `git rev-parse --short=12` and never to that string. A log with an empty
+  `commit ` value reads as **absent** and is refused — correct and conservative. Its `commitNote`
+  extractor **fails closed**: a wrong capture turns assertions red, not green. `MEMORY.md`'s "twelve
+  rounds of shape assertions" is a past-tense count attached to one abandoned ladder, not a claim about
+  the current total. A byte scan of 9,005 tracked `.md/.ts/.tsx/.mjs/.ps1/.yml/.json` files finds **0
+  U+FFFD and 0 NUL**, the only literal being the regex that *checks* for U+FFFD.
+
+  ### Accepted open residuals, recorded and NOT repaired
+
+  The repair cycle ends here by the rule stated when round 17 was recorded: **a round returning no
+  CRITICAL ends the cycle, and its remaining findings are recorded rather than repaired.** The reason is
+  not that the findings are unimportant — it is that a process which repairs everything it is shown can
+  be run forever, and seventeen rounds have produced this milestone's real content while also
+  demonstrating that its own standard has a stopping problem. These are left open deliberately:
+
+  - **CRITICAL 1 and CRITICAL 2** - two one-line edits can each make the archived gate's install cascade
+    dead code, leaving 71/71 green. Named, measured, and **unclosable here**: the closing instrument is
+    executing the gate, whose first step is a dependency install, and that is forbidden for this work.
+  - **NIT 1 (accepted) - the absent count in the partly-absent message is pinned by no case.** Hard-coding
+    `${absentCount}` to `1` is green: with 2 of 6 absent the checker still prints the right *class* of
+    message, only the wrong number, in prose, in a batch that has already failed with exit 1. Pinning it
+    would add a clause to guard a sentence, and **a clause guarding prose is the thing this change spent
+    sixteen rounds dismantling.**
+  - **Batches 16-20's recorded figures** - their logs were not supplied to round 18 and it declined to
+    repeat them unverified. It did verify that all six named SHAs resolve and form the linear chain above.
+  - **`openspec verify` does not exist as a subcommand**, so the verification-workflow step this change
+    mandates has never been run as specified. The six independent rounds above were run by hand instead.
+  - No browser verification of any kind. CI unobserved on this branch. Root `scripts/` and both
+    archived `release-gate.mjs` copies remain outside every gate. The `encoding-integrity` BOM timeout's
+    cause, the `vitest list` phantom-line mechanism, and the `readSteps` loudness trade remain unverified
+    or open by decision. The lyrics `2 in 10` / `0 in 40` figures are observations, not proof.
+  - Six sequential runs are **not a contention test**, and no batch's provenance is proved by its stamp.

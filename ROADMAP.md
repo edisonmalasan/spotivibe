@@ -166,8 +166,13 @@ Both were measured on the real gate with `node --check` passing. They are not fi
 structural rather than pending: the instrument that closes this class is *executing the gate* and
 observing whether `environmentBroken` is set, or a taint/flow analysis, and executing the gate is
 forbidden for this work because its first step is a dependency install. What remains available is more
-syntactic predicates, and twelve rounds show each one is answered by the next round — name, then span,
-then declaration, then dispatch, then complement, never the rung that covers the next finding.
+syntactic predicates, and **sixteen rejecting rounds** show each one is answered by the next round — name,
+then span, then declaration, then dispatch, then complement, never the rung that covers the next finding.
+> **Round 18's NIT 3: this sentence said "twelve rounds" while line 143 of the same file said
+> "Seventeen rounds", twenty-six lines above.** Round 17 corrected line 143 and left this one, so the
+> defect survived the fix by being one paragraph away from where the fix was applied. It understates, so
+> it manufactures no false green. **Counting a sequence is the one task in this change that has been
+> reliable less often than expected, and it is the task every other finding here is about.**
 
 **What M21 therefore delivers:** the gate's install cascade pinned against a named, mutation-proven list
 of regressions; the batch evidence checker that runs the gate six times and refuses anything it cannot
@@ -210,7 +215,12 @@ the record, which was corrected in the same round. Recorded at `tasks.md` 8.29 a
 > batch 16 as the criterion's evidence and never marked it superseded, while batches 17-20 were absent
 > from it entirely - so a reader of `ROADMAP.md` alone would take batch 16 as current, and
 > `run-gate-batch.ps1` states in-tree that batch 16's logs predate the commit stamp the checker requires.
-> The live chain is at `tasks.md` 8.29, 8.30, 8.34, 8.36 and 8.38, each stating its own supersession.
+> The live chain is at `tasks.md` 8.30, 8.32, 8.34, 8.36 and 8.38, each stating its own supersession.
+> **Round 18's NIT 4: this sentence listed 8.29 among them and said "each".** 8.29 does not state a
+> supersession — it needs none, since its own heading reads "the criterion is NOT met" and cannot be
+> mistaken for current evidence — so the "each" was false while the entry it wrongly included was
+> harmless. **It was found by checking a list against its items rather than by reading the sentence**, which
+> is the only method that has ever caught this family.
 > **This is the fourth recurrence of the same finding** - a record not marked superseded is worse than no
 > record, because it looks current - and it survived five rounds because each fix was applied at the site
 > the previous round named rather than searched for globally.
@@ -242,10 +252,24 @@ unverified line number, and two counts of the same batch sequence that disagreed
 run ever occurred. **Every one of the five was caught by asking a verifier to check a pointer rather than
 to trust it, and none was caught by writing them carefully.**
 
-**The current criterion evidence is batch 20, at `90c2496`, recorded at `tasks.md` 8.38** - six of six
-green, corroborated, exit 0, 182 files, 3341 tests, motion-budget 21, enumeration 3019/3341 = 0.904
-against a 0.8 floor, verified independently of the shipped corroborator by round 17 (six distinct
-whole-file SHA-256, six distinct durations, executed total 3341 measured at HEAD).
+**How to find the live criterion evidence — a rule, not a pointer.** `design.md` §2.10 requires six
+consecutive green full gate runs. The batches and the commits they were measured at are at `tasks.md`
+8.29, 8.30, 8.34, 8.36 and 8.38, each stating its own supersession. **The live one is whichever entry's
+commit equals `main`'s merge commit for PR #100; if none does, the criterion is not met at the merge
+commit and the batch must be re-run there.**
+> **This paragraph replaces a pointer, and the replacement is the finding.** It used to read "the current
+> criterion evidence is batch 20, at `90c2496` ... executed total 3341 measured at HEAD", and round 18
+> measured HEAD at 3342 - so a stale executed total sat next to the word "HEAD", in the document whose own
+> line 214 calls this "the fourth recurrence of the same finding". **A pointer to a moving target has to
+> be updated every time the target moves, which means it is wrong by default and only briefly right.** A
+> rule that identifies the live entry cannot go stale, so this is the last place in this file that will
+> need amending on this account. The same overreach then migrated here from `tasks.md`, where round 17 had
+> just fixed it - **a claim does not stop being wrong because it was moved to a file with fewer readers.**
+
+Latest recorded batch: **21**, at `b931c7c` - six of six green, corroborated, exit 0, 182 files, 3342
+tests, motion-budget 21, enumeration 3020/3342 = 0.904 against a 0.8 floor, verified independently of the
+shipped corroborator by round 18 (six distinct whole-file SHA-256, six distinct durations, executed total
+3342 measured at HEAD).
 
 What that does **not** establish: CI is still unobserved on this branch; there is still no live-browser
 verification of anything; the two accepted residuals remain named, measured and **unclosed**; and the
