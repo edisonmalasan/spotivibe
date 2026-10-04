@@ -94,7 +94,7 @@ function parseArguments(argv) {
   return {
     dir: resolve(positional[0]),
     frontend: resolve(flags.get("frontend") ?? "frontend"),
-    files: flags.get("expect-files") ?? "181",
+    files: flags.get("expect-files") ?? "182",
     budget: flags.get("expect-budget") ?? "21",
     runs: Number(flags.get("runs") ?? "6"),
   };
