@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { prepareWorkflow, workflowScalar } from "./helpers/yaml";
+import { prepareWorkflow, stepWith, workflowScalar } from "./helpers/yaml";
 import { validateEnv } from "@/server/env";
 
 /**
@@ -233,18 +233,28 @@ function pinnedMajor(range: string | undefined): string | null {
 /** The Node major the CI workflow verifies, read from the workflow rather than restated. */
 function ciNodeMajor(): string | null {
   const workflow = readFileSync(join(FRONTEND, "..", ".github", "workflows", "ci.yml"), "utf8");
-  // Prepared, then read as a VALUE. Three rounds of the same defect are behind this line:
+  // Prepared, then read as a VALUE, then read from the SCOPE that owns it. Four rounds of the same
+  // defect are behind this line:
   //   - round 4: the raw text matched `# node-version: 24`, so commenting out the pin left every test
   //     green while the runner would have used its own default Node;
   //   - round 5: the first repair stripped trailing comments by tracking quotes, and a plain scalar may
   //     contain an apostrophe, so `x: it's # node-version: 24` opened a quote that never closed and the
   //     decoy survived - again with every test green;
-  //   - and a regex over the remaining text would still find the *first* `node-version:` and pull digits
-  //     out of whatever follows it, decoy or not.
-  // So the scalar is read and must be exactly the major. Anything else - absent, a decoy in a trailing
-  // comment, a range - returns `null`, which every caller already treats as a failure.
+  //   - round 5 again: a regex over the remaining text found the *first* `node-version:` and pulled
+  //     digits out of whatever followed it, decoy or not;
+  //   - round 6: even a VALUE read returned the first match in the whole document, so a
+  //     `node-version: 24` decoy in a job-level `env:` block beat the real pin and the real pin could be
+  //     set to 22 with every test green. Confirmed with a real YAML parser, not by the absence of an
+  //     error.
+  //
+  // The lesson across all four: **a bare key is ambiguous, and position is what a decoy manipulates.**
+  // So the value comes from the `Setup Node.js` step's `with:` inputs - the mapping that actually owns
+  // the pin - and a missing step is `null`, which every caller already treats as a failure. Anything
+  // else - absent, a decoy in a trailing comment, a range, a duplicate - also returns `null`.
   const code = prepareWorkflow(workflow);
-  const value = workflowScalar(code, "node-version");
+  const inputs = stepWith(code, "Setup Node.js");
+  if (inputs === null) return null;
+  const value = workflowScalar(inputs, "node-version");
   return value !== null && /^\d+$/.test(value) ? value : null;
 }
 

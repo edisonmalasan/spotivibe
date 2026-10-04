@@ -1781,6 +1781,31 @@ function isForbiddenMediaRoute(file: string): boolean {
   return namesMediaCapability(file) || isUnapprovedDownloadRoute(file);
 }
 
+describe("arm names identify clauses, so the registry gives each one a distinct name", () => {
+  // Mechanism 2 of the sole-custody pair. Without this, that filter's conjunction of name and source
+  // still misses two clauses identical in both - both catch the violation, and both are excluded, so
+  // `others` stays empty with two clauses doing the work.
+  //
+  // Over the whole registry rather than per exclusion. The round-6 mutation put the colliding arm
+  // inside one array, but the reason names are consulted at all is that arms are compared *across*
+  // exclusions - so uniqueness across all of them is the property the comparison depends on.
+  it("gives every arm in the registry a distinct name", () => {
+    const byName = new Map<string, string[]>();
+    for (const { arm, owner } of ARMS_WITH_OWNER_FLAGS) {
+      byName.set(arm.name, [...(byName.get(arm.name) ?? []), owner]);
+    }
+    const collisions = [...byName]
+      .filter(([, owners]) => owners.length > 1)
+      .map(([name, owners]) => `${name} (${owners.join(", ")})`);
+    expect(
+      collisions,
+      "arm names identify clauses, so an arm sharing a name would be excluded from the sole-custody " +
+        "competition along with the clause under test - two clauses could then catch the violation " +
+        "with the sole-custody claim still green. Give each arm its own name.",
+    ).toEqual([]);
+  });
+});
+
 describe("the permanent product exclusions are enforced (M15 task 1.1)", () => {
   it("covers every exclusion the roadmap states as permanent", () => {
     // A guard on the guard: if this list shrank, the sweep below would silently stop
@@ -3604,11 +3629,21 @@ describe("the streaming clause's facts are asserted", () => {
     // them cannot leave this check silently behind.
     const others = ARMS_WITH_OWNER_FLAGS.filter(
       ({ arm, owner }) =>
-        // By NAME, not by source and not by identity - see `STREAMED_BODY_AS_RESPONSE_NAME`.
-        // Comparing sources let an arm in a different exclusion with the same pattern drop out of the
-        // competition, so two clauses could catch the violation with the sole-custody claim still green.
-        arm.name !== STREAMED_BODY_AS_RESPONSE_NAME &&
-        new RegExp(arm.source, flagsOf(owner)).test(CALLER_SUPPLIED),
+        // By NAME **and** source together - see `STREAMED_BODY_AS_RESPONSE_NAME`.
+        //
+        // Three rounds on this one line. Comparing sources (round 4) let an arm in a different
+        // exclusion with the same pattern drop out, so two clauses could catch the violation with the
+        // sole-custody claim green. Comparing names alone (round 5) excluded EVERY arm carrying that
+        // name, and nothing enforced name uniqueness - so a second arm with the same name and a
+        // different source was excluded too, which round 6 defeated with a whole suite green.
+        //
+        // Names are labels, not identities; a label is an identity only if it is unique. The
+        // uniqueness assertion above is what makes this conjunction sound, and the conjunction is what
+        // makes it hold without that assertion. Either alone leaves a hole.
+        !(
+          arm.name === STREAMED_BODY_AS_RESPONSE_NAME &&
+          arm.source === STREAMED_BODY_AS_RESPONSE_ARM.source
+        ) && new RegExp(arm.source, flagsOf(owner)).test(CALLER_SUPPLIED),
     ).map(({ owner, arm }) => `${owner} :: ${arm.name}`);
     expect(
       others,

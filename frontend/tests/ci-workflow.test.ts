@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   assertNoBlockScalars,
+  jobRunDefaults,
   prepareWorkflow,
+  scalarValue,
+  stepWith,
   stripWholeLineComments,
   workflowScalar,
 } from "./helpers/yaml";
@@ -139,8 +142,115 @@ const workflow = readFileSync(WORKFLOW, "utf8");
  */
 const workflowCode = prepareWorkflow(workflow);
 const steps = readSteps(workflowCode);
-const indexOfStep = (needle: string): number =>
-  steps.findIndex((step) => (step.run ?? "").includes(needle));
+
+/**
+ * Every command the workflow claims to run, in the order it claims. Declared once so the ordering
+ * assertions and the witness that guards them cannot disagree about what the list is — the same
+ * reason the round-3 repair stopped scraping a value the file already held.
+ */
+const GATES = [
+  "npm ci",
+  "npm run lint",
+  "npm run format:check",
+  "npm run typecheck",
+  "npm run build",
+  "npm test",
+];
+
+/**
+ * Index of the step running `needle`, throwing if there is none.
+ *
+ * Throws when no step runs `needle`. It used to return `-1`, and `-1` is less than every real
+ * index, so an ordering assertion naming a step that does not exist was vacuously true. Round 6
+ * defeated it three times over: `npm run lint` could be replaced with `echo lint is disabled for
+ * now`, `npm run typecheck` with `echo typecheck deferred`, and `npm run lint` with `npx eslint .`
+ * — all green, all while the gate the workflow claims to run no longer ran.
+ *
+ * Throwing makes every ordering assertion double as a presence assertion, which is what the gate
+ * claims anyway: "lint runs before build" is not true of a workflow with no lint step.
+ */
+const indexOfStep = (needle: string): number => {
+  const at = steps.findIndex((step) => (step.run ?? "").includes(needle));
+  if (at === -1) {
+    throw new Error(
+      `no step runs \`${needle}\`. An absent step used to read as index -1, and -1 is less than ` +
+        "every real index, so every ordering assertion naming it passed without checking anything.",
+    );
+  }
+  return at;
+};
+
+describe("the workflow reader is witnessed on the shapes that actually failed", () => {
+  // Round 5's three witnesses all fed the helper a single line. That proved trailing-decoy handling and
+  // nothing else, and round 6 walked straight through the gap: an earlier line elsewhere in the document.
+  // Every witness below is multi-line for that reason.
+
+  it("reads a step's inputs and nothing outside them", () => {
+    const yaml = [
+      "    env:",
+      '      NODE_VERSION: "24"',
+      "    steps:",
+      "      - name: Setup Node.js",
+      "        uses: actions/setup-node@v7",
+      "        with:",
+      "          node-version: 22",
+      "      - name: Something else",
+      "        with:",
+      "          node-version: 20",
+    ].join("\n");
+
+    const inputs = stepWith(yaml, "Setup Node.js");
+    expect(inputs, "the named step's inputs must be found").not.toBeNull();
+    expect(workflowScalar(inputs!, "node-version")).toBe("22");
+
+    // A whole-document read is now **refused outright**, not merely out-ranked. It used to answer `24`:
+    // the `env:` decoy is earlier and first-wins. So round 6's defeat needed two things at once — a
+    // whole-document scope *and* a single occurrence of the key — and either one alone is now fatal.
+    // This is on synthetic input so the witness does not depend on what `ci.yml` contains.
+    expect(() => workflowScalar(yaml, "node-version")).toThrow(/appears 2 times/);
+
+    // And the second step's value is not reachable through the first step's scope.
+    expect(workflowScalar(inputs!, "node-version")).not.toBe("20");
+    expect(stepWith(yaml, "No Such Step")).toBeNull();
+  });
+
+  it("reads the job's run defaults rather than any working-directory in the file", () => {
+    const yaml = [
+      "    defaults:",
+      "      run:",
+      "        working-directory: frontend",
+      "    steps:",
+      "      - name: Lint",
+      "        run: npm run lint",
+      "        working-directory: frontend",
+    ].join("\n");
+    const defaults = jobRunDefaults(yaml);
+    expect(defaults).not.toBeNull();
+    expect(workflowScalar(defaults!, "working-directory")).toBe("frontend");
+    expect(jobRunDefaults("    steps: []")).toBeNull();
+  });
+
+  it("refuses a repeated key rather than resolving it by position", () => {
+    // Position is the thing a decoy manipulates. Taking the first of two occurrences IS the round-6
+    // defect, so a repeated key is stopped and the line numbers are named.
+    expect(() => scalarValue("  node-version: 24\n  node-version: 22", "node-version")).toThrow(
+      /appears 2 times/,
+    );
+    expect(() => scalarValue("  node-version: 24\n  node-version: 22", "node-version")).toThrow(
+      /lines 1, 2/,
+    );
+    expect(() => scalarValue("  cache: npm", "node-version")).not.toThrow();
+    expect(scalarValue("  cache: npm", "node-version")).toBeNull();
+  });
+
+  it("keeps quoting and trailing text out of the value only by refusing them", () => {
+    // Retained from round 5: still true, and still the reason the scope work is not enough on its own.
+    expect(workflowScalar("        node-version: x # node-version: 24", "node-version")).toBe(
+      "x # node-version: 24",
+    );
+    expect(workflowScalar('        cache: "a#b"', "cache")).toBe("a#b");
+  });
+});
 
 describe("the workflow reader is witnessed on input the real workflow does not contain", () => {
   // Each of these guards is a claim about a shape `ci.yml` does not currently have. Without a
@@ -280,12 +390,24 @@ describe("the CI workflow's steps", () => {
 
   it("is proven able to fail", () => {
     // Every ordering assertion here is a comparison of two indexes, and a comparison of -1 with
-    // -1 is true. This confirms the indexes are real, distinct numbers rather than missing ones.
-    const build = indexOfStep("npm run build");
-    const test = indexOfStep("npm test");
-    expect(build).toBeGreaterThan(-1);
-    expect(test).toBeGreaterThan(-1);
-    expect(build).not.toBe(test);
+    // -1 is true. So this must cover **every** gate the ordering assertions mention, not only the
+    // two M21 moved.
+    //
+    // Round 6's WARNING B is exactly what happens when it does not. This test checked `npm run
+    // build` and `npm test`; `npm run lint`, `npm run format:check` and `npm run typecheck` were
+    // never witnessed, so all three could be replaced with `echo` and every ordering assertion
+    // stayed green. A witness that covers two of the five things it is a witness for is not a
+    // witness for the other three.
+    const indexes = GATES.map((gate) => indexOfStep(gate));
+    expect(indexes.every((at) => at >= 0)).toBe(true);
+    // Distinct as well as present: two gates sharing an index means one step matched both needles,
+    // which would make their ordering comparison a comparison of a number with itself.
+    expect(new Set(indexes).size, "each gate must be its own step").toBe(GATES.length);
+    // And the total is the one this workflow has. A gate added without being added here would not
+    // be ordered against anything, which is the failure this file exists to prevent.
+    expect(steps.filter((step) => (step.run ?? "").trim() !== "").length).toBeGreaterThanOrEqual(
+      GATES.length,
+    );
   });
 
   it("produces the production build before running the tests", () => {
@@ -316,14 +438,32 @@ describe("the CI workflow's steps", () => {
     // Not re-derived here: `tests/deployment-contract.test.ts` already asserts that `engines.node`,
     // `package.json` and this workflow agree, and it proves itself by rejecting a pin Vercel
     // cannot build. Duplicating it would be a second place for the value to drift.
-    // Compared as **values**, not as substrings. `node-version: 24` present *somewhere* in the file is
-    // not the claim; `node-version`'s value being `24` is. A substring check is what let a comment
-    // satisfy the assertion twice, and a value check cannot be satisfied by text after the value.
-    expect(workflowScalar(workflowCode, "node-version")).toBe("24");
-    expect(workflowScalar(workflowCode, "cache-dependency-path")).toBe(
-      "frontend/package-lock.json",
-    );
-    expect(workflowScalar(workflowCode, "working-directory")).toBe("frontend");
+    // Compared as **values within the mapping that owns them**, which is two mechanisms rather than
+    // one, and rounds 4, 5 and 6 each defeated the previous single mechanism.
+    //
+    // Round 4: a substring check was satisfied by a comment.
+    // Round 5: the value check was satisfied by a decoy on the same line as the value.
+    // Round 6: the value check was satisfied by a decoy on an EARLIER line, because the lookup
+    // returned the first match in the whole document. `node-version` placed in a job-level `env:`
+    // block beat the real pin in `setup-node`'s `with:`, and the real pin could be set to 22 with
+    // all 3297 tests green.
+    //
+    // So the scope is named: `setup-node`'s inputs own the pin, the job's `defaults.run` owns the
+    // working directory, and nothing else is reachable. A decoy outside the scope is not merely
+    // unlikely to win — it is not found at all.
+    const setupNode = stepWith(workflowCode, "Setup Node.js");
+    expect(setupNode, "the workflow must configure actions/setup-node by name").not.toBeNull();
+    expect(workflowScalar(setupNode!, "node-version")).toBe("24");
+    expect(workflowScalar(setupNode!, "cache-dependency-path")).toBe("frontend/package-lock.json");
+
+    const runDefaults = jobRunDefaults(workflowCode);
+    expect(runDefaults, "the job must set a default working directory").not.toBeNull();
+    expect(workflowScalar(runDefaults!, "working-directory")).toBe("frontend");
+
+    // The scopes must be reached through the step the rest of the file also refers to. If a future
+    // edit renames the step, the assertion above fails with "not.toBeNull" and names the step —
+    // rather than silently reading a mapping that no longer exists.
+    expect(steps.map((step) => step.name)).toContain("Setup Node.js");
   });
 
   it("states why the build comes first, in the workflow rather than only in a test comment", () => {

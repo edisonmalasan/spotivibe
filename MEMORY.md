@@ -641,6 +641,28 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     This is the seventh time this repository has produced the same defect, which is why it is worth
     memorising as a reflex rather than a lesson. It is also the first time the reflex was written down and
     then not followed two rounds running - so the lesson is now about the value, not the strip.
+    **AMENDED AGAIN (round 6) - "a decoy anywhere" was false, and the false part was the load-bearing
+    part.** Value comparison defeats a decoy on the same line or after it. It does not defeat a decoy on
+    an EARLIER LINE ELSEWHERE, because reading a value means first deciding *which* `node-version` was
+    meant, and the implementation resolved that by taking the first match in the document. So
+    `node-version: 24` in a job-level `env:` block beat the real pin in `setup-node`'s `with:`, the real
+    pin could be set to `22`, and 181 files / 3297 tests stayed green. Confirmed with a real YAML parser,
+    not by the absence of an error - which is the only way to confirm an absence.
+    **The rule that survives: A BARE KEY IS AMBIGUOUS, AND POSITION IS EXACTLY WHAT A DECOY MANIPULATES.**
+    "Which `node-version` did you mean?" is a question, and answering it by order of appearance is
+    answering it on the decoy's behalf. So a value must be read from a **scope** - the mapping that owns
+    it: `stepWith(workflow, "Setup Node.js")` for the pin, `jobRunDefaults` for `working-directory` -
+    and a **repeated key inside that scope must be refused, not resolved**. Refusing is the whole trick:
+    it is the one answer that cannot be wrong in the decoy's favour.
+    Three properties, each of which a previous round thought was the whole fix:
+    - comments are not the problem; **text containing the value** is;
+    - nor is it **text at all**; it is **which occurrence**;
+    - so the ladder is: strip whole-line comments -> compare values -> **scope the lookup and refuse
+      duplicates**. Each rung was sufficient against the round before it and insufficient against the
+      next. `scalarValue` refuses duplicate keys; `blockAfter` must refuse duplicate *container* keys too,
+      or the same defect survives one level up - which is exactly how round 6's own suite found it.
+    The pattern generalises past YAML. Any lookup that answers "which one?" by order is one edit away
+    from answering it for whoever planted the decoy.
 54. **A check that asserts an identifier *appears somewhere* is not a check.** M21's cascade guard
     asserted the name `environmentBroken` was in the gate's source. Replacing the condition with
     `false` left it green while the gate went back to reporting sixteen failures where there is one.

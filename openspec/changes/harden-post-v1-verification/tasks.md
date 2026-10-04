@@ -593,3 +593,144 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   the parse read NULs and "Test Files" was not *findable* — and a string that cannot be searched looks
   exactly like a string with no results in it). A run whose counts cannot be parsed is still reported as
   `PARSE FAILURE`, never as a run that reported no counts.
+
+- [x] 8.17 **Verification round 6: one CRITICAL, two WARNINGs, all closed, each mutation-proven. Round 6
+  attacked round 5's repairs, and its CRITICAL is round 5's CRITICAL reproduced against the fix for it —
+  the third time this change has done that.**
+
+  **C1 — round 5's claim was false, and the false part was the load-bearing part.** Round 5 wrote:
+  *"a decoy anywhere — in a comment, after the value, in a second key — is part of what you compared,
+  and fails."* True for a decoy on the same line or after it. **False for a decoy on an earlier line
+  elsewhere**, because reading a value means first deciding *which* `node-version` was meant, and
+  `scalarValue` resolved that by returning the **first** match in the document. So:
+
+  ```yaml
+      env:
+        NODE_VERSION: "24"
+        node-version: 24        # decoy, in a mapping that does not own the pin
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22        # the real pin, now wrong
+  ```
+
+  **181 files / 3297 tests, all green, with the runner on Node 22.** The verifier confirmed the pin was
+  really gone using a real YAML parser — not by the absence of an error, which is the only way to confirm
+  an absence. Both C1 sites were defeated: `ci-workflow.test.ts` and `deployment-contract.test.ts`, the
+  latter being the check that *proves itself by rejecting a pin Vercel cannot build*.
+
+  **Fix — the rule that survives: A BARE KEY IS AMBIGUOUS, AND POSITION IS EXACTLY WHAT A DECOY
+  MANIPULATES.** "Which `node-version` did you mean?" is a question, and answering it by order of
+  appearance is answering it on the decoy's behalf. Two mechanisms:
+  - **Scope.** `stepWith(workflowCode, "Setup Node.js")` returns that step's `with:` inputs and nothing
+    else; `jobRunDefaults` returns `defaults.run`. A decoy outside the scope is not *unlikely* to lose —
+    it is not found. Both consumers read the same scopes, so they agree by construction rather than by
+    coincidence, and fixing the shared helper alone would have left the second site reading the whole
+    document through it (round 4's lesson restated).
+  - **Refusal.** `scalarValue` **throws** when the key appears more than once in its scope, naming the
+    lines. Refusing is the whole trick: it is the one answer that cannot be wrong in the decoy's favour.
+
+  Each was muted **alone**, composed with the verifier's decoy, to prove the other holds it up. That
+  composition is the point: round 5 shipped two mechanisms and round 6 proved one had been carrying
+  both.
+
+  **A fourth defect found by my own mutation suite, which the verifier's report had closed.** Inserting a
+  second `run:` under `defaults:`, decoy inside it, left the suite green — `blockAfter` refused duplicate
+  *scalars* while still resolving duplicate *mappings* first-wins. **Refusing a duplicate scalar while
+  resolving a duplicate mapping by position is the same defect with one of its two faces removed.** Fixed;
+  `blockAfter` now refuses a repeated container key too. Nothing in the file could have revealed this;
+  only a mutation aimed at the repair could.
+
+  **W1 — three of five gate orderings were vacuous.** `indexOfStep` returned `-1` for an absent needle,
+  and `-1 < 6` is true. `npm run lint`, `npm run format:check` and `npm run typecheck` could each be
+  replaced with `echo <gate> is disabled` — or with `npx eslint .` — and every ordering assertion stayed
+  green. The `is proven able to fail` witness that should have caught it covered only `npm run build` and
+  `npm test`, the two gates M21 actually moved. **A witness that covers two of the five things it is a
+  witness for is not a witness for the other three.** Now: `indexOfStep` **throws** on absence, so every
+  ordering assertion is also a presence assertion; the gates are declared once as `GATES` so the
+  assertions and their witness cannot disagree; and the witness covers all six, asserting presence,
+  distinctness (one step per gate, or an ordering comparison becomes a number against itself), and a
+  floor on run-bearing steps. Muted alone and composed with the echo defeat, the throw is not the only
+  thing working.
+
+  **W2 — a name is a label, and a label is only an identity if it is unique.** Round 5 had just moved the
+  sole-custody filter from `arm.source` to `arm.name`, reasoning that a name is what a named clause is
+  identified by. Nothing enforced uniqueness, so `arm.name !== NAME` excluded **every** arm carrying that
+  name: a second arm with the same name and a different source was excluded too, and two clauses could
+  catch the violation with the sole-custody claim green. Two mechanisms again:
+  - the filter excludes the clause under test by name **and** source together, so a same-name competitor
+    written differently stays in the competition (the verifier's exact defeat);
+  - **arm names are asserted unique across the registry**, which is what makes the conjunction sound —
+    without it, two clauses identical in both would both catch and both be excluded.
+
+  Each muted alone and composed with the competitor. Round 5's reasoning here was *right about what it
+  rejected and wrong about what it replaced*, which is a harder failure to see than being simply wrong.
+
+  **Proof: `mut-round6`, 15 of 15 that must go red did, plus 1 green by design.** Includes the verifier's
+  exact defeat for all three findings, the same defeat on `working-directory` and on
+  `cache-dependency-path`, a duplicate key inside the owning scope, the second-`run:` mapping defeat
+  found by this suite, both single-mechanism mutings composed with the decoy, and **positive control:**
+  removing the documentation comment the two raw-text assertions check stays green.
+
+  **Four synthetic witnesses added, all multi-line — and that is the repair to round 5's witnesses.**
+  Round 5's three witnesses each fed the reader a **single line**, so they proved trailing-decoy handling,
+  which was never the hole, and left scope and repetition entirely unwitnessed. The new ones feed it
+  documents, reproduce round 6's exact defeat on synthetic input, and witness the run-defaults scope and
+  the duplicate refusal. **A witness must exercise the shape that failed, not the shape that passes.**
+
+  **`MEMORY.md` lesson 53 amended a second time.** Round 5's amendment asserted "a decoy anywhere"; that
+  is now corrected in place rather than erased, and the rule that replaces it is the ambiguity rule above.
+  The lesson records the full ladder — comments are not the problem, *text containing the value* is; nor
+  is it *text at all*, it is *which occurrence* — because each rung was sufficient against the round
+  before it and insufficient against the next.
+
+  **Five defects in my own tooling, all caught, all recorded rather than smoothed.** This is the third
+  round in a row whose ledger leads with them, because they are the part a reader cannot derive from the
+  diff.
+  1. **The runner reported a verdict about a tree it had not produced.** `applyAll` wrote each compose
+     edit from `pristine`, so when a mutation's own file was also one of its compose files — the normal
+     case — the second write silently discarded the first. The competitor never entered the file and the
+     row reported STILL GREEN.
+  2. **A crash was reported as a defeat, twice.** Two mutations were invalid TypeScript; vitest failed to
+     transform the file and exited non-zero, and the runner called it RED. Now `RED BUT DID NOT RUN` is
+     raised on a transform error or a short file count.
+  3. **The guard for (2) was then mis-calibrated**, reading vitest's *passed* count instead of its total —
+     so `Test Files  1 failed | 2 passed (3)` read as `2 < 3` and **all fifteen real defeats became
+     `RED BUT DID NOT RUN`.** Caught only because fifteen simultaneous class changes is unmissable where
+     one would not have been. The guard is now self-calibrating: a bad calibration flips every row at
+     once, which is the property that makes it safe to have.
+  4. **Three mutations were not composed with their probes**, so they were green by construction — round
+     4's lesson in a fourth new shape. Each is now composed, and the un-composed rows are kept and
+     relabelled so the two reasons cannot be confused.
+  5. **One witness was declared but never registered.** `same-name-different-source-competitor` added a
+     probe arm as a `const` and never put it in any `arms` array, so it was a no-op that reported as an
+     unexpected green. **The most expensive kind of harness bug, because it looks like a finding about
+     the code.**
+
+  **And one needle re-pointed, reported `DID NOT APPLY` first.** `mut-f1`'s `identity-filter-removed`
+  stopped matching because round 6 rewrote that filter into a conjunction. Re-aimed at the new text with
+  the same meaning. **That block's needle has now needed re-pointing three times** — W1 made it flag-aware,
+  round 5 made it name-based, round 6 made it a conjunction — and the honest reading is that each repair
+  was correct about the defect it targeted and wrong about the one underneath it.
+
+  **Suites, all re-run because four files changed under them.** `mut-round6` 15/15 + 1 designed green,
+  `mut-f1` 6/6 + 3, `mut-w1-flags` 3/3 + 2, `mut-c1-round5` 9/9 + 1, `mut-c1-comments` 6/6 + 1,
+  `mut-f5` 5/5, `mut-gate-order` 7/7, `mut-apiroutes` 8/8 + 1, `mut-notseen-anchor` 4/4. Full suite **181
+  files / 3302 tests, 0 skipped** (+5: four synthetic witnesses, one uniqueness assertion). `tsc
+  --noEmit`, `prettier --check`, `eslint` exit 0; `openspec validate --strict` and `--specs --strict`
+  both valid (26 items, 0 failed).
+
+  **Note on ordering.** Prettier reformatted `tests/helpers/yaml.ts` after the first full run, and the
+  file is one `mut-round6` and one `mut-c1-round5` mutation attack. Both suites were re-run against the
+  formatted file before any of the figures above were believed — the standing rule being that a repair
+  invalidates the suites beneath it, and a formatter is a repair.
+
+  **Still unverified, unchanged from 8.11.** No browser verification (8.8); CI not observed green (8.9);
+  `npm ci` / `npm run setup` / both archived `release-gate.mjs` copies never run and outside every gate.
+  Round 6 **did** attack `release-gate-install.test.ts` for the first time in six rounds and found it
+  sound: the `installItem` window and the cascade assignment are both non-vacuous (4/4 mutations
+  defeated). It recorded one **latent** issue, not a current defect: the `code()` comment stripper
+  mis-reads an unescaped `//` inside a regex literal, and no scanned `.mjs` file contains one — so it is
+  a trap for the next person who adds one, not a hole today. `download-non-goals.test.ts`'s
+  `SOURCES_BY_FILE` anchor and `motion-budget.test.ts` were also checked and found sound. The
+  fixture-presence gap noted in 8.15 remains open **by decision**.
