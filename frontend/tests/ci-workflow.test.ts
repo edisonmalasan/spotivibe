@@ -158,26 +158,71 @@ const GATES = [
 ];
 
 /**
- * Index of the step running `needle`, throwing if there is none.
+ * The steps whose **whole command** is `command`.
  *
- * Throws when no step runs `needle`. It used to return `-1`, and `-1` is less than every real
- * index, so an ordering assertion naming a step that does not exist was vacuously true. Round 6
- * defeated it three times over: `npm run lint` could be replaced with `echo lint is disabled for
- * now`, `npm run typecheck` with `echo typecheck deferred`, and `npm run lint` with `npx eslint .`
- * — all green, all while the gate the workflow claims to run no longer ran.
- *
- * Throwing makes every ordering assertion double as a presence assertion, which is what the gate
- * claims anyway: "lint runs before build" is not true of a workflow with no lint step.
+ * This is the single definition of "a step that runs the gate", and both the ordering lookups and the
+ * once-per-gate count go through it. Round 7 generalised the count to exact equality while leaving the
+ * lookups on `.includes`, which put a strict rule and a loose rule in one file for one question — the
+ * exact shape of the WARNING it had just closed, where `npm ci` was compared by equality and the other
+ * five by substring. See `indexOfStep` for what that cost.
  */
-const indexOfStep = (needle: string): number => {
-  const at = steps.findIndex((step) => (step.run ?? "").includes(needle));
-  if (at === -1) {
+const stepsRunning = (list: Step[], command: string): Step[] =>
+  list.filter((step) => (step.run ?? "").trim() === command);
+
+/**
+ * Index of the step running `needle`, throwing if there is none and refusing if there is more than one.
+ *
+ * **Two defects, one per round, and the second was created by repairing the first.**
+ *
+ * Round 6: this returned `-1`, and `-1` is less than every real index, so an ordering assertion naming a
+ * step that does not exist was vacuously true. `npm run lint` could be replaced with
+ * `echo lint is disabled for now`, `npm run typecheck` with `echo typecheck deferred`, and `npm run lint`
+ * with `npx eslint .` — all green, all while the gate the workflow claims to run no longer ran.
+ *
+ * Round 8: it matched by **substring**, first match winning. So a step that merely *spells* a gate can
+ * stand in for the step that *runs* it. Proven live, in three composed edits — a decoy step early whose
+ * `run:` mentions `npm run lint`, the real Lint step moved to **after** the production build, and the
+ * expected step-name list updated to agree:
+ *
+ *     Gate summary -> Checkout -> Setup Node.js -> Install dependencies -> Format check ->
+ *     Typecheck -> Production build -> Lint -> Unit tests
+ *
+ * `runs the static checks before the build` compares `indexOfStep("npm run lint")` — the **decoy's** index,
+ * 0 — against the build's, and passes. **37/37 green, with lint running after the build.** The claim
+ * "lint runs before build" was false in the file and true in the assertion.
+ *
+ * The single-edit version of that probe is caught, by `reads every step the file declares` — which pins
+ * the ordered name list. That is *incidental* safety, a consumer's guarantee rather than this function's,
+ * and the third edit removes it. Round 7 recorded the identical distinction for `stepWith`, so the pattern
+ * is now named rather than rediscovered: **a helper's safety that lives in a different assertion is not the
+ * helper's safety.**
+ *
+ * Hence: exact command equality, and a **throw** rather than a first match when two steps run it — the
+ * same "refuse rather than choose" rule `helpers/yaml.ts` now applies at every level of a scoped lookup.
+ */
+const indexOfStep = (needle: string): number => indexOfRunning(steps, needle);
+
+const indexOfRunning = (list: Step[], needle: string): number => {
+  const running = stepsRunning(list, needle);
+
+  if (running.length === 0) {
     throw new Error(
-      `no step runs \`${needle}\`. An absent step used to read as index -1, and -1 is less than ` +
-        "every real index, so every ordering assertion naming it passed without checking anything.",
+      `no step runs \`${needle}\` as its whole command. An absent step used to read as index -1, and -1 ` +
+        "is less than every real index, so every ordering assertion naming it passed without checking " +
+        "anything; and a step that merely spells the gate used to be accepted as one running it.",
     );
   }
-  return at;
+
+  if (running.length > 1) {
+    throw new Error(
+      `refusing to read the position of \`${needle}\`: ${running.length} steps run it as their whole ` +
+        `command (${running.map((step) => `\`${step.name}\``).join(", ")}). Which one an ordering ` +
+        "assertion is talking about is not decidable from the workflow, and taking the first would be " +
+        "answering on the decoy's behalf.",
+    );
+  }
+
+  return list.indexOf(running[0]!);
 };
 
 describe("the workflow reader is witnessed on the shapes that actually failed", () => {
@@ -424,6 +469,51 @@ describe("the workflow reader is witnessed on input the real workflow does not c
     expect(stepWith(oneStep, "No Such Step")).toBeNull();
   });
 
+  it("reads a step that runs the gate, not one that merely spells it", () => {
+    // **Round 8's finding, reproduced on synthetic input.** The defect needs a workflow with three
+    // properties at once — a step that mentions a gate early, the real gate elsewhere, and the name list
+    // updated to match — so the witness builds the shape rather than the whole file. All three matter: the
+    // name list is what made the one-edit version look caught, and "incidentally caught by another
+    // assertion" is not caught.
+    const withDecoy: Step[] = [
+      { name: "Gate summary", run: 'echo "npm run lint runs below"' },
+      { name: "Production build", run: "npm run build" },
+      { name: "Lint", run: "npm run lint" },
+    ];
+
+    // The decoy is at index 0 and the real gate at 2, so a substring lookup answering "first match" puts
+    // lint *before* the build and an ordering assertion comparing them passes. With exact command
+    // equality the decoy is not a candidate at all, so the comparison is between the two steps it names.
+    expect(indexOfRunning(withDecoy, "npm run lint")).toBe(2);
+    expect(indexOfRunning(withDecoy, "npm run build")).toBe(1);
+
+    // And the composed claim, stated as the assertion would state it: lint runs after the build in this
+    // list, so `lint < build` must be **false** — which is the whole point. A lookup that returned 0 here
+    // would report it true.
+    expect(indexOfRunning(withDecoy, "npm run lint")).toBeGreaterThan(
+      indexOfRunning(withDecoy, "npm run build"),
+    );
+
+    // A step that mentions a gate is not a step that runs it, so a gate nobody runs is still absent.
+    expect(() => indexOfRunning(withDecoy, "npm run typecheck")).toThrow(/no step runs/);
+
+    // Two steps running the same gate is ambiguous rather than first-wins, matching the rule
+    // `helpers/yaml.ts` now applies at every level of a scoped lookup.
+    expect(() =>
+      indexOfRunning([...withDecoy, { name: "Lint again", run: "npm run lint" }], "npm run lint"),
+    ).toThrow(/2 steps run it/);
+
+    // Control: the correct workflow reads as the assertions expect, so nothing above is firing because the
+    // lookup rejects everything.
+    const correct: Step[] = [
+      { name: "Lint", run: "npm run lint" },
+      { name: "Production build", run: "npm run build" },
+    ];
+    expect(indexOfRunning(correct, "npm run lint")).toBeLessThan(
+      indexOfRunning(correct, "npm run build"),
+    );
+  });
+
   it("removes whole-line comments and nothing else", () => {
     const yaml = [
       "# a whole-line comment",
@@ -593,11 +683,15 @@ describe("the CI workflow's steps", () => {
     //
     // `|| true` on a CI step is an entirely ordinary edit and it is silent. So the fix is not a cleverer
     // matcher; it is to require the command to *be* the gate.
+    //
+    // **Round 8 then found that this assertion and `indexOfStep` were two mechanisms for one question**,
+    // and that the loose one was the one every ordering assertion used. Both now call `stepsRunning`, so
+    // the rule exists exactly once: a step runs a gate when its whole trimmed command **is** that gate.
     for (const gate of GATES) {
-      const matching = steps.filter((step) => (step.run ?? "").trim() === gate);
-      expect(matching, `exactly one step must run \`${gate}\` as its whole command`).toHaveLength(
-        1,
-      );
+      expect(
+        stepsRunning(steps, gate),
+        `exactly one step must run \`${gate}\` as its whole command`,
+      ).toHaveLength(1);
     }
   });
 
