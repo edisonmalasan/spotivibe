@@ -2162,7 +2162,7 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   reproducible false green in the repository's own verification machinery. It is accepted, not fixed and
   not forgotten, and it is not covered by this change's acceptance criterion — which is worded to say so.
 
-## 8.29 Batch 15 - the criterion is NOT met, and the run that broke it has a narrowed cause
+## 8.29 Batch 15 - the criterion is NOT met, and the run that broke it had a cause that is now established
 
   **Five of six green. `design.md` 2.10's criterion is six consecutive green full gate runs, so it is
   not satisfied at `0e65dc8`.** Batch 14 satisfied it at `ed6f9f6`; between those two commits this
@@ -2213,7 +2213,7 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   `encoding-integrity` timeout. Two findings, one shape: a test that is correct when the machine is idle
   and wrong when it is busy.
 
-  ### M21 did not cause it
+  ### M21 did not cause it — **as of `0e65dc8`**, the commit batch 15 ran at
 
   ```
   git log --oneline -3 -- frontend/tests/lyrics/lyricsPanel.test.tsx   -> 6e11917 (M19), 20d69a1, 214bd12
@@ -2221,14 +2221,20 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   git diff --stat origin/main...HEAD -- <both files>                      -> empty
   ```
 
-  **Neither file is touched by this branch.** The defect is pre-existing from M16/M19 work, and the
-  six-green criterion is what made it visible. That is the criterion working, not failing.
+  **Neither file was touched by this branch at `0e65dc8`.** The defect was pre-existing from M16/M19 work,
+  and the six-green criterion is what made it visible. That is the criterion working, not failing.
 
-  ### Cause: ESTABLISHED by measurement. **This supersedes the "not established" record above.**
+  **This statement was true when written and is now false, so it is timestamped rather than deleted.**
+  `a0bf535` touched `lyricsPanel.test.tsx` — the *test*, never the panel. `LyricsPanel.tsx` remains
+  untouched by this branch: `git diff --stat origin/main...HEAD -- frontend/src/features/lyrics/
+  LyricsPanel.tsx` is empty, and `git diff --stat -- src/` is empty.
 
-  Scope was extended by the owner under `design.md` 2.12 to permit this investigation and repair, and the
-  cause is now established by measurement rather than narrowed. The narrowing above was also wrong in one
-  specific respect, which is worth correcting plainly: **all four candidate dependencies are inert.** The
+### Cause: ESTABLISHED by measurement, at `a0bf535`
+
+  **This section replaces an earlier one in this same §8.29** which recorded the cause as *narrowed but not
+  established*, listed four candidate dependencies, and declined to fix anything on that basis. That text is
+  gone, so this is a replacement rather than an appendix, and it is wrong in one specific respect worth
+  correcting plainly: **all four candidate dependencies are inert.** The
   effect fires exactly three times, with these values, and there are only ever two scrolls:
 
   ```
@@ -2305,7 +2311,7 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   - so the criterion is currently **unsatisfied**, for a cause outside this change's scope and outside
     its authorship.
 
-  Three readings are available, and this record does not pick one silently:
+  Three readings were available, and this record did not pick one silently:
 
   1. **A defect in the criterion's reach.** Six sequential runs miss a 2-in-10-under-load failure. The
      criterion is a *reliability* criterion, and one that passes 5 times in 6 while missing a
@@ -2317,9 +2323,144 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   3. **A defect in the test**: an exact-count assertion against a shared counter, whose measurement
      window can legitimately include a second activation.
 
-  **Reading 3 is the one that is correct, and it is now established by measurement rather than chosen.**
+  **Reading 3 is the one that is correct, and it is established by measurement rather than chosen.**
   It was always the defect: the component's behaviour never varied between a passing and a failing run, so
   there was no component defect to find. See the established cause and the fix above.
 
-  The six-green count **restarts at the fix**; pre-fix runs are not evidence about the tree the fix
-  produces.
+  Reading 1 is **still true and still applies to the batch of six in §8.30**, which runs sequentially and
+  so cannot rule out a contention-only failure. That is a property of the criterion rather than a defect in
+  it, and it is recorded rather than argued away.
+
+## 8.30 Batch 16 at `a0bf535` - six of six green, corroborated, and the criterion is MET
+
+  Run at the commit that fixed §8.29's cause, from a fresh log directory, driving six `npm run gate` passes.
+  The count restarted here: pre-fix runs are not evidence about the tree the fix produces.
+
+  ```
+  run 1  exit 0  299s  files 182  tests 3335  motion-budget 21
+  run 2  exit 0  163s  files 182  tests 3335  motion-budget 21
+  run 3  exit 0  103s  files 182  tests 3335  motion-budget 21
+  run 4  exit 0   99s  files 182  tests 3335  motion-budget 21
+  run 5  exit 0   96s  files 182  tests 3335  motion-budget 21
+  run 6  exit 0  147s  files 182  tests 3335  motion-budget 21
+  ```
+
+  Checked by the shipped corroborator, exit **0**, `corroborated`. Per log: `gate exit0` as the leading
+  line, 0 NUL bytes and 0 U+FFFD, all markers found, `files 182`, `budget 21`, `skipped none`, and **six
+  distinct SHA-256 digests** - so this is six runs, not one log copied six times. Enumeration
+  `3013 templates / 3335 executed = 0.903`, floor 0.8.
+
+  **Which commit these ran against is `consistent-with`, not stamped, and the difference matters.**
+  Round 13 raised this and it is correct: the driver writes no commit identifier, so no log can be tied
+  to a commit by its own contents. What is established: all six carry `3335` tests, which is the
+  post-fix tree (`+1` regression test from §8.29) and **not** `3334`, which batch 15 at `0e65dc8` is
+  recorded at; all six carry `182` files and `motion-budget 21`; and the logs postdate the commit. So the
+  logs are consistent with `a0bf535` and inconsistent with its parent. **A commit stamp in
+  `gate exit <code>`'s log header would settle it, and adding one after the fact does not settle it for
+  this batch** - it would only bind future ones. Recorded as a limitation, not presented as verified.
+
+  **Where the milestone stands on its own criterion, in full:**
+
+  - batch 14 (`ed6f9f6`): 6/6 green, corroborated, exit 0;
+  - batch 15 (`0e65dc8`): **5/6**, broken by the defect established and fixed in §8.29;
+  - batch 16 (`a0bf535`): **6/6 green**, corroborated, exit 0 - **the criterion is met.**
+
+  `3334` -> `3335` is the regression test added in §8.29, and it is the count I expected; a silent jump
+  would have been the finding.
+
+  **What this does not establish, unchanged:** CI is unobserved on this branch. There is no browser
+  verification of any kind. CRITICAL 1 and CRITICAL 2 remain named, measured, **unclosed** residuals, and no
+  document in this change claims otherwise. Reading 1 above applies: six sequential runs are not a
+  contention test. And the logs live outside the repository at a temp path, so a reader of `main` cannot
+  re-check them from the tree - which is a consequence of committing ~300 KB of build output to the
+  repository being the only alternative, and is recorded rather than solved.
+
+## 8.31 Round 13 - REJECT on the record, and the claim that was falsified by the commit that measured it
+
+  **Verdict: REJECT. 1 CRITICAL, 2 WARNING, 2 NIT.** The code change was confirmed sound - the verifier
+  reproduced the regression evidence with its own needles and mutations (5/5 red without the discipline,
+  5/5 green with it, byte-exact restore) and independently re-ran the corroborator. **The rejection was
+  entirely about the record.**
+
+  **CRITICAL: `design.md` asserted a `src/` change that does not exist.** §2.12 and §3 were written
+  **before** the investigation, on the belief that the defect was in shipped code, and §2.12 said so in the
+  present tense: *"This defect **is** shipped code"*, and *"**One shipped-code change is now authorised
+  and on the record** ... It is the only `src/` change this milestone will make."* The measurement in the
+  same commit reversed it, `tasks.md` was corrected, and **`design.md` - this change's scope authority -
+  was not.** The verifier found it by checking the claim against `git diff`, which is the cheapest
+  possible check and the one a reader would have run first.
+
+  This is the same defect family this milestone exists to remove - **something believed because it was
+  written down** - and it was introduced by the very commit that measured the question. §3 promised a
+  shipped-code edit; §2.12's scope still required *"make the smallest production change"* for work the
+  measurement showed was unnecessary because all four dependencies are inert. Repaired in place, with the
+  supersession in `design.md` itself and not only in `tasks.md`, and with the heading corrected so it no
+  longer reads as a claim about where the defect lives.
+
+  **The lesson is the one this change keeps re-learning, and it is now the fourth instance:** write the
+  finding down only after measuring it. §2.12 was written to authorise work before the work was done,
+  which was correct as an authorisation - and it is precisely that, a document describing work not yet
+  done - but then it was left in the present tense after the work falsified it. **An authorisation is not
+  a finding, and the document carrying it must be re-read when the answer arrives.**
+
+  **WARNING 1, first half - now repaired for future batches.** Round 13 could not tie the six logs to a
+  commit and marked it `unverified`, correctly. Repaired by having the driver write `commit <sha>` into
+  each log, resolved **once, above the run loop** - resolving it inside the loop would let a batch that
+  spanned a commit change stamp all six logs with the last HEAD seen, appearing to be six runs of one
+  tree when it was six runs of two. The checker refuses a log with no commit line, reports a batch naming
+  more than one, and accepts `unknown`: presence is required, informativeness is not, because refusing
+  `unknown` would punish a shallow clone rather than the evidence. **This binds future batches only;
+  batch 16's logs cannot acquire the stamp, and that limitation is recorded above rather than hidden by a
+  stamp added too late.**
+
+  **WARNING 1, second half and WARNING 2 - record gaps, now closed.** Batch 16 was not recorded anywhere
+  (§8.30), and a sentence that was true at `0e65dc8` still read in the present tense (§8.29, now
+  timestamped, with its two dangling back-references repointed at the section that replaced them).
+
+  **NIT 1 is accepted and disclosed:** reverting the *original* test's discipline leaves the file 5/5
+  green in isolation. Only the new test pins it, deterministically. The suite cannot fail if that specific
+  repair is reverted under light load, and that is stated here rather than left for a reader to find.
+
+  **NIT 2** folded into the CRITICAL repair - the §2.12 heading read as a claim about the defect's
+  location.
+
+  **The five new clauses were mutation-tested before being believed**, each RED, control green, all three
+  files restored byte-exactly:
+
+  ```
+  driver stops writing `commit $commit`                    RED  Test Files  1 failed (1)
+  checker stops requiring the commit line                  RED  Test Files  1 failed (1)
+  checker stops flagging a batch spanning two commits      RED  Test Files  1 failed (1)
+  checker treats an `unknown` stamp as a failure           RED  Test Files  1 failed (1)
+  driver resolves the commit inside the run loop           RED  Test Files  1 failed (1)
+  control, nothing broken                                  expected-green  Test Files  1 passed (1)
+  ```
+
+  **Two of my own instruments lied while producing that table, and both are recorded because the pattern
+  is the point.** The first run labelled all five `RED BUT DID NOT RUN`: the detector matched
+  `Test Files 1 failed (1)` while vitest prints `Test Files  1 failed | 18 passed (1)` and `1 failed (1)`,
+  so four genuine reds were reported as inconclusive and **the suite reported 0/5 RED with a green
+  control** - a mutation table that looks like a total failure and is really a broken instrument. The
+  second attempt matched `passed \((\d+)\)`, which does not exist on a red file at all, and still reported
+  them as not-run. Reading the parenthesised total directly fixed it. **Third instrument failure of this
+  shape in this milestone, and the same lesson each time: a counter that cannot see the thing it counts
+  is worse than no counter, because it reports a result.**
+
+  **And one mutation returned STILL GREEN and was right to.** Hard-coding the status word while leaving
+  the count text intact passed my straddling-batch test, because that test asserted only
+  `2 distinct of 6`. The clause exists to make a straddling batch *visible*, and visibility is the
+  `WARN` label; the count is detail. **The test was amended to assert the label**, and only then was the
+  mutation RED. A still-green row is not a failed experiment — it is a finding about the test, and reading
+  it as anything else is how a suite acquires a clause that cannot fail.
+
+  **Round 13's `unverified` items are accepted as unverified**, not argued away: the pre-fix ordering's
+  `2 in 10 concurrent` figure and the fixed ordering's `0 in 40` were both the verifier's own runs to
+  make and it made neither; batch 16's commit attribution is `consistent-with` and cannot become `stamped`
+  after the fact; the two install-cascade escapes were not executed, being forbidden; the phantom
+  `vitest list` mechanism stays unverified by agreement.
+
+  **What round 13 got right that is worth keeping:** it found a falsified claim in the document that
+  defines scope, by checking it against `git diff`, in a change whose entire subject is claims that were
+  believed rather than measured. It also disclosed its own incident — a mutation interrupted before its
+  restore, detected, restored with `git checkout --`, tree confirmed clean — rather than quietly
+  proceeding. A reviewer who reports its own mishap is worth more than one who reports none.

@@ -69,6 +69,28 @@ if (-not (Test-Path $LogDir)) {
 
 $summary = @()
 
+# **Round 13's WARNING 1: the log did not say which commit it ran against.** Six logs carrying every green
+# figure still cannot be tied to a commit by their own contents, so a criterion claim about "the tree at
+# <commit>" rests on timestamps and arithmetic. Batch 16's logs predate this stamp and therefore cannot
+# acquire it - this binds future batches only, and that limitation is recorded at `tasks.md` 8.30 rather
+# than papered over by a stamp added too late.
+#
+# Resolved ONCE, above the loop, so all six logs of a batch name the same commit. Inside the loop it would
+# re-resolve per run, and a batch that spanned a commit change would stamp all six logs with whatever HEAD
+# was last seen - a batch appearing to be six runs of one tree when it was six runs of two.
+#
+# `git` absent, or a detached/unborn HEAD, yields `unknown` rather than a plausible-looking guess. A stamp
+# reading `unknown` proves the driver ran and does not prove what it ran against, so the checker requires
+# presence and not informativeness - see its own comment for why refusing `unknown` would be wrong.
+$commit = "unknown"
+try {
+    $described = & git -C $repoRoot rev-parse --short=12 HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $described) { $commit = ($described | Out-String).Trim() }
+} catch {
+    $commit = "unknown"
+}
+Write-Host "commit under test: $commit"
+
 for ($run = 1; $run -le $Runs; $run += 1) {
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
 
@@ -90,7 +112,7 @@ for ($run = 1; $run -le $Runs; $run += 1) {
     # It is written as a leading marker line rather than appended, so it cannot be confused with the gate's
     # own output and so a reader sees it before reading anything the gate claimed. The checker refuses a log
     # without one rather than defaulting it, because "absent" and "green" must not collapse.
-    [System.IO.File]::WriteAllText($logPath, "gate exit$exitCode`n$clean", $encoding)
+    [System.IO.File]::WriteAllText($logPath, "gate exit$exitCode`ncommit $commit`n$clean", $encoding)
 
     # Markers are located as strings before any number is read from their region. A number parsed out of a
     # region not yet known to contain its marker is how a working log gets reported as an empty one.

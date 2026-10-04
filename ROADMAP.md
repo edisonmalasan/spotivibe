@@ -169,21 +169,36 @@ corroborate, now itself gated by execution rather than by grepping its own sourc
 measured, documented ways to defeat it. **Not:** immunity of the gate to a disabled caller. See
 `openspec/changes/harden-post-v1-verification/design.md` §2.11.
 
-**M21's own completion criterion is not currently met.** `design.md` 2.10 requires six consecutive
-green full gate runs. Batch 14 satisfied it at `ed6f9f6` (6/6, corroborated, exit 0). **Batch 15, run
-at the final documentation commit `0e65dc8`, was 5 of 6.** The failure was
-`tests/lyrics/lyricsPanel.test.tsx > scrolls the active line into view while following` -
-`expected [ ...(2) ] to deeply equal [ { top: 150, behavior: 'smooth' } ]`, the same scroll call issued
-twice. Neither that test nor `LyricsPanel.tsx` is touched by this branch (`git diff origin/main...HEAD`
-on both is empty), so the criterion surfaced a pre-existing defect rather than causing one.
-Reproduced at **0 failures in 40 isolated runs** and **2 in 10 concurrent ones** - contention, not
-isolation. The mechanism is **unverified**, so under M21's own rule no fix is claimed and none is in
-scope: `LyricsPanel` is shipped product code. Three readings stay open - the criterion does not reach
-a 20%-under-load failure, the panel emits a duplicate smooth scroll, or the test's exact-count
-assertion is wrong. Recorded at `tasks.md` 8.29.
+**M21's completion criterion is met.** `design.md` 2.10 requires six consecutive green full gate runs.
+Batch 14 satisfied it at `ed6f9f6`. Batch 15, at `0e65dc8`, was **5 of 6** - and the sixth is the useful
+part. It failed `tests/lyrics/lyricsPanel.test.tsx > scrolls the active line into view while following`
+with `expected [ ...(2) ] to deeply equal [ { top: 150, behavior: 'smooth' } ]`, the same scroll call
+issued twice. At `0e65dc8` neither that test nor `LyricsPanel.tsx` was touched by this branch, so the
+criterion surfaced a pre-existing defect rather than causing one. **The milestone's own bar found a real
+bug before it found nothing.**
 
-Also open and unaffected by that decision: no live-browser verification of anything, and two red gate
-runs whose second cause is now measured *not* to be tree size.
+Scope was extended by the owner to diagnose and repair it. **The cause was in the test, not the panel,
+and it is established by measurement rather than narrowed.** `layout()` mutates the global geometry stub,
+and `scrollActiveLineIntoView` reads it when the effect *flushes* rather than when it is scheduled - so
+flushing before `layout()` gives delta `0` and an early return (1 call, passes), and flushing after gives
+delta `150` and a second call inside the window (fails). Which branch runs is a scheduler decision. All
+four of the effect's dependencies are inert: the trace is byte-identical whether the run passes or fails.
+The test had read its marker at `scrollCalls.length = 0` in 8 of 8 isolated runs.
+
+Fixed in the test alone - flush pending effects, discard what they recorded, then take the marker.
+`git diff --stat -- src/` is empty: **no shipped code changed**, because a production fix would have
+suppressed the panel's legitimate first centring. The assertion's exact count is unchanged. A regression
+test pins it, and its first version was measured to be decorative before being rewritten.
+
+**Batch 16, at `a0bf535`: 6 of 6 green, corroborated, exit 0** - six distinct log digests, 182 files,
+3335 tests, motion-budget 21, enumeration 3013/3335 = 0.903 against a 0.8 floor. The count restarted at
+the fix; pre-fix runs are not evidence about the tree the fix produces. Round 13 reproduced the regression
+evidence independently (5/5 red without the discipline, 5/5 green with it) and rejected only the record,
+which was corrected in the same round. Recorded at `tasks.md` 8.29 and 8.30.
+
+What that does **not** establish: CI is still unobserved on this branch; there is still no live-browser
+verification of anything; and the two accepted residuals remain named, measured and **unclosed**. Six
+sequential runs are also not a contention test.
 
 **M20 outcome, 2026-10-03.** Proposal merged as `eb76cfc`; Apply as PR #96 / `9b61e72`; spec sync as
 PR #97 / `91f47a1`. The `download` capability is 8 requirements and 31 scenarios, and

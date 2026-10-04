@@ -248,7 +248,13 @@ the product.
 of specific regressions, each mutation-proven, and that two further ways to make it dead code are known,
 measured and documented. It does **not** claim that a false green in this area is impossible.
 
-### 2.12 Scope extension — one shipped-code defect, authorised because M21's own criterion found it
+### 2.12 Scope extension — one defect, in shipped code *on the premise*, and authorised because M21's own criterion found it
+
+> **Read this heading with its second clause.** At the time of writing the defect was believed to be in
+> shipped code, and the scope extension was granted on that basis. Measurement then placed the cause in the
+> **test's measurement window**, and **no `src/` change was made**. The section is retained, corrected,
+> because the record of what was authorised and what the authorisation turned out to be worth is part of
+> the evidence — not because a shipped-code change exists.
 
 **Decision, 2026-10-05.** M21 §2.10 requires six consecutive green full gate runs. Batch 15, run at the
 final documentation commit `0e65dc8`, was **five of six**. The failing run was
@@ -261,39 +267,67 @@ AssertionError: expected [ …(2) ] to deeply equal [ { top: 150, behavior: 'smo
 
 — an exact-count assertion over a shared call counter, receiving the *same* call twice. Reproduced at
 **0 failures in 40 isolated runs** and **2 in 10 concurrent instances** with an identical signature, so
-the condition is contention rather than isolation. Neither `tests/lyrics/lyricsPanel.test.tsx` nor
-`src/features/lyrics/LyricsPanel.tsx` is touched by this branch — `git diff --stat origin/main...HEAD` on
-both is empty — so **this is a pre-existing nondeterministic defect that M21's own verification criterion
-exposed.** A criterion that finds a real defect before it finds nothing is the criterion working.
+the condition is contention rather than isolation. At the commit where batch 15 ran, `0e65dc8`, neither
+`tests/lyrics/lyricsPanel.test.tsx` nor `src/features/lyrics/LyricsPanel.tsx` was touched by this branch —
+`git diff --stat origin/main...HEAD` on both was empty — so **this was a pre-existing nondeterministic
+defect that M21's own verification criterion exposed.** A criterion that finds a real defect before it
+finds nothing is the criterion working. *Both statements are timestamped because this branch has since
+touched the test file; see the supersession below.*
 
-**Why this extends scope.** §3 promises no shipped behaviour changes. This defect *is* shipped code, so
-establishing and repairing it cannot be done inside that promise, and leaving it disclosed means merging
-a milestone that did not meet its own bar. The extension is therefore:
+**Why this extends scope.** §3 promises no shipped behaviour changes, and the premise at the time of
+writing was that the defect *is* shipped code. **That premise was falsified by measurement, and the
+supersession is here rather than only in `tasks.md` 8.29 because this section is the authority.**
 
-- **In scope, and only this:** determine which of the effect's four dependencies moves to produce the
-  second call, capture evidence establishing it, make the smallest production change that removes the
-  nondeterminism without weakening lyrics-following or weakening the assertion, and add a regression test
-  that reproduces the established mechanism and fails before the fix.
-- **Explicitly out of scope:** any other change to `LyricsPanel`, any change to the lyrics-following
-  *behaviour*, and any weakening of the assertion to make the failure disappear. The assertion's exact
-  count is the thing that caught this; an assertion relaxed to `toHaveLength(1)`-on-first-call would
-  convert a caught bug into a silent one.
-- **All temporary instrumentation is removed before final verification.** Instrumentation that survives
-  into the tree is a debug artefact that later readers must reverse-engineer, and this change has spent
-  twelve rounds on exactly that failure mode.
-- **The six-run count restarts after the final production and test fix.** Runs recorded before it are
-  not evidence about the tree that fix produces.
+The measured cause is in the **test's measurement window**, not the panel:
 
-This is not a general licence to touch product code. It is one defect, named before the work started,
-with the authorisation on the record rather than inferred afterwards.
+```
+MARKER read: scrollCalls.length = 0     (8 of 8 isolated runs)
+exactly ONE scroll recorded per passing run
+```
+
+`layout()` mutates the global `getBoundingClientRect` stub, and `scrollActiveLineIntoView` reads it at
+the moment the effect **flushes**, not when it is scheduled. Flushing before `layout()` gives delta `0`
+and an early return — one recorded call, passes. Flushing after gives delta `150` and a second recorded
+call inside the window — fails. Which branch runs is a scheduler decision. **All four of the effect's
+dependencies are inert**: the effect's trace is byte-identical whether the run passes or fails, so
+`following`, `state.kind`, `activeIndex` and the callback identity never move.
+
+So the extension was needed to *investigate* shipped code, and it turned out no shipped change was
+warranted. What survives of the original scope:
+
+- **Done:** determine which dependency moves — measured, and the answer is **none of them**; capture
+  evidence establishing the cause; make the smallest change that removes the nondeterminism without
+  weakening lyrics-following or weakening the assertion; add a regression test that reproduces the
+  established mechanism and fails without the fix.
+- **The repair is in the test file only.** `git diff --stat -- src/` is empty. A production fix would have
+  meant suppressing the panel's legitimate first centring, which is intended behaviour.
+- **Explicitly out of scope, unchanged:** any other change to `LyricsPanel`, any change to the
+  lyrics-following *behaviour*, and any weakening of the assertion to make the failure disappear. The
+  assertion's exact count is the thing that caught this; relaxing it would convert a caught bug into a
+  silent one.
+- **All temporary instrumentation was removed before verification.** Instrumentation that survives into
+  the tree is a debug artefact that later readers must reverse-engineer, and this change has spent twelve
+  rounds on exactly that failure mode.
+- **The six-run count restarts at the final fix.** Runs recorded before it are not evidence about the
+  tree the fix produces.
+
+**The record this section now corrects is the reason it is here at all.** §2.12 and §3 were written
+*before* the investigation, on the belief that the defect was in shipped code, and both went on asserting
+that in the present tense. When the measurement reversed it, only `tasks.md` was updated, and this change's
+scope authority kept claiming a `src/` edit that does not exist. Round 13 found it by checking the claim
+against `git diff`. A falsified premise left standing in the document that defines scope is the same
+defect class as the one this milestone exists to remove — something believed because it was written down,
+rather than because anything about it could fail — and it was introduced by the very commit that measured
+it.
 
 ## 3. What this change does not do
 
 - No shipped behaviour changes. `src/` is touched only if a test-only defect and a product defect
-  prove indistinguishable, and that is recorded as a finding rather than slipped in. **One shipped-code
-  change is now authorised and on the record**, by the owner, under §2.12: a nondeterministic duplicate
-  scroll in `src/features/lyrics/LyricsPanel.tsx`, found by §2.10's own criterion in batch 15. It is the
-  only `src/` change this milestone will make, and §2.12 states what it may and may not include.
+  prove indistinguishable, and that is recorded as a finding rather than slipped in. **No `src/` change
+  was made under §2.12**: the defect was investigated in `src/features/lyrics/LyricsPanel.tsx` and the
+  measurement placed the cause in the test's measurement window, so the repair is in
+  `tests/lyrics/lyricsPanel.test.tsx` alone — `git diff --stat -- src/` is empty. §2.12 authorised a
+  shipped-code change and none turned out to be warranted.
   **One export was added and it is on the record:** `flushListeningRecorder()` in
   `src/features/history/useListeningRecorder.ts`. Task 4.1 replaced a fixed 2000 ms poll with an
   await on the recorder's serialized write chain, and that chain was module-global and unexported, so

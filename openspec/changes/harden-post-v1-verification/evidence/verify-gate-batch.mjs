@@ -227,6 +227,18 @@ for (let run = 1; run <= options.runs; run += 1) {
   // half has no evidence behind it is a criterion with an unmeasured half. The driver now writes
   // `gate exit <code>` into the log and this asserts it is 0.
   const exitCode = /gate exit(\d+)/.exec(text)?.[1] ?? null;
+  // **Round 13's WARNING 1: a batch whose logs cannot name their commit cannot support a claim about
+  // the tree at a commit.** Six logs can agree on every figure and still have been produced by six
+  // different trees, and the criterion is stated in terms of a commit. The driver now writes
+  // `commit <sha>` under the exit line and this reads it.
+  //
+  // **The check is that it is present, not that it is `unknown`.** A log stamped `unknown` proves the
+  // driver ran; it does not prove what it ran against, so refusing `unknown` would make the driver
+  // unusable in exactly the shallow-clone or no-git case it must not fail in. What is refused is
+  // *absence*, for the same reason `gate exit` absence is refused: absent and present-but-uninformative
+  // must not collapse into one another silently. Every commit in the batch is printed at the end, so a
+  // batch spanning two commits is visible to a reader rather than averaged away.
+  const commit = /^commit (\S+)$/m.exec(text)?.[1] ?? null;
   // A second summary contradicting the first would also be a log carrying two verdicts. Refused rather than
   // resolved, because which one the gate meant is not decidable from the file.
   const failingSummary = /Tests\s+[^\n]*\d+ failed/.exec(text)?.[0] ?? null;
@@ -236,6 +248,7 @@ for (let run = 1; run <= options.runs; run += 1) {
     found.budget === options.budget &&
     found.skipped === null &&
     exitCode === "0" &&
+    commit !== null &&
     failingSummary === null;
   if (!markersPresent || !assertedHold || nulBytes > 0 || replacement > 0) problems += 1;
 
@@ -246,16 +259,25 @@ for (let run = 1; run <= options.runs; run += 1) {
   // their timing lines, which is precisely the variation the criterion is claiming to have observed.
   const digest = createHash("sha256").update(text).digest("hex").slice(0, 12);
 
-  rows.push({ run, nulBytes, replacement, markersPresent, assertedHold, digest, ...found });
+  rows.push({ run, nulBytes, replacement, markersPresent, assertedHold, digest, exitCode, commit, ...found });
 
   process.stdout.write(
     `run${run}  ${String(bytes.length).padStart(6)}B  NULs ${nulBytes}  U+FFFD ${replacement}  ` +
       `markers ${markersPresent ? "all found" : "MISSING"}  ` +
       `files ${found.files}  tests ${found.tests ?? "?"} (reported, not asserted)  ` +
       `budget ${found.budget}  skipped ${found.skipped ?? "none"}  ` +
-      `exit ${exitCode ?? "ABSENT"}  sha ${digest}  ` +
+      `exit ${exitCode ?? "ABSENT"}  commit ${commit ?? "ABSENT"}  sha ${digest}  ` +
       `${assertedHold ? "asserted ok" : "ASSERTED MISMATCH"}\n`,
   );
+
+  if (commit === null) {
+    process.stdout.write(
+      "        the log carries no `commit <sha>` line, so this run cannot be tied to a tree. The\n" +
+        "        criterion is stated about a commit; a batch that cannot name it is agreeing about\n" +
+        "        figures without saying which code produced them. Logs must come from the shipped\n" +
+        "        run-gate-batch.ps1, which writes it.\n",
+    );
+  }
 
   if (exitCode === null) {
     process.stdout.write(
@@ -306,6 +328,29 @@ if (rows.length > 0) {
         "        counted six times.\n",
     );
     problems += 1;
+  }
+}
+
+// **All six logs must name the SAME commit.** Distinct digests prove six distinct byte streams; they do
+// not prove one tree. Six runs spanning a commit boundary would agree on every figure only if the change
+// was inert, and "inert" is an assumption no reader of a criterion should be asked to make. This is the
+// difference between six runs and six runs *of one unchanged tree*, which is the claim the block above
+// was corrected to make.
+//
+// Reported rather than refused: a batch stamped `unknown` on every log is internally consistent and its
+// figures are still corroborated, so failing it would reject evidence that is merely less informative.
+// The single distinct value is printed either way, so a straddling batch cannot pass unnoticed.
+if (rows.length > 0) {
+  const distinctCommits = [...new Set(rows.map((row) => row.commit))];
+  process.stdout.write(
+    `${distinctCommits.length === 1 ? "ok   " : "WARN "}commits named across the logs: ` +
+      `${distinctCommits.join(", ")} (${distinctCommits.length} distinct of ${rows.length})\n`,
+  );
+  if (distinctCommits.length !== 1) {
+    process.stdout.write(
+      "      a batch spanning more than one commit is not six runs of one unchanged tree. The figures may\n" +
+        "        still agree, but the criterion is about a commit, so treat this batch as unattributed.\n",
+    );
   }
 }
 
