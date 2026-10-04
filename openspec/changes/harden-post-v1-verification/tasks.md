@@ -1050,9 +1050,34 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   scope, a nested `run:` stops `ci-workflow.test.ts` from loading at all — the strongest fail-closed
   point available, and *not* the same evidence as an assertion failing. It has its own reported verdict,
   `RED, FILE COULD NOT LOAD`, because a RED whose mechanism is unexplained is a verdict without evidence.
-  This also gave the batch corroborator something new to guard: a file that cannot load contributes
-  **zero** tests, so `Test Files 181 passed (181)` is now the figure that distinguishes *the tree is
-  happy* from *a reader refused and the suite quietly shrank*.
+
+  ~~This also gave the batch corroborator something new to guard: a file that cannot load contributes
+  **zero** tests, so `Test Files 181 passed (181)` is now the figure that distinguishes *the tree is happy*
+  from *a reader refused and the suite quietly shrank*.~~
+
+  **CORRECTED IN ROUND 10 — the conclusion holds and the stated reason does not.** I measured the refused
+  state rather than reasoning about it, by adding round 9's own `r9-env-run-decoy-alone` decoy and running
+  the full suite:
+
+  ```
+   ❯ tests/ci-workflow.test.ts (0 test)
+   FAIL  tests/ci-workflow.test.ts [ tests/ci-workflow.test.ts ]
+   Test Files  1 failed | 180 passed (181)
+        Tests  3289 passed (3289)
+  ```
+
+  **The parenthesised file total does not move: it is 181 either way.** The string
+  `Test Files 181 passed (181)` never appears in the refused state, so it cannot be the figure that
+  distinguishes the two. The figures that actually distinguish them are the **exit status** (non-zero) and
+  the **executed-test count** (3312 → 3289, −23) — both of which the corroborator already recorded, which
+  is why the batch would still have noticed.
+
+  So the *conclusion* was right and arrived at by the wrong route, and the difference matters: I asserted a
+  mechanism and then added an assertion to the corroborator believing it, so for one round the checker
+  carried a claim that measurement does not support. **An assertion added on the strength of a reason
+  nobody measured is a claim, not a check** — the same defect as a named thing with no witness, one level
+  up. The `Test Files` assertion is retained because it is independently true and worth having; what was
+  removed is the sentence claiming it is what catches a refused reader.
 
   ## C2 — `keyLinesIn` derived a line index from text
 
@@ -1246,3 +1271,178 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
     with a transient environmental cost and **does not identify what it was**.
   - **The cause remains unverified.** A tighter spread is corroboration, not an explanation, and recording
     it as the explanation would be the same false-report shape this change has spent nine rounds removing.
+
+## 8.23 Round 10 - the findings were about *wiring*, not text
+
+  Round 10's verifier returned **REJECT: 2 CRITICAL, 2 WARNING, 2 NIT**. Rounds 4-9 all found *textual*
+  problems - a value read from the wrong place, a key attributed to the wrong owner, an item located by a
+  pattern. Round 10's two CRITICALs are a different kind of question, and neither needed a new round to
+  find:
+
+  ```
+  naming a thing      ->  which one is it?    ->  the node's own span       (round 9)
+  attributing a key   ->  whose key is this?  ->  direct child by indent    (round 9)
+  WIRING IT           ->  is the value consumed here the one produced over there?
+                      ->  compare producer to consumer, refuse either    (round 10)
+  ```
+
+  ### C1 - the gate's only `prepareDependencies` call site was asserted nowhere
+
+  `prepareDependencies` had **eight behaviour tests**. `cascadeReason` had four. The file contained the
+  assignment that joins them:
+
+  ```js
+  environmentBroken = cascadeReason(prepared);
+  ```
+
+  and that assignment was asserted. **What `prepared` *is* was not.** So replacing the line that produces
+  it with a fabricated literal satisfied every assertion:
+
+  ```js
+  const prepared = prepareDependencies({ frontendDir: FRONTEND });
+  // becomes
+  const prepared = { ok: true, detail: "...", output: "" };
+  ```
+
+  `prepared.ok` is then literally `true`, the `else` arm at line 474 - the **only** writer of
+  `environmentBroken` in the file - becomes unreachable, no later item is ever short-circuited, and the
+  cascade cannot fire. Measured independently before any repair: **105/105 targeted, 3312/3312 across the
+  suite, with the gate preparing nothing.**
+
+  The comment above the check already said *"The gate must actually **call** it"* - the prose claimed
+  the property the two lines beneath it did not enforce. Repaired by comparing **producer to consumer**
+  rather than matching text: a text match can be satisfied by a name, only the comparison can be
+  satisfied by the wiring.
+
+  ### C2 - nothing tied the extracted `gates-install` item to the gate executing it
+
+  ```js
+  for (const item of ITEMS) {
+  // becomes
+  for (const item of ITEMS.filter((candidate) => candidate.id !== "gates-install")) {
+  ```
+
+  The identifier stays in the file and the loop stays a loop, so any locator asking *is there a loop over
+  `ITEMS`?* answers yes. `itemSource` proved the item is **declared**; nothing proved it was **reached** -
+  one claim about the data and one about the control flow that consumes it. Also **3312/3312**.
+
+  Each of the two is **individually sufficient**: C1 makes the `else` arm unreachable, C2 removes the only
+  writer. Neither needs composing with the other, so both are repaired as one finding and both are
+  witnessed separately.
+
+  ### The repairs, and the three ways the repair reproduced the defect it was answering
+
+  New locators `callsTo`, `soleCall`, `boundVariableName`, `firstArgumentName` and `soleLoopOver`, each
+  refusing at every level - including the clause that distinguishes `ITEMS` from `ITEMS.filter(...)`,
+  since a locator asking only whether a loop exists would answer yes and be wrong.
+
+  **`mut-round10`'s first run then found three of my own defects**, one round after NIT N1 was reported
+  and repaired:
+
+  1. **Two new refusals were unwitnessed.** Muting `soleCall`'s refuse-on-zero and `soleLoopOver`'s
+     derived-clause both reported STILL GREEN, because nothing fed either locator the input it exists to
+     refuse. That is *a guard defended by a comment while nothing reached it* - the very finding this round
+     had been dispatched to fix. Six refusal witnesses added; seven rows added that mute each refusal.
+  2. **`soleLoopOver`'s recursive descent was dead code on the real gate.** The archived gate's loop is a
+     **top-level** statement (line 418, column 0), so `forEachChild(file, visit)` reaches it in one hop
+     and the recursive `forEachChild(node, visit)` never runs. Removing it changed nothing. **A walk
+     deeper than the tree it is pointed at looks exactly like a walk that is not.** A witness that feeds it
+     a nested gate now makes the descent load-bearing.
+  3. **The harness's transform guard mis-calibrated a second time.** It keyed on the bare word
+     `SyntaxError`, and this suite has a test whose *subject* is a syntax error - so a legitimate failure of
+     it arrived carrying that word and was reported as a crash of the suite's own code: 113 tests executed,
+     1 failed, verdict `RED BUT DID NOT RUN`. Now keyed on vitest's own transform signatures.
+
+  ### W1 of round 10 - this record's own corroborator rationale was wrong about its mechanism
+
+  ~~It is now the only figure in the checker that distinguishes *the tree is happy* from *a reader refused
+  and the suite quietly shrank*.~~ **Corrected in place: measured, and false.** A file that cannot load
+  does **not** move the parenthesised file total - vitest reports `Test Files 1 failed | 180 passed (181)`,
+  and the string `Test Files 181 passed (181)` never appears in the refused state. The figures that
+  distinguish it are the **exit status** and the **executed-test count** (3312 -> 3289), both of which the
+  checker already recorded. The `Test Files` assertion is kept because it is independently true; what is
+  removed is the claim that it is what catches a refused reader. **An assertion added on the strength of a
+  reason nobody measured is a claim, not a check.**
+
+  ### W2 of round 10 - the corroborator was not in the repository
+
+  Eleven entries in this file described their figures as *corroborated from the six logs by separate code*,
+  naming a script each time. `git grep -l gateruns` returned nothing, and a recursive filename search over
+  the repository and the agent workspace found nothing either: **every batch entry was self-reported by the
+  tool that produced it** - the arrangement `verify-gateruns7.mjs` was created to replace, reintroduced one
+  level up. A claim of independent corroboration nobody else can run is a second script by the same author
+  agreeing with the first.
+
+  So the mechanism now ships with the claim it supports, under this change's `evidence/`:
+
+  - `evidence/run-gate-batch.ps1` - the batch driver, with the log directory and the run count as
+    parameters. Documents the two Windows traps that produced false evidence once: `Tee-Object` writes
+    UTF-16LE on PowerShell 5.1 (half the characters become NULs, so `Test Files` is not *findable* and a
+    log full of passing tests reads as an empty one), and the PowerShell `` `e `` escape does not exist in
+    5.1.
+  - `evidence/verify-gate-batch.mjs` - the checker, parameterised by log directory and by expected file
+    and budget counts. **Verified against the batch-10 logs: it reproduces all six runs' figures exactly**,
+    181 files / 3312 tests / motion-budget 21, 0 NULs and 0 `U+FFFD`, and its `vitest list` enumeration
+    phase reported **2991 against execution 3312**. A checker hard-coded to one author's temporary directory
+    is not runnable by the person reading it, which is the same defect as not shipping it.
+
+  ### The eleven earlier entries are corrected rather than deleted
+
+  Each said `verify-gaterunsN.mjs`, a file that existed only in a temp directory. They now read as: the
+  figures below were corroborated by a checker that is **now** `evidence/verify-gate-batch.mjs`, and the
+  logs they were read from are not in the repository. The **figures stand** - they were measured - but the
+  corroboration was self-reported at the time and a reader could not have re-run it. **Correcting a claim
+  in place keeps the history; deleting the entry would hide that the claim was ever made.**
+
+  ### NITs, and the comment that ran the wrong way
+
+  - **N1** - the block-scalar guard in `readSteps` was defended by a comment claiming it was *unnecessary*,
+    because a recorded `|` would "silently pass some" assertions. It would fail **all** of them: the
+    comparison is `===` on the whole command. And nothing witnessed the guard - `prepareWorkflow` refuses
+    block scalars first, so the branch was unreachable from every test and mutating it away left the suite
+    green. Comment corrected; witness added, with a `cat file | grep x` control so it cannot be satisfied by
+    refusing anything containing a pipe.
+  - **N2** - the block-exit **silently dropped** a `run:` key at or left of `steps:`, because it returned
+    before the refusal that described itself as covering *exactly that case*. The reader was described more
+    carefully than it behaved, in the one message a future editor would consult. It now refuses; a second
+    `steps:` block, which used to be concatenated into one list, is refused too - the same trade
+    `jobRunDefaults` already makes for two jobs.
+
+  Neither NIT was a live hole for today's assertions, and that is exactly why they survived nine rounds:
+  **nothing in the suite needed the dropped line to be present in order to fail.**
+
+  ### An intermittent gate failure, recorded rather than buried
+
+  One full gate run in this round reported `2 failed | 3314 passed (3316)` and exit 1. It **could not be
+  reproduced** in three subsequent runs (3320 passed, exit 0, twice) and the failing test names were not
+  captured, because the run's log was not written before it was understood. The cause is **unverified**;
+  the known intermittent vitest fork-pool failure is a candidate and nothing more. **A red run that cannot
+  be reproduced is not a green run, and the honest record is that it happened.**
+
+  ### Proof - `mut-round10`, **14/14 that must go red did, 5 green as designed, 0 did not apply, 0 wrong**
+
+  19 rows: the two verifier CRITICALs plus the comparison's own negative; **seven rows mutating one new
+  refusal each**, which is what makes a witness more than a comment; one row removing the descent; the
+  three `readSteps` repairs; five controls including the consistent-rename refactor that a suite pinning a
+  *name* would fail, and a decoy loop over a different array; two documentation controls.
+
+  Every needle that touches a `length === 0` / `length > 1` refusal is **multi-line**, because those
+  expressions open refusals in two different locators and a one-line needle would mutate whichever came
+  first - choosing by position inside the harness.
+
+  Three rows in that suite were **wrong three times** and are kept with their history in their notes: one
+  renamed an item the suite pins by exact id, one added an item and tripped the inventory check at
+  `ci-workflow.test.ts:918`, and one closed a brace by pattern and matched an inner brace instead of the
+  loop's own. **A control that fails tells you the control was mis-aimed; deleting it instead would cost
+  the suite one honest data point and one chance to notice.**
+
+  ### Figures at this commit
+
+  Full suite **181 files / 3320 tests, 0 skipped**. `tsc --noEmit`, `prettier --check` and `eslint` exit 0
+  with no warnings. `openspec validate harden-post-v1-verification --strict` valid;
+  `openspec validate --specs --strict` **26 passed, 0 failed**.
+
+  All thirteen mutation suites green at this tree, `mut-round10` included. Enumeration moved **2987 ->
+  2991** alongside execution **3312 -> 3320**, the same direction and by more than the tests added, because
+  the new witnesses contain `.for` loops over indicator strings and a nested-gate array rather than only
+  single cases.

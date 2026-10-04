@@ -901,3 +901,78 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     designed-green rows are the old defeats (re-indented brace, duplicate `id:`-shaped token, a field
     containing `},`) and they are now green **because the check no longer depends on formatting at all** —
     a suite where they went red would be asserting the formatting, which was never the claim.
+
+73. **A criterion measured against a tree that has since changed is not a measurement of the current tree —
+    and "documentation" is not a category the exemption can use.**
+    M21's release criterion is six consecutive green full gate runs. It has been re-measured ten times, and
+    eight of those re-runs were for the same reason: a repair landed after the batch, so the batch was
+    measuring a tree that no longer existed.
+    The ninth re-run was different, and the difference is the whole lesson. The repair was *documentation* —
+    the `tasks.md` entry and the `MEMORY.md` lessons recording the batch's own results — and every instinct
+    said a docs commit cannot invalidate a gate, because no gate step executes a markdown file.
+    `tests/encoding-integrity.test.ts:164` decodes `MEMORY.md` among the root files it checks. So the commit
+    that *recorded* the results changed an input to the gate, and the batch was measuring a `MEMORY.md` that
+    no longer existed. Found by grepping for the filename, not by reasoning about it.
+    Two rules:
+    - **The test suite decides which files are inputs, and grep decides which files those are.** Never infer
+      it from what a file *is*. A markdown file read by a test is a gate input; a TypeScript file no test
+      reads is not.
+    - **"Only documentation changed" is a claim about the tree, and it is the same class of claim as "only
+      formatting changed"** — which this branch also got wrong, when Prettier reformatted
+      `tests/helpers/yaml.ts`, a mutation target of two suites, and both suites were re-run against the
+      formatted file before any figure was believed. **A formatter is a repair, and a repair invalidates the
+      suites beneath it.**
+    The awkward consequence is worth stating rather than engineering around: this lesson cannot be recorded
+    without invalidating the batch it describes, so it is recorded in the **final** documentation commit with
+    the last batch run after it. **A rule that exempts itself from its own application is not a rule.**
+
+74. **Describing a mechanism and exercising a mechanism are different acts, and only the second one can
+    fail.**
+    Round 10's NIT was a block-scalar guard defended by a comment for a full round while no test reached it.
+    The finding's *repair* was to add new locators with refusals of their own — and the repair reproduced the
+    defect in the same file, one round after diagnosing it. `mut-round10`'s first run caught it: two rows
+    came back STILL GREEN when they had to go red, because nothing fed either locator the input it exists to
+    refuse.
+    Then a third, sharper instance. `soleLoopOver` walks the AST with `ts.forEachChild(node, visit)` inside
+    `visit`, which looks recursive. The archived gate's `for (const item of ITEMS)` is a **top-level**
+    statement, so `forEachChild(file, visit)` reaches it in one hop and the recursive call never runs on the
+    real file. Deleting it changed nothing. **A walk that is deeper than the tree it is pointed at looks
+    exactly like a walk that is not.**
+    The pattern across all three is the finding worth keeping:
+    - a guard defended by prose instead of a witness (NIT);
+    - a refusal that no input can reach (two `STILL GREEN` rows);
+    - a descent that no tree is deep enough to need (`RED BUT DID NOT RUN` absent, but the same shape).
+    So the discipline that actually catches this is not review, and not reading the comment carefully. It is
+    **one mutation row per refusal and per descent, written at the moment the refusal is written** — not a
+    round later, and not by whoever notices the absence first. A refusal with no row that mutes it is a
+    comment, and comments are exactly what this whole change has been finding in place of checks.
+    The corollary for reporting: the rows that found my own defects are **kept in the suite**, with the story
+    in their note. A harness that quietly drops the row which caught its author's mistake is the harness this
+    change exists to distrust.
+
+75. **A guard keyed on a word will misfire on any test whose subject is that word — and the round-6
+    calibration bug will find a new costume to wear.**
+    Round 6 caught the mutation harness's transform-crash guard keyed on vitest's *passed* count instead of
+    its total, so `Test Files 1 failed | 2 passed (3)` read as `2 < 3` and **fifteen real defeats became
+    `RED BUT DID NOT RUN` at once.** Caught only because fifteen simultaneous class changes is unmissable
+    where one would not have been.
+    Round 10 found the same guard mis-calibrated a second time, in a new costume: it keyed on the bare word
+    `SyntaxError` anywhere in vitest's output. But `release-gate-install.test.ts` has a test whose *subject*
+    is a syntax error — `it("parses, and its helper modules parse")` — so a legitimate failure of that test
+    arrives carrying the word `SyntaxError` in its assertion message, and the harness called it a crash of
+    its own code. Measured on the row that exposed it: `SyntaxError` present, `Transform failed` /
+    `Failed to parse source` / `Unhandled Error` all absent, **113 tests executed and 1 failed**, verdict
+    `RED BUT DID NOT RUN`.
+    The rule: **key a guard on the tool's own signature, never on a word that appears in the data it is
+    watching.** A test that fails *because* it detected the thing you are grepping for will always be
+    misread by a grep. And when a verdict disagrees with the measurement printed directly beneath it, treat
+    that as a finding about the harness rather than a mystery — here it was the only sign that anything was
+    wrong at all, because the row *also* had a real defect underneath it.
+    Related, from the same round: **a needle aimed by pattern at a 780-line artifact is a guess about
+    structure.** One control tried to close a brace by matching `  }\n  if (item.how === "install") {` and
+    matched an *inner* brace, leaving `continue;` outside any iteration statement. Two earlier versions of
+    that same control were wrong for different reasons — one renamed an item the suite pins by exact id, one
+    added an item and tripped the inventory check at `ci-workflow.test.ts:918`. Three failures, one lesson:
+    **a control that fails tells you the control was mis-aimed, and deleting it instead costs the suite one
+    honest data point and one chance to notice.** The version that finally worked needed no structural
+    knowledge at all, because the decoy it inserted brought its own braces with it.
