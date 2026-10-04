@@ -41,7 +41,25 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-$repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+$evidenceDir = $PSScriptRoot
+$changeDir = Split-Path -Parent $evidenceDir
+$changesDir = Split-Path -Parent $changeDir
+$openspecDir = Split-Path -Parent $changesDir
+# FOUR parents, not three. `$PSScriptRoot` is `<repo>/openspec/changes/<change>/evidence`, so three
+# `Split-Path -Parent` calls land on `<repo>/openspec` and print a path that does not exist. That is not
+# hypothetical: the first run of this driver printed `--frontend <repo>\openspec\frontend`, the reviewer
+# followed it, and the checker then reported a phase as UNAVAILABLE and exited 0 - which
+# `verify-gate-batch.mjs` has now been repaired to refuse. The path a script prints is an interface, and it
+# is only correct if something runs it.
+#
+# Asserted rather than assumed, because the number of levels is the thing that was wrong once already and a
+# comment saying "four" is not a check that there are four.
+$repoRoot = Split-Path -Parent $openspecDir
+if (-not (Test-Path (Join-Path $repoRoot "frontend\package.json"))) {
+    Write-Host "FAIL the computed repository root is not a repository root: $repoRoot"
+    Write-Host "     (expected <root>\frontend\package.json beneath it, from evidence dir $evidenceDir)"
+    exit 1
+}
 $encoding = New-Object System.Text.UTF8Encoding($false)
 $escape = [char]27
 
@@ -85,6 +103,7 @@ Write-Host ""
 Write-Host "distinct suite totals:   $((($summary | ForEach-Object { if ($_ -match 'tests (\d+)') { $Matches[1] } }) | Sort-Object -Unique) -join ', ')"
 Write-Host "distinct file counts:    $((($summary | ForEach-Object { if ($_ -match 'files (\d+)') { $Matches[1] } }) | Sort-Object -Unique) -join ', ')"
 Write-Host "distinct motion-budget:  $((($summary | ForEach-Object { if ($_ -match 'motion-budget (\d+)') { $Matches[1] } }) | Sort-Object -Unique) -join ', ')"
+Write-Host "repository root computed from evidence dir: $repoRoot"
 Write-Host ""
 Write-Host "Now verify the logs with the checker that ships beside this script:"
 Write-Host "  node `"$(Join-Path $PSScriptRoot 'verify-gate-batch.mjs')`" `"$LogDir`" --frontend `"$(Join-Path $repoRoot 'frontend')`""

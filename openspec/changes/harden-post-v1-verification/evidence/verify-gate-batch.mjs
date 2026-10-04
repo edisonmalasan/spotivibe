@@ -214,14 +214,51 @@ const logTotal = rows.length > 0 && rows[0].tests !== null ? Number(rows[0].test
 const listedIds = listed.split(/\r?\n/).filter((line) => /^tests\/\S+ > /.test(line.trim())).length;
 
 if (list.status !== 0 || listedIds === 0) {
+  // **This is the sixth defect in this checker's own history, and it was found by using it.**
+  //
+  // `run-gate-batch.ps1` ended by printing the command to run next. That printed path was wrong - the
+  // driver walks up three parents from `evidence/` and lands on `openspec/`, not the repository root - and
+  // so it named `...\openspec\frontend`, which does not exist. Running the printed instruction produced:
+  //
+  //     n/a   independent enumeration: `vitest list` produced no ids (exit null, 0 ids).
+  //     Reported as UNAVAILABLE, not as agreement.
+  //     corroborated: every asserted figure was found in all 6 logs, ...
+  //     exit: 0
+  //
+  // **A phase that cannot run was counted as a pass, and the word "corroborated" was printed under it.**
+  // The first three lines are careful and the fourth is not: the mechanism that makes this check
+  // *independent* of the logs it is checking did not execute, and the output said so and then agreed
+  // anyway. That is this change's own defect class - *a check that reports green without checking what it
+  // claims* - committed by the very script committed to repair an instance of it.
+  //
+  // It is worse than a stale number, because it is invisible: the exit status is 0, and a caller that only
+  // reads the exit status - which is what CI, and every batch entry in `tasks.md`, does - records a pass.
+  //
+  // Note that this is NOT defect 2 above, which looks like it and is not. That one skipped a *working*
+  // phase behind a marker the tool never prints. This one *ran* the phase, the phase failed, and the
+  // failure was absorbed. Skipping a check and swallowing a failure are different bugs with the same
+  // symptom, and conflating them would have left this one in place.
+  //
+  // The repair is to make it a problem, so it cannot be reported as agreement, and to say how to fix it -
+  // because `npm run gate` is driven from the repository root while `vitest list` runs with
+  // `cwd = --frontend`, and those are different directories on purpose.
   process.stdout.write(
-    "n/a   independent enumeration: `vitest list` produced no ids " +
-      `(exit ${list.status}, ${listedIds} ids). Reported as UNAVAILABLE, not as agreement.\n`,
+    `FAIL independent enumeration: \`vitest list\` produced no ids (exit ${list.status}, ${listedIds} ids).\n` +
+      "      This is the phase that makes the corroboration INDEPENDENT of the logs, so a phase that\n" +
+      "      cannot run is the absence of the check rather than a pass. Check that --frontend points at\n" +
+      "      the frontend directory and that dependencies are installed: the gate runs from the repository\n" +
+      "      root, but this phase runs with cwd=--frontend, and those are different directories.\n",
   );
+  problems += 1;
 } else if (logTotal === null) {
+  // Same reasoning, quieter case: with no log total there is no number to compare against, so the one
+  // directional claim the two mechanisms share cannot be made at all. Reported as a problem rather than as
+  // a phase that had nothing to say.
   process.stdout.write(
-    `n/a   independent enumeration: ${listedIds} ids, but no log total to compare against\n`,
+    `FAIL independent enumeration: ${listedIds} ids enumerated, but no log total to compare against, ` +
+      "so `enumerated <= executed` cannot be established.\n",
   );
+  problems += 1;
 } else {
   const consistent = listedIds <= logTotal;
   process.stdout.write(

@@ -1446,3 +1446,115 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   2991** alongside execution **3312 -> 3320**, the same direction and by more than the tests added, because
   the new witnesses contain `.for` loops over indicator strings and a nested-gate array rather than only
   single cases.
+
+## 8.24 The shipped corroborator's own two defects - found by running it, not by reading it
+
+  Round 10's W2 repair put `run-gate-batch.ps1` and `verify-gate-batch.mjs` in the repository so a reader
+  could re-run them. The eleventh batch was the first use of the driver **as shipped**, and it returned
+  two defects in the very mechanism that was supposed to remove the self-reporting problem.
+
+  ### Six green runs at `ad8a965`, and what the driver printed afterwards
+
+  ```
+  run 1  exit 0  156s  files 181  tests 3320  motion-budget 21  skipped none
+  run 2  exit 0  128s  files 181  tests 3320  motion-budget 21  skipped none
+  run 3  exit 0  118s  files 181  tests 3320  motion-budget 21  skipped none
+  run 4  exit 0  120s  files 181  tests 3320  motion-budget 21  skipped none
+  run 5  exit 0  130s  files 181  tests 3320  motion-budget 21  skipped none
+  run 6  exit 0  119s  files 181  tests 3320  motion-budget 21  skipped none
+  ```
+
+  Six of six, `181 / 3320 / 21` identical, 0 skipped, spread 38 s. Then the driver printed the command to
+  run next - and that is the moment the defects surfaced, because **the printed command was a path that
+  does not exist**:
+
+  ```
+  --frontend "C:\...\spotivibe\openspec\frontend"     <- three parents, lands on openspec/
+  ```
+
+  ### D1 - the driver walked up three levels and printed a nonexistent path
+
+  `$PSScriptRoot` is `<repo>/openspec/changes/<change>/evidence`, so reaching the repository root takes
+  **four** `Split-Path -Parent` calls. Three land on `<repo>/openspec`. The value is only used in the final
+  `Write-Host`, so nothing failed - it printed a wrong command.
+
+  Repaired, and **asserted rather than assumed**: the script now checks for `frontend\package.json`
+  beneath the computed root and refuses to continue without it. A comment saying "four" is not a check
+  that there are four, especially in a file whose only prior defect was the number four.
+
+  **Witnessed by making it fire** - the script was copied to a shallower directory and run:
+
+  ```
+  FAIL the computed repository root is not a repository root: C:\Users\Edison\AppData\Local
+       (expected <root>\frontend\package.json beneath it, from evidence dir ...\shallow-probe\evidence)
+  exit: 1
+  ```
+
+  ### D2 - and this one is worse: **the checker reported agreement while its independent phase had not
+  run**
+
+  Following the printed instruction produced:
+
+  ```
+  n/a   independent enumeration: `vitest list` produced no ids (exit null, 0 ids).
+        Reported as UNAVAILABLE, not as agreement.
+
+  corroborated: every asserted figure was found in all 6 logs, they all agree, and no log is UTF-16
+  or lossy
+  exit: 0
+  ```
+
+  The first three lines are careful and the fourth is not. `vitest list` could not run at all - there is
+  no `node_modules` under `openspec/frontend` - and the checker **printed the word "corroborated"** and
+  **exited 0**.
+
+  This is this change's own defect class - *a check that reports green without checking what it claims* -
+  committed by the very script committed to repair an instance of it. And it is worse than a stale
+  number, because **it is invisible to every consumer that reads only the exit status**, which is what CI
+  does and what every batch entry in this file has been doing. The whole reason W2 was repaired was so
+  that a reader would not have to take the word of the tool that produced the logs; the repaired tool
+  would have said "corroborated" to a reader who had pointed it at the wrong directory.
+
+  **This is not the checker's recorded defect 2**, which is adjacent and is not the same bug. That one
+  *skipped* a working phase behind a summary line `vitest list` never emits. This one *ran* the phase, the
+  phase failed, and the failure was absorbed. **Skipping a check and swallowing a failure produce the same
+  symptom, and conflating them would have left this one in place.**
+
+  Repaired so that an unavailable enumeration is a **problem**, not a note, with the reason it exists and
+  how to fix it - because `npm run gate` is driven from the repository root while `vitest list` runs with
+  `cwd = --frontend`, and those are deliberately different directories. A missing log total is now a
+  problem too: with no total there is no number, so `enumerated <= executed` cannot be established at all.
+
+  ### Both repairs, measured in both directions
+
+  The negative case is the one that matters, because it is the case that used to pass:
+
+  ```
+  wrong --frontend : FAIL independent enumeration: `vitest list` produced no ids (exit null, 0 ids).
+                    1 problem(s) unresolved
+                    exit: 1                                        <- was: corroborated, exit 0
+
+  correct --frontend : corroborated: every asserted figure was found in all 6 logs, they all agree,
+                    and no log is UTF-16 or lossy
+                    exit: 0
+                    enumeration: 2995 templates vs 3320 executed (gap 325)
+  ```
+
+  The `2995` is itself worth noting: batch 10 enumerated `2991` against `3316` executed, and the four
+  witnesses added since account for the difference exactly in both directions.
+
+  ### What this says about a script's first use
+
+  **The eleventh batch entry's `git grep` check proved the scripts were in the repository. It did not prove
+  they worked.** A file's existence is the cheapest possible check, and it is the one most likely to be
+  reported as though it were the substantive one - `git grep -l gateruns` returning the two filenames reads
+  exactly like a passing verification and is not one.
+
+  The only thing that found D1 and D2 was **running the shipped script the way a reader would**, i.e.
+  copying the command it printed and pasting it. A script that has never been invoked by anyone but its
+  author is untested code wearing the costume of evidence, and the costume is what makes it dangerous.
+
+  **The remaining open items are unchanged and still open:** the unreproduced `2 failed | 3314 passed`
+  run (cause **unverified**), no browser verification, CI not observed green on this branch, and the
+  round-9 question about whether refusing loudly at module scope is the right trade for three reader
+  ambiguities rather than one.

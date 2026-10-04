@@ -976,3 +976,32 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     **a control that fails tells you the control was mis-aimed, and deleting it instead costs the suite one
     honest data point and one chance to notice.** The version that finally worked needed no structural
     knowledge at all, because the decoy it inserted brought its own braces with it.
+
+76. **A checker that reports agreement while its independent mechanism could not run is the exact defect
+    it was written to catch — and existence is not function.**
+    Round 10's W2 repair shipped the two evidence scripts into the repository so a reader would not have to
+    take the word of the tool that produced the six logs. The eleventh batch was their first use as shipped,
+    and it found two defects in them:
+    - the driver walked up **three** parents where reaching the repository root from `evidence/` takes four,
+      so it printed a `--frontend` path pointing at a directory that does not exist;
+    - following that printed path, the checker reported its enumeration phase as `UNAVAILABLE, not as
+      agreement`, then printed **`corroborated:`** and **exited 0**.
+    The second is the whole lesson. The independent phase is what makes the check independent; if it cannot
+    run, the corroboration did not happen. And it is worse than a stale number, because **every consumer
+    that reads only the exit status sees a pass** — which is what CI does, and what every batch entry in this
+    change's records had been doing for eleven entries.
+    Three rules:
+    - **Existence is the cheapest check and the one most often reported as though it were the substantive
+      one.** `git grep -l gateruns` returning two filenames reads exactly like a passing verification and is
+      not one. It proved the files were present; it proved nothing about them working.
+    - **Test a shipped tool the way its reader will use it**: copy the command it prints and paste it. That
+      is the only step that found either defect, and it took seconds. A script never invoked by anyone but
+      its author is untested code wearing the costume of evidence, and the costume is the dangerous part.
+    - **Distinguish skipping a check from swallowing its failure.** The checker's own recorded history already
+      had a *skipped* phase (gated behind a summary line `vitest list` never emits). The new bug looked
+      identical in the output — `n/a` instead of `ok` — and was the opposite: the phase ran and the failure
+      was absorbed. Same symptom, different bug; conflating them would have left the new one in place while
+      the old one was believed fixed.
+    And the general form, which is lesson 74 again one level out: **a report that mixes what was checked with
+    what was skipped must not print a single word of verdict over both.** "Corroborated" is a claim about the
+    whole run. When one phase is missing, the run has no verdict, and saying so is the only honest output.
