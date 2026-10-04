@@ -1,4 +1,12 @@
-import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +15,54 @@ import { afterAll, describe, expect, it } from "vitest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(here, "..", "..");
-const CHANGE = join(REPO, "openspec", "changes", "harden-post-v1-verification");
+
+/**
+ * Locate this change's directory whether it is active or archived.
+ *
+ * **Archiving moved this directory and took the whole suite's ability to load with it.** The path was
+ * hard-coded to `openspec/changes/harden-post-v1-verification`, so `openspec archive` — the ordinary,
+ * expected, documented final step of a change's lifecycle — made this file fail at import with
+ * `Failed Suites 1`, `Tests 3321 passed` against a suite of 3342. Twenty-one tests silently stopped
+ * running: not one of them failed, and a reader checking for red tests would have found none.
+ *
+ * That is the failure mode this milestone exists to prevent, and it is worth naming precisely: **a check
+ * that vanishes on the happy path.** Every assertion in this file was correct about the driver and the
+ * corroborator, and all of it became unevaluated because the path moved. A suite whose coverage depends
+ * on a directory staying where it was put is not a guard over the evidence scripts; it is a guard over
+ * the change's lifecycle stage.
+ *
+ * The resolution globs for the directory in both locations and prefers the active one, so the suite
+ * keeps working across archive and never depends on which stage the change is in. It fails LOUDLY if
+ * neither exists — an unresolvable path throws here rather than quietly skipping.
+ */
+export function resolveChangeDir(root: string = REPO): string {
+  const active = join(root, "openspec", "changes", "harden-post-v1-verification");
+  if (existsSync(active)) return active;
+
+  const archiveRoot = join(root, "openspec", "changes", "archive");
+  if (existsSync(archiveRoot)) {
+    // Archive directories are named `<date>-<change-slug>`, so match on the slug rather than assuming
+    // today's date. Sorted descending so a re-archived change resolves to its most recent copy.
+    const match = readdirSync(archiveRoot)
+      .filter((name) => name.endsWith("-harden-post-v1-verification"))
+      .sort()
+      .reverse()[0];
+    if (match) {
+      const archived = join(archiveRoot, match);
+      // The evidence file is the thing this suite actually reads, so its presence is the test for a
+      // usable copy. A bare directory with the right name is not enough.
+      if (existsSync(join(archived, "evidence", "verify-gate-batch.mjs"))) return archived;
+    }
+  }
+
+  throw new Error(
+    `cannot locate the harden-post-v1-verification change directory: neither ${active} nor an ` +
+      `archived copy under ${archiveRoot} exists. This suite asserts against that change's evidence ` +
+      `scripts, so it cannot run without them - failing here is correct, skipping would not be.`,
+  );
+}
+
+const CHANGE = resolveChangeDir();
 const EVIDENCE = join(CHANGE, "evidence");
 const DRIVER = join(EVIDENCE, "run-gate-batch.ps1");
 const CHECKER = join(EVIDENCE, "verify-gate-batch.mjs");
@@ -618,5 +673,128 @@ describe("no record in this change claims corroboration from a checker nobody el
         "so a reader arriving at one of them alone is told a figure was corroborated by a script that " +
         "does not exist",
     ).toEqual([]);
+  });
+});
+
+/**
+ * Archiving this change moved its directory, and this file resolved that directory by hard-coded active
+ * path. `openspec archive` - the ordinary, documented, expected last step of a change's lifecycle - made
+ * the suite fail at import: `Failed Suites 1`, `Tests 3321 passed` against a suite of 3342.
+ *
+ * **The twenty-one missing tests all passed. None failed, and a reader looking for red tests would have
+ * found none.** That is the shape worth guarding, not the path: a check that *vanishes* on the happy path
+ * is quieter than one that goes red, and this milestone's own spec says a skipped run is never reported as
+ * a pass. A failing import reported as a suite error is better than silence and still not good enough.
+ *
+ * These clauses pin the resolution against synthetic trees, because the real one cannot be mutated by a
+ * test - moving the change directory is a lifecycle operation, not a fixture.
+ */
+describe("this suite's own change directory resolves whether the change is active or archived", () => {
+  /** Builds a throwaway repo root shaped like the one the resolver reads. */
+  function fakeRoot(shape: {
+    active?: boolean;
+    archived?: { name: string; evidence?: boolean }[];
+  }): string {
+    const root = mkdtempSync(join(tmpdir(), "sv-resolve-"));
+    const changes = join(root, "openspec", "changes");
+    mkdirSync(changes, { recursive: true });
+
+    if (shape.active) {
+      const dir = join(changes, "harden-post-v1-verification");
+      mkdirSync(join(dir, "evidence"), { recursive: true });
+      writeFileSync(join(dir, "evidence", "verify-gate-batch.mjs"), "// active\n", "utf8");
+    }
+
+    if (shape.archived?.length) {
+      const archiveRoot = join(changes, "archive");
+      mkdirSync(archiveRoot, { recursive: true });
+      for (const entry of shape.archived) {
+        const dir = join(archiveRoot, entry.name);
+        mkdirSync(join(dir, "evidence"), { recursive: true });
+        if (entry.evidence) {
+          writeFileSync(join(dir, "evidence", "verify-gate-batch.mjs"), "// archived\n", "utf8");
+        }
+      }
+    }
+
+    return root;
+  }
+
+  const roots: string[] = [];
+  function rootFor(shape: Parameters<typeof fakeRoot>[0]): string {
+    const root = fakeRoot(shape);
+    roots.push(root);
+    return root;
+  }
+
+  afterAll(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  });
+
+  it("resolves the active directory when it exists", () => {
+    const root = rootFor({ active: true });
+
+    expect(resolveChangeDir(root)).toBe(
+      join(root, "openspec", "changes", "harden-post-v1-verification"),
+    );
+  });
+
+  it("resolves an archived copy when the active directory is gone", () => {
+    // This is the case archiving produced, and the one that took twenty-one tests with it.
+    const root = rootFor({
+      archived: [{ name: "2026-10-05-harden-post-v1-verification", evidence: true }],
+    });
+
+    expect(resolveChangeDir(root)).toBe(
+      join(root, "openspec", "changes", "archive", "2026-10-05-harden-post-v1-verification"),
+    );
+  });
+
+  it("prefers the active directory when both exist", () => {
+    // Otherwise a stale archive could shadow the live change and the suite would assert against old text.
+    const root = rootFor({
+      active: true,
+      archived: [{ name: "2026-01-01-harden-post-v1-verification", evidence: true }],
+    });
+
+    expect(resolveChangeDir(root)).toBe(
+      join(root, "openspec", "changes", "harden-post-v1-verification"),
+    );
+  });
+
+  it("takes the most recent archived copy when there are several", () => {
+    const root = rootFor({
+      archived: [
+        { name: "2026-01-01-harden-post-v1-verification", evidence: true },
+        { name: "2026-10-05-harden-post-v1-verification", evidence: true },
+      ],
+    });
+
+    expect(resolveChangeDir(root)).toContain("2026-10-05-harden-post-v1-verification");
+  });
+
+  it("throws rather than resolving a directory with the right name and no evidence script", () => {
+    // A bare directory matches by name. Resolving it would restore the original failure mode one level
+    // down: a path that exists, so nothing complains, and a `read` that throws somewhere less obvious.
+    const root = rootFor({ archived: [{ name: "2026-10-05-harden-post-v1-verification" }] });
+
+    expect(() => resolveChangeDir(root)).toThrow(/cannot locate/);
+  });
+
+  it("throws when neither an active nor an archived copy exists", () => {
+    // The loud-failure half. Silently skipping here would recreate this very defect with no red at all.
+    const root = rootFor({});
+
+    expect(() => resolveChangeDir(root)).toThrow(/cannot locate/);
+  });
+
+  it("the real repository resolves to a directory holding every file this suite reads", () => {
+    // The control, and the clause that would have caught the regression: it asserts on the resolution the
+    // rest of the suite is about to use, so a moved directory is reported here with a readable message
+    // instead of as an import failure twenty lines into the file.
+    expect(existsSync(DRIVER)).toBe(true);
+    expect(existsSync(CHECKER)).toBe(true);
+    expect(existsSync(TASKS)).toBe(true);
+    expect(existsSync(CHANGE)).toBe(true);
   });
 });
