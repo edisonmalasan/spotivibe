@@ -137,7 +137,40 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M18** | Keyboard shortcuts, search suggestions, sharing | `DONE` | M5, M7, M9 |
 | **M19** | Motion and interaction polish | `DONE` | M18 |
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
-| **M21** | Post-v1 integration, regression validation, documentation | `NEXT` | M16–M20 |
+| **M21** | Post-v1 integration, regression validation, documentation | `APPLY` (PR #100 open) | M16–M20 |
+
+**M21 status, 2026-10-04 — Apply in progress, and its central claim has been narrowed.** Proposal merged
+as `6f86211`; Apply is PR #100. Twelve rounds of independent verification have run; the first eleven
+returned REJECT, and the twelfth found 4 CRITICAL, 7 WARNING and 4 NIT. Every round found the *previous
+round's* defect class reproduced inside the previous round's own repair.
+
+**The claim this milestone made — that its suite makes a false green impossible — has been retired by
+decision, not by success.** Two one-line edits still make the release gate's install cascade dead code
+while all 71 tests in `release-gate-install.test.ts` report green:
+
+```js
+const SKIP_INSTALL = true;
+if (!SKIP_INSTALL) { if (item.how === "install") { /* the whole dispatch */ } }
+
+const prepared = prepareDependencies({ frontendDir: FRONTEND });
+prepared.ok = true;
+```
+
+Both were measured on the real gate with `node --check` passing. They are not fixed, and the reason is
+structural rather than pending: the instrument that closes this class is *executing the gate* and
+observing whether `environmentBroken` is set, or a taint/flow analysis, and executing the gate is
+forbidden for this work because its first step is a dependency install. What remains available is more
+syntactic predicates, and twelve rounds show each one is answered by the next round — name, then span,
+then declaration, then dispatch, then complement, never the rung that covers the next finding.
+
+**What M21 therefore delivers:** the gate's install cascade pinned against a named, mutation-proven list
+of regressions; the batch evidence checker that runs the gate six times and refuses anything it cannot
+corroborate, now itself gated by execution rather than by grepping its own source; and two known,
+measured, documented ways to defeat it. **Not:** immunity of the gate to a disabled caller. See
+`openspec/changes/harden-post-v1-verification/design.md` §2.11.
+
+Also open and unaffected by that decision: no live-browser verification of anything, and two red gate
+runs whose second cause is now measured *not* to be tree size.
 
 **M20 outcome, 2026-10-03.** Proposal merged as `eb76cfc`; Apply as PR #96 / `9b61e72`; spec sync as
 PR #97 / `91f47a1`. The `download` capability is 8 requirements and 31 scenarios, and

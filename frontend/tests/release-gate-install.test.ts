@@ -67,6 +67,52 @@ import {
  * into `frontend/src/` collided with the guard that walks that tree, and M21's other half is the
  * fix for exactly that. Writing the tests to the same standard they are asserting is the least
  * defensible thing available.
+ *
+ * ## What this file cannot see — read this before adding a clause
+ *
+ * Everything this file asserts about the gate's own source is derived from its **syntax**: identifiers,
+ * declarations, spans, and the shape of a conditional. That is a real and useful instrument — it has
+ * survived a shadowed declaration, a renamed dispatch, an aliased loop, a conditional complement, a
+ * deleted call, a wrong field name and a full rename — and it is the strongest such instrument this
+ * repository has. It is not, and does not claim to be, a proof that the cascade runs.
+ *
+ * **Two measured escapes remain open, and both leave every test here green.** They are recorded here
+ * rather than only in `tasks.md` because the next person to widen this file will otherwise re-derive
+ * them, and will assume that a suite this size must already cover them:
+ *
+ * ```text
+ * const SKIP_INSTALL = true;
+ * if (!SKIP_INSTALL) {          // or: if (item.id === "gates-install-retired") {
+ *   if (item.how === "install") {
+ *     const prepared = prepareDependencies({ frontendDir: FRONTEND });
+ *     ...
+ * }
+ * // -> prepareDependencies is never called, cascadeReason is never called, environmentBroken is never
+ * //    written, and no later item is short-circuited.                          71 passed (71)
+ *
+ * const prepared = prepareDependencies({ frontendDir: FRONTEND });
+ * prepared.ok = true;           // the value is discarded one line after it is produced, so the else
+ *                                // arm never runs and the cascade cannot fire.  71 passed (71)
+ * ```
+ *
+ * Both were measured on the real archived gate with `node --check` passing, in M21 round 12. The first
+ * is the more plausible of the two — a rollout flag left on is exactly what a maintainer writes while
+ * staging an install change.
+ *
+ * **Why they are not fixed here.** The instrument that closes this class is *running the gate* and
+ * observing whether `environmentBroken` is set, or a taint/flow analysis, which is the same thing with
+ * more machinery. Executing the gate is forbidden for this work — its first step is a dependency
+ * install, and `npm ci` is never run here — so the closing instrument is unavailable. Every remaining
+ * fix is one more syntactic predicate, and twelve rounds have each answered the previous round's
+ * finding by adding exactly one of those: name, then span, then declaration, then dispatch, then
+ * complement. Each rung is real; none is the rung that would have covered the next finding, because the
+ * ladder was extended along the axis the last defect was on. A thirteenth rung would be defeated the
+ * same way.
+ *
+ * So the honest description of this file is: **a strong pin on the gate's shape, with two named,
+ * measured ways to make its central cascade dead code while it reports green.** If you need the class
+ * closed, the milestone claim has to be narrowed or an execution harness has to be authorised — not
+ * another clause added here.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));

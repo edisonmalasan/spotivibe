@@ -25,7 +25,13 @@ the prose drifts away from the code.
 
 ## What Changes
 
-**The gate stops being able to lie.**
+**The gate stops being able to lie about the state of the tree.**
+
+*Corrected in round 12.* This read "**The gate stops being able to lie**", unqualified. It is now false,
+and was false before this line was written: a rollout flag wrapped around the install dispatch, or one
+line that discards the install's result, makes the entire cascade dead code while every test in the
+repository reports green. Both were measured. The gate's *own* diagnostics are what this milestone makes
+honest; its immunity to a disabled caller is not claimed. See `design.md` §2.11.
 
 - The release gate's `gates-install` step no longer runs `npm ci` over the working tree. It installs
   into a staged directory, or refuses to run while `node_modules` is in use.
@@ -59,6 +65,13 @@ the prose drifts away from the code.
   separates VM state, not the filesystem, so `isolate: true` does not prevent it.
 
 **The checks that cannot fail, stop not being able to.**
+
+*Qualified in round 12.* This is true of the checks named below — each is now witnessed by a mutation
+that turns it red — and it is **not** a claim about the checks as a category. Twelve rounds of
+verification each found a check that could not fail, including in the apparatus written to fix the
+previous round's: round 11's own evidence gate asserted on four message substrings and was green when
+the checker it covered was both broken *and* correct. A repair that makes a finding's test go red is
+not the same as a repair that closes the finding.
 
 - The load-bearing clause check is extended beyond the three M20 detectors, or the remaining
   detectors are renamed to state what they actually cover. `download-non-goals.test.ts` has seven
@@ -107,12 +120,20 @@ alters tests, CI ordering, the gate, and documentation, and nothing a user can s
 
 ### New Capabilities
 
-- `verification-integrity`: The repository's own checks are required to be provable — a gate that
-  cannot distinguish one broken install from sixteen unrelated failures, a CI job whose ordering
-  determines whether a budget runs at all, a probe that mutates the tree another test is reading, and
-  an intermittently failing test whose failure is indistinguishable from a real regression. This is
-  a new capability because `release-validation` governs the *product's* exclusions and the release
-  contract; it does not govern whether the machinery performing that validation is itself sound.
+- `verification-integrity`: The repository's own checks are required to be **witnessed** — each one shown
+  failing on a violating input, and each one's known blind spots recorded rather than left for a reader
+  to assume away. A gate that cannot distinguish one broken install from sixteen unrelated failures, a CI
+  job whose ordering determines whether a budget runs at all, a probe that mutates the tree another test
+  is reading, and an intermittently failing test whose failure is indistinguishable from a real
+  regression. This is a new capability because `release-validation` governs the *product's* exclusions
+  and the release contract; it does not govern whether the machinery performing that validation is
+  itself sound.
+
+  *Terminology narrowed in round 12.* This originally read "required to be **provable**", and that word
+  is not available. Twelve rounds of verification established that the repository's checks are
+  *witnessed*, not *proved*: each has a mutation that turns it red, and each still has named ways to
+  defeat it. "Provable" would have been the aspirational version of a claim this milestone cannot make,
+  which is the exact failure the capability exists to prevent.
 
 ### Modified Capabilities
 

@@ -210,6 +210,44 @@ One green run is not evidence against an intermittent defect. That is the entire
 flakes in scope, and it would be incoherent to accept one green run as this change's proof while
 fixing three tests precisely because one green run meant nothing.
 
+### 2.11 The install suite is a pin on shape, and the milestone does not claim more
+
+**Decision, taken in round 12 after the alternative was rejected.** `tests/release-gate-install.test.ts`
+asserts everything it can about the gate's install cascade from its **syntax**. It is the strongest
+instrument of its kind this repository has, and it is not a proof that the cascade runs. Two escapes
+are measured, named, and accepted as open:
+
+```text
+const SKIP_INSTALL = true;
+if (!SKIP_INSTALL) { /* or a condition nothing can satisfy */
+  if (item.how === "install") { ... }
+}
+// prepareDependencies, cascadeReason and environmentBroken are all never touched.  71 passed (71)
+
+const prepared = prepareDependencies({ frontendDir: FRONTEND });
+prepared.ok = true;   // the value is discarded; the else arm never runs.       71 passed (71)
+```
+
+**Why this is a decision and not a deferral.** The instrument that closes the class is executing the
+gate and observing whether `environmentBroken` is set, or a taint/flow analysis — the same thing with
+more machinery. Executing the gate is forbidden for this work, because its first step is a dependency
+install and `npm ci` is never run here. So the closing instrument is unavailable, and the alternative
+was a thirteenth syntactic predicate.
+
+That alternative was rejected on evidence rather than taste. Twelve rounds of independent verification
+each found the previous round's defect class reproduced inside the previous round's own repair, and the
+ladder is legible: **name → span → declaration → dispatch → complement**. Each rung is real, and none is
+the rung that would have covered the next finding, because the ladder was extended along the axis the
+last defect was on rather than the axis the next one would be on. The same pattern appears one level
+up: three of round 12's eight CRITICAL/WARNING rows were defects in the *verification apparatus* rather
+than in the code it verifies. A suite that acquires a meta-layer per round acquires a meta-layer that
+must itself be verified, and this milestone's verification budget was being spent there instead of on
+the product.
+
+**What this change therefore claims.** That the gate's install cascade is pinned against a named list
+of specific regressions, each mutation-proven, and that two further ways to make it dead code are known,
+measured and documented. It does **not** claim that a false green in this area is impossible.
+
 ## 3. What this change does not do
 
 - No shipped behaviour changes. `src/` is touched only if a test-only defect and a product defect

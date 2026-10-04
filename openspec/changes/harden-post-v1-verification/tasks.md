@@ -2127,3 +2127,37 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   - No browser verification of any kind. CI unobserved green on this branch.
   - Root `scripts/` and both archived `release-gate.mjs` copies remain outside every gate; the two
     evidence scripts no longer are.
+
+  ### Resolution — option 3, decided by the owner
+
+  The three options above were put to the repository owner rather than chosen here, because each one
+  trades a different thing away and the trade is not mine to make. **Option 3 was taken: retire the
+  claim that this suite makes a false green impossible, and narrow the change to what it can deliver.**
+
+  Applied, in this commit:
+
+  - `proposal.md`'s headline, which read "**The gate stops being able to lie**", is corrected in place to
+    "stops being able to lie about the state of the tree", with the two measured counter-examples quoted
+    beside it. The old sentence was not a rounding of the truth; it was false, and it was the first line
+    a reader of this change would meet.
+  - `proposal.md`'s "**The checks that cannot fail, stop not being able to**" is qualified: true of the
+    checks named in it, not of checks as a category.
+  - `proposal.md`'s `verification-integrity` capability description said the checks are required to be
+    **provable**. They are **witnessed**. That distinction is the entire content of this round.
+  - `design.md` §2.11 added: the decision, both escape routes, why execution is the only instrument that
+    closes the class, why execution is unavailable here, and why a thirteenth syntactic predicate was
+    rejected on the measured evidence rather than on taste.
+  - `tests/release-gate-install.test.ts`'s header gained **"What this file cannot see — read this before
+    adding a clause"**, carrying both mutations and the reason no further clause is being added. The
+    header previously said why the file existed and why its fixtures are hand-written, and said nothing
+    about its limits; a 71-test file with no stated blind spot reads as a proof.
+
+  **Not done, and not to be done without a new decision:** an execution harness, a thirteenth syntactic
+  predicate, or any widening of `release-gate-install.test.ts`'s reach. Each is a way of re-opening the
+  question this resolution closed.
+
+  **What "accepted residual" means precisely, so it is not softened later.** The gate's install cascade
+  can be made dead code by two edits, both one line, both leaving 71/71 green: a guard wrapped around the
+  install dispatch, or discarding the install's result before the `.ok` test. This is a known,
+  reproducible false green in the repository's own verification machinery. It is accepted, not fixed and
+  not forgotten, and it is not covered by this change's acceptance criterion — which is worded to say so.
