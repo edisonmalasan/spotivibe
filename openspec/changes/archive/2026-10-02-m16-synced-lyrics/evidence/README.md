@@ -384,6 +384,15 @@ or inventing a fixture to make it look load-bearing.
   propagation are verified; whether LRCLIB returns the right thing for any specific real track is not.
 - **No visual review at either viewport.** Layout is asserted structurally (sibling, not overlay,
   height-bounded) and by the existing Now Playing suites, but nobody has looked at it.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 ## The release gate could not be used as a comparison, and running it did damage
 

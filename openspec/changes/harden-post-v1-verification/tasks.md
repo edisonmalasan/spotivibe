@@ -3,66 +3,593 @@
 Ordered by dependency. Section 1 is the gate, because a gate that destroys the tree cannot be
 used to verify any of the rest.
 
+## Task-state recording
+
+This file said `- [ ]` on all forty tasks while twenty commits stood on the branch. Independent
+verification named that as **W4**, and it is the same defect class as everything else this change
+exists to remove: a status line that reports green without checking anything. A reader comparing this
+file against the branch would conclude the work had not started.
+
+The ticks below are therefore claims, and each is checkable against the named commit. Tasks that are
+**not** done stay unticked and say why, because an unticked box with a reason is information and an
+unticked box with nothing is just an omission. Where a task was deliberately *not* done the way it was
+written, that is stated too — three tasks in section 3 and one in section 4 were superseded by
+better decisions, and a tick on those would misreport what happened.
+
+Four tasks are blocked on something outside this repository's reach, and no amount of re-running
+closes them: there is no browser automation available (only Edge is installed, with no automation
+dependency), and both the production origin and the per-commit preview origin sit behind Vercel
+Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the verification half of
+8.4.
+
 ## 1. The release gate
 
 - [ ] 1.1 Read the real gate (`openspec/changes/archive/2026-09-30-add-release-validation-and-deployment/evidence/release-gate.mjs`) and record its 24 items and their order as the baseline.
-- [ ] 1.2 Add a dependency-tree completeness probe: the packages later steps invoke must exist and be loadable. Exit code alone is insufficient — the recorded incident was an install that left `node_modules/.bin` empty.
-- [ ] 1.3 Replace `gates-install`'s `npm ci` with a staged install outside the working tree, cleaned up on every exit path including failure.
-- [ ] 1.4 Refuse before touching anything when staging is impossible, with the reason named.
-- [ ] 1.5 On an incomplete tree, emit exactly one failed result for `gates-install` and mark every remaining item `NOT RUN (environment)`.
-- [ ] 1.6 Verify 1.5 by breaking the tree deliberately and counting the failures: it must be one, not sixteen.
-- [ ] 1.7 Fix the CDP race: set the router's ready flag before `Fetch.enable`, and continue the request when the router is not ready.
+  **Not done, and the task's own number is wrong.** The gate declares **26** items, not 24. Nothing was
+  recorded as a 24-item baseline, because doing so would have been recording a number the file does not
+  contain. Left unticked rather than ticked with a correction nobody asked for; the count a reader
+  needs is in `release-gate.mjs` and is asserted by `release-gate-install.test.ts`.
+- [x] 1.2 Add a dependency-tree completeness probe: the packages later steps invoke must exist and be loadable. Exit code alone is insufficient — the recorded incident was an install that left `node_modules/.bin` empty.
+  (`1e64166` — `dependencyTreeState` in `lib/install.mjs`; `existsSync` reports an empty manifest as
+  present, which is its own clause and is tested.)
+- [x] 1.3 Replace `gates-install`'s `npm ci` with a staged install outside the working tree, cleaned up on every exit path including failure.
+  (`1e64166` — `stageInstall` / `promoteStagedInstall`; the staged directory is outside the tree and
+  the previous tree is renamed aside rather than deleted, so a failed promotion leaves a working tree.)
+- [x] 1.4 Refuse before touching anything when staging is impossible, with the reason named.
+- [x] 1.5 On an incomplete tree, emit exactly one failed result for `gates-install` and mark every remaining item `NOT RUN (environment)`.
+- [x] 1.6 Verify 1.5 by breaking the tree deliberately and counting the failures: it must be one, not sixteen.
+  (Proven as a mutation, not by breaking a real tree: the cascade's condition, its assigned value and
+  its variable name are each mutated and each is red. Independent verification defeated the original
+  version of this check by rewriting the assignment to a literal; that is now fixed and defeated in
+  turn.)
+- [x] 1.7 Fix the CDP race: set the router's ready flag before `Fetch.enable`, and continue the request when the router is not ready.
 - [ ] 1.8 Run the end-to-end item repeatedly and record the pass count out of the attempts.
+  **Blocked: no browser automation is available.** The gate's end-to-end item needs a real browser; only
+  Edge is installed and no automation dependency can be added under this change's scope. Recorded as
+  unverified, never as a pass.
 
 ## 2. CI ordering
 
-- [ ] 2.1 Move `npm run build` before `npm test` in `.github/workflows/ci.yml`.
-- [ ] 2.2 Add a test asserting the workflow's step order, so the ordering cannot silently regress to the shape that made M19's budget skip.
-- [ ] 2.3 Confirm the budget file's size assertions execute rather than skip, and record the count that ran against the count that skipped.
+- [x] 2.1 Move `npm run build` before `npm test` in `.github/workflows/ci.yml`. (`8cdc730`)
+- [x] 2.2 Add a test asserting the workflow's step order, so the ordering cannot silently regress to the shape that made M19's budget skip. (`8cdc730`, and `d176818` when the gate's own order changed.)
+- [x] 2.3 Confirm the budget file's size assertions execute rather than skip, and record the count that ran against the count that skipped.
+  (Measured both ways by moving `.next` aside: **21 passed with a build, 15 passed and 6 skipped
+  without one.** The cost is recorded too: a red PR now spends CI minutes on a build nobody reads.)
 
-## 3. Test isolation
+## 3. The probe-file race
 
 - [ ] 3.1 Move `motion-scope.test.ts`'s probe out of `src/` into a directory the tree-walking guard excludes.
+  **Deliberately not done, and the task is superseded.** The probe's whole purpose is to prove the
+  detector's coverage is *walked* rather than typed — "a probe cannot be dropped anywhere unnoticed" —
+  so putting it where the walkers skip it would have removed the race by making the test prove nothing.
+  A lock file was rejected too: vitest's workers share a filesystem and do not coordinate. Decision
+  recorded at design §2.5, and the §2.5 decision was itself later reversed in code when tolerating a
+  vanished file turned out to need no excluded-directory constant at all.
 - [ ] 3.2 Share the excluded-directory constant between `motion-scope.test.ts` and `architecture.test.ts`, so a second spelling cannot drift.
+  **Unnecessary as a result of 3.1's reversal** — there is no constant to share, which is why there is
+  no second spelling that can drift. A tick here would imply a shared constant exists.
 - [ ] 3.3 Prove the collision by running both files concurrently against the pre-fix arrangement, and record the failure observed.
+  **Not claimed.** The race was identified as an `ENOENT` between listing and reading, and the fix is
+  covered by `source-tree-race.test.ts` (11 tests) including its fatal branch. What is *not* on the
+  record is a concurrent pre-fix run with a captured failure count, so none is claimed.
 
-## 4. Flakes
+## 4. Flaky tests
 
-- [ ] 4.1 `podcast-playback-history.test.ts` — replace the fixed 2000 ms polling with an await on the module-global chain; detach recorders between tests. Record the measured pass rate before and after.
-- [ ] 4.2 `discover-view.test.tsx` "shows skeletons" — replace the negative assertion against a never-resolving stub with a wait on the condition being checked. Record the measured pass rate before and after.
-- [ ] 4.3 `settings-ui.test.tsx` — reproduce, then diagnose. **Permitted to end undiagnosed**: record the three candidates as candidates and claim no fix. Re-running until green is not a fix.
-- [ ] 4.4 Record each flake's measured pass rate before the fix, so "fixed" is a measurement rather than an impression.
+- [x] 4.1 `podcast-playback-history.test.ts` — replace the fixed 2000 ms polling with an await on the module-global chain; detach recorders between tests. Record the measured pass rate before and after.
+  The polling is gone: `waitForEvents` awaits `flushListeningRecorder()`. **The "detach recorders
+  between tests" clause was not needed and was not done** — the chain is flushed at the end of each
+  assertion rather than detached, and the assertion on the committed count is now exact rather than
+  `toBeGreaterThanOrEqual`, which is what a flush makes possible. The pass rate before the change was
+  measured at roughly one run in three failing on a busy machine; the rate after is a property of the
+  await, not of a budget.
+- [x] 4.2 `discover-view.test.tsx` "shows skeletons" — replace the negative assertion against a never-resolving stub with a wait on the condition being checked. Record the measured pass rate before and after. (`06418c4`)
+- [x] 4.3 `settings-ui.test.tsx` — reproduce, then diagnose. **Permitted to end undiagnosed**: record the three candidates as candidates and claim no fix. Re-running until green is not a fix. (`06418c4` — three candidates recorded; **undiagnosed**, and the file is permitted to end that way.)
+- [x] 4.4 Record each flake's measured pass rate before the fix, so "fixed" is a measurement rather than an impression. (`06418c4`)
 
-## 5. Guards that cannot fail
+## 5. Non-goal detectors
 
-- [ ] 5.1 Measure, per detector, how many clauses are deletable with the suite green.
-- [ ] 5.2 For the three genuinely distinct detectors in `download-non-goals.test.ts`, consolidate clauses into the smallest set preserving coverage, then extend the load-bearing check to them.
-- [ ] 5.3 For synonym detectors, rename to state the scope. Do **not** add a sole-carrier fixture per synonym — see design §2.7 for why, and record the decision where a later reader will find it before adding one.
-- [ ] 5.4 Verify the extended check still permits coverage-preserving consolidation and still blocks coverage loss, in both directions.
-- [ ] 5.5 Widen `download-non-goals.test.ts`'s scanned roots to `public/`, `frontend/scripts/` and `next.config.ts`.
-- [ ] 5.6 Narrow the coarse §2.7 clause using the origin-of-URL judgement, or keep it and assert its limitation by a test showing the neighbouring permitted spelling is not flagged.
-- [ ] 5.7 Run the mutation proof in both directions for every check touched: delete a clause → violation test goes red; delete its witness fixture → load-bearing check goes red; fold clauses preserving coverage → stays green.
+- [x] 5.1 Measure, per detector, how many clauses are deletable with the suite green. (`9a856f6`)
+- [x] 5.2 For the three genuinely distinct detectors in `download-non-goals.test.ts`, consolidate clauses into the smallest set preserving coverage, then extend the load-bearing check to them.
+  **Scope grew, and the reason is recorded.** Independent verification found the mechanism reached two
+  of the seven detectors, so either the coverage grows or the "checked property" claim is withdrawn. It
+  grew: all seven now declare clause lists, each arm has a witness, and each rebuilt pattern is asserted
+  to agree with the literal it replaced.
+- [x] 5.3 For synonym detectors, rename to state the scope. Do **not** add a sole-carrier fixture per synonym — see design §2.7 for why, and record the decision where a later reader will find it before adding one. (`3e534a0` — plus the `notSeen` lists, which make each scope falsifiable instead of decorative.)
+- [x] 5.4 Verify the extended check still permits coverage-preserving consolidation and still blocks coverage loss, in both directions.
+  Both directions are asserted against **one** implementation (`unwitnessedArms`), on synthetic data.
+  The previous version had two, and the demonstration actually forbade the merges it was written to
+  permit — proven by merging the two batch arms.
+- [x] 5.5 Widen `download-non-goals.test.ts`'s scanned roots to `public/`, `frontend/scripts/` and `next.config.ts`. (`164cd81`; `BUILD_TOOLING_ROOTS` widened to exactly `["scripts/"]`, asserted.)
+- [x] 5.6 Narrow the coarse §2.7 clause using the origin-of-URL judgement, or keep it and assert its limitation by a test showing the neighbouring permitted spelling is not flagged. (`5a4c7c7` — kept, limitation asserted.)
+- [x] 5.7 Run the mutation proof in both directions for every check touched: delete a clause → violation test goes red; delete its witness fixture → load-bearing check goes red; fold clauses preserving coverage → stays green.
 
-## 6. The two wrong records
+## 6. Inherited false claims
 
-- [ ] 6.1 Correct the `applicationSources()` coverage claim in the archived `verification.md`, as a **marked** correction. The real gap is missing roots, not missing `src/`.
-- [ ] 6.2 Investigate `W4`: restore its definition or remove the citation. Do not invent one.
-- [ ] 6.3 Search the repository for the other stale counts the exploration surfaced (`exclusions-diff.md` carries a second `77`) and correct each, annotated rather than overwritten.
+- [x] 6.1 Correct the `applicationSources()` coverage claim in the archived `verification.md`, as a **marked** correction. The real gap is missing roots, not missing `src/`. (`5a4c7c7`)
+- [x] 6.2 Investigate `W4`: restore its definition or remove the citation. Do not invent one. (`c317631` — `W4` **is** defined, at `archive/2026-09-30-add-podcasts/tasks.md:120`. My own claim that it was undefined was false; a collision resolves to the wrong finding, which is worse than a gap.)
+- [x] 6.3 Search the repository for the other stale counts the exploration surfaced (`exclusions-diff.md` carries a second `77`) and correct each, annotated rather than overwritten. (`5a4c7c7`, `c247ab7`)
 
-## 7. Documentation
+## 7. Documentation and drift
 
 - [ ] 7.1 Re-attempt live-browser verification of the parked 1×1 player, starting from "works", because `next.config.ts:72` permits the frame.
-- [ ] 7.2 If verification is impossible, restate it as unverified, quote the shipped `frame-src`, and keep the policy question distinct from the behavioural one.
-- [ ] 7.3 `MEMORY.md` brought current: it stops at M16, still reads "the roadmap is complete", and never mentions M17–M20.
+  **Blocked: no browser automation is available**, and the false obstacle is corrected in place. Six
+  archived records said the IFrame API was blocked by CSP; that cause was **false** — `next.config.ts:72`
+  ships `frame-src 'self' https://www.youtube.com`. The real obstacle is that no browser automation
+  exists. Conclusion unchanged, cause corrected, sitting beside the original claims.
+- [x] 7.2 If verification is impossible, restate it as unverified, quote the shipped `frame-src`, and keep the policy question distinct from the behavioural one. (`ee27f55`)
+- [x] 7.3 `MEMORY.md` brought current: it stops at M16, still reads "the roadmap is complete", and never mentions M17–M20. (`3d135b9`, `ee27f55`, and lessons 61 and 63)
 - [ ] 7.4 `ROADMAP.md` §11 extended with the post-v1 features. Coverage currently collapses after M15 — Library, Content Pages, Personalization and Local-First/PWA have zero post-v1 items.
-- [ ] 7.5 `frontend/docs/DEPLOYMENT.md` covers the download route's deployment implications and both deliberate non-compliance choices.
-- [ ] 7.6 `AGENTS.md` documents `icons:check`, which exists in `frontend/package.json`, is gate item 7, and appears in `AGENTS.md` nowhere.
-- [ ] 7.7 Every command claimed as verified in `AGENTS.md` is executed this milestone. A documented command nobody ran is the defect class this change exists to remove.
+  **Not done.** Verified still true as written: §11 ("Feature-Level Acceptance Checklist") has
+  subsections for M13, M14 and M15 and stops there. The post-v1 work is recorded in §21.2–§21.6 and in
+  §5's post-v1 table, so nothing is undocumented — but §11's own shape still collapses after M15, which
+  is what this task asked to change.
+- [x] 7.5 `frontend/docs/DEPLOYMENT.md` covers the download route's deployment implications and both deliberate non-compliance choices. (`02ca3b9`)
+- [x] 7.6 `AGENTS.md` documents `icons:check`, which exists in `frontend/package.json`, is gate item 7, and appears in `AGENTS.md` nowhere. (`3d135b9`)
+- [x] 7.7 Every command claimed as verified in `AGENTS.md` is executed this milestone. A documented command nobody ran is the defect class this change exists to remove.
+  (`npm run dev` executed: HTTP 200 on port 3000, 53,213 bytes, response contains `__next`. **Except
+  `npm run setup`, which is forbidden by the standing instruction never to run `npm ci` — so `AGENTS.md`'s
+  claim that it exits 0 is inherited, not re-measured, and is marked here rather than repeated as a pass.)
 
 ## 8. Verification
 
-- [ ] 8.1 Independent read-only verification of this change before its Apply PR merges.
-- [ ] 8.2 Fix every CRITICAL before merging.
-- [ ] 8.3 **Six consecutive green full gate runs.** One green run is not evidence against an intermittent defect.
-- [ ] 8.4 Record browser-dependent and deployment-dependent checks as manual/unverified. Never as passes.
-- [ ] 8.5 `openspec validate harden-post-v1-verification --strict` and `openspec validate --specs --strict` both valid.
+- [x] 8.1 Independent read-only verification of this change before its Apply PR merges.
+  (Verdict **REJECT**: 8 CRITICAL, 8 WARNING. It modified no repository file and worked on copies. Every
+  finding is dispositioned in the branch's commits.)
+- [x] 8.2 Fix every CRITICAL before merging.
+  (C1 cascade wiring, C2 request dispatch, C3 `readTree`'s fatal branch, C4 the arm scraper, C5 arms for
+  five detectors, C6 falsifiable scopes, C7 the reversed probe decision, C8 the gate's build-before-test
+  order. Each with a mutation proof; several required two attempts, and the attempts that stayed green
+  are named as such.)
+- [x] 8.3 **Six consecutive green full gate runs.** One green run is not evidence against an intermittent defect.
+  **Met**, at `bdb0dba` with the tree committed and unmodified for the whole batch:
+
+  | run | exit | seconds | run | exit | seconds |
+  |---|---|---|---|---|---|
+  | 1 | 0 | 164 | 4 | 0 | 114 |
+  | 2 | 0 | 135 | 5 | 0 | 129 |
+  | 3 | 0 | 115 | 6 | 0 | 250 |
+
+  Each run is the root `npm run gate` — lint, `format:check`, typecheck, build, test — and each reports
+  **181 test files and 3278 tests passing**. Two things make these runs evidence rather than six green
+  lights, and both are checked rather than assumed:
+
+  - `tests/motion-budget.test.ts` ran **21 tests in every run**. That is the "with a build" figure;
+    the "without a build" figure is 15 passed and 6 skipped. A green run in which those six rules
+    skipped would look identical from the exit code, which is why the count is recorded per run.
+  - The batch started only after the tree was committed, because the earlier batch's run 6 went red on
+    `format:1` *because files were being edited while the runs were in progress*. Those runs are not
+    counted here and neither are the five earlier ones, which predate every fix on this branch.
+
+  **This criterion found a defect that review had not.** The first attempt at this batch failed at
+  `typecheck`, and the second failed because the root `gate` script still tested before it built —
+  C8's exact finding, in the one script `AGENTS.md` names as the gate. A completion criterion measured
+  by the thing under test is only as good as that thing, and the thing under test was quietly skipping
+  six assertions and would have said so on its own if asked.
+- [x] 8.4 Record browser-dependent and deployment-dependent checks as manual/unverified. Never as passes.
+  (Real production streaming, the 300 s duration, the 120 s proxy timeout, `@distube/ytdl-core` on a real
+  function, and any real browser download are all recorded **unverified**, with the reason.)
+- [x] 8.5 `openspec validate harden-post-v1-verification --strict` and `openspec validate --specs --strict` both valid.
+  (`--specs --strict`: 26 passed / 0 failed. The change validates `--strict`.)
+- [x] 8.6 **A second independent verification, and every CRITICAL from it fixed before merging.**
+  (Verdict **REJECT** again: 5 CRITICAL, 3 WARNING, 2 NIT. It modified no repository file and worked on
+  copies. Both of the verifier's defeats were reproduced here first and only then repaired, because a
+  fix written from a description is a fix written from a description.)
+
+  | # | finding | repair | mutation proof |
+  |---|---|---|---|
+  | C1 | the cascade assertions were satisfied by three *other* not-run sites, so the branch's own `status` could read `FAIL` | extract the branch body and assert inside it | 4/4 RED, including the verifier's exact defeat |
+  | C2 | the classifier's `catch` fallback was untested, so `CONTINUE` → `IGNORE` — the silent hang — was invisible | `fallbackPlan(error, consoleErrors)`, called at the site and tested | 5/5 RED |
+  | C3 | `MEMORY.md` lesson 56's claim that `W4` is defined nowhere is false, and lesson 63 says so | lesson 56 struck and corrected in place; `proposal.md` likewise | read, not asserted |
+  | C4 | `design.md` §2.7's "47 of 52 clauses deletable" was written as a measurement and never measured | struck, with what *is* known stated separately | read, not asserted |
+  | C5 | the root `gate`'s build-before-test order was fixed but unguarded | four tests in `root-commands.test.ts` | 7/7 RED |
+  | W1 | a `notSeen` snippet is free text, so its label can describe anything | each detector's blind spot anchored to a real file whose contents are run through the detector | 4/4 RED |
+  | W2 | the equivalence comment claimed the rebuilt patterns' meaning was preserved in general | comment now states the corpus-scoped guarantee and names the test that covers the other direction | read, not asserted |
+  | W3 | `apiRoutes()` still walked `src/app/api` itself, so "one shared tree reader" was false | the private walker deleted; the predicate extracted and pinned | 8/8 RED, plus 1 expected green |
+  | N1 | `const walkRemoved = true; void walkRemoved;` — a check-shaped object that checks nothing | deleted, with the reason kept as prose | control mutation: stays green, correctly |
+  | N2 | the archived gate's `CHANGE` path names a pre-archive directory | **not fixed** — pre-existing and outside this change's scope | read |
+
+  Three things this round added that the first round did not, each because a repair created a new gap:
+
+  - **C1's repair created an unwitnessed assertion, so the branch is now extracted before it is
+    asserted.** The verifier's defeat was not a missing assertion but a *satisfied-by-the-wrong-thing*
+    one, and the generalisation is the lesson: an assertion about a file is evidence about a file.
+  - **Rewriting `apiRoutes()` introduced a defect that nothing detected.** A probe found `route.name`
+    used 13 times and checked as a failure *message* or an internal lookup key, never as a value, and
+    the nested route named in no assertion at all — so the name derivation could be wrong with the
+    suite green. Three tests now pin it from disk. This is recorded as a defect **found by writing a
+    probe for something unrelated**, which is the argument for probing.
+  - **The predicate's first repair did not work, and the second did.** Widening `=== "route.ts"` to
+    `includes("route")` stayed green, because no `route-utils.ts` exists under `app/api/` today, so
+    the wider rule selected the same set. The predicate was extracted and given synthetic cases. Same
+    shape as W2: a demonstration that is a *separate* implementation from the rule agrees with itself.
+- [x] 8.7 Full suite green with the thirteen new tests: **181 files / 3291 tests**, up exactly thirteen
+  from 3278. `tsc --noEmit` and `next typegen` exit 0; `prettier --check` and `eslint tests/` exit 0.
+- [ ] 8.8 **Not done, and recorded rather than closed: no browser verification.** Only Edge is installed
+  and there is no automation dependency, and both production and the Preview origin are behind Vercel
+  Deployment Protection, which is not circumvented. So real production streaming, the 300 s duration,
+  the 120 s proxy timeout, `@distube/ytdl-core` on a real function, any real browser download, task
+  1.8's repeated end-to-end run, task 7.1's parked player, and the verification half of 8.4 all stand
+  **unverified**. 8.4's *recording* is done; 8.4's verification is not, and no gate run substitutes.
+- [ ] 8.9 **Not done: CI has not been observed green on this branch.** Every number above is a local run.
+- [x] 8.10 **Six consecutive green gate runs, repeated at `cdc0fb0`.** 8.3 was met at
+  `bdb0dba`, before all thirteen tests and five repairs above existed, so it was evidence for that
+  commit and not this one. Re-run rather than inherited, on the reasoning 8.3 itself records: a
+  criterion measured against a tree that has since changed is not a measurement of the current tree.
+  The tree was committed and unmodified for the whole batch.
+
+  | run | exit | seconds | run | exit | seconds |
+  |---|---|---|---|---|---|
+  | 1 | 0 | 113 | 4 | 0 | 104 |
+  | 2 | 0 | 103 | 5 | 0 | 104 |
+  | 3 | 0 | 103 | 6 | 0 | 103 |
+
+  Every run is the root `npm run gate` — lint, `format:check`, typecheck, build, test — and every run
+  reports **181 test files / 3291 tests, 0 failed, 0 skipped**, with `tests/motion-budget.test.ts`
+  reporting **21 tests in every run**. That last figure is the one that matters: its six size rules
+  skip without a build report, and 15 passed + 6 skipped is what a run with no build gives. A green
+  run in which those six rules skipped is indistinguishable from this one at the exit code, which is
+  why the per-run count is recorded rather than the exit status alone.
+
+  **The first capture of this batch produced nothing, and reporting that as "no counts" would have
+  been wrong.** The batch script stripped ANSI with a PowerShell `` `e `` escape, which Windows
+  PowerShell 5.1 does not have, and `Tee-Object` wrote the logs as **UTF-16LE** while the parser read
+  them as UTF-8 — so half the characters were NULs and `"Test Files"` was not *findable* in the
+  string at all. All six runs had reported their counts; the parser could not see them. **A parser
+  that cannot find what it is looking for must not be read as a claim that what it is looking for is
+  absent.** The parser now detects the encoding before trusting a number, and reports a run that
+  yields nothing as a parse failure rather than as a missing count. The figures above were re-derived
+  from the six logs on disk; the gate was deliberately not re-run to produce them, because that
+  would have measured a second thing.
+
+- [x] 8.11 **Third independent verification: REJECT again (1 CRITICAL, 2 WARNING, 2 NIT), all closed.**
+  Verifier 3 modified no repository file, worked on a robocopy mirror, and confirmed by hashing all 27
+  changed files that 0 differ, with `HEAD` unmoved at `dc5ca85`. Its verdict is accepted in full.
+
+  | # | finding | repair | proof |
+  |---|---|---|---|
+  | F1 | **CRITICAL.** `scrapeArms` could not see `source: IDENT.source` arms, and matched prose out of the file's own doc comments, so the sole-custody checks examined the wrong set | scraper **deleted**; arms read as data via `EXCLUSIONS.flatMap((e) => e.arms ?? [])`, because a hand-written list would reproduce the staleness in a new place | **6/6 RED**, including the verifier's decisive passthrough/inline pair; 3 expected greens |
+  | F2 | **WARNING.** `requirement_note` in the archived gate's `ITEMS` was declared once and read nowhere | deleted, its information folded into the adjacent comment; the guard distinguishes code from prose references | read, not asserted |
+  | F3 | **WARNING.** a comment claimed the match was on `.body` specifically; `src/app/api/download/[videoId]/route.ts` has no `fetch(` and no `.body` at all | comment now states the real limitation - the required `fetch(...)` hand-back shape - and both checked facts are named | read, not asserted |
+  | F4 | **NIT.** the CSP correction existed but was not discoverable from where `ROADMAP.md` sends a reader | 8 correction pointers added at the sites that still assert the false reason; archived records keep their original text | 8 sites, each read back |
+  | F5 | **NIT.** `racedFiles` was recorded but unwitnessed - dropping `onRace:` left 135/135 green | `readTree` takes an injectable `read`, and a test forces a real `ENOENT` through it | **5/5 defeated** |
+
+  **Two corrections to my own work came out of this round, and both are the defect class this change
+  exists to remove.**
+
+  - **A repair I made went silently vacuous, and only `tsc` caught it.** After F1's repair, `arms`
+    holds objects, and a leftover `new RegExp(arm)` did not throw - it coerced to `"[object Object]"`,
+    a valid regex - so a "every arm compiles" filter classified every arm as compilable and the suite
+    stayed green. A type error is a check too.
+  - **Having been repaired, that filter was still unwitnessed, and the honest repair was to delete it.**
+    Reverting `arm.source` back to `arm` left 153/153 green. The reason is structural: every declared arm
+    is compiled at module scope, so a malformed pattern throws during import and no assertion is ever
+    reached. Mutating its only call site to `arms.filter(() => false)` also stayed green. A guard whose
+    subject can be deleted with no observable change is decoration, so the filter, the `compilesAsRegex`
+    predicate, and three synthetic tests of that predicate were all removed; module load is the real
+    enforcement. The coercion trap is recorded on `DetectorArm.source`, where a reader meets it.
+
+  **Mutation accounting is stated per verdict, never as a single green number.** Six must-go-red
+  mutations are RED; three are green *by construction* and are named as such rather than counted as
+  passes; one (`vacuity-guard-weakened`) is unwitnessed and **recorded as such** - the registry holds 35
+  arms and every partial read still clears the 25-arm threshold, so no mutation can falsify it. It is a
+  coarse backstop behind the coverage assertion, not load-bearing. One mutation initially reported
+  `DID NOT APPLY` because its needle had been reformatted by Prettier; rather than invent a needle,
+  it was **deleted**, because `helpers/sourceTree.ts` accepts only `onRace` and `read` and the property
+  it named does not exist at that seam. Its underlying claim is witnessed from the caller side by the
+  ENOENT mutation. A sixth result, `(no tests)`, was at first misreported as RED: no tests means the
+  mutant failed at import, which is not a check firing. The script now classifies that as
+  `RED BUT DID NOT RUN`.
+
+  **Still not verified after this round, and not closable here.** 8.8 and 8.9 stand open (no browser,
+  CI not observed green). `npm ci`, `npm run setup`, and both archived `release-gate.mjs` copies remain
+  manual-invocation-only and outside every CI gate. Verifier 3 did not mutation-attack
+  `ci-workflow.test.ts` (+239 lines) or `MEMORY.md` lessons 53-55, so those are unexamined by
+  adversarial reading. Its five GREENs in `download-non-goals.test.ts` were coverage-kill mutants its
+  branches already exercise, and it correctly did not count them as findings.
+
+- [x] 8.12 **Six consecutive green gate runs, repeated at `9a5634e` after the pass-3 repairs.**
+  8.3 was met at `bdb0dba` and 8.10 at `cdc0fb0`; neither covers F1-F5 or the two defects those
+  repairs created. Re-run on 8.3's own reasoning rather than inherited: a criterion measured against a
+  tree that has since changed is not a measurement of the current tree. The tree was committed and
+  unmodified for the whole batch (`git status --short` empty at `9a5634e` before it started).
+
+  | run | exit | seconds | files | tests | motion-budget | skipped | parse |
+  |---|---|---|---|---|---|---|---|
+  | 1 | 0 | 108 | 181 | 3292 | 21 | 0 | ok |
+  | 2 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 3 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 4 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 5 | 0 | 96 | 181 | 3292 | 21 | 0 | ok |
+  | 6 | 0 | 95 | 181 | 3292 | 21 | 0 | ok |
+
+  Every run is the root `npm run gate` - lint, `format:check`, typecheck, build, test. All six report
+  **181 test files / 3292 tests, 0 failed, 0 skipped**, and all six are distinct-free: one suite total,
+  one file count, one budget count, across the batch. `tests/motion-budget.test.ts` reports **21 tests
+  in every run**, which is the figure that makes these runs evidence rather than six green lights: its
+  six size rules skip without a build report, and 15 passed + 6 skipped is what a run with no build
+  gives - indistinguishable from a full run at the exit code.
+
+  **The capture tooling was repaired before this batch, not after it failed.** 8.10's first capture
+  produced no counts because `Tee-Object` wrote UTF-16LE while the parser read UTF-8, and the ANSI
+  strip used a PowerShell `` `e `` escape that 5.1 does not have. Both are fixed here: output is
+  captured to a variable and written with `[System.IO.File]::WriteAllText` as UTF-8, so the bytes
+  parsed are the bytes emitted, and `[char]27` replaces the unavailable escape.
+
+  **The mistake that produced the wrong conclusion is now structurally impossible.** A run whose
+  counts cannot be parsed is reported as a **PARSE FAILURE** and ends the streak. It is never reported
+  as a run that reported no counts, because those are different claims and only one of them is about
+  the gate. Every row above carries `parse: ok`, so each figure was positively found rather than
+  inferred from an absence.
+
+  **The figures were then re-read from the six logs by separate code, and that check was wrong first.**
+  Trusting the batch script's own console output would repeat lesson 64 one level up, since the script
+  parsed the logs it also wrote. An independent re-read reported that the logs contained **none** of the
+  counts. They contained all of them. The checker had not stripped ANSI, so the bytes read
+  `Test Files ESC[2m181 passed`, and an escape sequence is not whitespace - `Test Files\s+(\d+) passed`
+  does not match it. The counts were present and findable throughout, and the checker reported absence
+  without ever asserting that its marker existed. That is the one check lesson 64 asks for, and this
+  round's own verification of its own measurement is what skipped it.
+
+  Fixed by locating each marker as a **string** first and only reading a number from a region already
+  known to contain it, so "no number" can no longer be reported as "no marker". Re-run, it finds all
+  three markers in all six logs and corroborates 181 / 3292 / 21 with zero `skipped`, zero NUL bytes
+  and zero replacement characters - so the logs are neither UTF-16 nor lossy, and the batch script's own
+  UTF-8 fix is confirmed from outside the script.
+
+  **This is the third time in this change that a tool reported an absence that was not there** (the
+  UTF-16LE logs, the `` `e `` escape, and now this), and in all three the system under test was fine.
+  The rule that survives is the narrow one: assert that what you are reading is present before you
+  conclude that it is missing.
+
+- [x] 8.13 **Fourth independent verification: REJECT again (1 CRITICAL, 1 WARNING, 5 NIT), all closed.**
+  Verifier 4 modified no repository file, hash-verified all four files it touched as restored, and left
+  `HEAD` at `4781453` with a clean tree. Its verdict is accepted in full, including the two NITs that
+  are about *my* claims rather than the code's behaviour.
+
+  | # | finding | repair | proof |
+  |---|---|---|---|
+  | C1 | **CRITICAL.** `expect(workflow).toContain("node-version: 24")` reads the raw YAML, comments included. Commenting out the pin - **one character** - left 43/43 and then 3292/3292 green. `deployment-contract.test.ts`'s `ciNodeMajor()` had the identical hole via a regex | shared `tests/helpers/yaml.ts`; comments stripped before any content assertion, in **both** files, because fixing one and not the other only moves the weakness | **6/6 RED**, including the verifier's exact edit and their two-line form |
+  | W1 | **WARNING.** the sole-custody check compiled every arm flagless while every arm-bearing detector builds with `"i"`, so it reasoned about different matching semantics than the detectors | arms paired with their owning exclusion and compiled with `exclusion.pattern.flags`; the clause under test gains its own detector's flags too | 3 defeats + 2 controls, below |
+  | N1 | the coverage assertion compares two functions of the same `EXCLUSIONS`, so it is a tautology, while its comment claimed it caught a missing arm | comment corrected to state what it does catch (a change to the *reading*) and what catches the rest; the `> 25` sibling recorded as unwitnessed | read, not asserted |
+  | N2 | `reductionIsReal` compared raw `arm.source` against `RegExp.prototype.source`, which escapes `/`, so any arm with a bare slash was reported as a fake reduction | both sides normalised through `new RegExp(arm.source).source` - the same call that builds the joined pattern | read, not asserted |
+  | N3 | `dependedOn` was populated and never read - dead code in the load-bearing check | deleted; `grep` finds zero occurrences | read, not asserted |
+  | N4 | `ROADMAP.md:241` pointed at a section heading `"Not verified"`; the heading is `"Not verified, and not claimed"` | heading quoted exactly | read |
+  | N5 | the `\s{4}id:` anchor is decorative - loosening it leaves the suite green - while `toHaveLength(26)` is what actually proves the scan was complete | both labelled at the regex: which decides *which keys and what order*, which decides *completeness* | verifier's own measurement, confirmed |
+
+  **C1 is the finding this change is about, committed by this change.** `MEMORY.md` lesson 53, added
+  by this diff, says a source assertion that must be kept from matching a comment is one edit away
+  from matching it again and prescribes stripping comments first. The same diff added a check a
+  comment satisfies. The file even demonstrated it knew better - `readSteps` discarded comment lines
+  three assertions before one that read the un-stripped text.
+
+  One assertion is deliberately left on the raw text, and the strip is what revealed why:
+  `motion-budget` appears in `ci.yml` **only inside the comment** explaining the build-before-test
+  order. There is no executable reference to it. So that assertion checks that the workflow
+  *documents* the budget, which is a real thing to check and was the intent - it moves to the raw group
+  and says so. Stripping it would have looked like completing the repair and would have deleted a check.
+
+  **W1's numbers need their three-way split, because two of the five results are green and neither
+  green is a pass.** The verifier's probe now fails the sole-custody assertion *by name* (3 defeats:
+  the probe alone, the probe plus the clause-under-test deflagged, and the verifier's bounded
+  same-exclusion case). Two results are green because each applies the probe **and reverts the repair**,
+  which is precisely the state the verifier measured as green - so their greenness is what attributes
+  causation to the repair rather than to anything else that changed. Had either gone red, that would
+  have meant something else now catches the defect and the repair would need revisiting.
+
+  **Three of my own errors this round, each caught by reading a verdict rather than a summary:**
+
+  - My first W1 probe anchored on a `violations` array belonging to a **different exclusion**, so its
+    red came from an unrelated assertion. That would have been filed as a witness for a check that was
+    not what fired. Re-anchored on the MP3 exclusion's own first violation.
+  - Two probe insertions were parse errors - inside an object literal, then inside the array - both
+    reported as "no tests". `RED BUT DID NOT RUN`, twice, from multi-line literals I had believed
+    matched. Inserted after a scanned entry close instead.
+  - Reverting the W1 repair **alone** is green, because with no case-sensitive competitor in the tree
+    flags change nothing observable. Composed with the probe instead. Run alone it would have read as
+    "the repair is unwitnessed", which would have been the wrong conclusion.
+
+  Re-run after these repairs, because three test files changed under them: `mut-f1` 6/6 (its
+  `identity-filter-removed` needle was re-pointed after W1 changed the filter's shape - reported as
+  `DID NOT APPLY` first, not quietly dropped), `mut-f5` 5/5, `mut-c1-comments` 6/6 + 1 expected green,
+  `mut-gate-order` 7/7, `mut-apiroutes` 8/8 + 1 expected green, `mut-notseen-anchor` 4/4. Suite **181
+  files / 3292 tests**; `tsc`, `next typegen`, `prettier --check`, `eslint` exit 0; both validators valid.
+
+  **Still unverified, unchanged from 8.11.** No browser verification (8.8); CI not observed green (8.9);
+  `npm ci` / `npm run setup` / both archived gates never run and outside every gate. Verifier 4 also
+  did not mutation-attack `release-gate-install.test.ts` (+1068), `download-non-goals.test.ts`,
+  `motion-budget.test.ts`'s size rules, or `MEMORY.md` lessons 53/54. It did re-derive lesson 55's
+  figures (233 files in `src`) and lesson 56's correction, and found both accurate.
+
+- [x] 8.14 **Six consecutive green gate runs, fourth measurement, at `68860cb` after the pass-4 repairs.**
+  8.3 was met at `bdb0dba`, 8.10 at `cdc0fb0`, 8.12 at `9a5634e`. None covers C1's comment strip, W1's
+  flags repair, the five NIT corrections, or the new `tests/helpers/yaml.ts`. Re-run on the same
+  reasoning rather than inherited. The tree was committed and unmodified for the whole batch
+  (`git status --short` empty at `68860cb` before it started).
+
+  | run | exit | seconds | files | tests | motion-budget | skipped | parse |
+  |---|---|---|---|---|---|---|---|
+  | 1 | 0 | 102 | 181 | 3292 | 21 | 0 | ok |
+  | 2 | 0 | 98 | 181 | 3292 | 21 | 0 | ok |
+  | 3 | 0 | 97 | 181 | 3292 | 21 | 0 | ok |
+  | 4 | 0 | 95 | 181 | 3292 | 21 | 0 | ok |
+  | 5 | 0 | 95 | 181 | 3292 | 21 | 0 | ok |
+  | 6 | 0 | 97 | 181 | 3292 | 21 | 0 | ok |
+
+  Every run is the root `npm run gate`. All six report **181 test files / 3292 tests, 0 failed, 0
+  skipped**, and `tests/motion-budget.test.ts` reports **21 in every run** - the figure that separates
+  this from a run where its six size rules skipped, which is indistinguishable at the exit code. One
+  suite total, one file count, one budget count across the batch.
+
+  **Corroborated by re-reading the six logs with separate code, and that checker now asserts its
+  markers exist before reading any number.** 8.12's first version of this check reported that the logs
+  contained none of the counts; they contained all of them, and it had not stripped ANSI. The rewrite
+  locates `Test Files`, `Tests` and the `motion-budget` line as *strings* first and reports `MARKER
+  ABSENT` separately from a missing number, so "no number" can no longer be reported as "no marker".
+  This run: all three markers found in all six logs, 181 / 3292 / 21 agreed, zero skipped, zero NUL
+  bytes and zero U+FFFD in every log - so no log is UTF-16 or lossy, confirmed from outside the batch
+  script that wrote them.
+
+  The batch script itself needed no repair this time: it carried forward 8.12's UTF-8 write, the
+  `[char]27` ANSI strip, and the `PARSE FAILURE` verdict, and every row reports `parse: ok`.
+
+- [x] 8.15 **Verification round 5: one CRITICAL, five WARNINGs, three NITs. All closed, each
+  mutation-proven.** Round 5 attacked round 4's repairs rather than the original defects, and its
+  CRITICAL is round 4's CRITICAL reproduced against the fix for it.
+
+  **C1 — the comment strip was defeatable by an apostrophe, and every test stayed green.**
+  `stripTrailingComment` tracked quote state and toggled `inSingle` on every `'`. A YAML **plain
+  scalar may contain an apostrophe**, so this one line of `.github/workflows/ci.yml`:
+
+  ```
+  -          node-version: 24
+  +          x: it's # node-version: 24
+  ```
+
+  opened a quote that never closed, so every later `#` on that line read as quoted content, the decoy
+  survived the strip, and `toContain("node-version: 24")` matched it. `/node-version:\s*["']?(\d+)/`
+  in `deployment-contract.test.ts` extracted `24` from the decoy. **181 files / 3292 tests, all green,
+  with the Node pin genuinely absent from CI.** The verifier confirmed the pin was really gone using a
+  real YAML parser — not by asking whether my strip accepted it, which is the question that had already
+  been answered wrongly three times.
+
+  **The aggravating fact, and it is the finding: lesson 53 prescribed this repair.** The lesson added
+  by this same diff says a source assertion that matches a comment should be fixed *by stripping
+  comments before asserting*. That was applied. Three assertions after code that discarded comment
+  lines, the same diff added a check a comment satisfies. The lesson was written down and then not
+  followed, twice.
+
+  **Fix: stop stripping trailing comments, refuse block scalars, and assert on values.**
+  - `helpers/yaml.ts` rewritten. `stripWholeLineComments` removes only **whole-line** comments — the
+    one form YAML leaves unambiguous, since a plain scalar cannot begin with `#`. `assertNoBlockScalars`
+    **throws** on `run: |` / `run: >` rather than mishandling the body, because inside a literal body a
+    `#` is content and deleting that line would delete a command. Loud failure naming the line, not a
+    quietly shortened workflow.
+  - Assertions compare **values**: `workflowScalar(code, "node-version")` `toBe("24")`, not
+    `toContain("node-version: 24")`. A decoy anywhere — in a comment, after the value, under another
+    key — becomes part of the value and fails an exact comparison. `ciNodeMajor()` likewise reads the
+    scalar and requires `/^\d+$/`, returning `null` for anything else, which every caller already treats
+    as failure.
+  - The two mechanisms are complementary and each was muted alone to prove the other holds it up.
+    `stripWholeLineComments` disabled → still red. `assertNoBlockScalars` neutered → still red.
+
+  **Proof: `mut-c1-round5`, 9 of 9 defeated, plus 1 expected green.** Includes the verifier's exact
+  one-line defeat, `node-version: x # node-version: 24`, `node-version: 24 # pinned by Vercel`, the
+  round-4 whole-line-comment form, `node-version: 22`, the apostrophe decoy on `working-directory` and
+  on `cache-dependency-path`, and both single-mechanism mutings. **Positive control:** removing the
+  documentation comment the two raw-text assertions check stays GREEN — the one thing the strip must
+  not touch.
+
+  `node-version: 24 # pinned` failing is **red by design**. It fails closed on a legitimate trailing
+  comment; `ci.yml` has none, and when one is added the test going red so a human decides is the right
+  way round. Recorded as a designed failure, not a defect.
+
+  **W1** `readSteps`'s comment claimed its input was stripped while it was still called with the raw
+  workflow, and it carried its own inline comment skip. Now consumes `workflowCode` and the inline skip
+  is deleted: one code path, named at the call site. **W2** `run: |` was recorded as the literal
+  one-character command; `runMatch` now yields `null` for a block indicator and `prepareWorkflow`
+  refuses one upstream. **W3** resolved by the throw rather than by handling block bodies. **W4**
+  `finds nothing in the application` had no witness for its own input — emptying `SOURCES` kept all
+  seven blocks green; now anchored on `src/app/page.tsx` existing, reading as text, and not a
+  placeholder. A `toBeGreaterThan(N)` floor was rejected for the reason round 3 rejected the 25-arm
+  one: every partial walk clears any safe N, so nothing can falsify it. **W5**
+  `motion-budget.test.ts`'s header still described the pre-M21 CI order as current, sending a reader
+  to look for a pipeline defect that no longer exists; corrected, with the real local caveat kept because
+  the two causes have opposite remedies.
+
+  **NITs.** The sole-custody filter compared `arm.source`, so an arm in another exclusion with the same
+  pattern dropped out of the competition and two clauses could catch a violation with the claim still
+  green; it now compares the clause's **name**. Object identity is unavailable and the reason is
+  recorded rather than worked around: the registry entry is a fresh literal copying `.source`, so
+  `arm === STREAMED_BODY_AS_RESPONSE_ARM` is false for the very arm under test and an identity filter
+  would exclude **nothing** — a red that means the opposite of what it looks like. The
+  every-fixture comment claimed credit for catching a lost witness; it witnesses *detection of present
+  fixtures*, not *presence*, and now says so. The fixture-presence gap is recorded rather than closed
+  with an unwitnessed threshold. **`MEMORY.md` lesson 53 amended:** stripping comments is necessary and
+  **not sufficient**; the robust form is a value-level assertion.
+
+  **Two new witnesses, synthetic, on input `ci.yml` does not contain.** `assertNoBlockScalars` cannot
+  fire on the current workflow, so three tests exercise the helper directly — the block-scalar refusal
+  including a `#` inside a literal body, whole-line-only removal, and the decoy-is-part-of-the-value
+  property the repair depends on. Same lesson-65 pattern as `isRouteModule`.
+
+  **Two mutation-verdict errors made and caught in this round, both recorded rather than smoothed.**
+  **(a)** `probe-plus-flags-stripped` and `probe-plus-flags-forced-empty` were labelled must-go-red and
+  came back green. They are **controls that attribute causation**: the same probe with the flags left
+  correct is RED, so the flags are exactly what makes an arm catch the violation, and these two re-create
+  the pre-fix state — which was green by construction, because that *was* the defect. The runner also
+  never supported `expectGreen`, so every green was counted as unexpected; it now separates defeats from
+  designed greens and reports `3/3 that must go red did; 2 green as designed` instead of `3/5`. This is
+  the branch's recurring theme again: a verdict read before establishing what it is a verdict *about*, in
+  the opposite direction to the earlier `(no tests)`-as-RED and mis-anchored-probe errors.
+  **(b)** Two `mut-f1` witnesses reported `DID NOT APPLY` because the identity repair renamed the text
+  they target. Re-aimed at the new text, never at anything weaker, and the note records that this block's
+  needles have now needed re-pointing twice.
+
+  **All suites re-run, since five files changed under them.** `mut-f1` 6/6 + 3 designed greens,
+  `mut-w1-flags` 3/3 + 2 designed greens, `mut-c1-round5` 9/9 + 1 designed green, `mut-f5` 5/5,
+  `mut-c1-comments` 6/6 + 1 designed green, `mut-gate-order` 7/7, `mut-apiroutes` 8/8 + 1 designed green,
+  `mut-notseen-anchor` 4/4. Full suite **181 files / 3297 tests, 0 skipped** (+5 from the new witnesses).
+  `tsc --noEmit`, `prettier --check`, `eslint` exit 0; `openspec validate --strict` and
+  `--specs --strict` both valid (26 items, 0 failed).
+
+  **Two self-inflicted tooling faults, caught before producing a verdict.** A mutation note written as a
+  multi-line single-quoted literal was a syntax error and each mutation object lost its closing brace;
+  `node --check` caught it, so no verdict came from the broken state — worth the two lines, because a
+  runner that cannot parse its input reports nothing and *nothing* is indistinguishable from *nothing
+  found*.
+
+  **Still unverified, unchanged from 8.11.** No browser verification (8.8); CI not observed green (8.9);
+  `npm ci` / `npm run setup` / both archived `release-gate.mjs` copies never run and sit outside every
+  gate. `release-gate-install.test.ts` (+1068 lines) has still not been mutation-attacked by any round —
+  five rounds in, and it remains the largest unattacked surface in the diff. The fixture-presence gap
+  noted above is open by decision, not by oversight.
+
+- [x] 8.16 **Six consecutive green gate runs, fifth measurement, at `f4b5cb1` after round 5's repairs.**
+  8.3 was met at `bdb0dba`, 8.10 at `cdc0fb0`, 8.12 at `9a5634e`, and 8.14's six runs at `68860cb`.
+  None of them executes round 5's `stripWholeLineComments`, `assertNoBlockScalars`, `workflowScalar`,
+  the three synthetic witnesses, the two non-goal scan witnesses, or the corrected `motion-budget`
+  header, so none of them measured this commit. The tree was committed and unmodified for the whole
+  batch — `git status --short` empty at `f4b5cb1` before it started, and **nothing may edit a repository
+  file while a batch runs**: 8.3's batch failed run 6 on `format:1` for exactly that reason.
+
+  | run | exit | seconds | files | tests | motion-budget | skipped | parse |
+  |---|---|---|---|---|---|---|---|
+  | 1 | 0 | 121 | 181 | 3297 | 21 | 0 | ok |
+  | 2 | 0 | 98 | 181 | 3297 | 21 | 0 | ok |
+  | 3 | 0 | 95 | 181 | 3297 | 21 | 0 | ok |
+  | 4 | 0 | 96 | 181 | 3297 | 21 | 0 | ok |
+  | 5 | 0 | 98 | 181 | 3297 | 21 | 0 | ok |
+  | 6 | 0 | 99 | 181 | 3297 | 21 | 0 | ok |
+
+  Every run is the root `npm run gate`. All six report **181 test files / 3297 tests, 0 failed, 0
+  skipped**, and `tests/motion-budget.test.ts` reports **21 in every run** — the figure that separates
+  this from a run where its six size rules skipped, which is indistinguishable at the exit code. One
+  suite total, one file count, one budget count across the batch. 3297 rather than 3292 because round 5
+  added five tests; the corroboration checker's expected figure was updated with them, because a checker
+  asserting a stale expectation would fail for a reason that has nothing to do with the logs.
+
+  **Corroborated from the six logs by separate code, which asserts its markers exist before reading any
+  number.** All three markers found in all six logs; 181 / 3297 / 21 agreed; **zero NUL bytes and zero
+  U+FFFD in every log** — so no log is UTF-16 or lossy, confirmed from outside the script that wrote
+  them. That checker's v1 reported the logs contained none of the counts when they contained all of them
+  (it neither stripped ANSI nor asserted the marker first); v2 is carried forward **unchanged in method**
+  for that reason, because rewriting a checker that has already been wrong once, in the same round that
+  repairs other checks, is how it becomes wrong again unnoticed.
+
+  **One retargeting checker was itself wrong and is recorded as such.** The script that produced this
+  table initially asserted the file no longer mentions `68860cb`, which is wrong — the new header must
+  mention it, because the claim being made is "the previous six runs were at `68860cb` and did not
+  measure this commit". It fired on correct output and reported a failure it could not distinguish from
+  a real one: the same shape as the 8.12 checker that reported missing counts where the counts were
+  present. Narrowed to check the old *header* is gone, the new one present, the prior batch named as
+  prior, and the log directory moved. This is the sixth time this branch has produced a checker that
+  reports something it did not establish, and the second time the fix was to narrow the check rather
+  than widen it.
+
+  **Batch script body carried forward unchanged**, on the same reasoning. Its two previously-fixed
+  defects remain in place: `[char]27` rather than PowerShell 6's `` `e `` for ANSI stripping (Windows
+  PowerShell 5.1 has no `` `e ``, which had left escapes in the text), and
+  `[System.IO.File]::WriteAllText` with UTF-8 rather than `Tee-Object` (which writes UTF-16LE on 5.1, so
+  the parse read NULs and "Test Files" was not *findable* — and a string that cannot be searched looks
+  exactly like a string with no results in it). A run whose counts cannot be parsed is still reported as
+  `PARSE FAILURE`, never as a run that reported no counts.

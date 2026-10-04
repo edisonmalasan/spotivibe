@@ -33,6 +33,7 @@
 
 import { spawnSync } from "node:child_process";
 import { availableEngines, defaultEngine } from "./lib/harness.mjs";
+import { prepareDependencies, isShortCircuited, cascadeReason } from "./lib/install.mjs";
 import {
   existsSync,
   mkdirSync,
@@ -71,10 +72,23 @@ const SKIP_BROWSER = process.argv.includes("--skip-browser");
 const ITEMS = [
   {
     id: "gates-install",
-    requirement: "`npm ci` installs from the lockfile",
-    how: "command",
-    command: "npm",
-    args: ["ci"],
+    requirement: "the dependency tree is complete, and preparing it never destroys the working tree",
+    how: "install",
+    // No `command`/`args`: this step no longer runs a command over the working tree. It verifies
+    // the existing tree and, only if that tree is unusable, installs into a temporary directory
+    // and swaps the result in. See `lib/install.mjs` for why a dry run would not have been enough
+    // and why the exit code is not treated as proof.
+    //
+    // **Why this item exists at all**, which is history rather than an instruction: M15 ran `npm ci`
+    // here, which deletes `node_modules` before installing. A failed install therefore broke the
+    // working tree, and then every later item failed for a reason that was not the code.
+    //
+    // That sentence was a `requirement_note` field until independent verification's second pass,
+    // and the field was the defect: it was declared here and read by nothing — the printer emits
+    // `requirement`, the JSON report emits `requirement:`, and no test referred to it. Repair
+    // instructions for a human are carried by `steps`, which is emitted; this is the reason the step
+    // was reshaped, so it belongs beside the reasoning rather than in a record shape that implies
+    // something consumes it.
   },
   {
     id: "gates-lint",
@@ -98,18 +112,27 @@ const ITEMS = [
     args: ["run", "typecheck"],
   },
   {
-    id: "gates-tests",
-    requirement: "`npm test` passes",
-    how: "command",
-    command: "npm",
-    args: ["test"],
-  },
-  {
     id: "gates-build",
     requirement: "`npm run build` produces a production build",
     how: "command",
     command: "npm",
     args: ["run", "build"],
+  },
+  // **Build before test, deliberately.** `motion-budget.test.ts` has two halves: its manifest and
+  // import rules run unconditionally, and its *size* rules need a build report and skip without one.
+  // With the tests first those six size assertions skipped on every run and the gate reported green for
+  // a file whose headline is a budget. Measured both ways by moving `.next` aside: 21 passed with a
+  // build, 15 passed and 6 skipped without.
+  //
+  // The ordering was fixed in `.github/workflows/ci.yml` and asserted there by `ci-workflow.test.ts`,
+  // which read only the workflow file - so this gate kept the defect while the check sat next to it
+  // looking as though it covered it. `tests/ci-workflow.test.ts` now reads this file too.
+  {
+    id: "gates-tests",
+    requirement: "`npm test` passes",
+    how: "command",
+    command: "npm",
+    args: ["test"],
   },
   {
     id: "icons-drift",
@@ -381,7 +404,32 @@ function run(command, args, cwd, env = {}) {
   };
 }
 
+/**
+ * Set when dependency preparation failed, so the cascade is reported as one failure rather than as
+ * every later item failing for a reason that is not the code.
+ *
+ * This is the diagnostic half of the fix, and it is the half that matters most in practice: the
+ * destructive install is gone, but a staged install can still fail, and a reader told "sixteen
+ * things are wrong" spends an hour in the wrong place. The reason travels with every skipped item
+ * so the first line of output names the real cause.
+ */
+let environmentBroken = null;
+
 for (const item of ITEMS) {
+  // Every item after a failed dependency preparation is reported as not run, with the cause. It is
+  // deliberately **not** reported as failed: a missing `tsc` is not a finding about the code, and
+  // recording it as one would put a defect in the tally that does not exist.
+  if (isShortCircuited(item, environmentBroken)) {
+    results.push({
+      item,
+      status: "NOT RUN",
+      detail: `the environment is broken (${environmentBroken}); this item could not have been a meaningful result`,
+      steps: [
+        `Repair the dependency tree, then re-run the gate. The cause was: ${environmentBroken}`,
+      ],
+    });
+    continue;
+  }
   if (item.needsBrowser && SKIP_BROWSER) {
     results.push({
       item,
@@ -413,6 +461,19 @@ for (const item of ITEMS) {
       detail: verdict.reason,
       steps: item.steps ?? [],
     });
+    continue;
+  }
+  if (item.how === "install") {
+    const prepared = prepareDependencies({ frontendDir: FRONTEND });
+    if (prepared.ok) {
+      results.push({ item, status: "PASS", detail: prepared.detail, output: prepared.output });
+    } else {
+      // The cascade's value comes from a tested function rather than being spelled here, so the
+      // mapping from an install outcome to the reason string is pinned by behaviour instead of by a
+      // check that the identifier appears in this file.
+      environmentBroken = cascadeReason(prepared);
+      results.push({ item, status: "FAIL", detail: prepared.detail, output: prepared.output });
+    }
     continue;
   }
   // Any placeholder the item wanted filled in is filled in now, so the command names

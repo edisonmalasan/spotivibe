@@ -30,6 +30,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { beginRouting, createReadiness, pausedAction, PAUSED_ACTION } from "./router.mjs";
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -163,6 +164,173 @@ async function waitForJson(url, timeoutMs = 30000) {
 }
 
 /**
+ * What `classifyPausedRequest` returns.
+ *
+ * Every field except `outcome` is optional, because which fields exist depends on which outcome it
+ * is: a fulfilment carries a status and a body, a transport failure carries a reason, and the other
+ * two carry nothing. Written as a flat optional shape rather than a discriminated union because the
+ * outcome names are values in `PAUSED_OUTCOME`, not literals, so `allowJs` cannot narrow on them.
+ *
+ * The consequence is that a caller holding a plan cannot read `plan.body` as a string without first
+ * establishing the outcome — which is the correct order anyway, since the field is only meaningful
+ * once you know why it is there.
+ *
+ * @typedef {object} PausedRequestPlan
+ * @property {string} outcome one of {@link PAUSED_OUTCOME}
+ * @property {string} [errorReason] present only for a transport failure
+ * @property {number} [responseCode] present only for a fulfilment
+ * @property {string} [body] present only for a fulfilment, base64
+ */
+
+/**
+ * The four things that can happen to a paused request. Every one is a name, and the names are
+ * what `resolvePausedRequest` dispatches on.
+ */
+export const PAUSED_OUTCOME = {
+  IGNORE: "ignore",
+  CONTINUE: "continue",
+  FAIL: "fail",
+  FULFILL: "fulfill",
+};
+
+/**
+ * Serialize a route's body.
+ *
+ * A plain body is stringified. A body *function*'s return value was passed to `Buffer.from`
+ * unserialized, so `body: (url) => ({ q: url.searchParams.get("q") })` threw a `TypeError` that
+ * the handler's outer catch turned into a continue-to-the-network — a fixture that looked
+ * installed and was silently not. The two paths now agree: a string is sent as written, anything
+ * else is JSON.
+ */
+function serializeRouteBody(body, url) {
+  const value = typeof body === "function" ? body(url) : body;
+  // Absent first, and before the string check: `JSON.stringify(undefined)` is `undefined`, not
+  // `""`, and `JSON.stringify("")` is the two-character string `""` — neither is an empty
+  // document. The previous `value ?? ""` reached the JSON branch for a missing body and sent
+  // the literal text `""` to the browser.
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+/**
+ * Decide what happens to one paused request, without doing it.
+ *
+ * ## Why this is separated from the sending
+ *
+ * The handler used to be a chain of branches, each responsible on its own for sending
+ * *something* back to the browser — seven exit points in all. Independent verification reduced
+ * the not-ready branch to a bare `return`, deleting its `Fetch.continueRequest` call, and all
+ * 39 tests stayed green.
+ *
+ * That mutation restores exactly the bug the branch's own comment said was impossible, and it is
+ * invisible by construction: a dropped request does not fail, it **hangs**. On a release gate a
+ * hang reads as a slow run, not a wrong one, and the gate's exit code stays 0.
+ *
+ * A branch that decides and a branch that sends are therefore different things. This function
+ * only decides, so its whole output is a small enumerable plan; `pausedRequestHandlers` sends;
+ * and a missing send is a failing unit test rather than a stalled browser.
+ *
+ * @param {{action: string, request: {url: string}, routes: ReadonlyArray<object>}} input
+ * @returns {PausedRequestPlan}
+ */
+export function classifyPausedRequest({ action, request, routes }) {
+  // Not a page request, or the router is not ready → the request is not ours to answer.
+  if (action === PAUSED_ACTION.IGNORE) return { outcome: PAUSED_OUTCOME.IGNORE };
+  // Not ready → **continue**, never drop. The decision is `pausedAction`'s, and it is honoured
+  // before any route is consulted so a broken matcher cannot strand a not-yet-ready request.
+  if (action === PAUSED_ACTION.CONTINUE) return { outcome: PAUSED_OUTCOME.CONTINUE };
+  const url = new URL(request.url);
+  const route = routes.find(
+    (entry) => entry.path === url.pathname || (entry.match && entry.match.test(url.pathname)),
+  );
+  if (!route) return { outcome: PAUSED_OUTCOME.CONTINUE };
+  // A route can fail in two genuinely different ways, and the first version could only express
+  // one of them.
+  //
+  // `transport: "failed"` is a connection-level failure — the server never answered. A bare
+  // `status >= 400` used to mean this, which meant the `ok: false` bodies the failing fixtures
+  // carry were dead data: every failure arrived as a transport error and the application never
+  // saw the failure *shape* its own routes produce. The fixtures exist to model that shape, so a
+  // route that declares a `status` is served that status, and only a route that declares
+  // `transport: "failed"` fails at the connection level. The two are expressible separately, and
+  // the provider-failure scenario uses both.
+  if (route.transport === "failed") {
+    return { outcome: PAUSED_OUTCOME.FAIL, errorReason: route.errorReason ?? "Failed" };
+  }
+  return {
+    outcome: PAUSED_OUTCOME.FULFILL,
+    responseCode: route.status ?? 200,
+    body: Buffer.from(serializeRouteBody(route.body, url), "utf8").toString("base64"),
+  };
+}
+
+/**
+ * One handler per outcome. Each is the *only* place its outcome's request is resolved, so
+ * "forgot to send" is not a shape this file can express without a test failing.
+ */
+export const pausedRequestHandlers = {
+  // Answering a non-page request would be wrong, and there is nothing to resolve: the browser
+  // simply continues on its own.
+  [PAUSED_OUTCOME.IGNORE]: async () => {},
+  [PAUSED_OUTCOME.CONTINUE]: async (context) => {
+    await context.continueRequest();
+  },
+  [PAUSED_OUTCOME.FAIL]: async (context, plan) => {
+    await context.failRequest(plan.errorReason);
+  },
+  [PAUSED_OUTCOME.FULFILL]: async (context, plan) => {
+    await context.fulfillRequest(plan.responseCode, plan.body);
+  },
+};
+
+/**
+ * The plan to fall back to when deciding throws.
+ *
+ * A matcher or body that throws must not hang the request: fall through to the network, so the
+ * failure shows up as the application's own behaviour rather than a stall, and record why.
+ *
+ * ## Why this is a function and not a line in the handler
+ *
+ * Independent verification changed this fallback's outcome from `CONTINUE` to `IGNORE` and all 57
+ * tests stayed green. `IGNORE` means the paused request is never continued, which is exactly the
+ * silent hang the rest of this file is arranged to make impossible — and it is invisible to every
+ * check here, because each of them exercises `classifyPausedRequest` or `pausedRequestHandlers` on
+ * inputs that *succeed*. The error path was the one place a request could be dropped without a
+ * single assertion covering it.
+ *
+ * So the fallback is a returned value with its own tests. It is also the last remaining place a
+ * paused request could be dropped without a failing test, which is the only reason to claim the
+ * dispatch cannot drop one.
+ *
+ * @param {unknown} error the throwable that escaped classification
+ * @param {string[]} consoleErrors sink for the diagnostic
+ * @returns {PausedRequestPlan}
+ */
+export function fallbackPlan(error, consoleErrors) {
+  consoleErrors.push(`fixture router: ${String(error)}`);
+  return { outcome: PAUSED_OUTCOME.CONTINUE };
+}
+
+/**
+ * Resolve a planned request, or refuse to.
+ *
+ * An outcome with no handler is a programming error and throws. It does **not** fall through to
+ * the network, because "silently continue" is the exact failure this function exists to make
+ * impossible — a typo in an outcome name must be loud, not a hung browser.
+ *
+ * @param {PausedRequestPlan} plan
+ * @param {{continueRequest: Function, failRequest: Function, fulfillRequest: Function}} context
+ */
+export async function resolvePausedRequest(plan, context) {
+  const handler = pausedRequestHandlers[plan.outcome];
+  if (!handler) {
+    throw new Error(`no handler for paused request outcome "${plan.outcome}"`);
+  }
+  await handler(context, plan);
+}
+
+/**
  * A live session: a production server, a browser, one page, and a fixture router.
  */
 export async function openSession({
@@ -191,7 +359,9 @@ export async function openSession({
   const sessions = new Map();
   let wantedTargetId = "";
   const routes = [];
-  let routerPaused = false;
+  // The router's readiness, as a value rather than a local boolean, so the ordering and the
+  // not-ready decision are expressed once in `lib/router.mjs` and can be tested without a browser.
+  const readiness = createReadiness();
 
   const pageSession = () => sessions.get(wantedTargetId) ?? "";
 
@@ -329,60 +499,43 @@ export async function openSession({
      * router is here to stand in for the providers, not to stand in for the application.
      */
     on("Fetch.requestPaused", async (params, sessionId) => {
-      if (sessionId !== pageSession() || !routerPaused) return;
+      // Every paused request leaves through exactly one outcome, and each outcome's request is
+      // resolved in exactly one named function (`pausedRequestHandlers`). This used to be seven
+      // branches, each responsible on its own for sending something back; deleting the send from
+      // one of them dropped that request silently and no test noticed, because a dropped request
+      // hangs rather than fails.
       const { requestId, request } = params;
-      const url = new URL(request.url);
-      const route = routes.find(
-        (entry) =>
-          entry.path === url.pathname ||
-          (entry.match && entry.match.test(url.pathname)),
-      );
-      try {
-        if (!route) {
-          await sendTo(sessionId, "Fetch.continueRequest", { requestId });
-          return;
-        }
-        // A route can fail in two genuinely different ways, and the first version could
-        // only express one of them.
-        //
-        // `transport: "failed"` is a connection-level failure — the server never answered.
-        // A bare `status >= 400` used to mean this, which meant the `ok: false` bodies the
-        // failing fixtures carry were dead data: every failure arrived as a transport
-        // error and the application never saw the failure *shape* its own routes produce.
-        // The fixtures exist to model that shape, so a route that declares a `status` is
-        // served that status, and only a route that declares `transport: "failed"` fails at
-        // the connection level. The two are now expressible separately, and the
-        // provider-failure scenario uses both.
-        if (route.transport === "failed") {
-          await sendTo(sessionId, "Fetch.failRequest", {
+      const context = {
+        // Each send tolerates an already-resolved request, which is where the previous inline
+        // try/catch lived. Tolerance belongs to the transport, not to the decision.
+        continueRequest: () =>
+          sendTo(sessionId, "Fetch.continueRequest", { requestId }).catch(() => {}),
+        failRequest: (errorReason) =>
+          sendTo(sessionId, "Fetch.failRequest", { requestId, errorReason }).catch(() => {}),
+        fulfillRequest: (responseCode, body) =>
+          sendTo(sessionId, "Fetch.fulfillRequest", {
             requestId,
-            errorReason: route.errorReason ?? "Failed",
-          });
-          return;
-        }
-        const body =
-          typeof route.body === "function"
-            ? route.body(url)
-            : JSON.stringify(route.body);
-        await sendTo(sessionId, "Fetch.fulfillRequest", {
-          requestId,
-          responseCode: route.status ?? 200,
-          responseHeaders: [
-            { name: "content-type", value: "application/json; charset=utf-8" },
-            { name: "access-control-allow-origin", value: "*" },
-          ],
-          body: Buffer.from(body ?? "", "utf8").toString("base64"),
+            responseCode,
+            responseHeaders: [
+              { name: "content-type", value: "application/json; charset=utf-8" },
+              { name: "access-control-allow-origin", value: "*" },
+            ],
+            body,
+          }).catch(() => {}),
+      };
+      let plan;
+      try {
+        plan = classifyPausedRequest({
+          action: pausedAction(readiness, sessionId === pageSession()),
+          request,
+          routes,
         });
       } catch (error) {
-        // A router that throws must not hang the request: fall through to the network so
-        // the failure shows up as the application's own behaviour rather than a stall.
-        try {
-          await sendTo(sessionId, "Fetch.continueRequest", { requestId });
-        } catch {
-          /* the request is already resolved */
-        }
-        consoleErrors.push(`fixture router: ${String(error)}`);
+        // The reason this is `fallbackPlan` and not two lines here is written there: the error path
+        // was the last place a paused request could be dropped with no assertion covering it.
+        plan = fallbackPlan(error, consoleErrors);
       }
+      await resolvePausedRequest(plan, context);
     });
 
     const session = {
@@ -393,7 +546,15 @@ export async function openSession({
       consoleErrors,
       serverLog,
 
-      /** Route a same-origin API path to a recorded body. Later routes win. */
+      /**
+ * Route a same-origin API path to a recorded body.
+ *
+ * The **first** matching route wins: matching is `Array.prototype.find` over the list in
+ * registration order. This comment used to say "Later routes win", which was false — it was the
+ * only statement of the intended order and no test contradicted it, because nothing tested it.
+ * The comment was corrected to match the code, not the other way round, since nothing here shows
+ * which order a scenario actually needs. `classifyPausedRequest`'s tests now pin it.
+ */
       route(entry) {
         routes.push(entry);
       },
@@ -449,11 +610,15 @@ export async function openSession({
 
       /** Start intercepting. Called once; flows then see the router. */
       async startRouting() {
-        if (routerPaused) return;
-        await send("Fetch.enable", {
+        if (readiness.ready) return;
+        // The ordering and the rollback both live in `beginRouting`, because this change had them
+        // inlined here and the only check on them was a string-index comparison — which a mutation
+        // proof showed was unchecked. See `lib/router.mjs`.
+        await beginRouting({
+          send,
+          readiness,
           patterns: [{ urlPattern: `${origin}/*` }],
         });
-        routerPaused = true;
       },
 
       async evaluate(expression) {
@@ -577,7 +742,7 @@ export async function openSession({
       },
 
       async close() {
-        routerPaused = false;
+        readiness.release();
         try {
           ws?.close();
         } catch {

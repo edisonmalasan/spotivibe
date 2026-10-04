@@ -1,8 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import manifestRoute from "@/app/manifest";
+import { readTree as readTreeShared } from "./helpers/sourceTree";
 
 /**
  * Static architecture invariants checked against the real source files
@@ -55,26 +57,53 @@ import manifestRoute from "@/app/manifest";
 const srcRel = "../src";
 const srcDir = fileURLToPath(new URL(srcRel, import.meta.url));
 
-function walk(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return walk(full);
-    return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
-  });
-}
+// M21 removed the last caller of this local walker in favour of `readTreeShared` from
+// `helpers/sourceTree.ts`, which reads the tree once and reports any file that changed underneath it.
+// Deleting the walker rather than leaving it is the point: a second implementation of "list the
+// source tree" is a second thing to keep correct, and the shared helper already is that thing.
+// The removal is recorded here as prose and **not** as a `const walkRemoved = true; void
+// walkRemoved;`. Independent verification's first nit was that pair, and it was right for a
+// reason worth keeping: a boolean literal with no reader asserts nothing, reads like a guard, and
+// can never fail -- so it is a check-shaped object that checks nothing, which is the exact defect
+// class this change exists to remove. A comment costs nothing and claims only what a comment can.
 
 /**
  * Directory reads, memoized per directory for the same reason as
  * {@link uiSourceFiles}: the coverage proofs read their own subtree inside every
  * assertion, and re-walking it each time is pure repeated I/O.
+ *
+ * The listing and the read go through `helpers/sourceTree` rather than through a local
+ * `walk().map(readFileSync)`. The original was a time-of-check/time-of-use gap: another
+ * worker can create or delete a file between the two halves — `motion-scope.test.ts`
+ * writes a probe module into `src/features/sharing/` and deletes it again — and the
+ * result was `ENOENT` in a suite with nothing to say about the architecture,
+ * presenting as an intermittent failure in whichever file happened to be running.
+ * Vitest's isolation separates VM state and not the filesystem, so `isolate: true`
+ * cannot prevent it. See that helper for why moving the probe out of `src/` was
+ * rejected: it would have removed the race by making the probe test prove nothing.
  */
 const readTreeCache = new Map<string, Array<{ file: string; source: string }>>();
 
-function readTree(dir: string): Array<{ file: string; source: string }> {
+/**
+ * Files that vanished between being listed and being read.
+ *
+ * Recorded rather than swallowed. A tolerated race is only acceptable if it is visible: a tree
+ * being mutated under a test is worth knowing about, and a silently dropped file is the shape of
+ * bug this whole change is about. Asserted to be empty at the end of the suite, so a real
+ * collision fails rather than passing quietly.
+ */
+const racedFiles = new Set<string>();
+
+function readTree(
+  dir: string,
+  options: { read?: (path: string) => string } = {},
+): Array<{ file: string; source: string }> {
   const cached = readTreeCache.get(dir);
   if (cached) return cached;
-  const files = walk(dir).map((file) => ({ file, source: readFileSync(file, "utf8") }));
+  const files = readTreeShared(dir, {
+    onRace: (file) => racedFiles.add(file),
+    ...options,
+  });
   readTreeCache.set(dir, files);
   return files;
 }
@@ -3189,23 +3218,59 @@ describe("architecture: the M14 request boundary is one boundary (M14 task 1.6)"
    * as `api/download/route.ts` and then failed on a missing file. That is the worst kind of harness
    * bug: a new route broke a rule rather than the rule checking it. Nested handlers are now found,
    * and `name` carries the path relative to `api/` so a failure message still identifies the route.
+   *
+   * ## It reads through the shared helper, and that is a claim worth checking
+   *
+   * Independent verification's third warning was that this function still carried its own
+   * `walk`/`readFileSync` pair while the rest of the file used `helpers/sourceTree.ts`, which made
+   * the change's "one shared tree reader" statement false as written. Two ways to answer that:
+   * soften the sentence, or delete the duplicate. The duplicate went, for two reasons that are not
+   * only about tidiness:
+   *
+   * 1. This was the last reader in this file that could still hit the vanish-between-list-and-read
+   *    race. `readTree` tolerates an `ENOENT` on a file another worker deleted; the private walk
+   *    threw it. An intermittent `ENOENT` in an architecture suite is the failure mode the helper
+   *    was written to remove, and leaving one caller exposed keeps the flake alive.
+   * 2. A second "list the source tree" is a second thing to keep correct, which is the argument that
+   *    removed this file's original walker. Leaving a replacement behind would have made that removal
+   *    cosmetic.
+   *
+   * The route name is the part that had to survive exactly, because it is what makes a failure
+   * message identify the route. `relative(routesDir, file)` is the nested path, its directory part
+   * is the name, and separators are normalised to `/` so the message does not change shape on
+   * Windows — a name is read by a person in a failure, so its format is part of what it is for.
+   *
+   * Filtering is on the **basename** being exactly `route.ts`. `readTree` lists every `.ts` under
+   * `app/api/`, and a helper module named `route-utils.ts` must not be read as a handler; matching
+   * a substring would do exactly that.
    */
   function apiRoutes(): Array<{ name: string; source: string }> {
     const routesDir = join(srcDir, "app", "api");
-    const found: Array<{ name: string; source: string }> = [];
-    const walk = (directory: string, prefix: string): void => {
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const absolute = join(directory, entry.name);
-        if (entry.isDirectory()) {
-          walk(absolute, prefix === "" ? entry.name : `${prefix}/${entry.name}`);
-          continue;
-        }
-        if (entry.name !== "route.ts") continue;
-        found.push({ name: prefix, source: readFileSync(absolute, "utf8") });
-      }
-    };
-    walk(routesDir, "");
-    return found.sort((left, right) => left.name.localeCompare(right.name));
+    return readTreeShared(routesDir, { extensions: [".ts"] })
+      .filter((entry) => isRouteModule(entry.file))
+      .map((entry) => ({
+        name: relative(routesDir, entry.file).split(sep).slice(0, -1).join("/"),
+        source: entry.source,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  /**
+   * Whether a listed `.ts` is a Next.js route handler.
+   *
+   * Named, and not left inline, because an inline predicate cannot be tested on its own and an
+   * untestable predicate is not a checked one. Widening it from `=== "route.ts"` to
+   * `includes("route")` left this suite **green**: no `route-utils.ts` exists under `app/api/` yet,
+   * so the wider predicate selected exactly the same files. A count-equality test cannot see a rule
+   * that is too wide when nothing exercises the width -- and "nothing exercises it" is exactly the
+   * state the next person inherits.
+   *
+   * So the rule is a function and the demonstration calls it, rather than the two being separate
+   * expressions that happen to agree. The synthetic cases below are what make the width testable
+   * today rather than after someone adds the file that would break it.
+   */
+  function isRouteModule(file: string): boolean {
+    return file.split(sep).pop() === "route.ts";
   }
 
   it("finds every route, so the rules below are known to reach them", () => {
@@ -3214,6 +3279,69 @@ describe("architecture: the M14 request boundary is one boundary (M14 task 1.6)"
     for (const route of routes) {
       expect(route.source, route.name).toMatch(/export async function GET\b/);
     }
+  });
+
+  it("names each route by its path under api/, so a failure identifies it", () => {
+    // The name is what a person reads when a rule fails, and until this test it was checked by
+    // nothing: every other use of `route.name` is either a message argument or a lookup key into a
+    // map built from `apiRoutes()` itself, so a wrong-but-consistent name resolves fine and the suite
+    // stays green. The one nested route -- `download/[videoId]`, added in M20 -- was named in no
+    // assertion at all, which is why the derivation could be rewritten without anyone noticing.
+    //
+    // So it is pinned from disk rather than from the function's own output: each name must resolve
+    // to a real `route.ts` whose contents are the source the rules are about to read. A derivation
+    // that lost the nesting, or that stopped at the parent directory, fails here by name.
+    const routesDir = join(srcDir, "app", "api");
+    for (const route of apiRoutes()) {
+      expect(
+        route.name,
+        "a route name must never carry a platform separator; the name is read by a person",
+      ).not.toContain("\\");
+      const path = join(routesDir, ...route.name.split("/"), "route.ts");
+      expect(existsSync(path), `no route.ts at ${path}, so the name "${route.name}" is wrong`).toBe(
+        true,
+      );
+      expect(
+        readFileSync(path, "utf8"),
+        `the source for "${route.name}" is not the file that name points at`,
+      ).toBe(route.source);
+    }
+  });
+
+  it("reaches the route nested inside a dynamic segment, which a one-level walk misses", () => {
+    // Spelled out rather than left to the count above. `toBeGreaterThanOrEqual(7)` is satisfied by
+    // seven top-level routes and by the same seven plus the download route, so it cannot tell a
+    // recursive walk from a flat one -- and the flat version was the original bug, which reported
+    // `api/download/[videoId]/route.ts` as `api/download/route.ts` and then failed on a missing
+    // file. A harness bug that breaks a rule instead of checking it is the expensive kind.
+    expect(apiRoutes().map((route) => route.name)).toContain("download/[videoId]");
+  });
+
+  it("treats only an exact route.ts as a handler, not every module sharing the word", () => {
+    // Synthetic rather than on-disk, deliberately. There is no `route-utils.ts` under `app/api/` at
+    // the moment, so a fixture written into `src/` would prove the predicate for a file that does not
+    // exist yet and cost every other suite a concurrent write into the source tree. The names below
+    // are the ones a Next.js project actually grows: a shared helper next to a route, and a plural
+    // route file that is not a handler.
+    //
+    // Each case is a way the predicate could be too wide, and every one of them is invisible to the
+    // count-equality check beside it while the repository holds no such file.
+    expect(isRouteModule(join("api", "search", "route.ts"))).toBe(true);
+    expect(isRouteModule(join("api", "download", "[videoId]", "route.ts"))).toBe(true);
+    expect(isRouteModule(join("api", "search", "route-utils.ts"))).toBe(false);
+    expect(isRouteModule(join("api", "search", "routes.ts"))).toBe(false);
+    expect(isRouteModule(join("api", "search", "preroute.ts"))).toBe(false);
+    expect(isRouteModule(join("api", "search", "route.ts.bak"))).toBe(false);
+    expect(isRouteModule(join("api", "search", "helpers", "route.ts"))).toBe(true);
+  });
+
+  it("returns exactly the route handlers on disk, no more and no fewer", () => {
+    // The end-to-end count, which the synthetic cases cannot give: it ties the predicate to the tree
+    // it actually runs over, so a `readTree` root or extension change cannot quietly narrow the
+    // rules below to a subset of the handlers.
+    const routesDir = join(srcDir, "app", "api");
+    const modules = readTreeShared(routesDir, { extensions: [".ts"] });
+    expect(apiRoutes()).toHaveLength(modules.filter((entry) => isRouteModule(entry.file)).length);
   });
 
   it("guards every route through the one shared entry point, proven on a violating snippet", () => {
@@ -3492,5 +3620,65 @@ describe("architecture: the M14 resilience items stay implemented (M14 task 2.5)
     );
     expect(worker).toContain("readUsable");
     expect(worker).toContain("isIntactResponse");
+  });
+});
+
+describe("the source tree was not mutated while this suite read it", () => {
+  it("records a tolerated miss rather than swallowing it", () => {
+    // The assertion below is satisfied by an empty set no matter what, because a real collision is
+    // timing-dependent and almost never happens in a green run. Independent verification's mutation
+    // confirmed the cost: deleting `onRace:` from the `readTreeShared` call above left every test in
+    // this file green, so "the tolerance is visible" was a claim with nothing behind it.
+    //
+    // So the miss is forced through the same seam `source-tree-race.test.ts` uses. The point is not
+    // that `onRace` fires -- that is proven there -- but that **this** call site is wired to it, which
+    // is a different property and was the unwitnessed one.
+    //
+    // A temporary directory rather than a probe inside `src/`: writing into the source tree is the
+    // very thing the suite below asserts did not happen, so manufacturing it here would make that
+    // assertion depend on test ordering.
+    const directory = mkdtempSync(join(tmpdir(), "spotivibe-race-"));
+    const file = join(directory, "probe.ts");
+    writeFileSync(file, "export const probe = 1;\n");
+    try {
+      const before = new Set(racedFiles);
+      const missing = Object.assign(new Error("gone"), { code: "ENOENT" });
+
+      const read = readTree(directory, {
+        read: () => {
+          throw missing;
+        },
+      });
+
+      const recorded = [...racedFiles].filter((name) => !before.has(name));
+      // Cleaned up before the assertion below can observe it, so ordering cannot decide the outcome.
+      for (const name of recorded) racedFiles.delete(name);
+
+      expect(
+        read,
+        "the miss must be tolerated rather than thrown, or the flake this exists for is still a failure",
+      ).toEqual([]);
+      expect(
+        recorded,
+        "this call site did not record the tolerated miss, so the empty-set assertion below is " +
+          "vacuous and the tolerance is silent",
+      ).toEqual([file]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("no file vanished between being listed and being read", () => {
+    // The tolerance in `readTree` is only acceptable because it is visible. A file that appeared
+    // or disappeared under this suite means another worker is writing into `src` while this one
+    // reads it, which is the defect M21 fixed rather than the one it recorded: previously the
+    // behaviour was to throw `ENOENT` from whichever worker lost the race, so the failure surfaced
+    // in this file and nowhere near the cause.
+    //
+    // Asserted rather than logged. A logged race is a race that ships.
+    expect(
+      [...racedFiles],
+      "a file moved under this suite; the tree is being mutated by another worker",
+    ).toEqual([]);
   });
 });

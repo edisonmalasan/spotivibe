@@ -181,11 +181,32 @@ describe("DiscoverView: the surface", () => {
       expect(within(jazzShelf).getAllByTestId("shelf-skeleton")).not.toHaveLength(0),
     );
     // Every other genre already resolved with its own explained empty state.
+    //
+    // The wait above is for the **jazz** skeleton, which is present on first render — so it says
+    // nothing about the other genres, whose fetches have not resolved yet at that instant. The
+    // original version asserted their empty state immediately afterwards, which is a negative
+    // assertion racing a resolution: on a loaded machine the other shelves were still showing their
+    // skeletons and the run failed intermittently, for a reason that had nothing to do with what the
+    // test is about.
+    //
+    // So the condition being asserted is awaited rather than assumed. Once the empty state is on
+    // screen a shelf cannot also be showing a skeleton — they are alternative renderings — so the
+    // negative assertion that follows is a consequence of the wait instead of a race against it.
     for (const genre of GENRE_CATALOG.filter((entry) => entry.id !== "jazz")) {
       const shelf = screen.getByTestId(`discover-genre-${genre.id}`);
+      await waitFor(() =>
+        expect(
+          within(shelf).getByRole("heading", { name: "Nothing here yet" }),
+          `${genre.id} must have resolved before its skeleton count means anything`,
+        ).toBeInTheDocument(),
+      );
       expect(within(shelf).queryAllByTestId("shelf-skeleton")).toHaveLength(0);
-      expect(within(shelf).getByRole("heading", { name: "Nothing here yet" })).toBeInTheDocument();
     }
+    // And the genre that never resolved is still the only one waiting, which is the claim the test
+    // exists to make. Asserted last so it cannot be satisfied by the loop above.
+    expect(
+      within(screen.getByTestId("discover-genre-jazz")).getAllByTestId("shelf-skeleton"),
+    ).not.toHaveLength(0);
     // The language summary is never part of a shelf's loading state.
     expect(screen.getByTestId("discover-language-summary")).toBeInTheDocument();
   });

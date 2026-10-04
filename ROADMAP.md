@@ -148,8 +148,15 @@ detectors whose clauses could each be deleted with the whole suite green (27 of 
 file that had never been inside the encoding scan because `\.git` also matched `.github`, and two
 arms that matched the token as documented rather than as it appears in code. None was a defect in
 shipped behaviour; all were rules that said less than they appeared to. M21 inherits the rest —
-including 47 of 52 deletable clauses in `download-non-goals.test.ts`, whose scan covers none of
-M20's new server files.
+including the deletable clauses in `download-non-goals.test.ts`.
+
+> **M21 correction, 2026-10-04.** The clause of that sentence that said the scan "covers none of M20's
+> new server files" was **false**. `applicationSources()` walks all of `src/`, and every server file M20
+> added lives under `src/server/download/`, so all of them were covered by that scan the whole time.
+> The real gap ran the other way: `public/`, `scripts/` and `next.config.ts` were never scanned at all.
+> M21 widened the roots and asserted the widening took effect. The "47 of 52" figure was also never
+> measured — M21 measured the one detector whose clauses can be enumerated and found 5 of 6 deletable,
+> now 0 of 6. See the marked correction in the M20 archive's `evidence/verification.md`.
 
 **Sequencing rationale.** M16 first because lyrics is the deepest new *data* path (an external
 provider, a parser, a playback-position binding) and it proves the Now Playing surface can grow.
@@ -186,6 +193,15 @@ Three things M16 established that the rest of the post-v1 work inherits:
 observed in a real browser** — the YouTube IFrame API is blocked by CSP in this environment — and the
 M16 release gate could not be used as a comparison, which is how the destructive-install finding below
 was found. Both are in M21's scope.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 The work that followed M15 was not a milestone. It was the one defect M15's own release
 process was built to find, found before the first deploy rather than during it:
@@ -222,7 +238,7 @@ The work after that was a **deliberate reversal of M4's visible-player decision*
 | Item | Why it is not a milestone | Where it is recorded |
 |---|---|---|
 | ~~The Vercel deployment itself~~ — **CLOSED 2026-10-02** | Deployed to `https://spotivibe-web.vercel.app` and verified: 8 automated checks green against the live origin (headers present through the CDN, `sw.js` updateable, manifest and its four icons valid, `/api/search` returning real provider results, rate limiting answering `429` with `Retry-After`, all eleven routes answering). The browser-only list — offline reload, live playback, the parked player, console errors, layout — is **still open** and was never claimed as passing. | `openspec/changes/archive/2026-10-02-first-production-deployment.md`; `frontend/docs/DEPLOYMENT.md` |
-| Whether a parked 1×1 iframe keeps advancing in a live browser | The IFrame API is blocked by CSP in this environment, so no browser run can confirm it. The largest open item in the parked-player change. | `2026-10-02-lyrix-style-hidden-player` evidence README, "Not verified" |
+| Whether a parked 1×1 iframe keeps advancing in a live browser | **Still unverified**, and the recorded *reason* for it was wrong until M21: it was written as "the IFrame API is blocked by CSP in this environment", but the application ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`), so its own policy permits the frame. The real obstacle is that **no browser automation was available** — only Edge is installed, and the production and Preview origins sit behind Vercel Deployment Protection. So the item's status is unchanged and its stated cause is corrected; nothing about the player is newly claimed. | `2026-10-02-lyrix-style-hidden-player` evidence README, section "Not verified, and not claimed"; correction in `2026-10-02-m17-home-discovery` evidence README, same section name |
 | Reverting the parked player before any public deployment | The parked configuration is right for a personal instance and wrong for a public one. | `frontend/docs/DEPLOYMENT.md`; the `playback` spec's departure requirement |
 | Real multi-instance rate limiting | The limiter is per-instance in memory, so its effective ceiling multiplies by instance count on serverless. Never observed under load. | M15's archived `tasks.md`, "permanently unverified" |
 | Firefox / Android / iOS | Only Edge is installed here, and the automation protocol is Chrome DevTools-based. | M15's archived `tasks.md` |
@@ -1995,6 +2011,15 @@ UI states. Reduced-motion behaviour. Provider scoring and its negative cache.
 **Browser verification.** Active-line highlight advancing against a real position source, and
 auto-scroll following. **Not verifiable in this environment** (IFrame API blocked by CSP) — the
 position *plumbing* is verified in jsdom, the *following* is not.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 **Completion criteria.** Lyrics appear on Now Playing for a track that has them, in the correct
 format, and the panel is indistinguishable in structure from the rest of the surface. All four

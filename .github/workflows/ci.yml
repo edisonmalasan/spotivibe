@@ -34,7 +34,25 @@ jobs:
         run: npm run format:check
       - name: Typecheck
         run: npm run typecheck
-      - name: Unit tests
-        run: npm test
+      # The build runs **before** the tests, which is the opposite of the order this workflow
+      # shipped in, and the reason is not tidiness.
+      #
+      # `tests/motion-budget.test.ts` has two halves. Its manifest and import rules run
+      # unconditionally; its **size** rules need a build report and skip without one. With the
+      # tests first, those rules skipped in CI on every run and the job reported green for a file
+      # whose headline is a budget. A named-list rule and a size rule were the only two
+      # backstops against a renamed or forked animation package, so in CI only one of them was
+      # actually running.
+      #
+      # M19 disclosed this in the test file's own header, which is honest but does not make the
+      # check run. `tests/ci-workflow.test.ts` now asserts this ordering, so it cannot silently
+      # regress to the shape that made the budget skip.
+      #
+      # The cost, stated rather than hidden: the build now runs before a failing test can stop the
+      # job, so a red pull request spends a few minutes of CI on a build whose result nobody reads.
+      # That is the correct trade - a budget that never runs is not a budget - but it is a real
+      # cost and not a free fix.
       - name: Production build
         run: npm run build
+      - name: Unit tests
+        run: npm test

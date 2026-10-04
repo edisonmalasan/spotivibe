@@ -84,21 +84,50 @@ A test asserting on the *ordering* of the workflow is added, so the ordering can
 regress to the shape that produced the skip. M19's budget file disclosed this in a comment, which
 is honest and does not make the check run; this change makes the check run.
 
-### 2.5 The probe file moves out of the source tree
+### 2.5 The probe file stays in the source tree, and the reader tolerates it
 
-**Decision.** `motion-scope.test.ts` writes its probe outside `src/`.
+> **M21 Apply, 2026-10-04 — this decision was reversed in code and is recorded here rather than left
+> to be discovered.** The original decision was that `motion-scope.test.ts` writes its probe outside
+> `src/`, to a dedicated directory the tree-walking guard excludes, with both files naming the
+> exclusion as a shared constant. **None of that was implemented**, so the delta scenario "A test
+> asserts on a temporary file it created" — which requires the file to be created in a location the
+> application tree does not contain — was unmet while this file still advertised the decision.
+>
+> Independent verification, CRITICAL C7, caught it. What is implemented instead:
+>
+> - The probe **stays** at `src/features/sharing/ProbeM19Motion.tsx`, where the guard under test must
+>   be able to see it.
+> - `tests/helpers/sourceTree.ts` draws the distinction the *original* rationale cared about, one
+>   level lower and without any file to name: a file that vanished between being listed and read is
+>   **tolerated and reported**; a read failure for any other reason is **fatal**. `isMissing` is
+>   deliberately narrow — `ENOENT` only.
+> - `architecture.test.ts` asserts `racedFiles` is empty, so the tolerance cannot become a blind spot:
+>   a run that actually loses a file fails rather than quietly reading fewer files than it believes.
+>
+> **Why this is the better shape, and not merely the one that happened.** The original reasoning — that
+> a second literal spelling of the excluded directory would drift, and a drifted exclusion is a probe
+> that leaks into the tree anyway — was correct about the failure it was guarding against, and the new
+> shape has no equivalent spelling to drift: there is no exclusion list at all. Every reader of a
+> source tree in this repository goes through one helper, so there is one place for the distinction to
+> be right and one test asserting each half of it. A shared *name* would have been a second thing to
+> keep correct; a shared *implementation* is the thing itself.
+>
+> The cost is stated rather than hidden: the probe still writes into the tree other tests are reading,
+> so the race is real and is merely handled rather than prevented. `racedFiles` being asserted empty is
+> what makes "handled" a checked claim.
 
 **Rejected: a lock file.** Vitest's workers share a filesystem and do not coordinate, so a lock
-means implementing coordination for one test. Overkill.
+means implementing coordination for one test. Overkill — and it would still not make a *reading* test
+tolerate a file another test is writing.
 
-**Rejected: make `architecture.test.ts` tolerate the file.** It would have to know about another
-test's temporary file, which couples two unrelated guards — and it re-couples them the next time a
-third probe appears.
+**Rejected: make `architecture.test.ts` tolerate the file by name.** It would have to know about
+another test's temporary file, which couples two unrelated guards — and it re-couples them the next
+time a third probe appears. The helper avoids this by naming nothing: it tolerates a *vanished file*,
+which is a property of the filesystem rather than of any particular probe.
 
-The probe must be inside the tree at all: the guard under test asserts on the **application
-sources**, so it needs a file at a source path. So it is written to a dedicated directory that the
-tree-walking guard excludes, and both files name the exclusion as a shared constant — a second
-literal spelling would drift, and a drifted exclusion is a probe that leaks into the tree anyway.
+**Rejected: `npm ci --dry-run` as a pre-flight for §1.** Noted here because the same instinct
+applies — a dry run reports what *would* happen, and the recorded incident was handles that could not
+be opened at all, which a dry run never attempts.
 
 ### 2.6 Flakes are diagnosed before they are touched
 
@@ -114,10 +143,27 @@ clauses are a disjunction of genuinely distinct spellings**. Where clauses are d
 — fourteen ways to write "no account" — the detector is renamed to say so, and no sole-carrier
 fixture is demanded for each.
 
-**Why not all of them.** `download-non-goals.test.ts` has seven detectors and 47 of 52 clauses
-deletable. Adding 47 sole-carrier fixtures means 47 near-identical snippets, which costs
-maintenance and teaches nothing: the clauses are synonyms, and a synonym does not need its own
-witness to be honest. What a synonym needs is a **name that admits it**, which is free.
+**Why not all of them.** ~~`download-non-goals.test.ts` has seven detectors and 47 of 52 clauses
+deletable.~~ **That count was never measured.** It was an estimate written in the grammar of a
+measurement — "47 of 52" reads as two integers someone counted, and nobody did. The exploration had
+counted *clauses* by eye and *deletable* clauses by reasoning about what each detector would find; it
+never deleted 47 clauses and watched the suite stay green. Presenting the product of two estimates as
+a measurement is the defect this change exists to remove, committed in the document that argues for
+the repair.
+
+**What is actually known**, because the difference matters for the decision below: clauses were
+*counted* (five of seven detectors were single regex literals whose alternatives the check could not
+see, and two had a fixture per arm), and the *effect* was demonstrated on the two that did — deleting
+an arm there left the file green. So the gap is real and the direction is right; only the number was
+invented. Adding one fixture per synonym means one near-identical snippet per synonym, which costs
+maintenance and teaches nothing: a synonym does not need its own witness to be honest. What a synonym
+needs is a **name that admits it**, which is free — and, since C6, a `notSeen` snippet proving the
+stated boundary is still the boundary.
+
+**And the estimate was too pessimistic in the direction that mattered.** It assumed seven detectors
+would stay as they were. Splitting the five literals into clause lists and witnessing each arm
+(`tasks.md` 5.2) turned "7 detectors, mostly unwitnessed" into "7 detectors, every arm witnessed",
+which is a stronger position than the estimate claimed to justify.
 
 **Why not leave it.** The defect this change exists to fix is a check that overstates its scope.
 Naming the scope is the whole repair for a synonym detector; enumerating it would be theatre.
@@ -168,6 +214,12 @@ fixing three tests precisely because one green run meant nothing.
 
 - No shipped behaviour changes. `src/` is touched only if a test-only defect and a product defect
   prove indistinguishable, and that is recorded as a finding rather than slipped in.
+  **One export was added and it is on the record:** `flushListeningRecorder()` in
+  `src/features/history/useListeningRecorder.ts`. Task 4.1 replaced a fixed 2000 ms poll with an
+  await on the recorder's serialized write chain, and that chain was module-global and unexported, so
+  the test had no way to await it without one. It is a flush over state the module already owns, it
+  adds no capability, and the only caller in the repository is the test. A "no shipped behaviour
+  changes" promise that omits a `src/` export is not checkable by the reader it is written for.
 - No new product features, no public deployment.
 - The coarse §2.7 clause is **kept**, narrowed if the origin judgement supports it. It is a false
   positive on the approved M20 shape *and* the only clause catching the caller-path-segment

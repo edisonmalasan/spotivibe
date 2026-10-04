@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -27,21 +27,70 @@ import { describe, expect, it } from "vitest";
 // jsdom, `import.meta.url` is a path, not a `file:` URL, and the `URL` constructor refuses it.
 const here = dirname(fileURLToPath(import.meta.url));
 const FRONTEND = join(here, "..");
-const SRC = join(FRONTEND, "src");
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];
 
-/** Every application source, comments included: a comment is not an exemption from a non-goal. */
+/**
+ * The roots the non-goal detectors scan, and why each one is here.
+ *
+ * ## The correction this list is
+ *
+ * M20's evidence recorded that these detectors "cover none of M20's new server files". **That was
+ * false, and this is where the false part was.** `applicationSources()` walked all of `src/`, and
+ * every server file M20 added — `src/server/download/route.ts`, `service.ts`, `provider.ts` — is
+ * under `src/`, so they were covered. The real gap was the opposite one: three roots outside `src/`
+ * that the walk never reached.
+ *
+ * It is worth being precise about which half was wrong, because the two corrections are not
+ * interchangeable. "These files are not covered" sends a reader to add a test. "These roots are not
+ * scanned" sends a reader to widen a list. Fixing the claim into a different false claim would have
+ * preserved the defect in new words.
+ *
+ * | Root | Why a non-goal can hide there |
+ * | --- | --- |
+ * | `src/` | The application and the server routes. Where M20's files are. |
+ * | `public/` | `sw.js` is executable code the browser runs. It opens caches, and a service worker that cached a download response would be an offline library with no `src/` involvement at all. |
+ * | `scripts/` | `generate-icons.mjs` and its siblings run at build time. A build script that fetched media would defeat every runtime check. |
+ * | `next.config.ts` | Ships `headers`, which is where a `Cache-Control` for extracted audio or a permissive `connect-src` would be written. |
+ *
+ * `next.config.ts` is a single file rather than a directory, so `ROOTS` allows one to be one.
+ */
+const ROOTS: ReadonlyArray<{ path: string; extensions: ReadonlyArray<string> }> = [
+  { path: "src", extensions: SOURCE_EXTENSIONS },
+  { path: "public", extensions: [".js", ".mjs", ".json"] },
+  { path: "scripts", extensions: [".mjs", ".js"] },
+  { path: "next.config.ts", extensions: [".ts"] },
+];
+
+/**
+ * Every application source, comments included: a comment is not an exemption from a non-goal.
+ *
+ * The `public/` and `scripts/` extensions are wider than `SOURCE_EXTENSIONS` on purpose. A `.js`
+ * service worker is as executable as a `.tsx` component, and scanning only TypeScript would leave
+ * the one file most likely to cache something unwatched — which is the same "coverage that reads as
+ * coverage but is not" defect the root list is correcting.
+ *
+ * `.d.ts` is excluded: a declaration file states a shape and executes nothing.
+ */
 function applicationSources(): ReadonlyArray<{ file: string; code: string }> {
   const found: Array<{ file: string; code: string }> = [];
-  const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory)) {
-      const absolute = join(directory, entry);
+  const walk = (target: string, extensions: ReadonlyArray<string>): void => {
+    if (!existsSync(target)) return;
+    if (!statSync(target).isDirectory()) {
+      // A root that is a single file, such as `next.config.ts`.
+      found.push({
+        file: relative(FRONTEND, target).split("\\").join("/"),
+        code: readFileSync(target, "utf8"),
+      });
+      return;
+    }
+    for (const entry of readdirSync(target)) {
+      const absolute = join(target, entry);
       if (statSync(absolute).isDirectory()) {
-        walk(absolute);
+        walk(absolute, extensions);
         continue;
       }
-      if (!SOURCE_EXTENSIONS.some((extension) => entry.endsWith(extension))) continue;
+      if (!extensions.some((extension) => entry.endsWith(extension))) continue;
       if (entry.endsWith(".d.ts")) continue;
       found.push({
         file: relative(FRONTEND, absolute).split("\\").join("/"),
@@ -49,11 +98,43 @@ function applicationSources(): ReadonlyArray<{ file: string; code: string }> {
       });
     }
   };
-  walk(SRC);
+  for (const root of ROOTS) walk(join(FRONTEND, root.path), root.extensions);
   return found;
 }
 
 const SOURCES = applicationSources();
+
+const SOURCES_BY_FILE = new Map(SOURCES.map((entry) => [entry.file, entry]));
+
+/**
+ * Roots that are executed by the build rather than shipped to a browser.
+ *
+ * Two assertions below are about what *reaches a client chunk* — "exactly one place declares the
+ * capability", "only a server module may name the extractor". Widening the roots to include build
+ * tooling found two files that trip them for entirely legitimate reasons: a fixture that names
+ * `offlineDownload` because it is a case about it, and a bundle-measurement script that names the
+ * extractor because reporting whether the extractor reached a client bundle is its entire purpose.
+ *
+ * ## Why this is a named list and not a `startsWith("scripts/")`
+ *
+ * Because `startsWith("scripts/")` would silently grow to cover `scripts-that-ship/` or any future
+ * sibling directory. A literal exclusion with a fixed set of roots can only exclude what somebody
+ * deliberately added, and `SHIPPED_CODE excludes only build tooling` asserts the set, so adding a
+ * root here fails that test until the reason is written down.
+ *
+ * ## What this does NOT do
+ *
+ * It does not exempt `scripts/` from the seven non-goal detectors. Those scan `SOURCES`, which
+ * includes it — a build script that fetched media or opened an offline cache would violate a
+ * non-goal exactly as much as application code would. Only the two *shipped-code* assertions narrow.
+ * `scripts is still scanned by the non-goal detectors` asserts that this stays true.
+ */
+const BUILD_TOOLING_ROOTS: ReadonlyArray<string> = ["scripts/"];
+
+/** Everything outside build tooling. */
+const SHIPPED_CODE = SOURCES.filter(
+  (entry) => !BUILD_TOOLING_ROOTS.some((root) => entry.file.startsWith(root)),
+);
 
 /** Read one file relative to `frontend/`, for the assertions that name a specific path. */
 function read(relativePath: string): string {
@@ -70,6 +151,37 @@ function read(relativePath: string): string {
  */
 function anyOf(arms: readonly string[], flags = ""): RegExp {
   return new RegExp(arms.join("|"), flags);
+}
+
+/**
+ * The rule the witness check enforces, as a value: which of these arms have no witness.
+ *
+ * One implementation, used by the check and by the test that demonstrates the check's own
+ * properties. They were two copies before, and a demonstration written against its own copy can
+ * agree with itself while the real rule behaves differently — which is how a test that exists to
+ * show "consolidation is permitted" came to forbid the consolidations it was written to permit.
+ *
+ * A clause is witnessed when some fixture matches the full pattern but not the pattern with that
+ * clause removed. Membership, not counting: deleting a witness fixture shrinks *both* counts, so a
+ * count comparison survives the deletion it exists to catch.
+ *
+ * @returns the indices of arms with no fixture of their own, in ascending order
+ */
+function unwitnessedArms(
+  arms: readonly string[],
+  fixtures: readonly string[],
+  flags = "",
+): number[] {
+  const full = anyOf(arms, flags);
+  const orphans: number[] = [];
+  for (let index = 0; index < arms.length; index += 1) {
+    const without = anyOf(
+      arms.filter((_arm, position) => position !== index),
+      flags,
+    );
+    if (!fixtures.some((code) => full.test(code) && !without.test(code))) orphans.push(index);
+  }
+  return orphans;
 }
 
 /**
@@ -96,14 +208,217 @@ function codeOnly(source: string): string {
 interface NonGoal {
   /** §21.5's own wording, trimmed to a clause. */
   readonly name: string;
+  /**
+   * What this detector sees, and — more importantly — what it does not.
+   *
+   * Required, and asserted two-sided, because five of the seven detectors are built as a single regex
+   * literal whose alternatives are **synonyms** of one another: `adblock`, `ad-blocker` and
+   * `adBlocker` are three spellings of one idea, so a witness each would teach nothing a witness for
+   * one does not. For those, the honest repair is to state the boundary where a reader will meet it.
+   * The detectors whose arms are genuinely distinct shapes carry a witness per arm instead, and the
+   * asymmetry is deliberate rather than unfinished.
+   */
+  readonly scope: string;
   readonly pattern: RegExp;
-  /** A snippet that violates this non-goal. Its presence is what proves the detector can fail. */
-  readonly violation: Readonly<{ label: string; code: string }>;
+  /**
+   * The detector's clauses, **only when it is an enumerable disjunction**.
+   *
+   * Declared as a list rather than left inside `anyOf(...)` because a disjunction built and discarded
+   * in one expression cannot be reasoned about afterwards: the only way to ask "does every clause
+   * have a witness?" is to take the clauses apart, and taking them apart by re-parsing a regex is
+   * measuring the parser. Detectors whose pattern is a single literal with inline `|` alternatives
+   * leave this `undefined`, and `load-bearing` says so in its own output rather than reporting a zero
+   * for them.
+   */
+  readonly arms?: readonly string[];
+  /** Regex flags `pattern` was built with, so a clause can be rebuilt exactly as declared. */
+  readonly flags?: string;
+  /**
+   * Snippets that violate this non-goal. Their presence is what proves the detector can fail.
+   *
+   * An array rather than a single snippet, because one snippet proves one spelling. A detector built
+   * as a disjunction is watched by however many of its clauses some fixture happens to match, and
+   * with a single fixture that number is usually one — M21 measured 5 of 6 arms deletable with the
+   * suite green on this detector before this became an array.
+   *
+   * Several detectors below still carry exactly one, because their clauses are **synonyms** of one
+   * another rather than distinct spellings; `load-bearing` explains why that is the right number for
+   * those and this is the right number for the one above.
+   */
+  readonly violations: ReadonlyArray<{ label: string; code: string }>;
+  /**
+   * Snippets this detector is claimed **not** to see, asserted not to match.
+   *
+   * A `scope` says what a detector would miss. Written as prose, that claim is decoration — it can
+   * rot silently, because nothing checks that the sentence is still true. These make it falsifiable:
+   * each snippet is drawn from the "does not see" half of its own scope, and the assertion is that
+   * `pattern` really does miss it.
+   *
+   * This is deliberately the opposite direction from `violations`. A detector that matches too much
+   * is caught by `finds nothing in the application`; a detector that matches too little is caught by
+   * nothing at all, because the thing it misses is by definition not there to be found. So the
+   * boundary has to be stated as a test or it is only a claim.
+   *
+   * ## Why `realPath` exists, given a snippet is already asserted not to match
+   *
+   * Independent verification's second finding: a snippet is free-floating text, so a label can
+   * describe something the code does not contain. `label: "the backup importer's own file input"`
+   * with `code: "hello world"` satisfies every assertion in this file — the label is never checked
+   * against anything. Asserting `!pattern.test(code)` proves the *snippet* is outside the detector,
+   * which is not the claim; the claim is about a *thing in this repository*.
+   *
+   * So one entry per detector carries `realPath`: a file that exists, whose real contents the
+   * detector must not match. That makes the label checkable — it names an artifact, and if the
+   * artifact is renamed or deleted the test fails rather than continuing to vouch for a blind spot
+   * described in the past tense. Independent verification caught the gap by reading; this closes it
+   * by reading too.
+   */
+  readonly notSeen: ReadonlyArray<{ label: string; code: string; realPath?: string }>;
 }
+
+/**
+ * §2.4 clause 1's clauses, as a list rather than as an inline `anyOf(...)` argument.
+ *
+ * Named because `load-bearing` below needs to hold them one at a time. A disjunction written inline
+ * can only be taken apart by re-parsing the regex it produced, and a measurement of the parser is
+ * not a measurement of the detector.
+ */
+const ACCOUNT_ARMS: readonly string[] = [
+  String.raw`(?:from|import|require)\s*\(?\s*["'][^"']*(?:next-auth|@auth\/|@supabase\/auth-js|@supabase\/supabase-js|firebase\/auth|@clerk\/|@auth0\/|auth0)`,
+  String.raw`\b(?:signIn|signInWith|logIn|logInWith|signUp|signOut|logOut|authenticate|authorize|getSession|getAccessToken|getIdToken)\s*\(`,
+  String.raw`["'\`](?:access_token|refresh_token|id_token)["'\`]`,
+  String.raw`Authorization:\s*["'\`]?Bearer`,
+  String.raw`\bcredentials:\s*["'\`][^"'\`]*(?:user|pass|login|account)[^"'\`]*["'\`]`,
+  String.raw`\b(?:password|passcode)\s*[:=]\s*["'\`][^"'\`]+["'\`]`,
+];
+
+/**
+ * §21.5's "progress reporting by percentage" clauses, as a list for the same reason as
+ * {@link ACCOUNT_ARMS}.
+ *
+ * Four arms, and the single fixture this detector had matched only the second: arm 3 needs a `%`
+ * on the same line, arms 1 and 4 need the word "download", and `Math.round((loaded / contentLength)
+ * * 100)` has neither. Proven rather than assumed — removing arm 4 left the suite green.
+ */
+const PROGRESS_ARMS: readonly string[] = [
+  String.raw`\b(?:download(?:ed)?[A-Za-z]{0,12}(?:Progress|Percent|Pct)[A-Za-z]{0,12}|progressPercent|pctComplete|percentDownloaded|downloadPct)\b`,
+  String.raw`Math\.round\(\s*\(?\s*(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[\s\S]{0,60}?\*\s*100`,
+  String.raw`(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[^\n]{0,40}\/[^\n]{0,24}(?:total|contentLength|content_length|\bsize\b)[^\n]{0,24}%`,
+  String.raw`\bdownload\b[^\n]{0,40}\d+\s*%`,
+];
+
+/**
+ * The ad-blocking detector's clauses, as a list.
+ *
+ * ROADMAP §2.4. Two mistakes were available here and both were taken. A case-insensitive
+ * `ad-container` matched `X-Spotivibe-Download-Container` — the substring `ad-Container` — and a bare
+ * `\bblockAds?\b` would match a routine that blocks nothing. So every alternative below is a token
+ * that appears verbatim in a real ad-blocking implementation (a filter-list rule, a host pattern, a
+ * container-class name) and the clause is case-**sensitive**: cosmetic-filter lists are lowercase
+ * and camelCase class names are named exactly as written, while prose is not a detector's business.
+ *
+ * Twenty-one alternatives are grouped into ten arms, and the grouping is by *what a reader would
+ * call the thing* rather than by spelling. `adblock`, `ad-blocker` and `adBlocker` are three
+ * spellings of one filter name; giving each a witness would teach nothing a witness for one does
+ * not, which is the same reason the synonym detectors were exempted before. What must not happen is
+ * for a whole arm to go unwatched, and `load-bearing` checks that.
+ *
+ * `load-bearing` also asserts this list rebuilds to the same detector the single literal did, over
+ * every source file and every fixture, so the split is not a narrowing nobody would notice.
+ */
+const AD_ARMS: readonly string[] = [
+  String.raw`adblock|ad-blocker|adBlocker`,
+  String.raw`\badBlock\b|blockAds|block-ads|hideAds|hide-ads`,
+  String.raw`cosmetic-filter`,
+  String.raw`adsbygoogle`,
+  String.raw`doubleclick\.net`,
+  String.raw`googlesyndication`,
+  String.raw`pagead2?`,
+  String.raw`google_ads`,
+  String.raw`ad-container|ad-wrapper|ad-slot`,
+  String.raw`adunit|adUnit`,
+];
+
+/**
+ * The offline-library detector's clauses, as a list.
+ *
+ * §21.5's non-goal, and the one M20 came closest to by accident: a download route that cached its
+ * own response would be an offline library wearing the route's clothes. The clauses are anchored on
+ * a media-ish *store name*, because the store name is what makes it an offline library, and on
+ * `caches.open` rather than `cache.put` — the service worker's own `cache.put` is required code.
+ *
+ * Ten genuinely distinct shapes, so ten witnesses. Three of them can only be written by someone
+ * deliberately building an offline library, which is exactly the point of each having one.
+ */
+const OFFLINE_ARMS: readonly string[] = [
+  String.raw`getAudioData\s*\(`,
+  String.raw`captureStream\s*\(`,
+  String.raw`getAudioTracks`,
+  String.raw`MediaRecorder`,
+  String.raw`MediaElementAudioSourceNode`,
+  String.raw`createMediaElementSource\s*\(`,
+  String.raw`createObjectStore\s*\(\s*["'\`][^"'\`]*(?:media|audio|offline|download)[^"'\`]*["'\`]`,
+  String.raw`objectStore\s*\(\s*["'\`][^"'\`]*(?:media|audio|offline)[^"'\`]*["'\`]`,
+  String.raw`(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'\`][^"'\`]*(?:media|audio|offline|download)[^"'\`]*["'\`]`,
+  String.raw`caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)`,
+];
+
+/**
+ * The local-file detector's clauses, as a list.
+ *
+ * Distinct from the offline library: this is playing a file the listener already had. The clauses
+ * are a picker scoped to **audio**, plus the filesystem APIs and URL schemes only a local file can
+ * have.
+ *
+ * The bare `type="file"` in the first draft matched `features/backup/DataControls.tsx`, which is the
+ * versioned JSON backup importer — an `<input type="file" accept="application/json">` is how a
+ * listener brings data *in*, which is the opposite of this non-goal and a M2 requirement. So the
+ * arm requires an audio accept on the same element, and `file://` was dropped because
+ * `styles/motionTokens.ts` cites `file://./motion.css` in a doc comment.
+ */
+const LOCAL_FILE_ARMS: readonly string[] = [
+  String.raw`type\s*=\s*["']file["'][^>]*accept\s*=\s*["'][^"']*audio`,
+  String.raw`showOpenFilePicker`,
+  String.raw`webkitdirectory`,
+  String.raw`webkitRelativePath`,
+  String.raw`FileSystemFileHandle`,
+  String.raw`FileSystemDirectoryHandle`,
+  String.raw`\bblob:null\/`,
+  String.raw`path\.join\([^)]*\.(?:mp3|m4a|flac|opus|ogg|wav)`,
+];
+
+/**
+ * The transcoding detector's clauses, as a list.
+ *
+ * §21.5: "Real transcoding is explicitly out of scope." This is also what the honest `.webm` naming
+ * invites somebody to "fix", so it is worth a detector with a fixture of exactly that.
+ *
+ * Three shapes: a named tool, a conversion call naming a lossy container, and a codec option. The
+ * original single fixture matched both the first and the second at once, so it witnessed neither.
+ */
+const TRANSCODE_ARMS: readonly string[] = [
+  String.raw`\b(?:ffmpeg|fluent-ffmpeg|avconv|\bsox\b|\blame\b|libav)\b`,
+  String.raw`\.(?:toFormat|convert|remux|transcode|encode)\w*\s*\(\s*["'\`](?:mp3|m4a|aac|opus|ogg|flac|wav)["'\`]`,
+  String.raw`audio\s*:\s*["'](?:mp3|m4a|aac)["']`,
+];
+
+/**
+ * The batch-download detector's clauses, as a list.
+ *
+ * §21.5's non-goal, and the one the *route shape* is the real defence for: a batch endpoint is a
+ * different route. So this detector covers both the implementation vocabulary and the path, and the
+ * one-route assertion in this file checks the other half.
+ */
+const BATCH_ARMS: readonly string[] = [
+  String.raw`\/(?:api\/)?download\/(?:batch|bulk|all|playlist|queue|selection)`,
+  String.raw`\bdownload(?:All|Batch|Bulk|Playlist|Queue)\s*\(`,
+];
 
 const NON_GOALS: readonly NonGoal[] = [
   {
     name: "Accounts or auth of any kind",
+    scope:
+      "sees an auth-library import specifier, a session-or-token call, a quoted credential token key,\nan Authorization: Bearer header, a credentials field, or a password literal, in any scanned\nroot. Does not see a home-grown session store whose identifiers avoid every one of those\nspellings, and does not see the English words at all - deliberately: the first draft matched\nbare login, createSession and refreshToken and caught four files of this repository, including a\ndebounce counter in historyStore called refreshToken.",
     // ROADMAP §2.4 clause 1. Independent of the `release-exclusions` suite on purpose: that suite
     // guards the whole permanent-exclusion set, and this one guards the §21.5 list. Two detectors
     // for one policy is duplication only when they would drift, and the drift is the failure mode
@@ -116,59 +431,155 @@ const NON_GOALS: readonly NonGoal[] = [
     // `refreshToken`, and three doc comments stating that there is no sign-in. A permanent
     // exclusion detector that fires on the code which upholds it is a detector people disable, and
     // the arms below are the narrowed form of that failure rather than a loosening of the policy.
-    pattern: anyOf(
-      [
-        String.raw`(?:from|import|require)\s*\(?\s*["'][^"']*(?:next-auth|@auth\/|@supabase\/auth-js|@supabase\/supabase-js|firebase\/auth|@clerk\/|@auth0\/|auth0)`,
-        String.raw`\b(?:signIn|signInWith|logIn|logInWith|signUp|signOut|logOut|authenticate|authorize|getSession|getAccessToken|getIdToken)\s*\(`,
-        String.raw`["'\`](?:access_token|refresh_token|id_token)["'\`]`,
-        String.raw`Authorization:\s*["'\`]?Bearer`,
-        String.raw`\bcredentials:\s*["'\`][^"'\`]*(?:user|pass|login|account)[^"'\`]*["'\`]`,
-        String.raw`\b(?:password|passcode)\s*[:=]\s*["'\`][^"'\`]+["'\`]`,
-      ],
-      "i",
-    ),
-    violation: {
-      label: "an authentication flow",
-      code: `
-        import NextAuth from "next-auth";
-        export async function POST(request: Request) {
-          const { email, password } = await request.json();
-          const session = await createSession({ email, password });
-          return Response.json({ session, access_token: session.token });
-        }
-      `,
-    },
+    arms: ACCOUNT_ARMS,
+    flags: "i",
+    pattern: anyOf(ACCOUNT_ARMS, "i"),
+    // **One fixture per arm, not one fixture for the detector.** M21 measured this: deleting any arm
+    // except the import arm left the whole file green, so 5 of 6 arms had no witness at all. The
+    // original single fixture did not cover them by accident — it writes `access_token:
+    // session.token` and `password }` *unquoted*, while the token and password arms both require a
+    // quoted literal, so it only ever exercised the import arm.
+    //
+    // These five are **distinct spellings**, not synonyms: a library import, a token key, an
+    // `Authorization` header, a `credentials` field and a `password` field are five different ways a
+    // credential appears, and a detector that watches only one of them is a detector for that one.
+    // So each gets a witness. Where a detector's clauses really are synonyms of each other, the
+    // repair is instead to name the detector by its scope — fourteen near-identical fixtures teach
+    // nothing, and M20's rule that a hand-written attribution field is a choice rather than evidence
+    // applies to fixtures just as much as to clauses.
+    violations: [
+      {
+        label: "an authentication flow importing an auth library",
+        code: `
+          import NextAuth from "next-auth";
+          export async function POST(request: Request) {
+            const { email, password } = await request.json();
+            const session = await createSession({ email, password });
+            return Response.json({ session, access_token: session.token });
+          }
+        `,
+      },
+      {
+        label: "an authentication flow calling a session or token function",
+        code: `
+          export async function signInWithGoogle() {
+            return getAccessToken({ provider: "google" });
+          }
+        `,
+      },
+      {
+        label: "a credential token held as a quoted field name",
+        // Quoted, because the arm requires it — see above. An unquoted `access_token:` is a
+        // different shape and this fixture does not stand in for it.
+        code: `const response = { "access_token": token, "id_token": id };`,
+      },
+      {
+        label: "an Authorization header carrying a bearer token",
+        code: `const headers = { Authorization: \`Bearer ${"${token}"}\` };`,
+      },
+      {
+        label: "a credentials object naming an account",
+        code: `const auth = { credentials: "user:password" };`,
+      },
+      {
+        label: "a password assigned from a literal",
+        code: `const config = { password: "hunter2" };`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the IndexedDB session *restore* repository, which is local state",
+        realPath: "src/data/indexeddb/session.ts",
+        // The false positive that forced these arms onto executable positions. A local record of
+        // "what the listener was playing" is not an account.
+        code: `const store = db.objectStore("sessions"); await store.restore();`,
+      },
+      {
+        label: "the debounce counter named refreshToken",
+        code: `let refreshToken = 0; function schedule() { refreshToken = now(); }`,
+      },
+      {
+        label: "a doc comment stating there is no sign-in",
+        code: `// There is no sign-in here, and there is no account to create.`,
+      },
+      {
+        label: "the word login in a route path",
+        code: `export const GET = handle("/api/login-reminder");`,
+      },
+    ],
   },
   {
     name: "Ad blocking or suppression",
-    // ROADMAP §2.4. Two mistakes were available here and both were taken. A case-insensitive
-    // `ad-container` matched `X-Spotivibe-Download-Container` — the substring `ad-Container` — and a
-    // bare `\bblockAds?\b` would match a routine that blocks nothing. So every alternative below is a
-    // token that appears verbatim in a real ad-blocking implementation (a filter-list rule, a host
-    // pattern, a container-class name) and the clause is case-**sensitive**: cosmetic-filter lists
-    // are lowercase and camelCase class names are named exactly as written, while prose is not a
-    // detector's business.
-    pattern:
-      /adblock|ad-blocker|adBlocker|\badBlock\b|blockAds|block-ads|hideAds|hide-ads|cosmetic-filter|adsbygoogle|doubleclick\.net|googlesyndication|pagead2?|google_ads|ad-container|ad-wrapper|ad-slot|adunit|adUnit/,
-    violation: {
-      label: "a cosmetic ad filter",
-      code: `
+    scope:
+      "sees the tokens a real cosmetic filter uses - adblock, adsbygoogle, doubleclick.net,\ngooglesyndication, pagead2, and ad container/slot class names - and matches them\ncase-sensitively. Does not see ad-blocking spelled any other way, and does not see prose. The\ncase sensitivity is load-bearing: a case-insensitive ad-container matched\nX-Spotivibe-Download-Container.",
+    arms: AD_ARMS,
+    pattern: anyOf(AD_ARMS),
+    violations: [
+      {
+        label: "a cosmetic ad filter",
+        code: `
         export const rules = ['##.ad-banner', '##div[id^="google_ads"]', '@@||doubleclick.net^'];
         export function stripAds(html: string): string { return applyRules(html, rules); }
       `,
-    },
+      },
+      {
+        label: "arm 1: the filter's own name, however spelled",
+        code: `const filterList = "adblock";`,
+      },
+      {
+        label: "arm 2: a routine that removes ad elements",
+        code: `function adBlock(el: Element) { el.remove(); }`,
+      },
+      {
+        label: "arm 3: a cosmetic-filter list declared as such",
+        code: `const kind = "cosmetic-filter";`,
+      },
+      {
+        label: "arm 4: the adsbygoogle push",
+        code: `window.adsbygoogle = window.adsbygoogle || [];`,
+      },
+      { label: "arm 5: the doubleclick host", code: `rules.push("||doubleclick.net^");` },
+      {
+        label: "arm 6: the googlesyndication host",
+        // Deliberately without `pagead`, which would witness arm 7 as well and leave that arm
+        // unwatched — the exact mistake a single fixture per detector makes.
+        code: `rules.push("||googlesyndication.com/ads^");`,
+      },
+      { label: "arm 7: the pagead unit", code: `const unit = "pagead2";` },
+      {
+        label: "arm 8: a google_ads container selector",
+        code: `rules.push('##div[id^="google_ads"]');`,
+      },
+      { label: "arm 9: an ad container class name", code: `el.classList.contains("ad-wrapper");` },
+      { label: "arm 10: an ad unit class name", code: `const slot = "adUnit";` },
+    ],
+    notSeen: [
+      {
+        label: "the header this clause's case sensitivity exists for",
+        realPath: "src/server/download/service.ts",
+        code: `res.setHeader("X-Spotivibe-Download-Container", "keep");`,
+      },
+      {
+        label: "prose about blocking ads",
+        code: `// This component blocks ads for the listener when they ask it to.`,
+      },
+      {
+        label: "ad blocking spelled some other way",
+        code: `window.__adSuppress = true;`,
+      },
+    ],
   },
   {
     name: "A managed offline library in IndexedDB",
-    // §21.5's non-goal, and the one M20 came closest to by accident: a download route that cached its
-    // own response would be an offline library wearing the route's clothes. The clause is anchored on
-    // a media-ish *store name*, because the store name is what makes it an offline library, and on
-    // `caches.open` rather than `cache.put` — the service worker's own `cache.put` is required code.
-    pattern:
-      /getAudioData\s*\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\s*\(|createObjectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|objectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline)[^"'`]*["'`]|(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)/i,
-    violation: {
-      label: "an IndexedDB store created to hold downloaded media",
-      code: `
+    scope:
+      "sees media-capture APIs, an IndexedDB store whose name is media/audio/offline/download-shaped,\nand caches.open with such a name. Does not see a service worker caching a response under a\nneutral cache name - which is why public/sw.js is now scanned rather than assumed clean, and why\ncache.put is deliberately absent, the service worker's own cache.put being required code.",
+    arms: OFFLINE_ARMS,
+    flags: "i",
+    pattern: anyOf(OFFLINE_ARMS, "i"),
+    violations: [
+      {
+        label: "an IndexedDB store created to hold downloaded media",
+        code: `
         const STORE_DEFINITIONS = [
           { name: STORE.likedTracks },
           { name: "offlineMedia" },
@@ -177,62 +588,224 @@ const NON_GOALS: readonly NonGoal[] = [
           db.createObjectStore(definition.name);
         }
       `,
-    },
+      },
+      {
+        label: "arm 1: capturing raw audio out of the player",
+        code: `const pcm = audio.getAudioData(0, 4096);`,
+      },
+      {
+        label: "arm 2: capturing the element's own stream",
+        code: `const stream = track.captureStream();`,
+      },
+      {
+        label: "arm 3: taking the element's audio tracks",
+        code: `for (const t of media.getAudioTracks()) use(t);`,
+      },
+      {
+        label: "arm 4: recording the output",
+        code: `const recorder = new MediaRecorder(destination.stream);`,
+      },
+      {
+        label: "arm 5: routing audio through a graph node",
+        code: `const node = new MediaElementAudioSourceNode(audioCtx, { mediaElement: el });`,
+      },
+      {
+        label: "arm 6: creating a media element source",
+        code: `const source = ctx.createMediaElementSource(el);`,
+      },
+      {
+        label: "arm 7: a store created under a media-ish name",
+        // Named `downloads`, not `audioCache`, and that is load-bearing rather than incidental.
+        // The case-insensitive `objectStore` arm is a *suffix* of `createObjectStore`, so an
+        // `audioCache` store is detected by both arms and removing either leaves the fixture
+        // still matching — which is how this arm was found to be unwatched. `download` is the
+        // one word the created-store arm accepts and the acquired-store arm does not, so it is
+        // the only spelling that separates them. The asymmetry is in the original literal too;
+        // this records it rather than papering over it.
+        code: `db.createObjectStore("downloads", { keyPath: "id" });`,
+      },
+      {
+        label: "arm 8: a store acquired under a media-ish name",
+        code: `const store = tx.objectStore("offlineTracks");`,
+      },
+      {
+        label: "arm 10: a Cache bucket named for downloaded media",
+        code: `const cache = await caches.open("offline-media-v1");`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the service worker's own cache.put, which is required code",
+        realPath: "public/sw.js",
+        code: `await cache.put(request, response);`,
+      },
+      {
+        label: "a Cache bucket under a neutral name",
+        code: `const cache = await caches.open("spotivibe-shell-v1");`,
+      },
+      {
+        label: "a store named for something that is not media",
+        code: `db.createObjectStore("likedTracks", { keyPath: "id" });`,
+      },
+    ],
   },
   {
     name: "Local-file playback",
-    // Distinct from the offline library: this is playing a file the listener already had. The clause
-    // is a picker scoped to **audio**, plus the filesystem APIs and URL schemes only a local file can
-    // have.
-    //
-    // The bare `type="file"` in the first draft matched `features/backup/DataControls.tsx`, which is
-    // the versioned JSON backup importer — an `<input type="file" accept="application/json">` is how
-    // a listener brings data *in*, which is the opposite of this non-goal and a M2 requirement. So
-    // the arm requires an audio accept on the same element, and `file://` was dropped because
-    // `styles/motionTokens.ts` cites `file://./motion.css` in a doc comment.
-    pattern:
-      /type\s*=\s*["']file["'][^>]*accept\s*=\s*["'][^"']*audio|showOpenFilePicker|webkitdirectory|webkitRelativePath|FileSystemFileHandle|FileSystemDirectoryHandle|\bblob:null\/|path\.join\([^)]*\.(?:mp3|m4a|flac|opus|ogg|wav)/i,
-    violation: {
-      label: "a local file picker",
-      code: `
+    scope:
+      "sees an audio-scoped file picker, the File System Access handles, webkitdirectory, blob:null/,\nand a path joining an audio extension. Does not see a bare file input, which the versioned JSON\nbackup importer is one, and a listener bringing data in is the opposite of this non-goal. Nor\nthe file:// scheme, which styles/motionTokens.ts cites in a doc comment.",
+    arms: LOCAL_FILE_ARMS,
+    flags: "i",
+    pattern: anyOf(LOCAL_FILE_ARMS, "i"),
+    violations: [
+      {
+        label: "a local file picker",
+        code: `
         export function LocalLibrary() {
           return <input type="file" accept="audio/*" multiple onChange={onPick} />;
         }
       `,
-    },
+      },
+      {
+        label: "arm 2: the File System Access picker",
+        code: `const [handle] = await window.showOpenFilePicker({ types: [{ description: "Audio" }] });`,
+      },
+      { label: "arm 3: a directory picker", code: `<input type="file" webkitdirectory />;` },
+      {
+        label: "arm 4: reading a dropped file's path",
+        code: `const rel = file.webkitRelativePath;`,
+      },
+      {
+        label: "arm 5: holding a file handle",
+        code: `let handle: FileSystemFileHandle | null = null;`,
+      },
+      {
+        label: "arm 6: walking a directory handle",
+        code: `for await (const entry of (dir as FileSystemDirectoryHandle).values()) use(entry);`,
+      },
+      {
+        label: "arm 7: a blob URL with no origin",
+        code: `src = URL.createObjectURL(file); // blob:null/…`,
+      },
+      {
+        label: "arm 8: building a path to an audio file",
+        code: `const file = path.join(dir, name + ".flac");`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the backup importer's own file input",
+        realPath: "src/features/backup/DataControls.tsx",
+        // M2's versioned JSON import is a listener bringing data *in*, the opposite of this
+        // non-goal. It was the false positive that made this clause audio-scoped.
+        code: `<input type="file" accept="application/json" onChange={onImport} />`,
+      },
+      {
+        label: "the file:// scheme, cited in a doc comment",
+        code: `// Import this with file://./motion.css`,
+      },
+      {
+        label: "a bare file input with no accept at all",
+        code: `<input type="file" onChange={onPick} />`,
+      },
+    ],
   },
   {
     name: "Transcoding",
-    // §21.5: "Real transcoding is explicitly out of scope." This is also what the honest `.webm`
-    // naming invites somebody to "fix", so it is worth a detector with a fixture of exactly that.
-    pattern:
-      /\b(?:ffmpeg|fluent-ffmpeg|avconv|\bsox\b|\blame\b|libav)\b|\.(?:toFormat|convert|remux|transcode|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac|wav)["'`]|audio\s*:\s*["'](?:mp3|m4a|aac)["']/i,
-    violation: {
-      label: "a transcoder converting WebM audio to MP3",
-      code: `
+    scope:
+      "sees the named tools (ffmpeg, fluent-ffmpeg, avconv, sox, lame, libav) and a toFormat, convert,\nremux, transcode or encode call naming a lossy audio container. Does not see container renaming,\nwhich M20's honest .webm naming requires: renaming a .webm to .webm is not transcoding, and\nflagging it would invite somebody to fix the naming this milestone exists to keep honest.",
+    arms: TRANSCODE_ARMS,
+    flags: "i",
+    pattern: anyOf(TRANSCODE_ARMS, "i"),
+    violations: [
+      {
+        label: "a transcoder converting WebM audio to MP3",
+        code: `
         import ffmpeg from "fluent-ffmpeg";
         ffmpeg(input).audioCodec("libmp3lame").toFormat("mp3").save(output);
       `,
-    },
+      },
+      {
+        label: "arm 1: a transcoder named as a process",
+        // Arm 1 on its own: the original fixture imported fluent-ffmpeg *and* called toFormat, so
+        // removing either arm left it matching and neither was watched.
+        code: `await run("ffmpeg", ["-i", input, output]);`,
+      },
+      {
+        label: "arm 2: a conversion call naming a lossy container",
+        code: `await pipeline.toFormat("opus");`,
+      },
+      {
+        label: "arm 3: a codec option naming a lossy codec",
+        code: `const options = { audio: "mp3" };`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "M20's honest container renaming, which this detector must not flag",
+        realPath: "src/app/layout.tsx",
+        // The `.webm` naming is the thing this milestone exists to keep honest. A detector that
+        // flagged it would invite somebody to "fix" the naming, so the absence is asserted.
+        code: `const extension = ".webm"; // honest: it really is WebM`,
+      },
+      {
+        label: "a conversion to a container that is not a lossy audio one",
+        code: `await pipeline.toFormat("matroska");`,
+      },
+      {
+        label: "a codec option naming a lossless codec",
+        code: `const options = { audio: "vorbis" };`,
+      },
+    ],
   },
   {
     name: "Batch or playlist downloading",
-    // §21.5's non-goal, and the one the *route shape* is the real defence for: a batch endpoint is a
-    // different route. So this detector covers both the implementation vocabulary and the path.
-    pattern:
-      /\/(?:api\/)?download\/(?:batch|bulk|all|playlist|queue|selection)|\bdownload(?:All|Batch|Bulk|Playlist|Queue)\s*\(/i,
-    violation: {
-      label: "a batch download endpoint",
-      code: `
+    scope:
+      "sees a download path naming batch, bulk, all, playlist, queue or selection, and a downloadAll,\ndownloadBatch, downloadPlaylist or downloadQueue call. Does not see a loop that downloads one\ntrack per iteration. The route shape is the real defence - a batch endpoint is a different route\n- and the one-route assertion in this file checks that directly.",
+    arms: BATCH_ARMS,
+    flags: "i",
+    pattern: anyOf(BATCH_ARMS, "i"),
+    violations: [
+      {
+        label: "a batch download endpoint",
+        code: `
         export async function POST(request: Request) {
           const { ids } = await request.json();
           return downloadAll(ids);
         }
       `,
-    },
+      },
+      {
+        label: "arm 1: a batch route path",
+        // Arm 1 on its own: the original fixture was a route handler whose *body* called
+        // downloadAll, so it never exercised the path clause — which is the half that actually
+        // proves there is no batch endpoint.
+        code: `export const POST = handle("/api/download/batch");`,
+      },
+      {
+        label: "arm 2: a batch call",
+        code: `await downloadPlaylist(playlistId);`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the single-track route that does exist",
+        realPath: "src/app/api/download/[videoId]/route.ts",
+        code: `export const POST = handle("/api/download/[videoId]");`,
+      },
+      {
+        label: "a loop that downloads one track per iteration",
+        code: `for (const track of tracks) await downloadOne(track.id);`,
+      },
+      {
+        label: "one track downloaded once",
+        code: `await downloadOne(track.id);`,
+      },
+    ],
   },
   {
     name: "Progress reporting by percentage",
+    scope:
+      "sees download progress only: a download...Progress/Percent/Pct identifier, a Math.round(loaded *\n100), a loaded / total % readout, or a literal % beside the word download. Does not see a\nplayback scrubber's position, which is a true fraction of a known duration - matching any\nMath.round(x * 100) caught components/player/ProgressSlider.tsx, whose removal would be a\nregression. The rendered half is asserted behaviourally in tests/download-client.test.tsx, the\nonly place a rendered figure can be observed.",
     // §21.5's non-goal, and a subtle one: the size behind any percentage is an *estimate*, so a
     // percentage is a confident number derived from a guess.
     //
@@ -244,26 +817,460 @@ const NON_GOALS: readonly NonGoal[] = [
     // to the thing §21.5 actually prohibits. The *rendered* half of the same claim — no `progressbar`,
     // no `<progress>`, no `NN%` — is asserted behaviourally in `tests/download-client.test.tsx`,
     // which is the only place a rendered figure can be observed.
-    pattern: anyOf(
-      [
-        String.raw`\b(?:download(?:ed)?[A-Za-z]{0,12}(?:Progress|Percent|Pct)[A-Za-z]{0,12}|progressPercent|pctComplete|percentDownloaded|downloadPct)\b`,
-        String.raw`Math\.round\(\s*\(?\s*(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[\s\S]{0,60}?\*\s*100`,
-        String.raw`(?:loaded|downloaded|receivedBytes|bytesLoaded)\b[^\n]{0,40}\/[^\n]{0,24}(?:total|contentLength|content_length|\bsize\b)[^\n]{0,24}%`,
-        String.raw`\bdownload\b[^\n]{0,40}\d+\s*%`,
-      ],
-      "i",
-    ),
-    violation: {
-      label: "a download percentage",
-      code: `
+    arms: PROGRESS_ARMS,
+    flags: "i",
+    pattern: anyOf(PROGRESS_ARMS, "i"),
+    violations: [
+      {
+        label: "a download percentage",
+        code: `
         const pct = Math.round((loaded / contentLength) * 100);
         return <span>{pct}%</span>;
       `,
-    },
+      },
+      {
+        label: "a download progress value named as a percentage",
+        // Arm 1: the identifier itself. Nothing here computes anything, which is the point — a field
+        // named downloadProgressPct states the claim with no formula at all.
+        code: `const downloadProgressPct = remaining === 0 ? 100 : (done / total) * 100;`,
+      },
+      {
+        label: "a loaded-over-total readout rendered with a percent sign",
+        // Arm 3: the shape a progress readout takes without arithmetic. Both the `/` and the `%` must
+        // be on one line, which is why this fixture is a single JSX line and the original was not a
+        // witness for it.
+        code: `return <span>{loaded} / {contentLength} %</span>;`,
+      },
+      {
+        label: "a literal percentage beside the word download",
+        // Arm 4: the crudest spelling, and the one a hand-written string takes.
+        code: `return <span>download 42%</span>;`,
+      },
+    ],
+    notSeen: [
+      {
+        label: "the playback scrubber's position, which is a true fraction",
+        realPath: "src/components/player/ProgressSlider.tsx",
+        // The false positive that scoped these arms to *download* progress. A seek bar's position
+        // within a known duration is not a guess, and flagging it would have gotten the component
+        // removed.
+        code: `const pct = Math.round((currentTime / duration) * 100);`,
+      },
+      {
+        label: "a progress bar's aria value, which is a fraction not a percentage",
+        code: `<div role="progressbar" aria-valuenow={loaded} aria-valuemax={total} />;`,
+      },
+      {
+        label: "a percentage that is not about a download",
+        code: `return <span>battery 80%</span>;`,
+      },
+    ],
   },
 ];
 
+describe("the scan every non-goal check depends on is witnessed, not merely present", () => {
+  // Without this, all seven `finds nothing in the application` blocks can go green with a list that
+  // contains no files at all, and there is no difference between "the application implements no
+  // accounts" and "the check never looked at the application". A count threshold would not have
+  // caught it either - see below.
+  it("reads the application tree, and reads it as text", () => {
+    // Anchors rather than a threshold. `expect(SOURCES.length).toBeGreaterThan(N)` is unwitnessed in
+    // exactly the way round 3 found for the registry's 25-arm floor: every partial walk clears any N
+    // small enough to be safe, so nothing can falsify it and it reports green by construction.
+    // A named file is falsifiable: lose the tree and this fails with a file name in the message.
+    const anchor = SOURCES_BY_FILE.get("src/app/page.tsx");
+    expect(
+      anchor,
+      "the walk must find src/app/page.tsx, or it is not reading the application",
+    ).toBeDefined();
+    expect(anchor!.code.length, "the walk must read file contents, not just names").toBeGreaterThan(
+      0,
+    );
+    expect(anchor!.code, "and it must be the file, not a placeholder").toContain("<");
+  });
+
+  it("excludes the test files, or a check written here would detect its own fixtures", () => {
+    const testFiles = SOURCES.filter((entry) => entry.file.startsWith("tests/"));
+    expect(testFiles, "tests/ must not be scanned as application source").toEqual([]);
+  });
+});
 describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
+  it("scans the roots a non-goal can hide in, not only `src/`", () => {
+    // M20's evidence claimed these detectors "cover none of M20's new server files". That was false
+    // — `src/server/download/*` is under `src/` and was always covered. The real gap was three roots
+    // outside it. This asserts the widened coverage *actually took effect*, by checking that each
+    // added root contributes at least one file.
+    //
+    // Asserted on file counts rather than on the `ROOTS` array itself: a root listed but unreadable,
+    // or filtered out by its extension list, would leave the array correct and the coverage unchanged.
+    // `public/sw.js` is the specific case — it is the file most likely to cache something, and a
+    // `.js`-only root that silently matched nothing would leave it unwatched while this test passed.
+    for (const root of ROOTS) {
+      const covered = SOURCES.filter(
+        (entry) =>
+          entry.file.startsWith(`${root.path}/`) ||
+          entry.file === root.path ||
+          entry.file.startsWith(root.path),
+      ).map((entry) => entry.file);
+      expect(
+        covered.length,
+        `${root.path} contributes no files, so the root is listed but not read`,
+      ).toBeGreaterThan(0);
+    }
+    expect(
+      SOURCES.some((entry) => entry.file === "public/sw.js"),
+      "the service worker must be scanned: it is the most likely place to cache a download",
+    ).toBe(true);
+    expect(SOURCES.some((entry) => entry.file === "next.config.ts")).toBe(true);
+  });
+
+  it("keeps build tooling inside the non-goal detectors' reach", () => {
+    // `SHIPPED_CODE` narrows two shipped-code assertions. It must not have narrowed the seven
+    // detectors, because a build script that fetched media or opened an offline cache would violate
+    // a non-goal exactly as much as application code. Asserted directly rather than inferred from
+    // the absence of a failure.
+    expect(SOURCES.filter((entry) => entry.file.startsWith("scripts/")).length).toBeGreaterThan(0);
+    expect(SHIPPED_CODE.filter((entry) => entry.file.startsWith("scripts/"))).toEqual([]);
+  });
+
+  it("excludes only build tooling from the shipped-code scope", () => {
+    // The fixed-root list, asserted, so growing it is a deliberate act. `startsWith("scripts/")`
+    // would have been the same effect with none of the friction.
+    expect([...BUILD_TOOLING_ROOTS]).toEqual(["scripts/"]);
+    // And the exclusion must be a strict subset: if it ever covered everything, `SHIPPED_CODE` would
+    // be empty and both shipped-code assertions would pass vacuously.
+    expect(SHIPPED_CODE.length).toBeGreaterThan(0);
+    expect(SHIPPED_CODE.length).toBeLessThan(SOURCES.length);
+
+    // **W1: the contents check above cannot hold this line on its own.**
+    //
+    // `expect([...BUILD_TOOLING_ROOTS]).toEqual(["scripts/"])` is defeatable by swapping it for
+    // `expect.arrayContaining(["scripts/"])`, which accepts a second root. A second root narrows
+    // `SHIPPED_CODE`, so both shipped-code assertions above keep passing while watching less code.
+    //
+    // The first repair here was wrong and mutation verification said so: it asserted that dropping
+    // each root *widens* the scope, and adding `src/components/` passed, because both roots remain
+    // individually useful. "Each entry does something" is not the property. The property is "no
+    // entry excludes code it should not", and only the excluded set itself can say that — so it is
+    // asserted directly, as both directions at once.
+    const excluded = SOURCES.filter((entry) => !SHIPPED_CODE.includes(entry));
+    expect(
+      excluded.map((entry) => entry.file),
+      "the shipped-code scope must be every source except build tooling; these files are " +
+        "excluded from it and are not build tooling, so the assertions above watch less than " +
+        "they claim to",
+    ).toEqual(SOURCES.filter((entry) => entry.file.startsWith("scripts/")).map((e) => e.file));
+    expect(
+      SHIPPED_CODE.some((entry) => entry.file.startsWith("scripts/")),
+      "build tooling must stay out of the shipped-code scope",
+    ).toBe(false);
+    for (const root of BUILD_TOOLING_ROOTS) {
+      expect(
+        SOURCES.filter((entry) => entry.file.startsWith(root)).length,
+        `${root} is listed but excludes no file, so it is a claim shaped like coverage`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("states what every detector does and does not see", () => {
+    // Task 5.3's repair, checked rather than asserted in prose.
+    //
+    // A detector's name says what it forbids. Its *scope* says what it would miss, and that is
+    // the half a reader needs when it does not fire: without it, the only available conclusion
+    // is that the detector is broken. With it, the reader learns the boundary instead.
+    //
+    // Two properties are enforced, because a scope that is present but empty, or one-sided, is
+    // decoration:
+    //
+    //   - non-empty, and long enough to be a statement rather than a word;
+    //   - two-sided - it must say both what it sees and what it does not. A scope listing only
+    //     what is covered is a press release.
+    const thin = NON_GOALS.filter(
+      (goal) => goal.scope.trim().length < 60 || !/does not/i.test(goal.scope),
+    ).map((goal) => `${goal.name}: ${goal.scope.slice(0, 40)}`);
+    expect(
+      thin,
+      "every detector must state what it does NOT see, or the scope is decoration",
+    ).toEqual([]);
+  });
+  it("gives every clause of an enumerable detector a witness, so deleting one is not silent", () => {
+    // The gap this closes
+    //
+    // M21 measured that 5 of this detector's 6 arms could be deleted with the suite green, and then
+    // added a fixture per arm. That is the repair — but nothing in the suite *prevented* the loss. A
+    // later edit that deletes one fixture leaves "is proven able to fail" passing, because it has one
+    // fewer thing to check, and the arm becomes deletable again. The measurement script catches it;
+    // the test suite did not.
+    //
+    // So the check is here, and it is computed rather than measured: for each arm in turn, rebuild the
+    // pattern **without** that arm and confirm at least one fixture stops matching. If removing an arm
+    // changes nothing, no fixture was watching it.
+    //
+    // No file is touched and no subprocess runs, so this costs nothing at run time — which is the
+    // reason to compute it instead of mutation-testing on every run.
+    const enumerable = NON_GOALS.filter((goal) => (goal.arms?.length ?? 0) >= 2);
+
+    // Guard against vacuity. If every detector became a single literal this loop would run zero times
+    // and report green, which is the failure mode this whole milestone exists to remove. The count is
+    // stated rather than inferred from the array, so shrinking it fails loudly.
+    expect(
+      enumerable.map((goal) => goal.name),
+      "no detector declares an enumerable disjunction, so every check below is vacuous",
+    ).toEqual([
+      "Accounts or auth of any kind",
+      "Ad blocking or suppression",
+      "A managed offline library in IndexedDB",
+      "Local-file playback",
+      "Transcoding",
+      "Batch or playlist downloading",
+      "Progress reporting by percentage",
+    ]);
+
+    const orphans: string[] = [];
+    for (const goal of enumerable) {
+      const codes = goal.violations.map((violation) => violation.code);
+      for (const index of unwitnessedArms(goal.arms!, codes, goal.flags ?? "")) {
+        orphans.push(`${goal.name} arm ${index}: ${goal.arms![index]!.slice(0, 60)}`);
+      }
+    }
+    expect(
+      orphans,
+      "these clauses can be deleted with the suite green, because no fixture matches only them. " +
+        "Add a fixture per clause - or, if the clause is a synonym of another, merge them.",
+    ).toEqual([]);
+  });
+
+  it("permits coverage-preserving consolidation, and only that", () => {
+    // The other half of the check above, and the reason it does not get disabled.
+    //
+    // A rule that fails on every edit is a rule people turn off. This one requires each *clause* to
+    // have a witness, not each *clause as written*, so merging two clauses into one that still
+    // matches everything both did is allowed: the merged clause keeps both fixtures matching, so
+    // removing it still orphans them and the check still holds.
+    //
+    // ## What this test used to be
+    //
+    // It said "Both directions are asserted here, on a copy rather than on the real detectors" and
+    // then used `ACCOUNT_ARMS` and `NON_GOALS[0].violations` — the real ones. So it could not fail
+    // for a reason of its own: if the real table changed shape, this test's claims changed with it,
+    // and the comment describing what it was doing became false while the test stayed green. A
+    // comment that describes a copy is not evidence that there is one.
+    //
+    // It also never demonstrated the thing it is named for. It rewrote one arm of the real list and
+    // checked coverage was preserved, which is not consolidation: consolidation is *removing* an arm.
+    // Independent verification confirmed the gap by mutation — merging the two batch arms is reported
+    // as coverage loss, so the rule forbids the merges it exists to allow.
+    //
+    // Both defects have the same cause: the demonstration and the rule were two implementations.
+    // `unwitnessedArms` is now one, called by both, and this test runs it on data it owns.
+
+    // Synthetic on purpose: three tokens, three fixtures, no dependency on how the real table looks.
+    const arms = [String.raw`\btokenA\b`, String.raw`\btokenB\b`, String.raw`\btokenC\b`];
+    const fixtures = [`const a = tokenA;`, `const b = tokenB;`, `const c = tokenC;`];
+
+    /** Coverage of each fixture under a set of arms — what "loses coverage" is measured on. */
+    const detected = (subset: readonly string[]): ReadonlySet<number> =>
+      new Set(
+        fixtures
+          .map((code, index) => (anyOf(subset).test(code) ? index : -1))
+          .filter((index) => index !== -1),
+      );
+
+    // **Permitting direction, demonstrated.** Merging two witnessed arms into one is allowed: the
+    // merged clause matches both fixtures, so dropping it loses both and the rule still holds.
+    const MERGED = [String.raw`\btokenA\b`, String.raw`\btoken(?:B|C)\b`];
+    expect(
+      unwitnessedArms(MERGED, fixtures),
+      "merging two witnessed arms into one must be permitted: that is what this rule is for",
+    ).toEqual([]);
+    expect(
+      [...detected(arms)].filter((fixture) => !detected(MERGED).has(fixture)),
+      "the merge must actually preserve coverage, or it is a deletion wearing a merge's name",
+    ).toEqual([]);
+
+    // **Permitting direction, restated.** A clause rewritten to say the same thing differently still
+    // passes, because the rule keys on coverage and not on text.
+    const REWRITTEN = [String.raw`\btokenA\b`, String.raw`\btokenB\b`, String.raw`\btokenC{1}\b`];
+    expect(
+      [...detected(arms)].filter((fixture) => !detected(REWRITTEN).has(fixture)),
+      "a coverage-preserving rewrite must not be reported as coverage loss",
+    ).toEqual([]);
+
+    // **Blocking direction.** A clause that no fixture matches *on its own* is reported, even when a
+    // fixture does match it. A duplicated arm is the plain case, and the one a reader is most
+    // likely to assume is fine because something does detect it. Both copies are reported, not one:
+    // removing either leaves the other matching, so neither is what makes the fixture detectable.
+    expect(
+      unwitnessedArms([String.raw`\btokenA\b`, String.raw`\btokenA\b`], [`const a = tokenA;`]),
+      "a duplicated clause has no witness of its own, and both copies must be reported",
+    ).toEqual([0, 1]);
+
+    // And the rule is not vacuous in the merged form either: it still bites when a clause of *that*
+    // set goes unwatched.
+    expect(
+      unwitnessedArms([...MERGED, String.raw`\btokenD\b`], fixtures),
+      "the merged set must still detect a clause added without a fixture",
+    ).toEqual([2]);
+
+    // Deleting a fixture is the deletion this rule exists to catch, and it is worth showing here
+    // rather than only in the message: the arm survives, its witness does not, and the arm becomes
+    // deletable.
+    expect(
+      unwitnessedArms(arms, fixtures.slice(0, 2)),
+      "deleting a witness fixture must make its arm deletable",
+    ).toEqual([2]);
+
+    // The rule is built on rebuilt patterns, so two calls cannot share a regex object and drift.
+    expect(anyOf(arms)).not.toBe(anyOf(arms));
+    expect(anyOf(arms).source).toBe(arms.join("|"));
+  });
+
+  it("rebuilds every detector's pattern from its arms without changing what it matches", () => {
+    // The price of splitting five single-regex detectors into clause lists.
+    //
+    // Splitting a literal into arms is not automatically the same detector: `|` binds differently
+    // across a top-level alternative and a nested group, and a merged synonym arm can quietly widen
+    // a clause. A change like that is invisible here — the detectors still find nothing in the
+    // application either way — so it is asserted directly: for every source file and every fixture,
+    // the rebuilt pattern must agree with the literal it replaced.
+    //
+    // The literals are reproduced here rather than imported, because the point is to pin the
+    // *before* state. A regex that quietly stopped matching a file would still pass `finds nothing
+    // in the application`; only this can notice.
+    //
+    // ## What this does and does not prove, stated exactly
+    //
+    // It proves: **no clause changed its behaviour on this corpus.** Every source file the scan
+    // reads, every `violations` fixture and every `notSeen` snippet is run through both the old
+    // literal and the rebuilt pattern, and any disagreement is reported by name.
+    //
+    // It does **not** prove: that no clause changed at all. Agreement is a per-input property, so
+    // a clause widened toward a token appearing in neither the application nor the fixtures
+    // matches the same things here, before and after, and this test cannot see the difference.
+    // The gap is real and this assertion does not close it.
+    //
+    // What catches that case is a *different* test pointing the other way.
+    // `finds nothing in the application` fails the moment a widened clause starts matching a real
+    // file, and the arm-witnessing test fails when a clause matches nothing at all
+    // (`these clauses can be deleted with the suite green`).
+    //
+    // So the two directions have different witnesses and neither test substitutes for the other:
+    // a clause that *lost* a match is caught here, and a clause that *gained* one is caught
+    // there. Stating that division is the point -- an earlier version of this comment claimed the
+    // test held the pattern's meaning in general, which is the overstatement this whole change
+    // exists to remove, committed in the file that removes it.
+    const BEFORE: Record<string, RegExp> = {
+      "Ad blocking or suppression":
+        /adblock|ad-blocker|adBlocker|\badBlock\b|blockAds|block-ads|hideAds|hide-ads|cosmetic-filter|adsbygoogle|doubleclick\.net|googlesyndication|pagead2?|google_ads|ad-container|ad-wrapper|ad-slot|adunit|adUnit/,
+      "A managed offline library in IndexedDB":
+        /getAudioData\s*\(|captureStream\s*\(|getAudioTracks|MediaRecorder|MediaElementAudioSourceNode|createMediaElementSource\s*\(|createObjectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|objectStore\s*\(\s*["'`][^"'`]*(?:media|audio|offline)[^"'`]*["'`]|(?:STORE_DEFINITIONS|STORE_DEFINITION|createObjectStores?)\b[\s\S]{0,240}?name:\s*["'`][^"'`]*(?:media|audio|offline|download)[^"'`]*["'`]|caches\.open\s*\(\s*[^)]*(?:media|audio|offline|download)[^)]*\)/i,
+      "Local-file playback":
+        /type\s*=\s*["']file["'][^>]*accept\s*=\s*["'][^"']*audio|showOpenFilePicker|webkitdirectory|webkitRelativePath|FileSystemFileHandle|FileSystemDirectoryHandle|\bblob:null\/|path\.join\([^)]*\.(?:mp3|m4a|flac|opus|ogg|wav)/i,
+      Transcoding:
+        /\b(?:ffmpeg|fluent-ffmpeg|avconv|\bsox\b|\blame\b|libav)\b|\.(?:toFormat|convert|remux|transcode|encode)\w*\s*\(\s*["'`](?:mp3|m4a|aac|opus|ogg|flac|wav)["'`]|audio\s*:\s*["'](?:mp3|m4a|aac)["']/i,
+      "Batch or playlist downloading":
+        /\/(?:api\/)?download\/(?:batch|bulk|all|playlist|queue|selection)|\bdownload(?:All|Batch|Bulk|Playlist|Queue)\s*\(/i,
+    };
+
+    const divergences: string[] = [];
+    for (const goal of NON_GOALS) {
+      const before = BEFORE[goal.name];
+      if (!before) continue;
+      const texts = [
+        ...SOURCES.map((entry) => `${entry.file}\n${entry.code}`),
+        ...goal.violations.map((violation) => violation.code),
+        ...goal.notSeen.map((snippet) => snippet.code),
+      ];
+      for (const text of texts) {
+        if (before.test(text) !== goal.pattern.test(text)) {
+          divergences.push(`${goal.name} on ${text.slice(0, 60).replace(/\n/g, " ")}`);
+        }
+      }
+    }
+    expect(
+      divergences,
+      "the rebuilt detectors disagree with the literals they replaced, so a clause was widened " +
+        "or narrowed by the split",
+    ).toEqual([]);
+    // And the list of literals is complete: a sixth split detector would skip this comparison
+    // silently, which is the failure mode a stated count exists to prevent.
+    expect(Object.keys(BEFORE)).toHaveLength(5);
+  });
+
+  it("proves each detector's stated blind spot is still blind", () => {
+    // C6: a `scope` is a claim about what a detector *would miss*, and as prose it rots silently —
+    // the thing it misses is by definition not in the tree to be found.
+    //
+    // So each scope's "does not see" half is a snippet, and the assertion is that the detector really
+    // does miss it. Two failures this catches that nothing else would:
+    //
+    //   - a scope sentence that stopped being true, because the clause was later broadened;
+    //   - a `notSeen` snippet that quietly started matching, which would mean the scope is
+    //     describing a detector that does not exist.
+    //
+    // The count is stated so that a detector losing its whole `notSeen` list fails loudly rather
+    // than reporting a clean run over fewer detectors.
+    expect(NON_GOALS.every((goal) => goal.notSeen.length > 0)).toBe(true);
+    expect(NON_GOALS.map((goal) => goal.notSeen.length)).toEqual([4, 3, 3, 3, 3, 3, 3]);
+
+    const sighted: string[] = [];
+    for (const goal of NON_GOALS) {
+      for (const snippet of goal.notSeen) {
+        if (goal.pattern.test(snippet.code)) {
+          sighted.push(`${goal.name}: ${snippet.label}`);
+        }
+      }
+    }
+    expect(
+      sighted,
+      "these detectors match a snippet their own scope says they cannot see, so the scope is wrong",
+    ).toEqual([]);
+  });
+
+  it("anchors every scope to a real file the detector genuinely does not match", () => {
+    // Independent verification's second finding, and the reason the one above is not enough.
+    //
+    // `notSeen` proves a *snippet* lies outside the detector. The claim in each `scope` is about a
+    // *thing in this repository* — the backup importer's file input, the service worker's `cache.put`
+    // — and a snippet cannot carry that. A label reading "the backup importer's own file input"
+    // above `code: "hello world"` satisfies every assertion in this file, because the label is
+    // never checked against anything.
+    //
+    // So each detector also carries a `realPath`, and here the file's **actual contents** are run
+    // through the detector. That makes the label falsifiable in the direction that matters: if the
+    // file is renamed the test fails rather than going on vouching for a blind spot described in
+    // the past tense, and if a future edit puts the thing inside the file the detector now matches,
+    // the scope stops being true and this says so.
+    //
+    // Stated per detector rather than in aggregate, because "at least one is anchored" would let six
+    // of the seven scopes quietly go back to describing something that is not there.
+    const anchored = NON_GOALS.map(
+      (goal) => goal.notSeen.filter((snippet) => snippet.realPath).length,
+    );
+    expect(
+      anchored,
+      "every detector must anchor its blind spot to a real file; a floating snippet's label is " +
+        "not checked against anything and can describe whatever the author imagined",
+    ).toEqual([1, 1, 1, 1, 1, 1, 1]);
+
+    const problems: string[] = [];
+    for (const goal of NON_GOALS) {
+      for (const snippet of goal.notSeen) {
+        if (!snippet.realPath) continue;
+        const full = join(FRONTEND, snippet.realPath);
+        if (!existsSync(full)) {
+          problems.push(`${goal.name}: ${snippet.realPath} does not exist, so its scope is stale`);
+          continue;
+        }
+        // The whole file, comments and all. The claim is about the artifact, not about a line of it.
+        if (goal.pattern.test(readFileSync(full, "utf8"))) {
+          problems.push(`${goal.name} now matches ${snippet.realPath}, which its scope denies`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
   it("covers every non-goal the milestone names", () => {
     // A guard on the guard: the milestone lists seven, so a list that shrinks is a silent scope
     // reduction. The count is stated rather than inferred from the array length.
@@ -282,10 +1289,30 @@ describe("ROADMAP 21.5's non-goals are enforced, not merely stated", () => {
   for (const goal of NON_GOALS) {
     describe(`no ${goal.name}`, () => {
       it("is proven able to fail, so it cannot be mistaken for one that passes", () => {
-        expect(
-          goal.pattern.test(goal.violation.code),
-          `the detector missed ${goal.violation.label}`,
-        ).toBe(true);
+        // Every fixture, not the first one. A detector with five arms and one witness proved four
+        // arms nothing; asserting the first fixture is a check on the check, not on the detector.
+        //
+        // **What this witnesses, precisely: DETECTION of the fixtures that are present.** It does not
+        // witness PRESENCE of the fixtures — `goal.violations = []` gives `missed = []`, which is `[]`,
+        // which passes. A detector stripped of its evidence is indistinguishable here from a fully
+        // witnessed one. The earlier version of this comment implied otherwise, and round 5 caught it.
+        //
+        // A floor on the fixture count would be the obvious fix and is deliberately NOT applied: that is
+        // the same shape round 3 rejected for the registry's 25-arm floor, because every partial deletion
+        // clears any N small enough to be safe, so no mutation can falsify it. The pattern used instead
+        // in this change is a named anchor — a specific label that must be present — as the scan witness
+        // below demonstrates. Closing the presence gap the same way is not done here and is recorded in
+        // the change's task ledger rather than left for a reader to assume.
+        //
+        // The missed labels are named in the assertion's own message rather than left to a
+        // diff of two long object arrays, which vitest truncates — so a detector with five
+        // missed fixtures reported three of them and the other two had to be found by reading
+        // the table. A failure you have to go and re-derive is a failure reported worse than
+        // it needs to be.
+        const missed = goal.violations
+          .filter((violation) => !goal.pattern.test(violation.code))
+          .map((violation) => violation.label);
+        expect(missed, `every fixture must be detected; these were missed`).toEqual([]);
       });
 
       it("finds nothing in the application", () => {
@@ -321,13 +1348,21 @@ describe("the download feature is a download to the device and nothing more", ()
   it("gives every Track surface its capability from the normalizer, never from a literal", () => {
     // A second place asserting `offlineDownload: false` would be a second place to get it wrong, and
     // the two would be free to disagree. Asserted by counting: there must be exactly one.
-    const offenders = SOURCES.filter((entry) => /offlineDownload:\s*true/.test(entry.code)).map(
-      (entry) => entry.file,
-    );
+    //
+    // Scoped to `SHIPPED_CODE`, which excludes `scripts/`. Widening the scanned roots to include
+    // build tooling surfaced `scripts/lyrics-induced-violations.cases.mjs`, a fixture that names the
+    // capability because it is a *case about* it. Counting it would mean either deleting a fixture
+    // or adding a second exemption, and both would be the wrong repair: the assertion's subject is
+    // "one place in the application decides the value", and a case file does not decide anything.
+    // The exclusion is asserted to be exactly that one root by `SHIPPED_CODE excludes only build
+    // tooling`, so it cannot quietly widen.
+    const offenders = SHIPPED_CODE.filter((entry) =>
+      /offlineDownload:\s*true/.test(entry.code),
+    ).map((entry) => entry.file);
     expect(offenders).toEqual([]);
-    const declarations = SOURCES.filter((entry) => /offlineDownload:\s*false/.test(entry.code)).map(
-      (entry) => entry.file,
-    );
+    const declarations = SHIPPED_CODE.filter((entry) =>
+      /offlineDownload:\s*false/.test(entry.code),
+    ).map((entry) => entry.file);
     expect(declarations, "exactly one place may declare the capability's value").toEqual([
       "src/server/music/normalize.ts",
     ]);
@@ -429,8 +1464,15 @@ describe("the download feature is a download to the device and nothing more", ()
     expect(sources, "the extractor must not be a static import").not.toMatch(
       /^import\s[^\n]*from\s+["']@distube\/ytdl-core["']/m,
     );
-    // …and nothing outside `src/server/` names it at all.
-    const outsideServer = SOURCES.filter(
+    // …and nothing that ships names it at all.
+    //
+    // Scoped to `SHIPPED_CODE`, for the same reason as the capability assertion above: widening the
+    // roots surfaced `scripts/measure-client-bundle.mjs`, a build-time script that names the
+    // extractor precisely so it can report whether the extractor reached a client chunk. That is
+    // the check working, not the rule being broken — the rule is about what enters a client chunk,
+    // and a build script is not one. Excluding it by name would have been worse: the script would
+    // then be free to start *importing* it.
+    const outsideServer = SHIPPED_CODE.filter(
       (entry) => !entry.file.startsWith("src/server/") && /@distube\/ytdl-core/.test(entry.code),
     ).map((entry) => entry.file);
     expect(outsideServer, "only a server module may name the extractor").toEqual([]);

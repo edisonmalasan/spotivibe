@@ -16,6 +16,6 @@
     "format:check": "npm --prefix frontend run format:check",
     "typecheck": "npm --prefix frontend run typecheck",
     "test": "npm --prefix frontend test",
-    "gate": "npm --prefix frontend run lint && npm --prefix frontend run format:check && npm --prefix frontend run typecheck && npm --prefix frontend test && npm --prefix frontend run build"
+    "gate": "npm --prefix frontend run lint && npm --prefix frontend run format:check && npm --prefix frontend run typecheck && npm --prefix frontend run build && npm --prefix frontend test"
   }
 }

@@ -76,12 +76,49 @@ unless it contains MP3. See `docs/DOWNLOADING.md`. It serves no player, feeds no
 nothing to IndexedDB, and cannot be used to fetch a URL the caller supplies: the video id comes
 from the path and is shape-validated. `tests/download-non-goals.test.ts` enforces §21.5's
 non-goals — no accounts, no ad blocking, no managed offline library, no local-file playback, no
-transcoding, no batch download, no percentage — with a violating fixture per detector.
+transcoding, no batch download, no percentage — with a violating fixture per detector, and each of the
+seven detectors now states what it does **not** see as well, so a reader who finds a violation it
+missed learns the boundary instead of assuming it is broken.
 
 **If you are deploying this publicly or sharing it with anyone else, change this back first.**
 The parked configuration is appropriate for a personal instance and is not appropriate for a
 public one. Reverting is a presentation change: restore a visible video surface on the
 Now Playing route and the `playback` requirements with it.
+
+## The download route's deployment implications
+
+`GET /api/download/[videoId]` is the one route whose correctness depends on platform configuration
+rather than on this repository's code. Four things a deployment must get right, and one that is a
+deliberate departure.
+
+| Item | Value | Where it lives |
+| --- | --- | --- |
+| Function duration | `maxDuration = 300`, stated explicitly rather than inherited from the platform default | the route module |
+| Client-facing timeout | 120 s, imposed by Vercel's proxy and **not** configurable from the application | platform |
+| Transfer budget | `DOWNLOAD_BUDGET_BYTES`, the ladder's top rung | the route module |
+| Rate limiting | per-IP, applied before any provider work, releasing its permit when the body settles | the route module |
+
+**The deliberate departure: `maxDuration = 300` is stated rather than left to the default.** §7.1 says
+the duration "must be stated explicitly in `export const maxDuration` rather than left to default", and
+this repository follows it. The consequence is that the route's ceiling and the proxy's ceiling are
+*different numbers*, and the design bets on the former being operative:
+
+    160 kbit/s, 20 MiB   ~17 minutes   —  9x past the 120 s proxy timeout
+     50 kbit/s, 20 MiB   ~56 minutes   — 28x past it
+
+A short track finishes comfortably at either end. A long one at the top of the ladder cannot, on
+either reading of which ceiling applies. This is **documented, not solved**: the bitrate range is an
+assumption rather than a measurement, no transfer has been observed on this deployment, and choosing a
+budget without observing the real timeout would be a guess dressed as a decision. The two options, in
+the order they should be tried, are to lower `DOWNLOAD_BUDGET_BYTES` so the ladder's top rung fits
+120 s at a realistic rate, or to raise the budget and rely on the 300 s duration. See
+`docs/DOWNLOADING.md` for the full working and `evidence/verification.md` in the M20 archive for the
+per-check record.
+
+**The second departure is the one above it, in the previous section**: the parked player is not
+appropriate for a public deployment, and M20's route is an exception to the *playback* exclusions
+rather than to them. Both departures are stated here so that somebody deploying this can see them
+before deploying it, rather than discovering them from a test failure.
 
 ## What the deployment must serve correctly
 

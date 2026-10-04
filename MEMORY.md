@@ -350,6 +350,15 @@ followed the user onto Home, because the host lives in the shell so navigating u
 **The largest open item is unverified and unticked:** whether a 1×1 `opacity: 0` iframe actually
 keeps advancing position in a live browser. The IFrame API is blocked by CSP here, so no run can
 confirm it. Geometry and the tab stop were measured *before* the fixes; there is no re-run after.
+  > **Corrected in M21 — the *reason* above is wrong; the *conclusion* is not.** The application
+  > ships `frame-src 'self' https://www.youtube.com` (`frontend/next.config.ts:72`) and permits
+  > `https://www.youtube.com` in `script-src` (`:41-53`), so its own policy allows both the frame
+  > and the IFrame API script. The real obstacle was that **no browser automation was available** —
+  > only Edge is installed, and the production and Preview origins sit behind Vercel Deployment
+  > Protection, which is not circumvented. Unchanged: this item is still unverified.
+  > Correction and the decision to leave archived records as written:
+  > `openspec/changes/archive/2026-10-02-m17-home-discovery/evidence/README.md`, "Not verified".
+
 
 ## Hard-won lessons
 1. **PowerShell edits**: `Get-Content`/`Set-Content` round-trips are fine, but
@@ -607,3 +616,151 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     commit**, so the commit lands on the branch by construction rather than by decision; and after any
     merge, run `git branch --show-current` and expect `main`, which is the state to leave. Not
     reverted, because reverting a merged push is the more destructive operation; recorded here instead.
+53. **A source assertion that has to be kept from matching a comment is one edit away from matching
+    it again.** Three of M21's own new assertions failed against *unmodified* code, all the same way:
+    they matched the explanatory comment describing the bug rather than the code. One compared the
+    index of `routerPaused = true` against the index of `Fetch.enable` — and the comment written to
+    describe that exact bug mentions `Fetch.enable` first, so the check was reading the prose. Another
+    matched the old broken guard, which its comment quotes verbatim. **Fix this by extracting the decision
+    into a function and asserting on what it returns.** A returned value cannot be satisfied by a
+    sentence; a string index can.
+    **AMENDED - "strip the comments first" is necessary and NOT sufficient, and this lesson is what
+    M21 got wrong twice.** The original wording prescribed stripping comments before asserting. That was
+    applied, and the comment still satisfied the assertion: `# node-version: 24` passed a
+    `toContain("node-version: 24")` (round 4), and then `x: it's # node-version: 24` passed it again
+    (round 5) because the repair stripped *trailing* comments by tracking quote state and **a YAML
+    plain scalar may contain an apostrophe** - so the quote opened and never closed. All 3292 tests
+    green both times. A hand-rolled comment stripper is only as correct as the parser it is standing in
+    for, and it is not one.
+    **The part that generalises: assert on the VALUE, not on text containing it.** Read
+    `node-version`'s scalar and require it to equal `24`. Then a decoy anywhere - in a comment, after
+    the value, in a second key - is part of what you compared, and fails. Stripping comments and
+    comparing values are complementary: the strip handles the one form the language makes unambiguous (a
+    whole-line comment, since a plain scalar cannot begin with `#`), and the value comparison handles
+    everything a strip cannot reason about. Either alone was beaten here.
+    This is the seventh time this repository has produced the same defect, which is why it is worth
+    memorising as a reflex rather than a lesson. It is also the first time the reflex was written down and
+    then not followed two rounds running - so the lesson is now about the value, not the strip.
+54. **A check that asserts an identifier *appears somewhere* is not a check.** M21's cascade guard
+    asserted the name `environmentBroken` was in the gate's source. Replacing the condition with
+    `false` left it green while the gate went back to reporting sixteen failures where there is one.
+    Only the mutation proof found it, and only because the mutation was written to delete the
+    *condition* rather than the word. **Write the mutation against the decision, not the spelling.**
+55. **Measure an inherited claim before repeating it.** M21 set out to correct two M20 records and
+    found three claims false in the process: that the coarse §2.7 clause "flags the approved M20
+    shape as a false positive" (it matches 0 of 233 real files — the approved route streams
+    `payload.stream`, not `.body`); that `download-non-goals`' `applicationSources()` "covers none of
+    M20's new server files" (it walks all of `src/`, so it covered every one); and my *own*
+    exploration's claim that `exclusions-diff.md` carried stale `77` counts (both occurrences are
+    correct history — I had the wrong current value in mind). **A correction can be as false as the
+    claim it replaces**, so correcting a claim into a *different* false claim sends the next reader
+    to fix the wrong thing. Check the direction of the error, not just its existence.
+56. ~~**`W4` is cited in M20's carried-forward list and defined nowhere in the repository.**~~
+    **CORRECTED — this claim was false, and the lesson it was recorded for is not the one it
+    teaches.** `W4` **is** defined: `archive/2026-09-30-add-podcasts/tasks.md:120`, a finding from the
+    *podcasts* change, not from M20's or M21's. See lesson 63 for how the false claim was made and
+    what it cost. The text is struck rather than deleted, because deleting a wrong lesson would leave
+    no trace that the file was ever wrong about it — and this file's whole subject is that a wrong
+    claim left standing is read and acted on.
+    **What survives, and is the real lesson:** a carried-forward item that names a defect by a bare
+    number nobody can resolve is not a task, it is a rumour with a number on it. `W4` *was* resolvable,
+    which is what made it worse: it resolved to a finding belonging to a different change, so a reader
+    following it would go and fix the wrong thing with total confidence. **Do not invent the definition
+    to make the list resolve** — that advice was right and is kept; it was the claim of absence that
+    was wrong, not the response to one.
+57. **Widening a scan's roots re-scopes everything that consumes it.** Adding `public/`, `scripts/`
+    and `next.config.ts` to `download-non-goals` immediately failed two *other* assertions in the
+    same file — legitimately: a fixture case names `offlineDownload` because it is a case about it,
+    and `scripts/measure-client-bundle.mjs` names the extractor because reporting whether it reached a
+    client bundle is its purpose. The repair was to scope those two assertions to *shipped code*
+    through a fixed root list, not to delete either file. **Exclude by an asserted literal list, never
+    by `startsWith("scripts/")`**, which silently grows to cover any future sibling — and assert the
+    exclusion is a strict subset, or an exclusion that covers everything leaves the assertions
+    passing vacuously.
+58. **A gate whose first step can destroy the working tree cannot be the thing that validates one.**
+    The release gate ran `npm ci`, which deletes `node_modules` before installing, so a failed
+    install (an `EPERM` on a native module held by a running dev server) left 19 packages, no `.bin`,
+    and a `next` without its `package.json` — and then every later item failed for a reason that was
+    not the code. **`npm ci --dry-run` would not have caught it**: the failure was filesystem
+    contention over files a dry run never opens, so it would have reproduced the absence of the
+    incident rather than its cause. Completeness must also not be read off the exit code — that
+    incident exited `0` while leaving `.bin` empty.
+59. **A paused request that is never continued hangs rather than errors, so the failure surfaces far
+    from its cause.** The end-to-end router awaited `Fetch.enable` and only then set its ready flag,
+    and the handler returned without continuing anything that arrived in the window. Every such
+    request hung, the caller waited out its own timeout, and the run failed somewhere downstream of
+    the real cause — which is why it read as an intermittent failure rather than a bug. **When a
+    browser-driven harness is flaky, suspect a dropped request before suspecting the application.**
+60. **`format:check` was skipped in the same command block that ran the other three gates.** M21
+    committed a file Prettier would reject, because the block ran lint and committed without
+    formatting first. Running three of four gates is not running the gate. **Run the formatter before
+    committing, not after.**
+61. **A false obstacle is worse than an honest missing capability, because a false one stops anyone
+    from looking for the capability.** Six archived records from M4 to M17 explained the unverified
+    parked player as "the IFrame API is blocked by CSP". The application ships
+    `frame-src 'self' https://www.youtube.com`, so its own policy permits the frame; the real obstacle
+    was that no browser automation existed. Recorded as *blocked by policy*, the item would have sat
+    there indefinitely looking like a decision nobody was allowed to revisit. **When a record blames
+    the environment, check whether the environment is actually the blocker before leaving the
+    explanation standing** — and keep policy and behaviour separate, since `frame-src` permitting a
+    frame says nothing about whether a 1×1 `opacity: 0` iframe advances.
+62. **A mutation needle that matches nothing, and one that matches something harmless, look
+    identical: both leave the suite green.** Two of M21's mutations were mis-specified and read as
+    weak checks — one replaced only a fixture's `label` and left its `code` in place, another removed
+    one "does not see" from a scope that had a second one further along. **Always assert the needle is
+    present before applying it, and report `DID NOT APPLY` separately from `STILL GREEN`.** Also: a
+    multi-line *string literal* joined with real newlines is a parse error that vitest reports at the
+    line of the string rather than at the mistake, and an anchor written with `\n` will not match a
+    CRLF file — which reads as a missing anchor rather than a line-ending mismatch.
+63. **A claim about a negative is the most expensive kind of claim, because being wrong about it is
+    invisible from where you stand.** M21 asserted "`W4` is not defined anywhere in the repository" and
+    opened task 6.2 to restore the definition. `W4` was defined the whole time, at
+    `archive/2026-09-30-add-podcasts/tasks.md:120` — a finding from the *podcasts* change. The search
+    had been for a definition *belonging to this change*, and the absence was reported as the absence
+    of any. **When a negative claim is load-bearing, name the search that would falsify it.** Worse, the
+    real defect is a *collision* rather than a gap: two changes both number findings `W1, W2, W4, W5,
+    W6`, so a bare `W4` looks resolvable and quietly resolves to the wrong finding. An undefined
+    reference is visibly broken; a colliding one misleads. **Prefer a namespaced identifier to a
+    number that is only unique by accident.** Independent verification caught this by re-running the
+    search instead of accepting the claim — which is the whole argument for having a verifier, in one
+    concrete instance rather than as a principle.
+64. **A parser that cannot find what it is looking for is not evidence that it is
+    absent — and the two failures look identical from the outside.** M21 re-measured six consecutive
+    green gate runs and the per-run counts came back empty for all six. The natural reading was "the
+    gate did not report its counts". It had, in every run. `Tee-Object` writes **UTF-16LE** on Windows
+    PowerShell 5.1, the parser read the logs as UTF-8, and half the characters were NULs — so
+    `"Test Files"` was not *findable* in the string. A UTF-8 read of UTF-16 data does not throw; it
+    returns a plausible-looking string in which every later `includes` quietly answers false. (A second,
+    independent bug sat on top: the ANSI strip used a PowerShell `\`e\`` escape, which is PowerShell 6+,
+    so Windows PowerShell left the escape sequences in place.) Two defects that both produce "no
+    results", neither of which is a finding about the system under test.
+    **Never let a measurement tool report absence.** Assert that the thing you are reading is present
+    before concluding it is missing, detect the encoding rather than assuming it, and report a run that
+    yields nothing as a *parse failure* so it cannot be filed as a result. The counts were re-derived
+    from the same six logs rather than by re-running the gate — re-running would have measured a
+    second thing and quietly replaced a failed measurement with a passing one.
+
+65. **A repair can empty a check it never mentions, and a check with no witness is worse than no check.**
+    M21 replaced a scraper with data read from a registry. Two things followed that nothing caught at
+    the time. First, a leftover `new RegExp(arm)` where `arm` was now an *object* rather than a string:
+    `new RegExp` does not throw on an object, it coerces to `"[object Object]"` - a valid regex - so a
+    "does every arm compile" filter silently classified every arm as compilable. The suite was green.
+    `tsc` was the only thing that objected, because an object is not a `RegExp`. Second, and worse: after
+    fixing that, the filter was *still* unwitnessed. Reverting the fix left 153/153 green, because every
+    declared arm really does compile - and it must, since arms are compiled at module scope, so a malformed
+    pattern throws during import and no assertion is ever reached. Deleting the filter's only call site
+    (`arms.filter(() => false)`) also left the suite green.
+    **That last fact is the lesson.** A guard whose subject can be deleted with no observable change is
+    decoration, and decoration in a test suite is worse than an honest gap because it reads as coverage.
+    The honest repair was to delete the filter, the predicate it called, and three synthetic tests of that
+    predicate whose only remaining caller was itself - a helper asserting that `new RegExp` throws on bad
+    input, which is a tautology wearing a test's clothes. What replaced them was not more assertions but a
+    note on `DetectorArm.source`, where the mistake is actually made.
+    Three rules that came out of it: **after a repair, re-run the mutation suite for the file you touched,
+    not just the new check**; **keep the type checker in the loop, because it catches what a green suite
+    cannot**; and **when you find a guard that cannot fail, delete it rather than keep it as insurance.**
+    Also worth keeping from the same round: `new RegExp` accepting an object is not a type error at runtime,
+    so any check of the form "does this compile" written over a value that might be an object is vacuous
+    until the parameter is typed `string`. And a mutation result of *no tests ran* is a mutant that failed
+    at import - not a check firing. It is reported as `RED BUT DID NOT RUN`, never as a defeat, because
+    the difference between those two is the difference between a proof and a lie.
