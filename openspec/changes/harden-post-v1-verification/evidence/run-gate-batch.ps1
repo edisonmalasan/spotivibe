@@ -82,6 +82,24 @@ $summary = @()
 # `git` absent, or a detached/unborn HEAD, yields `unknown` rather than a plausible-looking guess. A stamp
 # reading `unknown` proves the driver ran and does not prove what it ran against, so the checker requires
 # presence and not informativeness - see its own comment for why refusing `unknown` would be wrong.
+# **Set ONCE, above the loop, and frozen into `$header`. Rounds 13-15 are why the freezing matters.**
+#
+# Rounds 13, 14 and 15 each tried to pin "resolved once, outside the loop" by reading this file's text, and
+# each pin was escaped by a *different* parse-valid rewrite: moving the resolution inside the loop, a decoy
+# `$commit` above it, `Set-Variable -Name commit`, `${commit} =`, a decoy `for ($run`, and a column-0
+# closing brace that truncates any text-scanned loop body. Seven syntactic rungs, seven escapes, and the
+# reason is structural rather than a matter of not trying hard enough: **PowerShell can assign a variable
+# many ways, and no spelling test can enumerate them.**
+#
+# So nothing here asserts where this resolution happens. The string is built ONCE and the per-run write
+# consumes `$header` verbatim. Re-resolving `$commit` inside the loop now **cannot affect the logs at all**,
+# whatever syntax is used to do it — not "is detected", but "is inert". The property is enforced by the
+# data flow rather than asserted about the syntax, which is what the seven previous rungs failed to do.
+#
+# Round 15 is recorded as the reason. It is also the reason `tests/evidence-scripts.test.ts` no longer
+# tries to check the position of this resolution at all: the check that would fail is one that cannot be
+# written, so the file asserts what CAN be observed — that the header carries a commit line, and that the
+# stamp's absence is fatal to the corroborator — and says so where a reader will look for it.
 $commit = "unknown"
 try {
     $described = & git -C $repoRoot rev-parse --short=12 HEAD 2>$null
@@ -89,6 +107,11 @@ try {
 } catch {
     $commit = "unknown"
 }
+# Frozen. The loop below reads this string, not `$commit`.
+# `$commit` is frozen into this string ONCE. The exit status is deliberately NOT frozen: it is per-run by
+# nature, so freezing it would be wrong. Only the commit is constant across a batch, and only the commit
+# is what a straddling batch needs to be caught by.
+$header = "commit $commit"
 Write-Host "commit under test: $commit"
 
 for ($run = 1; $run -le $Runs; $run += 1) {
@@ -112,7 +135,9 @@ for ($run = 1; $run -le $Runs; $run += 1) {
     # It is written as a leading marker line rather than appended, so it cannot be confused with the gate's
     # own output and so a reader sees it before reading anything the gate claimed. The checker refuses a log
     # without one rather than defaulting it, because "absent" and "green" must not collapse.
-    [System.IO.File]::WriteAllText($logPath, "gate exit$exitCode`ncommit $commit`n$clean", $encoding)
+    # `$header` was frozen above the loop, so this line records the commit the batch was *started* at no
+    # matter what happens to `$commit` inside the loop. See the long comment on `$header`.
+    [System.IO.File]::WriteAllText($logPath, "gate exit$exitCode`n$header`n$clean", $encoding)
 
     # Markers are located as strings before any number is read from their region. A number parsed out of a
     # region not yet known to contain its marker is how a working log gets reported as an empty one.

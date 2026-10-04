@@ -2567,8 +2567,135 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   on the grounds that the shipped driver cannot produce such a batch** — a fair distinction between a live
   defect and a reachable one, and stated as reasoning rather than as a favour.
 
-  **What round 14 could not verify, recorded rather than argued:** that batch 17's logs came from a gate run
-  rather than being synthesised. The `commit` stamp is **self-reported by the driver**, and no stamp written
-  by the thing it describes can establish provenance — it binds a batch to a commit, it does not make the
-  logs part of the tree or prove they were not written by hand. That limit is real, it is not repaired by
-  any stamp, and the logs remain outside the repository.
+  **What round 14 could not verify, recorded rather than argued:** that its batch's logs came from a gate
+  run rather than being synthesised. The `commit` stamp is **self-reported by the driver**, and no stamp
+  written by the thing it describes can establish provenance — it binds a batch to a commit, it does not
+  make the logs part of the tree or prove they were not written by hand. That limit is real, it is not
+  repaired by any stamp, and the logs remain outside the repository. Round 15 reached the same limit by a
+  different route and is recorded at 8.35.
+
+## 8.34 Batch 18 at `6e817d4` - six of six green, stamped, and superseded by the commit that follows it
+
+  ```
+  commit under test: 6e817d40da9f
+  run 1  exit 0  104s  files 182  tests 3340  motion-budget 21
+  run 2  exit 0   89s  files 182  tests 3340  motion-budget 21
+  run 3  exit 0   91s  files 182  tests 3340  motion-budget 21
+  run 4  exit 0   88s  files 182  tests 3340  motion-budget 21
+  run 5  exit 0   89s  files 182  tests 3340  motion-budget 21
+  run 6  exit 0   89s  files 182  tests 3340  motion-budget 21
+  ```
+
+  Corroborator exit **0**, `corroborated`: six distinct digests, `commits named across the logs:
+  6e817d40da9f (1 distinct of 6)`, `182` files (asserted), `motion-budget 21` (asserted), `3340` tests
+  (stability only), enumeration `3018/3340 = 0.904` against a 0.8 floor. Round 15 corroborated it
+  independently, including six distinct whole-file SHA-256 digests and six distinct durations.
+
+  **Batch 18 is superseded by the commit recording round 15**, which changed `evidence-scripts.test.ts`
+  and the driver. The count does not carry across a commit; §8.29's rule applies to every batch, not
+  only the ones that were red.
+
+## 8.35 Round 15 — REJECT, and the seventh rung is the one that broke
+
+  **Verdict: REJECT. 1 CRITICAL, 2 WARNING, 2 NIT.** Round 14's CRITICAL was confirmed genuinely repaired —
+  round 15 ran round 14's exact escape and got RED — and the batch was confirmed independently. **The
+  rejection was on the clause added in the commit written to close round 13's WARNING 1, again.**
+
+  **CRITICAL: the replacement clause was escapable four more ways, and its new comment overclaimed in the
+  same way the withdrawn one had.** Rounds 13, 14 and 15 each tried to assert, by reading the driver's
+  text, that the commit is resolved once outside the loop. Seven syntactic rungs, seven escapes, each a
+  *different* parse-valid PowerShell rewrite:
+
+  | round | the rung | the escape |
+  |---|---|---|
+  | 13 | `contains("commit $commit")` | commenting the write out |
+  | 14 | `for ($run` after the first `$commit =` | always true; asserted nothing |
+  | 14 | first `$commit = "unknown"` before `for ($run`, comment claiming "Text position does" | a decoy above the loop plus a real re-resolution inside |
+  | 15 | last `$commit` before the loop, plus no `$commit =` in the body | `Set-Variable -Name commit` |
+  | 15 | same | `Set-Item -Path variable:commit` |
+  | 15 | same | `${commit} =` |
+  | 15 | same | a decoy `for ($run` owning the textual scan |
+  | 15 | same | a column-0 `}` truncating any text-scanned body |
+  | 15 | same | the pre-loop *assignment* deleted, leaving only a `Write-Host` mention |
+
+  **The reason is structural, not insufficient effort: PowerShell can assign a variable many ways, and no
+  spelling test can enumerate them.** Round 15's own words for it — the clause "is a spelling test, not an
+  assignment test" — are the finding. This is §2.11's conclusion about the archived gate's install cascade
+  arriving a second time, for this change's own apparatus, and it was predicted in §2.11 three rounds
+  before it happened.
+
+  **The repair is data flow, not an eighth rung.** The driver freezes the commit into `$header` **once,
+  above the loop**, and the per-run write consumes `$header` verbatim. Re-resolving `$commit` inside the
+  loop is therefore **inert, not detected** — whatever syntax is used to do it, the written string cannot
+  change. `tests/evidence-scripts.test.ts` correspondingly **stops checking the position of the
+  resolution at all** and says so in a section a reader will find before adding a clause back. **A check
+  that cannot be written is not replaced by a weaker one.**
+
+  Measured, with the split verdicts never collapsed:
+
+  ```
+  A. clauses that must fail
+  driver reads $commit per run instead of the frozen $header    RED  Test Files  1 failed (1)
+  driver stops writing the commit line entirely                 RED  Test Files  1 failed (1)
+  the frozen header is declared after the run loop              RED  Test Files  1 failed (1)
+  the frozen header carries no commit                           RED  Test Files  1 failed (1)
+
+  B. round 15's escapes - green, and the stamp demonstrably unmoved
+  Set-Variable -Name commit in the loop          STILL GREEN  stamp: commit PRETREE000000  x2
+  ${commit} = in the loop                       STILL GREEN  stamp: commit PRETREE000000  x2
+  Set-Item variable:commit in the loop          STILL GREEN  stamp: commit PRETREE000000  x2
+  pre-loop resolution deleted, Write-Host left  STILL GREEN  stamp: commit PRETREE000000  x2
+  control, nothing broken                       expected-green  Test Files  1 passed (1)
+  ```
+
+  **Section B is the part that matters, and its rows are `STILL GREEN` on purpose.** A repair that merely
+  failed to detect the escape would look identical to this table without the second column. So each escape
+  is *executed as PowerShell* — the mutated driver's own freeze and write, with the gate call stubbed — and
+  the written stamp is read back. It reads `commit PRETREE000000` in every run of every variant, while
+  `$commit` is being reassigned inside the loop to a different value. **The escape routes are inert, and
+  that is measured rather than asserted.** The probe labels such a row `expected-green`, so a future round
+  cannot mistake "still green" for a gap and re-add a spelling test for something that can no longer go
+  wrong.
+
+  **Two instrument failures again, and this time one of them produced a plausible lie.** The first run of
+  section B reported every escape as `*** WRONG ***` with `*** STAMP MOVED ***`, because my PowerShell stub
+  never defined `$encoding` and every write threw — an instrument failure reported as a driver failure, the
+  `RED BUT DID NOT RUN` case in a place where nothing was red at all. The second run came back `RED` for
+  three rows **for a reason unrelated to any clause under test**: the escape text I injected hard-coded
+  `C:\Users\Edison\...`, which tripped the suite's own *no hard-coded machine path* clause. The verdict was
+  correct and the attribution was not. Re-aimed with `$repoRoot`, and the probe now prints **which test
+  went red** on every row, so a mutation table cannot credit the wrong clause. **Fifth instrument failure
+  of this family in this milestone, and the second where a correct verdict pointed at the wrong thing.**
+
+  **WARNING 1: round 14's NIT 2 correction was wrong on arrival.** It corrected "two non-test lines" to
+  "three" and "73 lines" to "74", both measured and both right for the file it names, but the claim
+  directly above them — that the phantom lines are **localised to one file** — is false at HEAD.
+  `tests/lyrics-induced-violations.test.ts` contributes a fourth, an entry named `\/`, which is an artefact
+  of the test's own `replace(/\\/g, "/")` and not a test name. **A correction added as a fix is still a
+  claim, and still has to be measured across the whole population rather than at the site of the original
+  error.** The ratio is unaffected — 4 in 3018 moves 0.904 by about 0.0005 against a 0.8 floor — and that is
+  now the comment's stated argument, which is the correct place for it.
+
+  **WARNING 2: batch 18 existed, was green, and was recorded nowhere**, with §8.32 still presenting batch
+  17 as current criterion evidence. Closed by §8.34, which records batch 18 *and* states that it is
+  superseded by the commit recording this round.
+
+  **NITs 1 and 2 are confirmed closed by measurement:** the §2.12 heading no longer contains
+  `shipped code` (a grep returns five hits, none of them a heading line), and §8.31's quoted vitest shapes
+  now match real output. Round 15 also re-derived the `3335 -> 3340` delta as exactly `+5` with zero tests
+  removed, and `3013 + 5 = 3018` for the enumerator.
+
+  **What round 15 got right, for the third consecutive round:** it refused to report "the ladder has moved"
+  as a finding, and instead enumerated four specific parse-valid escapes with the mechanism for each, each
+  verified to genuinely re-resolve `$commit` by *executing* the variant as PowerShell. It distinguished a
+  comment over-claim from wrong behaviour, noting the shipped driver is correct. It declined to escalate
+  its own WARNING 1 because the shipped driver cannot produce such a batch. And it re-hashed every file it
+  mutated, restoring all thirteen runs byte-exactly with a clean tree. **A verifier that reports what it
+  could not escalate is worth more than one that escalates everything.**
+
+  **Still unverified and recorded as such:** that any batch's logs came from a gate run rather than being
+  synthesised — the `commit` stamp is self-reported by the thing it describes, and no stamp written by the
+  driver can establish its own provenance. CI unobserved on this branch. No browser verification of any
+  kind. CRITICAL 1 and CRITICAL 2 remain named, measured, **unclosed**. And the ladder has seven rungs
+  behind it, of which the last three each broke within a single round; the claim that an eighth would not
+  be needed is therefore not made.

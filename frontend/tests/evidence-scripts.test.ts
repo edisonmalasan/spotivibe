@@ -350,49 +350,64 @@ describe("the two evidence scripts are readable by the person told to run them",
     // reason the exit-status clause is: a needle satisfied by a comment is a needle satisfied by prose.
     const executable = stripComments(read(DRIVER), POWERSHELL);
 
+    // **What this file no longer checks, and why — read before adding a clause back.**
+    //
+    // Rounds 13, 14 and 15 each tried to assert, by reading the driver's text, that the commit is resolved
+    // once outside the run loop. Seven syntactic rungs, seven escapes, each a *different* parse-valid
+    // PowerShell rewrite:
+    //
+    //   round 14  decoy `$commit` above the loop, real re-resolution inside
+    //   round 15  `Set-Variable -Name commit` · `Set-Item variable:commit` · `${commit} =`
+    //   round 15  a decoy `for ($run` that owns the clause's textual scan
+    //   round 15  a column-0 `}` that truncates any text-scanned loop body
+    //   round 15  the pre-loop *assignment* deleted, leaving only a `Write-Host` mention
+    //
+    // The reason is structural, not insufficient effort: **PowerShell can assign a variable many ways and
+    // no spelling test can enumerate them.** A predicate written about syntax is a predicate that can be
+    // defeated by a rewrite that preserves behaviour and changes only spelling — which is exactly what
+    // §2.11 already concluded for the archived gate's install cascade, and this is the same conclusion
+    // arriving for this change's own apparatus. Adding an eighth rung would repeat a result already
+    // measured twice.
+    //
+    // So the driver no longer *can* mis-stamp: it freezes the commit into `$header` once, above the loop,
+    // and the per-run write consumes `$header` verbatim. Re-resolving `$commit` inside the loop is
+    // therefore **inert**, not detected — the data flow enforces the property, so there is nothing left for
+    // a spelling test to miss.
+    //
+    // What IS checkable is asserted below: the header carries a commit line, and the corroborator treats
+    // its absence as fatal and a straddling batch as refused. What remains invisible is *how* the driver
+    // arrives at that string, and it is stated here so a reader is not left assuming otherwise. A file
+    // with no stated blind spot reads as a proof — that was round 11's finding about this repository's
+    // 71-test header, and it is why this section exists.
+
+    // Observable, and falsifiable: the stamp's shape as written. This is the assertion that would fail if
+    // the stamp were dropped, and it is the one the corroborator's own rule depends on.
     expect(
       executable,
       "the driver never writes a commit line, so every future batch would be refused by the checker",
-    ).toMatch(/WriteAllText\(\$logPath,\s*"gate exit\$exitCode`ncommit \$commit/);
-    // **The batch must resolve its commit ONCE, outside the run loop.**
-    //
-    // The failure this guards against is a batch resolving per run, which would let six logs spanning a
-    // commit boundary all carry the last HEAD seen — six runs of two trees reported as six of one.
-    //
-    // **Two earlier versions of this assertion were escapable, and round 14 escaped both.**
-    //
-    //   v1 compared the *text* order of `for ($run` against `$commit`. Always true — the loop header
-    //      necessarily precedes the loop body — so it asserted nothing at all.
-    //   v2 compared the *first* `$commit = "unknown"` against `for ($run`, and its comment claimed
-    //      "Text position does" distinguish the failure. It does not: keep a decoy assignment above the
-    //      loop and add a real re-resolution inside the body, and `indexOf` still finds the decoy first.
-    //      Measured STILL GREEN by round 14 against exactly the failure v2's comment named.
-    //
-    // So "text position does" is withdrawn. The property that survives the decoy is **the LAST
-    // assignment before the loop body**: any per-run re-resolution also carries an assignment, and that
-    // one necessarily sits after `for ($run`. Asserted on `lastIndexOf` scoped to the text preceding the
-    // loop, so a decoy cannot satisfy it.
+    ).toMatch(/WriteAllText\(\$logPath,\s*"gate exit\$exitCode`n\$header/);
+
+    // The commit is frozen into `$header` before the loop, and the per-run write consumes `$header`
+    // rather than `$commit`. This is a *data-flow* assertion, not a position one: it does not claim to know
+    // where the resolution happens, only that the written string does not depend on the loop body. Round
+    // 15's `Set-Variable` and `${commit} =` escapes cannot touch it, because neither changes `$header`.
+    expect(
+      executable,
+      "the per-run write reads $commit directly, so anything that reassigns it mid-batch would restamp " +
+        "the logs. The frozen $header is what makes that inert.",
+    ).toMatch(/WriteAllText\(\$logPath,\s*"gate exit\$exitCode`n\$header`n\$clean/);
+
+    // And the freeze happens above the loop, which IS checkable by position here because it is a
+    // *declaration* that must precede the loop to be frozen — the failure is "declared but never
+    // assigned before use", which is a PowerShell error rather than a silent mis-stamp.
+    const headerAssignAt = executable.indexOf('$header = "commit $commit"');
     const loopAt = executable.indexOf("for ($run");
+    expect(headerAssignAt, "the driver freezes no commit header").toBeGreaterThan(-1);
     expect(loopAt, "the driver has no run loop at all").toBeGreaterThan(-1);
-
-    const beforeLoop = executable.slice(0, loopAt);
-    const lastResolveAt = beforeLoop.lastIndexOf("$commit");
     expect(
-      lastResolveAt,
-      "the driver resolves no commit before the loop, so every run resolves its own",
-    ).toBeGreaterThan(-1);
-
-    // A re-resolution inside the body. Scoped to the loop's own text rather than the whole file, so an
-    // unrelated later assignment elsewhere in the script cannot fail this — a check that fires on
-    // innocent code is a check a maintainer learns to work around.
-    const loopBody = executable.slice(loopAt);
-    const loopEnd = loopBody.indexOf("\n}");
-    const body = loopEnd === -1 ? loopBody : loopBody.slice(0, loopEnd);
-    expect(
-      /\$commit\s*=[^=]/.test(body),
-      "the commit is re-resolved inside the run loop, so one batch could straddle two commits and " +
-        "report one",
-    ).toBe(false);
+      headerAssignAt,
+      "the frozen header is declared after the loop, so it cannot be constant across runs",
+    ).toBeLessThan(loopAt);
   });
 
   it("the driver's printed checker command carries the run count it was given", () => {

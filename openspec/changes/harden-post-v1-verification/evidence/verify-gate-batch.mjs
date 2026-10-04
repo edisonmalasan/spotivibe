@@ -491,14 +491,25 @@ if (list.status !== 0 || listedIds === 0) {
   // cause is the exact failure this change has spent twelve rounds removing, committed here in round 11.
   //
   // What survives measurement is narrower and sufficient: a small number of non-test lines exist, they
-  // inflate `listedIds`, they are deterministic (6/6 full-suite runs enumerate identically), they are
-  // localised to one file, and they appear on stdout rather than stderr.
+  // inflate `listedIds`, they are deterministic (6/6 full-suite runs enumerate identically), they appear
+  // on stdout rather than stderr, and they are **not confined to one file**.
   //
-  // **The exact count was re-measured at `9f78ee1` and is now THREE, not two — `> node` appears twice —
-  // and that file now lists 74 lines for 71 executed tests.** Round 14 measured it; the earlier figures
-  // ("two", "inflate by 2", "73 lines") were written when they held and this comment was not revisited
-  // after `evidence-scripts.test.ts` gained five cases. Immaterial to the anchor — 3 in a 3000-line
-  // count moves the ratio by 0.001 against a floor with 0.104 of headroom — and **that immateriality is
+  // **Round 14's NIT 2 correction was itself wrong on arrival, and round 15 caught it.** That correction
+  // replaced "two" with "three" and "73 lines" with "74" — both right for `release-gate-install.test.ts` —
+  // while leaving the sentence above it, "localised to one file", untouched. Re-measured here across the
+  // whole population rather than at the site of the original error:
+  //
+  //     tests/release-gate-install.test.ts     listed 74  executed 71  delta +3
+  //     tests/lyrics-induced-violations.test.ts listed 18  executed 17  delta +1
+  //     sum of positive deltas 4, over 2 files
+  //
+  // The second file's entry is named `\/`, which is an artefact of that test's own
+  // `replace(/\\/g, "/")` rather than a test name. **A correction added as a fix is still a claim**, and it
+  // has to be measured over the population it is about — the site of the original error is the one place
+  // it is guaranteed to agree with you.
+  //
+  // Immaterial to the anchor: 4 in a 3018-line count moves the ratio by about 0.0005 against a floor with
+  // 0.104 of headroom, and **that immateriality is
   // the point of writing the ratio rather than the constant.** The stale figures are corrected here
   // rather than deleted so a reader can see that the count was once anchored and was deliberately
   // replaced by something that does not move when a test is added.
