@@ -52,6 +52,24 @@
  * Both are needed and each covers the other: scoping alone would still take the first of two duplicates
  * inside one mapping, and refusing duplicates alone would still read a decoy that is the only occurrence
  * in the whole file.
+ *
+ * ## Round 7: every level of a scoped lookup is itself a scoped lookup
+ *
+ * Round 6 installed refusal at two levels — the scalar key and the container key inside a scope — and
+ * scoping at one. Round 7 walked through the level above both: **the thing that decides which mapping is
+ * the scope was still `findIndex` on a bare key.** A second job carrying `working-directory: frontend`
+ * won, the real job's `defaults:` was never read, and the workflow behaved identically while
+ * `quality-gates` had no default working directory at all. 181 files / 3302 tests, green.
+ *
+ * That is the fourth round in a row to find the same defect class one level up from where the previous
+ * round fixed it, and it is worth stating as a property of this code rather than as an incident:
+ *
+ *     **Every level of a scoped lookup is itself a scoped lookup, so every level must refuse.**
+ *
+ * Hence the shape throughout: zero matches is `null`, two or more is a **throw** naming the lines, and
+ * there is no "first match wins" anywhere. `findIndex` does not appear in this file, and that is the
+ * point — `findIndex` cannot express "I am not sure", so it always answers, and the answer is always
+ * available to whoever placed the earlier block.
  */
 
 /** Whole-line comments removed. Every other byte is preserved exactly. */
@@ -81,7 +99,14 @@ export function isCommentLine(line: string): boolean {
  * @throws if a block scalar indicator is found.
  */
 export function assertNoBlockScalars(yaml: string): void {
-  const line = yaml.split(/\r?\n/).find((candidate) => /:\s*[|>][-+0-9]*\s*$/.test(candidate));
+  // The trailing `(?:#.*)?` is round 7's WARNING B. The indicator used to have to be the last thing on
+  // the line, so `run: | # the unit tests` walked straight past the guard — and then the stripper
+  // deleted a real command from the literal body, which is the exact outcome this function exists to
+  // prevent. **A guard that only recognises the tidy spelling of the thing it guards is not a guard.**
+  // A YAML block header may carry a comment after the indicator, so the comment is part of the header.
+  const line = yaml
+    .split(/\r?\n/)
+    .find((candidate) => /:\s*[|>][-+0-9]*\s*(?:#.*)?$/.test(candidate));
   if (line !== undefined) {
     throw new Error(
       "refusing to strip a YAML block scalar: its body is literal text in which `#` is content, not a " +
@@ -102,12 +127,74 @@ function literal(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Any `key:` line at any depth, including a sequence entry's first key. */
+const KEY_LINE = /^\s*(?:-\s*)?(?:["'])?[\w.$-]+(?:["'])?\s*:/;
+
+/**
+ * The lines nested under the mapping that starts at `at`, stopping at the first line not indented deeper.
+ *
+ * This is how a mapping ends in YAML without needing to know the whole grammar. It is *not* enough to
+ * find a mapping: a nested block is nested too, and `nestedBlocks` is what tells the two apart.
+ */
+function nestedBlocks(lines: string[], at: number): string[] {
+  const keyIndent = indentOf(lines[at]!);
+  const body: string[] = [];
+  for (let next = at + 1; next < lines.length; next += 1) {
+    const candidate = lines[next]!;
+    if (candidate.trim() === "") continue;
+    if (indentOf(candidate) <= keyIndent) break;
+    body.push(candidate);
+  }
+  return body;
+}
+
+/**
+ * The lines of the mapping that starts at `at` that are **keys** — as opposed to block content.
+ *
+ * Split out from `nestedBlocks` because the distinction matters and round 7 walked through it. A mapping's
+ * body includes everything nested, but only the *shallowest* key lines are its direct children; the rest
+ * belong to mappings further in. Returning one list for both concepts is what made the job lookup count
+ * `runs-on`, `steps`, `- name:` and every `with:` input as separate jobs.
+ *
+ * Indent is left unbounded here on purpose: this function's only job is "which lines are keys", and a key
+ * nested four levels down is still a key line.
+ */
+function keyLinesIn(lines: string[], at: number): number[] {
+  const body = nestedBlocks(lines, at);
+  const bodyStart = at + 1;
+  const found: number[] = [];
+  body.forEach((line, offset) => {
+    if (line.trim() !== "" && KEY_LINE.test(line)) found.push(bodyStart + offset);
+  });
+  return found;
+}
+
+/**
+ * The indexes of the **direct** children of the mapping at `at` whose key matches `keyPattern`.
+ *
+ * Direct means: the key line's indent is the shallowest indent among the mapping's key lines. That one
+ * rule is the whole difference between a mapping and a subtree — round 7's N5 was that the walk matched
+ * `defaults:` at *any* depth, so one nested inside a step's `with:` was a candidate for the job's own.
+ *
+ * Returns indexes into `lines`, so a caller need not re-derive the offset. Getting that wrong is silent
+ * rather than loud: an index off by one yields `null`, and `null` reads as "this workflow has no such
+ * scope" — a claim about the file rather than a symptom of a bug. That is why it is derived here once.
+ */
+function directChildKeys(lines: string[], at: number, keyPattern: RegExp): number[] {
+  const candidates = keyLinesIn(lines, at);
+  if (candidates.length === 0) return [];
+
+  const shallowest = Math.min(...candidates.map((index) => indentOf(lines[index]!)));
+  return candidates.filter(
+    (index) => indentOf(lines[index]!) === shallowest && keyPattern.test(lines[index]!),
+  );
+}
+
 /**
  * The lines nested under the first `key` found in `lines` at or after `start`.
  *
  * `keyPattern` is matched against the line; the block is every following line indented deeper than the
- * key's own line, stopping at the first line that is not — which is how a mapping ends in YAML without
- * needing to know the whole grammar.
+ * key's own line, stopping at the first line that is not.
  *
  * `outerIndent` is the indent of whatever *encloses* the search, and a line at or left of it ends the
  * search. It is a parameter rather than derived from `lines[start]` because the two callers enclose
@@ -123,23 +210,20 @@ function literal(text: string): string {
  * assertion green. Refusing a duplicate scalar while resolving a duplicate mapping by position is the
  * defect with one of its two faces removed.
  *
- * @throws if `keyPattern` matches more than once in the searched region.
+ * `parentAt` is the index of the key line that **owns** the block, so "direct child of the mapping at
+ * `parentAt`" is decided by indentation relative to that line rather than by an outer bound passed in
+ * separately. Round 7's N5 was that the previous version matched at any depth greater than some `outer
+ * indent`, which made the scope a subtree.
+ *
+ * @throws if `keyPattern` matches more than once among the parent's direct children.
  */
 function blockAfter(
   lines: string[],
-  start: number,
+  parentAt: number,
   keyPattern: RegExp,
-  outerIndent: number,
   what: string,
-): { lines: string[]; indent: number } | null {
-  const matches: number[] = [];
-
-  for (let at = start; at < lines.length; at += 1) {
-    const line = lines[at]!;
-    if (line.trim() === "") continue;
-    if (at > start && indentOf(line) <= outerIndent) break;
-    if (keyPattern.test(line)) matches.push(at);
-  }
+): { at: number; lines: string[]; indent: number } | null {
+  const matches = directChildKeys(lines, parentAt, keyPattern);
 
   if (matches.length === 0) return null;
 
@@ -152,15 +236,40 @@ function blockAfter(
   }
 
   const at = matches[0]!;
-  const keyIndent = indentOf(lines[at]!);
-  const body: string[] = [];
-  for (let next = at + 1; next < lines.length; next += 1) {
-    const candidate = lines[next]!;
-    if (candidate.trim() === "") continue;
-    if (indentOf(candidate) <= keyIndent) break;
-    body.push(candidate);
-  }
-  return { lines: body, indent: keyIndent };
+  return { at, lines: nestedBlocks(lines, at), indent: indentOf(lines[at]!) };
+}
+
+/**
+ * The one direct child of the mapping at `parentAt` whose key matches `keyPattern`, or `null`.
+ *
+ * ## Why this exists, and why its refusal is the point
+ *
+ * Round 6 scoped two lookups and refused duplicates *within* a scope. Round 7 walked straight through it:
+ * the thing that decides **which** mapping is the scope was still `findIndex` on a bare key, so a decoy
+ * block placed anywhere earlier won. The general form, and it is the whole of this change's defect class:
+ *
+ *     a lookup that answers "which one?" by order of appearance is answering on the decoy's behalf,
+ *     and *every level of a scoped lookup is such a lookup*.
+ *
+ * Round 6 refused at the scalar key (`scalarValue`) and at the container key inside a scope
+ * (`blockAfter`). Round 7 found the level above both: **the scope selector itself** — `findIndex` for the
+ * step name, `findIndex` for `defaults:`. Six rounds, four levels, and every repair has been correct about
+ * the level beneath it. So the rule is the strongest one available:
+ *
+ *     **at every level, refuse rather than choose.**
+ *
+ * Hence `null` for zero and a throw for two or more. There is no third answer, and in particular no
+ * "first match wins", which is the answer that hands the choice to whoever planted the decoy.
+ *
+ * @throws if more than one direct child matches.
+ */
+function onlyChild(
+  lines: string[],
+  parentAt: number,
+  keyPattern: RegExp,
+  what: string,
+): { at: number; lines: string[]; indent: number } | null {
+  return blockAfter(lines, parentAt, keyPattern, what);
 }
 
 /**
@@ -176,24 +285,33 @@ export function stepWith(yaml: string, stepName: string): string | null {
   const lines = yaml.split(/\r?\n/);
   const namePattern = new RegExp(`^\\s*-\\s*name:\\s*${literal(stepName)}\\s*$`);
 
-  const start = lines.findIndex((line) => namePattern.test(line));
-  if (start === -1) return null;
-
-  // The step's body: deeper lines, up to the next sibling entry at the `- name:` line's own indent.
-  const stepIndent = indentOf(lines[start]!);
-  const body: string[] = [];
-  for (let at = start + 1; at < lines.length; at += 1) {
-    const line = lines[at]!;
-    if (line.trim() === "") continue;
-    if (indentOf(line) <= stepIndent) break;
-    body.push(line);
+  // Round 7's N4: this was `findIndex`, so two steps sharing a name resolved to the first. The helper
+  // promises "the step named `stepName`" and that phrase has no answer when there are two, so it now
+  // refuses rather than picking one. The safety here was previously *incidental* — a different test
+  // happened to assert the workflow's step names, which is a consumer's guarantee, not this helper's.
+  const named = lines.reduce<number[]>(
+    (found, line, at) => (namePattern.test(line) ? [...found, at] : found),
+    [],
+  );
+  if (named.length === 0) return null;
+  if (named.length > 1) {
+    throw new Error(
+      `refusing to read the 'with:' inputs of step '${stepName}': ${named.length} steps carry that name ` +
+        `(lines ${named.map((at) => at + 1).join(", ")}). The name does not identify one step, so reading ` +
+        "the first would be choosing by position — and the step you get is the one you did not mean.",
+    );
   }
+  const start = named[0]!;
 
-  const inputs = blockAfter(
-    body,
-    0,
+  // The `- name:` line *is* the step's mapping, so it is the parent — no separate body slice, and no
+  // hand-rolled sibling-boundary loop to get wrong. `nestedBlocks` stops at the next line not indented
+  // deeper, which is the next step's `- name:` at the same indent, so another step's `with:` is not
+  // reachable through this one. And `directChildKeys` requires `with:` to sit at the shallowest key
+  // indent in the step, so one nested under an `env:` is not found either (round 7's N5).
+  const inputs = onlyChild(
+    lines,
+    start,
     /^\s*with:\s*$/,
-    stepIndent,
     `the 'with:' inputs of step '${stepName}'`,
   );
   if (inputs === null || inputs.lines.length === 0) return null;
@@ -208,15 +326,62 @@ export function stepWith(yaml: string, stepName: string): string | null {
  */
 export function jobRunDefaults(yaml: string): string | null {
   const lines = yaml.split(/\r?\n/);
-  const start = lines.findIndex((line) => /^\s*defaults:\s*$/.test(line));
-  if (start === -1) return null;
-  const run = blockAfter(
-    lines,
-    start,
-    /^\s*run:\s*$/,
-    indentOf(lines[start]!),
-    "the job's 'defaults.run' mapping",
+
+  // Round 7's CRITICAL, and the level above both round-6 repairs. `defaults:` was found with
+  // `findIndex`, so a *second job* carrying `working-directory: frontend` won:
+  //
+  //     jobs:
+  //       dependency-audit:            # decoy job
+  //         defaults:
+  //           run:
+  //             working-directory: frontend
+  //       quality-gates:               # the real job, its own `defaults:` deleted
+  //         steps: …                    # each step carrying its own working-directory
+  //
+  // The workflow's behaviour is identical — CI does the same work in the same directory — and
+  // `quality-gates` has no default working directory at all. **181 files / 3302 tests, green.**
+  //
+  // Round 6 refused duplicates *inside* a scope and scoped two lookups. This is the level above both:
+  // the thing that decides *which* mapping is the scope. The doc comment above already claimed "of the
+  // single job"; that was an assumption in prose, and this is where it becomes enforced.
+  const jobs = lines.reduce<number[]>(
+    (found, line, at) => (/^\s*jobs:\s*$/.test(line) ? [...found, at] : found),
+    [],
   );
+  if (jobs.length === 0) return null;
+  if (jobs.length > 1) {
+    throw new Error(
+      `refusing to read the job's run defaults: the workflow declares 'jobs:' ${jobs.length} times ` +
+        `(lines ${jobs.map((at) => at + 1).join(", ")}), so which job owns the defaults is not decidable ` +
+        "from the text.",
+    );
+  }
+
+  const jobsAt = jobs[0]!;
+
+  // The job *names* are the direct children of `jobs:`. `directChildKeys` decides "direct" by the
+  // shallowest key indent in the block, so `runs-on`, `steps`, `- name:` and every `with:` input are not
+  // candidates — they belong to mappings further in. Round 7's N5 was matching at *any* depth, which
+  // made this count every key line in the file as a separate job.
+  const jobNames = directChildKeys(lines, jobsAt, KEY_LINE);
+  if (jobNames.length === 0) return null;
+  if (jobNames.length > 1) {
+    throw new Error(
+      `refusing to read the job's run defaults: the workflow declares ${jobNames.length} jobs ` +
+        `(lines ${jobNames.map((at) => at + 1).join(", ")}). Which one owns 'defaults.run' is a question ` +
+        "this helper answered by position until round 7, and position is what the decoy controls.",
+    );
+  }
+  const jobAt = jobNames[0]!;
+
+  const defaults = onlyChild(lines, jobAt, /^\s*defaults:\s*$/, "the job's 'defaults' mapping");
+  if (defaults === null) return null;
+
+  // Scoped to `defaults:` by *index*, not by a hand-computed offset. `defaults.at` is where that key
+  // actually is, so this needs no arithmetic on `lines` at all — and arithmetic on the wrong array is the
+  // kind of off-by-one that returns `null` instead of throwing, where `null` reads as "this workflow has
+  // no run defaults": a claim about the file rather than a symptom.
+  const run = onlyChild(lines, defaults.at, /^\s*run:\s*$/, "the job's 'defaults.run' mapping");
   if (run === null || run.lines.length === 0) return null;
   return run.lines.join("\n");
 }

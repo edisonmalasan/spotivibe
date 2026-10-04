@@ -216,6 +216,8 @@ describe("the workflow reader is witnessed on the shapes that actually failed", 
 
   it("reads the job's run defaults rather than any working-directory in the file", () => {
     const yaml = [
+      "jobs:",
+      "  quality-gates:",
       "    defaults:",
       "      run:",
       "        working-directory: frontend",
@@ -227,7 +229,11 @@ describe("the workflow reader is witnessed on the shapes that actually failed", 
     const defaults = jobRunDefaults(yaml);
     expect(defaults).not.toBeNull();
     expect(workflowScalar(defaults!, "working-directory")).toBe("frontend");
+    // A workflow with no `jobs:` at all, and one whose single job has no `defaults:`, are both "no such
+    // scope" rather than an error. Round 7 made the *ambiguous* case loud; the *absent* case stays
+    // quiet, because absent and undecidable are different claims and only one of them is a defect.
     expect(jobRunDefaults("    steps: []")).toBeNull();
+    expect(jobRunDefaults(["jobs:", "  quality-gates:", "    steps: []"].join("\n"))).toBeNull();
   });
 
   it("refuses a repeated key rather than resolving it by position", () => {
@@ -270,6 +276,152 @@ describe("the workflow reader is witnessed on input the real workflow does not c
     );
     expect(() => assertNoBlockScalars(withHashInBody)).toThrow(/block scalar/);
     expect(() => assertNoBlockScalars("        run: npm test\n")).not.toThrow();
+
+    // **Round 7's WARNING B, reproduced.** The pattern above required the indicator to be the last
+    // thing on the line, so a trailing comment on the *header* walked straight past the guard — and
+    // then the stripper deleted a real command from the literal body. That is the outcome this whole
+    // function exists to prevent, reached by spelling the header the way YAML permits:
+    //
+    //     run: | # the unit tests
+    //       # a literal command
+    //       npm test
+    //
+    // A YAML block header may carry a comment after the indicator, so the comment is part of the header.
+    // A guard that only recognises the tidy spelling of the thing it guards is not a guard.
+    const commentedHeader = [
+      "        run: | # the unit tests",
+      "          # a literal command",
+      "          npm test",
+    ].join("\n");
+    expect(() => assertNoBlockScalars(commentedHeader)).toThrow(/block scalar/);
+    expect(() =>
+      assertNoBlockScalars("        run: >- # folded, with a comment\n          npm test\n"),
+    ).toThrow(/block scalar/);
+    // And the consequence, stated as behaviour rather than implied: with the guard firing, the body is
+    // never stripped, so the command inside it survives.
+    expect(() => prepareWorkflow(commentedHeader)).toThrow(/block scalar/);
+  });
+
+  it("refuses to pick one of two jobs, rather than reading the first", () => {
+    // **Round 7's CRITICAL, reproduced on synthetic input.** `jobRunDefaults` resolved the scope with
+    // `findIndex` on a bare `defaults:`, so a decoy in a *second job* won:
+    //
+    //     jobs:
+    //       dependency-audit:            # decoy job, carries the value the assertion wants
+    //         defaults:
+    //           run:
+    //             working-directory: frontend
+    //       quality-gates:               # the real job
+    //         steps: …                    # each step carrying its own working-directory
+    //
+    // The workflow behaves identically — same work, same directory — and the real job has no default
+    // working directory at all. **181 files / 3302 tests, green.** So the thing that decides *which
+    // mapping is the scope* was itself answering by position, which is round 6's defect one level up.
+    const decoyJob = [
+      "jobs:",
+      "  dependency-audit:",
+      "    runs-on: ubuntu-latest",
+      "    defaults:",
+      "      run:",
+      "        working-directory: frontend",
+      "    steps:",
+      "      - run: node --version",
+      "  quality-gates:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: npm run lint",
+      "        working-directory: frontend",
+    ].join("\n");
+
+    // Two jobs, and the helper's own contract says "the single job". So two is not something to
+    // resolve — it is something to stop on, naming what was found.
+    expect(() => jobRunDefaults(decoyJob)).toThrow(/declares 2 jobs/);
+
+    // And the control that attributes it: the *same* workflow with one job reads correctly. Without
+    // this, the throw above could be firing for any reason at all.
+    const singleJob = [
+      "jobs:",
+      "  quality-gates:",
+      "    runs-on: ubuntu-latest",
+      "    defaults:",
+      "      run:",
+      "        working-directory: frontend",
+      "    steps:",
+      "      - run: npm run lint",
+    ].join("\n");
+    expect(workflowScalar(jobRunDefaults(singleJob)!, "working-directory")).toBe("frontend");
+
+    // A second `defaults:` in the *same* job is the level below, and is refused too — one mechanism at
+    // every level rather than a different rule per level.
+    expect(() =>
+      jobRunDefaults(
+        singleJob.replace(
+          "    steps:",
+          "    defaults:\n      run:\n        shell: bash\n    steps:",
+        ),
+      ),
+    ).toThrow(/appears 2 times/);
+  });
+
+  it("ignores a `defaults:` nested inside a step rather than treating the subtree as the scope", () => {
+    // **Round 7's N5.** The walk matched the key at *any* depth deeper than the enclosing indent, so
+    // the scope was a subtree rather than a mapping. No Actions-valid workflow was found that exploits
+    // it — `defaults:` has exactly one legal child under a job, and an action's `with:` inputs are
+    // scalars — so this is latent rather than live. It is witnessed anyway, because the walker's
+    // boundary being "subtree" instead of "mapping" is exactly the kind of thing a reader assumes to
+    // be the former and relies on the latter.
+    const nestedOnly = [
+      "jobs:",
+      "  quality-gates:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Something",
+      "        with:",
+      "          defaults:",
+      "            run:",
+      "              working-directory: frontend",
+    ].join("\n");
+
+    // Not found, rather than found-and-wrong: the job has no `defaults:`, so there is nothing to read.
+    expect(jobRunDefaults(nestedOnly)).toBeNull();
+  });
+
+  it("refuses two steps sharing a name rather than reading the first", () => {
+    // **Round 7's N4.** `stepWith` used `findIndex` on `- name:`, so two steps named `Setup Node.js`
+    // resolved to the first. The real workflow was safe — but only *incidentally*, because a different
+    // test asserts the list of step names. That is a consumer's guarantee, not this helper's, and the
+    // helper's own doc comment promises "the step named `stepName`", which has no referent here.
+    const twoSteps = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Setup Node.js",
+      "        with:",
+      "          node-version: 20",
+      "      - name: Setup Node.js",
+      "        with:",
+      "          node-version: 24",
+    ].join("\n");
+
+    expect(() => stepWith(twoSteps, "Setup Node.js")).toThrow(/2 steps carry that name/);
+
+    // Control: one step of that name reads correctly, so the refusal above is about the *duplicate* and
+    // not about the name filter failing to discriminate. Built as its own document rather than by
+    // slicing `twoSteps`, because a slice that cuts the step off its own `- name:` line would test a
+    // different workflow than the one the throw above was proven on.
+    const oneStep = [
+      "jobs:",
+      "  quality-gates:",
+      "    steps:",
+      "      - name: Setup Node.js",
+      "        with:",
+      "          node-version: 20",
+      "      - name: Something else",
+      "        with:",
+      "          node-version: 24",
+    ].join("\n");
+    expect(workflowScalar(stepWith(oneStep, "Setup Node.js")!, "node-version")).toBe("20");
+    expect(stepWith(oneStep, "No Such Step")).toBeNull();
   });
 
   it("removes whole-line comments and nothing else", () => {
@@ -425,13 +577,28 @@ describe("the CI workflow's steps", () => {
     expect(indexOfStep("npm run typecheck")).toBeLessThan(indexOfStep("npm run build"));
   });
 
-  it("installs from the lockfile exactly once", () => {
+  it("runs each gate as exactly that command, so no gate can be silently made non-blocking", () => {
     // `npm ci` in CI is correct and is not the defect this change is about: a CI runner's working
     // tree is disposable, so deleting `node_modules` there costs nothing. The defect was doing it
     // in a *developer's* tree. Asserted so a future edit adding a second install is noticed, and so
     // nobody reads this file as an argument against CI installs.
-    const installs = steps.filter((step) => (step.run ?? "").trim() === "npm ci");
-    expect(installs).toHaveLength(1);
+    //
+    // **Round 7's WARNING B generalised this from one gate to all six, and the generalisation is the
+    // finding.** This assertion compared `step.run.trim() === "npm ci"` — the *command*. The ordering
+    // assertions above went through `indexOfStep`, which uses `.includes(gate)` — the *text*. So the
+    // file already knew the difference between a step that runs the gate and a step that spells it,
+    // and applied it to one gate out of six. `npm run lint || true`, `npm test || true` and
+    // `npm run build || true` all keep the needle in the text, so every ordering assertion stayed green
+    // while the gate could not fail CI. **3302/3302, with five of six gates unable to fail.**
+    //
+    // `|| true` on a CI step is an entirely ordinary edit and it is silent. So the fix is not a cleverer
+    // matcher; it is to require the command to *be* the gate.
+    for (const gate of GATES) {
+      const matching = steps.filter((step) => (step.run ?? "").trim() === gate);
+      expect(matching, `exactly one step must run \`${gate}\` as its whole command`).toHaveLength(
+        1,
+      );
+    }
   });
 
   it("keeps the Node pin, the cache path and the repository contract in agreement", () => {

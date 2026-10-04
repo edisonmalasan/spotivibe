@@ -776,3 +776,140 @@ Deployment Protection. Auth is never circumvented. Those are 1.8, 7.1, and the v
   **Not re-measured by this batch, and therefore not claimed:** `npm ci`, `npm run setup`, and both
   archived `release-gate.mjs` copies. `npm run gate` does not invoke them, so AGENTS.md's claim that they
   exit 0 remains inherited from M0 rather than re-measured here.
+
+- [x] 8.19 **Verification round 7: one CRITICAL, two WARNINGs, two NITs, all closed, each
+  mutation-proven. Round 7 attacked round 6's repairs and its CRITICAL is round 6's CRITICAL reproduced
+  against the fix for it — the FOURTH round in a row to do that.**
+
+  **C1 — the scope *selector* was still a bare key resolved by position.** Round 6 scoped two lookups and
+  refused duplicates *inside* a scope. It left the level above both:
+
+  ```ts
+  // frontend/tests/helpers/yaml.ts, before
+  const start = lines.findIndex((line) => /^\s*defaults:\s*$/.test(line));
+  ```
+
+  So a **second job** won the scope:
+
+  ```yaml
+      jobs:
+        dependency-audit:            # decoy job
+          defaults:
+            run:
+              working-directory: frontend
+        quality-gates:               # the real job, its own `defaults:` DELETED
+          steps:                      # every step carrying its own working-directory
+  ```
+
+  **The workflow's behaviour is identical** — CI does the same work in the same directory — and
+  `quality-gates` has **no default working directory at all**. 181 files / 3302 tests, green. The
+  verifier confirmed this with `js-yaml` rather than by the absence of an error.
+
+  The doc comment had claimed *"the `defaults.run` mapping of **the single job**"* for a round while the
+  code read whichever job came first. **A stated assumption is not a constraint.**
+
+  **Fix — a shape, not another patch.** Four rounds have now walked up one level each, so the repair is
+  the general rule rather than the next instance:
+
+  > **Every level of a scoped lookup is itself a scoped lookup, so every level must refuse. `findIndex`
+  > cannot express "I am not sure", so it always answers — and its answer is available to whoever
+  > placed the earlier block.**
+
+  Hence, at every level: **`null` for zero, a throw naming the lines for two or more**, and no
+  "first match wins" anywhere. `findIndex` no longer appears in `yaml.ts` — a helper whose signature
+  cannot express uncertainty will always be certain, and being certain is the defect. Four levels, one
+  rule:
+
+  ```
+  reading a value      →  which occurrence?   →  scope + refuse duplicates   (round 6)
+  choosing the scope   →  which mapping?      →  refuse ambiguity            (round 7)
+  walking the mapping  →  which depth?        →  direct child, not subtree   (round 7, N5)
+  naming a thing       →  which one is it?    →  refuse duplicates + assert uniqueness (round 6, W2)
+  ```
+
+  **W1 — every gate could be made non-blocking while the needle stayed in the text.** `npm run lint ||
+  true` keeps `npm run lint` inside the step's `run:`, so every ordering assertion through `indexOfStep`
+  stayed green — while the gate cannot fail CI. `|| true` on a CI step is an ordinary edit and it is
+  completely silent. **3302/3302 with five of six gates unable to fail.**
+
+  The revealing detail is that the file **already knew the difference**: `npm ci` was protected by
+  `step.run.trim() === "npm ci"` — the *command* — while the ordering assertions used `.includes(gate)`
+  — the *text*. One gate out of six. Round 6's recorded claim that gates "could be replaced with
+  `echo <gate> is disabled`" was true only because that particular echo omits the needle; the general
+  form survived the repair. Now every gate is required to be *exactly* its command.
+
+  **W2 — the block-scalar guard was defeated by a trailing comment, and then the strip deleted a command.**
+  The pattern required the indicator to be the **last thing on the line**, so `run: | # the unit tests`
+  walked straight past it — and the stripper then removed a real command from the literal body, which is
+  the exact outcome the guard exists to prevent. A YAML block header may carry a comment after the
+  indicator, so the comment is part of the header: **a guard that only recognises the tidy spelling of
+  the thing it guards is not a guard.** No scanned file has a block scalar today, so this was latent —
+  but the failure mode is silent *deletion of content*, not a mis-read.
+
+  **N4 — `stepWith` took the first of two steps sharing a name.** `findIndex` again. On the real workflow
+  it was caught, but by *a different test* asserting the step-name list — **a consumer's guarantee, not
+  this helper's**, while the helper's own doc comment promised "the step named `stepName`", a phrase
+  with no referent when there are two.
+
+  **N5 — the scope was a subtree, not a mapping.** `blockAfter` matched the key at any depth, so a
+  `defaults:` nested inside a step's `with:` was a candidate for the job's own. **No Actions-valid
+  workflow exploiting this was found** — `defaults:` has exactly one legal child and action inputs are
+  scalars — so it was latent. Fixed and witnessed anyway: a reader assumes "mapping" from the word.
+
+  **N6 — one extraction window in `release-gate-install.test.ts` had no anti-vacuity anchor.** The cascade
+  window beside it carried one; the `gates-install` window did not, so re-indenting its closing brace made
+  the lazy window swallow the next item — two mutations, both green.
+
+  **And the first repair for N6 was itself wrong, which is worth recording because the mutation suite
+  caught it rather than a reviewer.** A `toContain('id: "gates-install"')` anchor passes on a window that
+  has *widened* — it contains everything the narrow one did. **An anchor must test the window's extent,
+  not its content**, so both windows now assert *exactly one* `id:` key / one `isShortCircuited(`.
+
+  **Proof — `mut-round7`, 12 of 12 that must go red did, plus 1 green by design.** The verifier's exact
+  defeat in three separate edits; each refusal muted alone and composed with the decoy it exists to defeat;
+  the block-scalar header comment; `|| true` across five gates; the pre-repair `command`/`args` shape;
+  the widened window; and **positive control** — removing the witnesses' own documentation stays green.
+
+  **Suites, all re-run because three files changed under them.** `mut-round7` 12/12 + 1, `mut-round6`
+  15/15 + 1, `mut-f1` 6/6 + 3, `mut-w1-flags` 3/3 + 2, `mut-c1-round5` 9/9 + 1, `mut-c1-comments` 6/6 + 1,
+  `mut-f5` 5/5, `mut-gate-order` 7/7, `mut-apiroutes` 8/8 + 1, `mut-notseen-anchor` 4/4. Full suite **181
+  files / 3305 tests, 0 skipped** (+3: three new witness tests). `tsc --noEmit`, `prettier --check`,
+  `eslint` exit 0; `openspec validate --strict` and `--specs --strict` both valid (26 items, 0 failed).
+
+  **Three needles in my own tooling, all reported `DID NOT APPLY` first and re-aimed at the new text with
+  the same meaning.** `mut-round7`'s install row aimed at `command:`/`args:` lines the M21 repair had
+  itself deleted four milestones ago — a mutation aimed at retired text. Two further aims failed because
+  the item carries a fifteen-line comment block before its brace. `mut-c1-round5`'s block-scalar row
+  needed re-pointing when round 7 split that lookup across two lines. **A mutation that stops applying is
+  a witness that stopped working**, and `DID NOT APPLY` is the only honest report of it.
+
+  **And a tooling mistake worth naming: I wrote a patch script to repair the suite, and it failed
+  `node --check` twice** on mixed quote styles inside an array-of-strings — the exact trap the branch's
+  own notes warn about, committed by the person who wrote the warning. It cost nothing because it failed
+  before touching anything, and I stopped patching through hand-written JS and edited the suite directly.
+  **A patch script is code and gets checked like code.**
+
+  **`MEMORY.md` lesson 66 added**, stating the four-level ladder as a property of the shape rather than a
+  caution. Lessons 53 and its two amendments are left untouched: they cover the value level, and this one
+  is the level above every value-level rule.
+
+  **Attacked by round 7 and found sound** (recorded so they are not re-attacked): the
+  conjunction-plus-uniqueness pair in `release-exclusions.test.ts`, against a competitor in a different
+  exclusion, a same-name competitor, a same-name-**and**-source competitor, and the identity filter alone;
+  `release-gate-install.test.ts`'s cascade branch, install branch and call site (4/4 defeated); the
+  `code()` latent hazard; `motion-budget.test.ts`'s 21 tests and its stated 15 + 6 skipped discriminator,
+  measured both ways; and the fails-closed shapes — `with:` as a flow mapping, a YAML alias, a quoted step
+  name, a quoted key, and `cache-node-version` not suffix-matching `node-version`.
+
+  **Open by decision, not by oversight:** the registry-wide *scope* of the arm-name uniqueness assertion,
+  in composition with a load-bearing competitor, is the one question in round 7's target list the verifier
+  could not answer with a valid probe — its narrowing mutation still accumulated into the registry-wide
+  map, so it proved nothing and was reported as a failed probe rather than a pass.
+
+  **Still unverified, unchanged from 8.11.** No browser verification (8.8); CI not observed green (8.9);
+  `npm ci` / `npm run setup` / both archived `release-gate.mjs` copies never run and outside every gate
+  (round 7 edited the archived gate for mutations and restored it byte-exactly; it was never executed).
+  No production verification against `spotivibe-web.vercel.app` was performed in round 7 — every finding
+  is about test-suite integrity and has no runtime observable on the deployed site, so a fetch would have
+  been decoration rather than evidence. There is still no `openspec verify` subcommand, so the
+  AGENTS.md-mandated verification-workflow step remains unverified.

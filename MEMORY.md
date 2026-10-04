@@ -786,3 +786,38 @@ confirm it. Geometry and the tab stop were measured *before* the fixes; there is
     until the parameter is typed `string`. And a mutation result of *no tests ran* is a mutant that failed
     at import - not a check firing. It is reported as `RED BUT DID NOT RUN`, never as a defeat, because
     the difference between those two is the difference between a proof and a lie.
+
+66. **Every level of a scoped lookup is itself a scoped lookup, so every level must refuse. `findIndex`
+    cannot express "I am not sure", so it always answers — and its answer is available to whoever
+    placed the earlier block.**
+    Four rounds in a row (4, 5, 6, 7) found the same defect class **one level above** where the previous
+    round fixed it, in this repository's own code, in repairs made by this same branch. The ladder:
+    - round 4: the assertion matched a comment. Fix: strip whole-line comments.
+    - round 5: the strip tracked quote state, and a plain scalar may contain an apostrophe. Fix: compare
+      **values** instead of text containing them.
+    - round 6: the value read returned the **first** match anywhere, so an earlier decoy won. Fix: read
+      from a **scope** (`stepWith`, `jobRunDefaults`) and refuse duplicate keys inside it.
+    - round 7: the thing that decides **which mapping is the scope** was still `findIndex` on a bare
+      key. A second job carrying `working-directory` won; the real job's `defaults:` was never read; CI
+      behaved identically; 3302 tests stayed green.
+    **Each rung was sufficient against the round before it and insufficient against the next. No rung was
+    wrong — each was the strongest available fix for the defect it was written for.** So the lesson is
+    not "be more careful". It is a property of the shape:
+    ```
+    reading a value      →  which occurrence?     →  scope + refuse duplicates
+    choosing the scope   →  which mapping?        →  refuse ambiguity
+    walking the mapping  →  which depth?          →  direct child, not subtree
+    naming a thing       →  which one is it?      →  refuse duplicates, and assert uniqueness
+    ```
+    **Four levels, one rule: `null` for zero, a throw naming the lines for two or more, and no
+    "first match wins" anywhere.** `findIndex`, `.find`, `[0]` and `\|\| first` are all the same
+    answer wearing different syntax. This is why the repair for round 7 deleted `findIndex` from the file
+    entirely rather than adding a check beside it: **a helper whose signature cannot express uncertainty
+    will always be certain, and being certain is the defect.**
+    Two corollaries worth keeping:
+    - **The scope selector is the load-bearing part, and it is the part a doc comment describes rather
+      than enforces.** `jobRunDefaults` had said "of *the single job*" in prose for a round while
+      reading whichever job came first. A stated assumption is not a constraint.
+    - **A witness must exercise the shape that failed.** Rounds 5 and 6 fed the reader a single line and
+      proved trailing-decoy handling, which was never the hole. Multi-line input reproducing the actual
+      defeat is what found scope, repetition, and depth — three of the four levels above.

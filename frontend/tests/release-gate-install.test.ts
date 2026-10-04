@@ -466,7 +466,35 @@ describe("the gate script itself", () => {
     // without this, deleting the `how: "install"` branch and restoring `command: "npm",
     // args: ["ci"]` would leave every one of those tests green while the gate went back to
     // destroying the tree.
+    // **Round 7's N6: this window is now anchored, because the cascade's beside it already was.**
+    // The lazy `[\s\S]*?\n  \},` assumed this item's closing brace sits at two spaces. Re-indent it and
+    // the window simply runs on to the *next* item's `},`, swallowing it — two mutations in, both GREEN.
+    // The cascade window 60 lines below carries exactly this anchor ("the cascade branch could not be
+    // located, so every assertion about it would be vacuous") because a previous round found it needed
+    // one. One window in this file was anchored and one was not, which is the asymmetry worth closing:
+    // an unanchored extraction is a check that cannot tell "the item says this" from "the extraction
+    // drifted and now covers something else".
     const installItem = /id:\s*"gates-install"[\s\S]*?\n  \},/.exec(gate)?.[0] ?? "";
+    // **Two anchors, and the second is the one that matters.** `toContain('id: "gates-install"')` on its
+    // own is nearly worthless here: a window that has *widened* to swallow the following item still
+    // contains that string, so the anchor passes on exactly the drift it was added to catch. The
+    // failure mode is a lazy `[\s\S]*?\n  \},` running past a re-indented closing brace to the next
+    // item's, so the anchor has to test the window's **extent**, not its content:
+    //
+    //   exactly one `id:` key  ⇒  the window covers one item and no more
+    //
+    // Round 7's N6 was that the cascade window 60 lines below carried this and this one did not, and the
+    // asymmetry is why two widenings were green: re-indent either closing brace and the window silently
+    // absorbs the next item.
+    expect(
+      installItem,
+      "the gates-install item could not be located, so every assertion about it would be vacuous",
+    ).toContain('id: "gates-install"');
+    expect(
+      (installItem.match(/id:\s*"/g) ?? []).length,
+      "the extracted window must cover exactly the gates-install item; if it has widened past that " +
+        "item's closing brace it now includes the next one, and every assertion below is about both",
+    ).toBe(1);
     expect(installItem).not.toMatch(/args:\s*\[\s*"ci"/);
     expect(installItem).toMatch(/how:\s*"install"/);
   });
@@ -538,6 +566,16 @@ describe("the gate script itself", () => {
     // `FAIL` in this branch would put sixteen defects in the tally where there is one, which is the
     // thing `release-gate.mjs`'s own comment above the branch says it is avoiding.
     expect(cascade).not.toContain('status: "FAIL"');
+    // And the cascade window gets the *extent* anchor too, for the same reason as the one above: its
+    // `toContain` anchor is satisfied by a window that has widened to include the following branch, so
+    // the content check alone cannot tell "this branch says NOT RUN" from "the extraction drifted and
+    // now covers something else that happens to as well". Round 7 found both windows were unanchored on
+    // extent while only one was anchored at all.
+    expect(
+      (cascade.match(/isShortCircuited\(/g) ?? []).length,
+      "the extracted window must cover exactly the cascade branch; a widened window would satisfy every " +
+        "content assertion below from the code that follows it",
+    ).toBe(1);
     // And the reason must travel with the skip, or "not run" is an omission rather than a result.
     expect(cascade).toMatch(/steps:\s*\[[\s\S]*?Repair the dependency tree/);
   });
