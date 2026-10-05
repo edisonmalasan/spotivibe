@@ -10,7 +10,11 @@ import {
   presentsSurface,
   type HomeFilterValue,
 } from "@/features/home/homeFilter";
-import { deriveMixCollage, type MixCollage } from "@/features/home/mixes/collage";
+import {
+  deriveMixCollage,
+  deriveMixPreviewCollage,
+  type MixCollage,
+} from "@/features/home/mixes/collage";
 import { mixCardPlans, type MixCardPlan } from "@/features/home/mixes/namedMixes";
 import { systemClock, type Clock } from "@/features/home/timeBands";
 import { generateMix, type MixOutcome } from "@/features/mixes/generateMix";
@@ -33,6 +37,11 @@ import { useMixStore } from "@/stores/mixStore";
  *    its own leading taste word, checked by `isHonestMixName` inside
  *    `mixCardPlans`. This component never names anything itself, so there is no
  *    second place where a name could become a ranking claim.
+ * 2a. **A cover before there is a mix (M23).** A card shows preview artwork derived
+ *    from the tracks its own strategy selects, so the row is not six placeholders.
+ *    The material is the two slices this surface already receives, so a row of any
+ *    length still issues no provider request — and the cover is never described as
+ *    the mix, which does not exist until activation.
  * 3. **An empty mix is explained.** Activation can still find nothing to build
  *    from — the signal a card was rendered from can be gone by the time it is
  *    pressed — and then the card says why and starts nothing, rather than
@@ -246,6 +255,28 @@ export function MixCards({
   );
   const plans = useMemo(() => mixCardPlans({ profile, languages }), [profile, languages]);
 
+  /*
+   * M23: a card's *preview* cover, derived from what the device already holds.
+   *
+   * Both slices are props this surface already receives, so the preview costs no
+   * provider request and reads no storage — which is what lets a six-card row show six
+   * covers without adding a single request to Home's count. The material is deduped by
+   * track id because a liked track is usually also a played one, and the same cover on
+   * two slots would collapse the collage to a single tile anyway.
+   */
+  const previews = useMemo(() => {
+    const material: Track[] = [];
+    const seen = new Set<string>();
+    for (const track of [...likedTracks, ...events.map((event) => event.track)]) {
+      if (seen.has(track.id)) continue;
+      seen.add(track.id);
+      material.push(track);
+    }
+    const byId: Record<string, MixCollage> = {};
+    for (const plan of plans) byId[plan.identity.id] = deriveMixPreviewCollage(plan, material);
+    return byId;
+  }, [events, likedTracks, plans]);
+
   const play = useCallback(
     async (plan: MixCardPlan) => {
       const id = plan.identity.id;
@@ -315,7 +346,10 @@ export function MixCards({
         <MixCard
           key={plan.identity.id}
           plan={plan}
-          collage={card.collages[plan.identity.id]}
+          // M23: the generated mix's own cover takes over from the preview the moment
+          // one exists. `card.collages` is written only by `generateMix` on activation,
+          // so this is "generated, if at all" and never a request on render.
+          collage={card.collages[plan.identity.id] ?? previews[plan.identity.id]}
           busy={card.busyId === plan.identity.id}
           notice={card.notices[plan.identity.id] ?? null}
           onPlay={(selected) => {

@@ -103,20 +103,58 @@ function feedTrack(index: number, artist: string, artwork?: string): Track {
   });
 }
 
-/** A local artist with real signal, so the cards have seeds to select. */
+/**
+ * A local artist with real signal, so the cards have seeds to select.
+ *
+ * `makeTrack` supplies a default cover, which would quietly give every track artwork —
+ * so the artwork field is set explicitly here, and `likedWithoutArtwork` exists for the
+ * cases that need a library carrying none. Getting this wrong makes the
+ * no-artwork-placeholder case pass for the wrong reason, or fail for the wrong one.
+ */
 function liked(id: string, title: string, artist: string): Track {
   return makeTrack({
     id: `youtube:${id}`,
     providerId: id,
     title,
     artists: [{ name: artist }],
+    artwork: [],
   });
+}
+
+/** The same signal, with no usable cover anywhere in the library. */
+function likedWithoutArtwork(id: string, title: string, artist: string): Track {
+  return { ...liked(id, title, artist), artwork: [] };
 }
 
 /** Four distinct covers, so the composed mix gets a collage. */
 const FEED_TRACKS = Array.from({ length: 4 }, (_unused, index) =>
   feedTrack(index, `Mix Artist ${index}`, `https://example.test/cover${index}.jpg`),
 );
+
+/** The catalog's maximum selection, so a row carries its most cards. */
+const EIGHT_LANGUAGES = ["en", "es", "fr", "de", "ja", "ko", "pt", "it"];
+
+/**
+ * A library whose liked tracks carry artwork (M23).
+ *
+ * Two things are deliberate. The covers are on a `library/` path, distinct from the
+ * feed's `cover{n}.jpg`, so a test can tell a preview from a generated cover. And the
+ * titles name genres from the shared lexicon, so the genre-led strategies (`chill`,
+ * `night`, `discovery`) have something of their own to select — otherwise every card
+ * would legitimately show the same picture and the ranking could not be observed.
+ */
+const LIBRARY_WITH_ARTWORK: readonly Track[] = [
+  ...["Funk Groove", "Deep Funk Cut", "Night Jazz", "Ambient Drift", "Classical Study"].map(
+    (title, index) =>
+      makeTrack({
+        id: `youtube:lib${index}`,
+        providerId: `lib${index}`,
+        title,
+        artists: [{ name: `Library Artist ${index}` }],
+        artwork: [{ url: `https://example.test/library/cover${index}.jpg` }],
+      }),
+  ),
+];
 
 /** Stub the discovery endpoint; `fail` answers every feed with a 503. */
 function stubDiscovery(tracks: Track[] = FEED_TRACKS, fail = false) {
@@ -215,6 +253,145 @@ describe("MixCards: cards are not composed on render", () => {
     renderCards();
     await screen.findByTestId("home-mix-cards");
     expect(await (await getLocalData()).mixes.list()).toEqual([]);
+  });
+
+  it("still issues no request for the artwork it previews (M23)", async () => {
+    // The preview is the one thing a card renders *before* it composes, so it is the
+    // one thing that could plausibly spend a request. This asserts the count is
+    // unaffected by how many cards render — the spec's "unaffected by the number of
+    // cards" — rather than only that some fixed number of calls were made.
+    const { calls } = stubDiscovery();
+    render(
+      <MixCards
+        likedTracks={LIBRARY_WITH_ARTWORK}
+        events={[]}
+        // Eight languages is the maximum selection, so the row carries its largest
+        // possible number of cards — the case a per-card request would hurt most.
+        languages={EIGHT_LANGUAGES}
+        clock={CLOCK}
+      />,
+    );
+    await screen.findByTestId("home-mix-cards");
+
+    const cards = screen.getAllByTestId("mix-card");
+    expect(cards.length).toBeGreaterThan(4);
+    expect(calls).toEqual([]);
+    expect(generator).not.toHaveBeenCalled();
+  });
+});
+
+describe("MixCards: preview artwork comes from the local library (M23)", () => {
+  it("shows a cover on a card that has not been activated", async () => {
+    render(
+      <MixCards likedTracks={LIBRARY_WITH_ARTWORK} events={[]} languages={["en"]} clock={CLOCK} />,
+    );
+    await screen.findByTestId("home-mix-cards");
+
+    // Not the placeholder: real artwork, drawn from tracks the device already holds.
+    expect(screen.queryAllByTestId("mix-card-cover-placeholder")).toHaveLength(0);
+    expect(screen.getAllByTestId("mix-card-cover-single").length).toBeGreaterThan(0);
+    const sources = screen
+      .getAllByTestId("mix-card")
+      .flatMap((card) => [...card.querySelectorAll("img")].map((img) => img.getAttribute("src")));
+    expect(sources.length).toBeGreaterThan(0);
+    // And every source is a library cover, never the feed's — the preview cannot know
+    // what the feed would have returned, because it never asks.
+    for (const src of sources) expect(src).toMatch(/^https:\/\/example\.test\/library/);
+  });
+
+  it("falls back to the placeholder when the library carries no artwork", async () => {
+    render(
+      <MixCards
+        likedTracks={[
+          likedWithoutArtwork("l1", "Deep Funk Cut", "Aurora"),
+          likedWithoutArtwork("l2", "Soul Cut", "Beacon"),
+        ]}
+        events={[]}
+        languages={["en"]}
+        clock={CLOCK}
+      />,
+    );
+    await screen.findByTestId("home-mix-cards");
+
+    expect(screen.queryAllByTestId("mix-card-cover-single")).toHaveLength(0);
+    expect(screen.queryAllByTestId("mix-card-cover-collage")).toHaveLength(0);
+    expect(screen.getAllByTestId("mix-card-cover-placeholder").length).toBe(
+      screen.getAllByTestId("mix-card").length,
+    );
+  });
+
+  it("never describes the preview as the mix's contents", async () => {
+    // The honesty clause. A card whose cover is a preview must not label it as the mix
+    // it has not built, so the second line stays about the device rather than naming
+    // tracks, a count, or a composition.
+    render(
+      <MixCards likedTracks={LIBRARY_WITH_ARTWORK} events={[]} languages={["en"]} clock={CLOCK} />,
+    );
+    const shelf = await screen.findByTestId("home-mix-cards");
+
+    for (const card of within(shelf).getAllByTestId("mix-card")) {
+      expect(card).toHaveTextContent("On this device");
+      expect(card.textContent ?? "").not.toMatch(/\d+\s+(song|track)/iu);
+    }
+  });
+
+  it("replaces the preview with the generated mix's own cover", async () => {
+    // The pair with the case above: the preview is temporary by design, and what
+    // replaces it must come from the mix rather than from the library it happened to
+    // be previewing. The library covers and the feed covers are deliberately different
+    // hosts so the substitution is observable rather than assumed.
+    render(
+      <MixCards likedTracks={LIBRARY_WITH_ARTWORK} events={[]} languages={["en"]} clock={CLOCK} />,
+    );
+    await screen.findByTestId("home-mix-cards");
+
+    const topCard = screen
+      .getAllByTestId("mix-card")
+      .find((card) => card.getAttribute("data-mix-id") === "top");
+    expect(topCard).toBeDefined();
+    const before = [...(topCard?.querySelectorAll("img") ?? [])].map((img) =>
+      img.getAttribute("src"),
+    );
+    expect(before.some((src) => src?.startsWith("https://example.test/library"))).toBe(true);
+
+    pressCard("top");
+
+    // Read the *pressed* card, not the row: sibling cards are showing previews, and
+    // several of those may legitimately be collages too. Asserting on "a collage
+    // exists somewhere on the row" would pass on a card that never changed.
+    await waitFor(() => {
+      const covers = [...(topCard?.querySelectorAll("img") ?? [])].map((img) =>
+        img.getAttribute("src"),
+      );
+      expect(covers.filter((src) => src?.startsWith("https://example.test/cover"))).toHaveLength(4);
+    });
+    for (const img of topCard?.querySelectorAll("img") ?? []) {
+      expect(img.getAttribute("src")).toMatch(/^https:\/\/example\.test\/cover\d+\.jpg$/);
+    }
+  });
+
+  it("shows different covers for cards with different strategies", async () => {
+    // The point of ranking by the plan's own strategy rather than slicing the library
+    // in input order: if every card showed the same tiles, the preview would be one
+    // picture copied six times and would tell the listener nothing about which card is
+    // which.
+    render(
+      <MixCards likedTracks={LIBRARY_WITH_ARTWORK} events={[]} languages={["en"]} clock={CLOCK} />,
+    );
+    await screen.findByTestId("home-mix-cards");
+
+    const covers = new Map<string, string[]>();
+    for (const card of screen.getAllByTestId("mix-card")) {
+      const id = card.getAttribute("data-mix-id") ?? "";
+      covers.set(
+        id,
+        [...card.querySelectorAll("img")].map((img) => img.getAttribute("src") ?? ""),
+      );
+    }
+    const distinct = new Set([...covers.values()].map((value) => value.join("|")));
+    // At least two cards differ. Not "all six", because two strategies may honestly
+    // select the same material — that is the ranking working, not a bug.
+    expect(distinct.size).toBeGreaterThan(1);
   });
 });
 
@@ -345,11 +522,11 @@ describe("MixCards: a card starts playback rather than navigating", () => {
   it("derives the card's cover from the mix it composed", async () => {
     renderCards();
     await screen.findByTestId("home-mix-cards");
-    // Nothing composed yet, so nothing to show: the monochrome placeholder.
-    expect(screen.getAllByTestId("mix-card-cover-placeholder")).toHaveLength(
-      screen.getAllByTestId("mix-card").length,
-    );
 
+    // M23: before activation a card no longer shows a bare placeholder — it shows a
+    // *preview* built from the library the device already holds. The clause this test
+    // protects is still the one that follows: the generated mix's own cover is what
+    // the card is showing afterwards.
     pressCard("top");
 
     await waitFor(() => expect(screen.getByTestId("mix-card-cover-collage")).toBeInTheDocument());
