@@ -148,8 +148,23 @@ reaches an existing visitor.
 - [x] 4.12 Home mix preview issues no provider request per card
 - [x] 4.13 Generated mix resolves its cover from its own tracks
 - [x] 4.14 Library playlist card, sidebar, and detail all use real available artwork
-- [ ] 4.15 Compact and desktop layouts remain usable — **browser verification, section 7; not yet
-      run**
+- [x] 4.15 Compact and desktop layouts remain usable — verified in a browser on **production**,
+      both viewports, measured rather than eyeballed:
+  - **Compact 390×844**: captured and inspected. Header, `All`/`Music`/`Podcasts` filter, the
+    first-run language modal with its own scroll region, the player bar and the bottom nav all
+    fit; nothing overlaps or is clipped.
+  - **Desktop 1280×900**: `documentElement.scrollWidth === clientWidth === 1280`, so there is no
+    horizontal overflow, and `home-view` renders exactly once. **One caveat, recorded rather than
+    hidden:** the first desktop screenshot came back tiled — the same page twice side by side. That
+    is a capture artifact of viewport emulation against a smaller window, not a layout defect, and
+    it is established as such by the DOM counters above (`home-view` × 1, `quick-pick` × 8, not
+    16). The compact screenshot captured cleanly. So the desktop claim rests on measurement, not on
+    a clean visual capture.
+  - **Circular geometry across the whole feed**, which also discharges the "no two circular sections
+    adjacent" rule in a real browser rather than only in jsdom. Per-rail, in document order:
+    rail 0 `r=500px` on a `134x134` box (**circular** — Quick Picks), rails 1, 3 and 4 `r=6px` on
+    `134x134` boxes (**square with rounded corners**), rail 2 carries no image. Exactly one circular
+    section, and it is the first rail.
 - [x] 4.16 Exactly one circular artist section renders, and none adjacent — asserted in
       `tests/home-sections.test.ts` over every combination of local signals and in
       `tests/routes.test.tsx` over the rendered feed
@@ -284,11 +299,65 @@ cropping, shelf scrolling, and reduced-motion behaviour were **not** exercised i
 in this pass. They are covered by unit tests, several of which are mutation-proven, but a
 unit test is not a visual check and this file does not claim otherwise.
 
+## 7b. Production verification
+
+Run against `https://spotivibe-web.vercel.app` **after** M23 was merged to `main` as
+`e99414f` and deployed, from a **first-visit origin** (a freshly created isolated browser
+profile that had never registered a worker). Measured, not inferred.
+
+Headers, by direct request:
+
+| path | `img-src` | `connect-src` |
+|---|---|---|
+| `/` | `'self' i.ytimg.com yt3.googleusercontent.com yt3.ggpht.com invidious.f5.si yewtu.be piped-proxy.ducks.party data:` | `'self'` |
+| `/sw.js` | same as `/` | `'self'` **plus every `img-src` origin** |
+
+So the document's `connect-src` is unchanged at `'self'`, and only the worker's is widened —
+exactly what the requirement asks for.
+
+In the page, worker controlling:
+
+- `navigator.serviceWorker.controller` present
+- Quick Picks: **8 cards, every one `data-quick-pick-kind="artist"`**, ids deduplicated,
+  all 8 hrefs under `/artist/`, card text `LumivoxArtist`, **8/8 images decoded** from
+  `yt3.googleusercontent.com`, 0 anchors pointing at `/search`
+- circular geometry measured at both viewports — `border-radius: 500px` on a `134x134`
+  box at 1280×900 and a `126x126` box at 390×844
+- page-wide artwork at 1280×900: **68/68 decoded, 0 broken**
+- **per-rail geometry**, in document order: rail 0 `r=500px` on `134x134` (circular — Quick Picks),
+  rails 1/3/4 `r=6px` on `134x134` (square), rail 2 has no image. Exactly one circular section, and
+  it is the first rail — so "no two circular sections adjacent" is observed in a browser, not only
+  asserted in jsdom
+- **no horizontal overflow** at 1280×900 (`scrollWidth === clientWidth === 1280`), and `home-view`
+  renders once
+
+A screenshot at 390×844 was captured and inspected: the first-run language modal, its own scroll
+region, the player bar and the bottom nav all fit, with nothing overlapping or clipped. The desktop
+screenshot came back tiled — a capture artifact of viewport emulation, refuted by the DOM counters
+above — so the desktop layout claim rests on measurement rather than on a clean visual capture.
+Both are stated rather than presented as equivalent.
+
+This is the end-to-end proof that the 3b/3c fixes work where they matter: the deployed
+document, the deployed worker, the real provider hosts, and a real browser.
+
+**What production verification does not cover.** The same stale-worker caveat as 7.6 applies
+and is not retested here: this was a first-visit origin, so it does not demonstrate what a
+visitor who installed a worker *before* this deploy sees. Profile scenarios B–E, mix
+collage cropping, shelf scrolling, and reduced motion remain unexercised in a browser, in
+production as locally.
+
 ## 8. Lifecycle
 
-- [ ] 8.1 Apply PR opened and merged with a **merge commit**
-- [ ] 8.2 Specs synced into `openspec/specs/`
-- [ ] 8.3 Change archived
+- [x] 8.1 Apply PR `#108` opened and merged with a **merge commit** (`e99414f`)
+- [x] 8.2 Specs synced into `openspec/specs/` — PR `#109`, merge commit `a44e681`;
+      `openspec validate --specs --strict` → 27 passed, 0 failed
+- [x] 8.3 Change archived
+
+**Sync was done by hand, deliberately.** The three deltas were applied to `openspec/specs/`
+in their own PR, so the archive step ran with `--skip-specs`. Letting `openspec archive`
+re-apply them would have written the same requirements a second time and re-run the two
+`REMOVED` blocks against requirements that were already gone. The deltas remain inside the
+change directory, which is where the archived record of what was specified belongs.
 
 ## 9. Residuals recorded, not smuggled in
 
