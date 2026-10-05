@@ -138,7 +138,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M19** | Motion and interaction polish | `DONE` | M18 |
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
-| **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `APPLY` | M17, M8 |
+| **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `DONE` - PR #104 `624838f`, sync #105 `e5d502a`, archived `2026-10-05-quick-picks-cold-start` | M17, M8 |
 
 > **M22 is not new scope.** `§21.2` below specifies Quick Picks as derived from "selected languages, the
 > local listening profile, liked artists/tracks, **and existing provider results**", and
@@ -2579,3 +2579,17 @@ unverified rather than claimed.**
 **Completion criteria.** A fresh device's Quick Picks rail offers more than one entry, drawn from
 results the page had already fetched; a device with local material renders exactly as before; no new
 request, no new persisted state; and every new clause proven able to fail.
+
+**Outcome.** Delivered as PR #104 (`624838f`), synced as #105 (`e5d502a`), archived as
+`2026-10-05-quick-picks-cold-start`. Measured: 182 files and 3,361 tests, 0 failed, against a
+baseline of 3,349; `openspec validate --specs --strict` 27 passed, 0 failed; the control mutation
+run green at 24 of 24 with all four clauses turning red on the intended test. The client-bundle
+ceiling was re-recorded by 1,580 gzipped bytes and one chunk, measured against a `main` control that
+reproduced the prior record byte for byte.
+
+**Two things are deliberately not done.** Browser verification remains unverified and task 5.4 stays
+unchecked — no automation exists here and both Vercel origins sit behind Deployment Protection. And
+at eight selected languages, the maximum, the reservation leaves the cold-start stand-in no slot: the
+rail is eight search cards. That is the documented behaviour rather than an oversight, it is now its
+own scenario with a test on both sides of the boundary, and whether the stand-in should win at full
+language selection is a separate product decision this milestone did not make on its own.
