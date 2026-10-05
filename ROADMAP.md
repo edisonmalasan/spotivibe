@@ -139,6 +139,30 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
 | **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `DONE` - PR #104 `624838f`, sync #105 `e5d502a`, archived `2026-10-05-quick-picks-cold-start` | M17, M8 |
+| **M23** | Lyrix-style artist Quick Picks and Home artwork parity | `PROPOSED` | M22, M19 |
+
+> **M23 supersedes M17/M22's product decision, deliberately and with the user's explicit
+> instruction.** M22 shipped a Quick Picks rail that renders **selected languages as `Search`
+> cards** and reserves them Quick Pick slots. Because `MAX_SELECTED_LANGUAGES === MAX_QUICK_PICKS
+> === 8`, that design's documented degenerate case — eight languages selected yields eight Search
+> cards and zero artists — is reachable by ordinary use, and M22 recorded it as deliberate rather
+> than as a defect. Measured on production before this milestone: a **fresh profile with only the
+> default language already renders 7 artist cards plus one `Search` card named `English`**, because
+> the reservation always holds one language slot back. **Selected languages are inputs to artist
+> discovery, never Quick Pick content.** That is the Lyrix behavior, it is what the user asked for,
+> and it overrides the earlier decision. Archived M17/M22 artifacts are **historical evidence and
+> are not rewritten**; this row and the synced specs are what supersede them.
+>
+> **M23 also fixes a live production artwork defect found while investigating, which is not a
+> Quick Picks problem at all.** `frontend/next.config.ts` permits only `https://i.ytimg.com` in
+> `img-src`, but real provider payloads — 84 `yt3.googleusercontent.com` matches across five
+> captured fixtures in `frontend/tests/fixtures/providers/` — are passed through verbatim by
+> `pickArtwork()`. Production therefore **blocks every artist/channel image it requests**. Isolated
+> by controlled experiment in a real browser, one variable: `img-src` without `yt3` → image
+> `ERR`; with `yt3` added → `ok 120`. `tests/security-policy.test.ts` passes because it derives
+> origins from `src/**` **source text**, and provider artwork arrives as opaque data rather than as
+> a string in our code. The detector is structurally blind to it and is replaced with a
+> fixture-derived one. Full evidence: `§21.9`.
 
 > **M22 is not new scope.** `§21.2` below specifies Quick Picks as derived from "selected languages, the
 > local listening profile, liked artists/tracks, **and existing provider results**", and
@@ -2588,8 +2612,115 @@ ceiling was re-recorded by 1,580 gzipped bytes and one chunk, measured against a
 reproduced the prior record byte for byte.
 
 **Two things are deliberately not done.** Browser verification remains unverified and task 5.4 stays
-unchecked — no automation exists here and both Vercel origins sit behind Deployment Protection. And
+unchecked - no automation exists here and both Vercel origins sit behind Deployment Protection. And
 at eight selected languages, the maximum, the reservation leaves the cold-start stand-in no slot: the
 rail is eight search cards. That is the documented behaviour rather than an oversight, it is now its
 own scenario with a test on both sides of the boundary, and whether the stand-in should win at full
 language selection is a separate product decision this milestone did not make on its own.
+
+> **M23 resolves both of the above.** The eight-language outcome is reversed by design, and browser
+> automation is available for this milestone — see `§21.8`.
+
+## 21.8 M23 — Lyrix-style artist Quick Picks and Home artwork parity
+
+**Objective.** Make Quick Picks an **artist** discovery surface whose candidates are shaped by the
+selected languages without the languages themselves ever becoming cards, and make real provider and
+local artwork actually render on Home, collections, and artist surfaces.
+
+**Depends on.** M22 (`quickPicks.ts`, `QuickPicksShelf.tsx`), M19 (`ArtistCard`, geometry, motion), M8
+(`HomeView`, `homeSections`), M14 (`next.config.ts` security policy).
+
+**Defect 1 — languages occupy the artist rail.** M22's design reserves Quick Pick slots for language
+`Search` cards. `MAX_SELECTED_LANGUAGES === MAX_QUICK_PICKS === 8`, so the maximum selection yields
+eight `Search` cards and zero artists, which M22 recorded as deliberate. Measured on production
+before this milestone, on a **fresh profile with only the default language**:
+
+```
+Quick Picks targets: Lumivox, Hazel Aria, Previa, The Weeknd, Ed Sheeran,
+                     Swedish House Mafia, Sabrina Carpenter, English   <- "English" is a Search card
+```
+
+The reservation always holds a language slot back, so the degenerate case is the **normal** case at
+its mild end: one `Search` card in a rail of artists. Lyrix uses selected languages to decide *which
+artists* to offer and never renders a language as a card. The user has overridden the M17/M22
+decision; this milestone implements the Lyrix behavior.
+
+**Defect 2 — the two artist rails are the same artists.** Popular Artists derives from
+`groupArtistsByIdentity(trending.tracks)`; Quick Picks' cold-start stand-in derives from
+`groupArtistsByIdentity([...trending.tracks, ...feed.collections.tracks])`. Measured on production,
+Quick Picks' artist targets were a **strict prefix** of Popular Artists' — all 7, same order, same
+image URLs. Two visually identical circular shelves, one a subset of the other, is not two sections.
+
+**Defect 3 — production blocks its own artwork.** `next.config.ts` declares
+`CLIENT_IMAGE_ORIGINS = ["https://i.ytimg.com", "data:"]` and comments that `i.ytimg.com` is
+"track, album, and artist artwork". That is false against real traffic: `pickArtwork()` only
+*constructs* the `i.ytimg.com` fallback when a tier supplied none, and passes every provider URL
+through verbatim. **84 `yt3.googleusercontent.com` matches across five captured fixtures.** Live
+production DOM: all 7 Quick Picks images are `yt3` URLs, every one `complete: true,
+naturalWidth: 0` — the signature of a *failed* load, not lazy deferral (which reports
+`complete: false`).
+
+The cause was isolated rather than assumed, because two plausible explanations were available and
+only one is true: the URLs could be malformed, or the page could be refusing them.
+
+- **Not the URL.** The exact `src` from production returns HTTP 200 `image/jpeg`, 9,818 bytes, from
+  this machine, and renders at 120x120 in the browser when navigated to as a top-level document.
+- **It is the policy.** Same browser, same URL, three fresh `about:blank` tabs, one variable changed
+  — an injected `<meta http-equiv="Content-Security-Policy">`:
+
+  | injected `img-src` | result |
+  |---|---|
+  | (no meta) | `ok 120` |
+  | `'self' https://i.ytimg.com data:` — production's exact value | **`ERR`** |
+  | the same plus `https://yt3.googleusercontent.com` | `ok 120` |
+
+  `i.ytimg.com` loads fine as an in-page subresource while `yt3` does not, which is precisely the
+  asymmetry the policy creates.
+
+`tests/security-policy.test.ts` passes and always did: it derives permitted origins by scanning
+`src/**` **source text**, and provider artwork arrives as opaque data rather than as a string in our
+code, so `yt3` is invisible to it. **The detector was structurally incapable of failing on this
+class of defect and is therefore not evidence of anything.** It is replaced by one that derives the
+image origins from the captured provider fixtures, which is where the truth lives.
+
+**In scope.**
+
+- Quick Picks renders **only** artists. `Search` and `album` kinds are removed from the rail; no
+  language is ever a card; no slot is reserved for one.
+- Selected languages influence **which artist candidates** are surfaced. The mechanism is already
+  built and needs no new request: `useDiscoveryShelf({ kind, languages })` fetches language-scoped
+  feeds and `interleaveByLanguage` mixes them, so the trending/collections tracks Quick Picks already
+  reads **are** the language-aware candidate set. The languages become a filter over artist
+  candidates instead of a card type.
+- Local evidence still outranks provider results, still adds no request, and still stores nothing.
+- Artist artwork resolves from artwork already present on the candidate tracks — **no new route
+  handler and no per-card provider lookup**. Lyrix batches a thumbnail fetch through its Express
+  backend; Spotivibe's normalized provider results already carry artist artwork via
+  `groupArtistsByIdentity`, so that machinery is not reproduced.
+- **Reconcile the two artist rails deliberately.** `discovery`'s spec allows "at most one circular
+  artist section" and DESIGN.md states never to place two circular sections adjacent, so both rails
+  cannot stay circular. Quick Picks becomes the single circular artist rail; the shipped `Popular
+  Artists` section is consolidated into it, and the `discovery` spec and `homeSections` are updated
+  in the same change. Removing a shipped section is recorded here explicitly rather than done
+  silently.
+- Artwork parity: fix `img-src`; Home mix cards gain honest preview artwork derived from material
+  already on the device, without one provider request per card; a generated mix's cover comes from
+  its own tracks; local playlist card/sidebar/detail artwork is verified end-to-end.
+- Replace the source-text CSP detector with a fixture-derived one, and prove it can fail.
+
+**Non-goals.** Accounts, authentication, cloud profiles, Supabase, a user database, cross-user or
+collaborative filtering, Lyrix's Express/MySQL/Redis backend. Recommending tracks from Quick Picks —
+real recommendation stays in For You, mixes/Smart Mixes, and radio. Composing a mix on render;
+mix generation still happens on activation, and preview artwork never claims to be a generated mix.
+
+**Verification.** Behavioral tests that fail on today's implementation, covering: eight languages
+still produce artist Quick Picks and **zero** `Search` cards; a selected language changes the
+candidate set without becoming a card; every Quick Pick resolves to `/artist/[key]`; dedupe by
+canonical identity; artwork renders when metadata supplies it and degrades to the existing
+placeholder when it does not; circular geometry with an `Artist` label; activation reaches the artist
+route; no new persisted state; no account dependency; collage rules for 1 / 2–4 / 0 covers; and no
+provider request per mix card for artwork. Induced-violation evidence for the critical clauses.
+
+**Browser verification.** Real-browser checks at 1280x900 and 390x844 against the M23 preview and
+then production, across a fresh profile, two languages, eight languages, local history present, and
+local history absent.
