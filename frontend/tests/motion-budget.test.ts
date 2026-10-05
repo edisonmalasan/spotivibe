@@ -5,6 +5,7 @@ import { MOTION_ALLOWED } from "@/styles/motionTokens";
 import {
   CLIENT_BUDGET,
   M20_CLIENT_BUDGET,
+  M22_CLIENT_BUDGET,
   PRE_M19_CLIENT_BUDGET,
   measureClientBundle,
   measureRouteFirstLoad,
@@ -135,12 +136,16 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     const delta = M20_CLIENT_BUDGET.totalGzippedBytes - PRE_M19_CLIENT_BUDGET.totalGzippedBytes;
     expect(delta, "M20's measured cost in gzipped bytes").toBe(3161);
 
-    // The current ceiling has moved on, and must still sit above both predecessors.
-    expect(CLIENT_BUDGET.recordedAt).toContain("M22");
+    // The current ceiling has moved on, and must still sit above M20's record.
+    //
+    // M20's *chunk count* is the one figure that later milestones moved past in both
+    // directions — M22 added one and M23 removed one, landing back on 25. So the
+    // comparison here is total bytes only, and the chunk history is asserted per-record
+    // below rather than as a chain this test would have to keep re-deriving.
+    expect(CLIENT_BUDGET.recordedAt).toContain("M23");
     expect(CLIENT_BUDGET.totalGzippedBytes).toBeGreaterThanOrEqual(
       M20_CLIENT_BUDGET.totalGzippedBytes,
     );
-    expect(CLIENT_BUDGET.chunkCount).toBeGreaterThanOrEqual(M20_CLIENT_BUDGET.chunkCount);
 
     // Inside the headroom the *original* record already allowed, and far below the spike.
     expect(delta).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
@@ -156,13 +161,13 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     // M22 re-recorded the ceiling, so its move is stated the same way M20's and M19's
     // were: as a measured byte delta against the record it replaced, with the origin
     // of the code asserted rather than assumed.
-    const delta = CLIENT_BUDGET.totalGzippedBytes - M20_CLIENT_BUDGET.totalGzippedBytes;
+    const delta = M22_CLIENT_BUDGET.totalGzippedBytes - M20_CLIENT_BUDGET.totalGzippedBytes;
     expect(delta, "M22's measured cost in gzipped bytes").toBe(1580);
 
     // Same shape M20 recorded: one extra emitted chunk and one extra on `/`. Asserted
     // because it is the part a reader would otherwise have to take on trust.
-    expect(CLIENT_BUDGET.chunkCount - M20_CLIENT_BUDGET.chunkCount).toBe(1);
-    expect(CLIENT_BUDGET.homeFirstLoadChunkCount - M20_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
+    expect(M22_CLIENT_BUDGET.chunkCount - M20_CLIENT_BUDGET.chunkCount).toBe(1);
+    expect(M22_CLIENT_BUDGET.homeFirstLoadChunkCount - M20_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
       1,
     );
 
@@ -179,6 +184,41 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     // `dependencies` and `devDependencies` directly. Repeating it would be a second place
     // to keep in step for no additional coverage. What this test adds is the size
     // comparison and the chunk deltas — the numbers M22 actually moved.
+  });
+
+  it("states what M23 cost, in bytes, and the direction of the move", () => {
+    // M23 *removed* a section, so its delta is negative — and a negative delta is the one
+    // shape a stale record hides best: a ceiling left at 389,572 while the bundle sits at
+    // 388,571 still passes every ceiling test in this file, because a smaller bundle is
+    // inside any budget. Asserting the sign and the exact figure is what makes the
+    // re-record a measurement rather than a slack grant.
+    const delta = CLIENT_BUDGET.totalGzippedBytes - M22_CLIENT_BUDGET.totalGzippedBytes;
+    expect(delta, "M23's measured cost in gzipped bytes").toBe(-1001);
+
+    // One chunk fewer emitted, and one fewer on `/`. Not asserted as `toBe(-1)` alone
+    // because the byte figures are the primary claim; this is the corroborating shape.
+    expect(CLIENT_BUDGET.chunkCount).toBe(M22_CLIENT_BUDGET.chunkCount - 1);
+    expect(CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(M22_CLIENT_BUDGET.homeFirstLoadChunkCount - 1);
+
+    // The largest chunk did not move, which is what makes this a change in first-party
+    // code rather than in a vendor's table of chunk sizes.
+    expect(CLIENT_BUDGET.largestChunkGzippedBytes).toBe(M22_CLIENT_BUDGET.largestChunkGzippedBytes);
+
+    // The removal is real but bounded: a milestone that deleted the whole feed would
+    // satisfy the assertions above, so the size is pinned as well as the direction.
+    expect(Math.abs(delta)).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
+  });
+
+  it("keeps M22's own record readable, so its cost is not redefined by M23's", () => {
+    // The failure this prevents is specific: a reader computing "what did M23 cost" from
+    // `PRE_M19_CLIENT_BUDGET` gets 3,740 B, which is M20 *plus* M22 *plus* M23 and reads
+    // as though M23 had spent three milestones' budgets. Each record has to hold its own
+    // figures for any of those three numbers to mean what it says.
+    expect(M22_CLIENT_BUDGET.totalGzippedBytes).toBe(389572);
+    expect(M22_CLIENT_BUDGET.largestChunkGzippedBytes).toBe(96667);
+    expect(M22_CLIENT_BUDGET.chunkCount).toBe(26);
+    expect(M22_CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(232135);
+    expect(M22_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(14);
   });
 
   it("names what the headroom is for, and keeps it far smaller than any real dependency", () => {
@@ -451,23 +491,31 @@ describe("the evidence file carries the decision and what would reverse it (task
     expect(evidence).toMatch(/interruptible/i);
   });
 
-  it("records what M20 and M22 re-recorded the ceiling for, in bytes", () => {
+  it("records what M20, M22, and M23 re-recorded the ceiling for, in bytes", () => {
     // The evidence file has to carry every later re-recording too, or the budget's whole claim —
     // that its numbers are measurements rather than intentions — stops holding at the moment a
     // feature moves them. Read from the constants, so the prose cannot claim a different cost.
     //
     // Each delta is measured against the record it replaced. A delta taken from the oldest
-    // record would report the sum of two milestones and read as though M20 had spent M22's
-    // money, which is the specific error this change had to avoid introducing.
+    // record would report the sum of several milestones and read as though M20 had spent the
+    // others' money, which is the specific error this change had to avoid introducing.
     const m20 = M20_CLIENT_BUDGET.totalGzippedBytes - PRE_M19_CLIENT_BUDGET.totalGzippedBytes;
-    const m22 = CLIENT_BUDGET.totalGzippedBytes - M20_CLIENT_BUDGET.totalGzippedBytes;
+    const m22 = M22_CLIENT_BUDGET.totalGzippedBytes - M20_CLIENT_BUDGET.totalGzippedBytes;
+    const m23 = CLIENT_BUDGET.totalGzippedBytes - M22_CLIENT_BUDGET.totalGzippedBytes;
 
     expect(evidence, "M20's cost is published").toContain(`+${m20.toLocaleString("en-US")} B`);
     expect(evidence, "M22's cost is published").toContain(`+${m22.toLocaleString("en-US")} B`);
+    // M23's is a reduction, so it is published with a minus and matched as one. Asserting
+    // it as `+${...}` would pass only if the prose lied about the direction, and asserting
+    // the bare figure would pass on either sign.
+    expect(evidence, "M23's saving is published with its sign").toContain(
+      `−${Math.abs(m23).toLocaleString("en-US")} B`,
+    );
 
-    // All three records, so the history is readable rather than overwritten.
+    // All four records, so the history is readable rather than overwritten.
     expect(evidence).toContain(PRE_M19_CLIENT_BUDGET.totalGzippedBytes.toLocaleString("en-US"));
     expect(evidence).toContain(M20_CLIENT_BUDGET.totalGzippedBytes.toLocaleString("en-US"));
+    expect(evidence).toContain(M22_CLIENT_BUDGET.totalGzippedBytes.toLocaleString("en-US"));
     expect(evidence).toContain(CLIENT_BUDGET.totalGzippedBytes.toLocaleString("en-US"));
 
     // …and the reason it is a figure the ceiling can absorb: no client dependency was added.
