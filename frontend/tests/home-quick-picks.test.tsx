@@ -182,6 +182,235 @@ describe("quickPicks: derivation reads only local material", () => {
   });
 });
 
+describe("quickPicks: the cold-start stand-in (M22)", () => {
+  /**
+   * M22 tasks 3.1–3.3, 3.5, 3.6 (spec: `home-mixes` — "Quick Picks lead to
+   * surfaces that exist", scenarios "A device with no local material is offered
+   * more than the language entry", "Local evidence is never displaced by provider
+   * results", "The language entries survive a full stand-in pass"; design decisions
+   * D2, D3, D5).
+   *
+   * The bug being closed: with no likes and no plays, the rail rendered exactly
+   * one entry — a search card for the default language — under a heading promising
+   * artists and releases. `ROADMAP.md` §21.2 and this requirement both specified a
+   * fourth source, "existing provider results", which the derivation never read.
+   */
+
+  /** A device with no likes and no plays — the state these tests are about. */
+  const cold = { likedTracks: [], events: [] } as const;
+
+  it("offers a cold device real artists and releases ahead of the language entry", () => {
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: cold,
+      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
+    });
+
+    // Not one entry any more: the two provider artists, then the two releases'
+    // artist-derived pair, then the language entry last.
+    expect(picks.map((pick) => pick.kind)).toEqual(["artist", "artist", "album", "search"]);
+    expect(picks.filter((pick) => pick.kind === "artist").map((pick) => pick.title)).toEqual([
+      "Nova",
+      "Iris",
+    ]);
+    // The ordering claim itself, asserted rather than inferred from the array shape:
+    // every provider entry precedes the language entry.
+    expect(picks.findIndex((pick) => pick.kind === "search")).toBe(picks.length - 1);
+
+    // And every one of them is a link somewhere real, like every other entry. The
+    // provider gave no artist entity ids, so the artist entries are text keys.
+    for (const pick of picks) expect(quickPickHref(pick)).not.toBeNull();
+    expect(quickPickHref(picks[0]!)).toBe("/artist/Nova");
+  });
+
+  it("gives the stand-in entries the artwork the provider supplied", () => {
+    // The complaint that started this was a bare grey icon with no cover. A
+    // provider track carries artwork, so the stand-in entries must use it — the
+    // cover fallback belongs to search entries, which name a query and have none.
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: cold,
+      providerTracks: [track("p1", "Nova", "Signal Fire")],
+    });
+
+    expect(picks.find((pick) => pick.kind === "artist")?.artworkUrl).toBe(
+      "https://example.test/p1.jpg",
+    );
+    expect(picks.find((pick) => pick.kind === "album")?.artworkUrl).toBe(
+      "https://example.test/p1.jpg",
+    );
+    expect(picks.find((pick) => pick.kind === "search")?.artworkUrl).toBeUndefined();
+  });
+
+  it("never lets provider results displace, reorder, or outrank local evidence", () => {
+    // The warm path, stated as whole-array equality rather than a length: a
+    // stand-in that merely kept the count while swapping entries would pass a
+    // weaker assertion than the one the requirement actually makes.
+    const withProvider = deriveQuickPicks({
+      languages: ["en", "es"],
+      taste: material(),
+      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris", "Low Tide")],
+    });
+    const withoutProvider = deriveQuickPicks({ languages: ["en", "es"], taste: material() });
+
+    expect(withProvider).toEqual(withoutProvider);
+    // Spelled out too, so a failure says *which* guarantee broke.
+    expect(withProvider.map((pick) => pick.title)).not.toContain("Nova");
+    expect(withProvider.map((pick) => pick.title)).not.toContain("Low Tide");
+
+    // One liked track is already "material". The gate is emptiness, not thinness.
+    const barely = deriveQuickPicks({
+      languages: ["en"],
+      taste: { likedTracks: [track("l1", "Aurora", "First Light")], events: [] },
+      providerTracks: [track("p1", "Nova", "Signal Fire")],
+    });
+    expect(barely).toEqual(
+      deriveQuickPicks({
+        languages: ["en"],
+        taste: { likedTracks: [track("l1", "Aurora", "First Light")], events: [] },
+      }),
+    );
+  });
+
+  it("keeps the language entry when the provider returns more than the whole bound", () => {
+    // Without the reservation, a cold device on a healthy network would fill the
+    // bound with provider artists and lose the one entry the derivation guarantees
+    // — making that guarantee depend on the network.
+    const crowded = Array.from({ length: 20 }, (_unused, index) =>
+      track(`p${index}`, `Artist ${index}`, `Album ${index}`),
+    );
+
+    const one = deriveQuickPicks({ languages: ["en"], taste: cold, providerTracks: crowded });
+    expect(one.length).toBeLessThanOrEqual(MAX_QUICK_PICKS);
+    expect(one.filter((pick) => pick.kind === "search").map((pick) => pick.title)).toEqual([
+      "English",
+    ]);
+
+    // Three languages reserve three slots, so fewer stand-in entries survive.
+    const three = deriveQuickPicks({
+      languages: ["en", "es", "ja"],
+      taste: cold,
+      providerTracks: crowded,
+    });
+    const searches = three.filter((pick) => pick.kind === "search");
+    expect(searches).toHaveLength(3);
+    expect(searches.map((pick) => pick.title).sort()).toEqual(["English", "Japanese", "Spanish"]);
+    expect(three.length).toBeLessThanOrEqual(MAX_QUICK_PICKS);
+    expect(three.filter((pick) => pick.kind !== "search")).toHaveLength(MAX_QUICK_PICKS - 3);
+  });
+
+  it("gives the rail to a full set of selected languages, and does not squeeze them out", () => {
+    // The boundary of the reservation, pinned so it is a recorded decision rather
+    // than an accident nobody looked at. `MAX_SELECTED_LANGUAGES` is 8 and
+    // `MAX_QUICK_PICKS` is 8, so eight selected languages leave the stand-in no
+    // slot at all.
+    //
+    // This is the one configuration where the cold-start stand-in contributes
+    // nothing, and it is deliberate: the reservation's purpose (design decision
+    // D5) is to keep the language entries from being crowded out by provider
+    // volume, so a listener who has explicitly selected as many languages as the
+    // rail has slots gets exactly those. It is still strictly better than before
+    // this milestone — the same device previously got these same language cards
+    // and nothing else — but it is not the improvement, and the requirement says so.
+    const eight = deriveQuickPicks({
+      languages: ["en", "es", "fr", "de", "it", "pt", "ja", "ko"],
+      taste: cold,
+      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
+    });
+
+    expect(eight).toHaveLength(MAX_QUICK_PICKS);
+    expect(eight.filter((pick) => pick.kind === "search")).toHaveLength(MAX_QUICK_PICKS);
+    expect(eight.filter((pick) => pick.kind !== "search")).toHaveLength(0);
+
+    // One language fewer and the stand-in gets exactly one slot back.
+    const seven = deriveQuickPicks({
+      languages: ["en", "es", "fr", "de", "it", "pt", "ja"],
+      taste: cold,
+      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
+    });
+    expect(seven.filter((pick) => pick.kind !== "search")).toHaveLength(1);
+    expect(seven).toHaveLength(MAX_QUICK_PICKS);
+  });
+
+  it("falls back to exactly today's rail when the provider returned nothing", () => {
+    // A cold device whose discovery request failed or is still in flight passes
+    // `[]` — `DiscoveryShelf.tracks` is empty until a shelf is ready. That must
+    // degrade to the pre-M22 behaviour, not to an error or an empty rail.
+    const empty = deriveQuickPicks({ languages: ["en"], taste: cold, providerTracks: [] });
+    expect(empty.map((pick) => pick.kind)).toEqual(["search"]);
+    expect(empty[0]?.target).toBe("English");
+
+    // And omitting the field entirely is the same thing, which is what makes it
+    // safe to keep optional.
+    expect(deriveQuickPicks({ languages: ["en"], taste: cold })).toEqual(empty);
+  });
+
+  it("produces no release entry for a stand-in track with no album metadata", () => {
+    // Asserted rather than assumed: the stand-in and the local pass share one
+    // helper, and sharing is exactly the kind of thing that is true until it is
+    // not. "Symmetric with the local pass" is the claim; this is the check.
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: cold,
+      providerTracks: [
+        track("p1", "Nova"),
+        makeTrack({ id: "youtube:p2", providerId: "p2", title: "Song p2" }),
+      ],
+    });
+
+    expect(picks.map((pick) => pick.kind)).toEqual(["artist", "artist", "search"]);
+    expect(picks.filter((pick) => pick.kind === "album")).toHaveLength(0);
+  });
+
+  it("reads no repository and no store while deriving from provider results", async () => {
+    // The "no new stored data" half of the clause, checked where the existing
+    // local-material test checks it: `getLocalData` is the single accessor every
+    // local read goes through.
+    const localData = await import("@/data/localData");
+    const getLocalData = vi.spyOn(localData, "getLocalData");
+
+    deriveQuickPicks({
+      languages: ["en"],
+      taste: cold,
+      providerTracks: [track("p1", "Nova", "Signal Fire")],
+    });
+
+    expect(getLocalData).not.toHaveBeenCalled();
+    getLocalData.mockRestore();
+  });
+
+  it("renders the stand-in entries as working links on a cold device", () => {
+    // The component path, because a derivation can be correct while the shelf
+    // forgets to pass the fourth source down.
+    render(
+      <QuickPicksShelf
+        likedTracks={[]}
+        events={[]}
+        languages={["en"]}
+        providerTracks={[track("p1", "Nova", "Signal Fire"), track("p2", "Iris")]}
+      />,
+    );
+
+    const cards = screen.getAllByTestId("quick-pick");
+    expect(cards).toHaveLength(4);
+    expect(cards.map((card) => card.getAttribute("data-quick-pick-kind"))).toEqual([
+      "artist",
+      "artist",
+      "album",
+      "search",
+    ]);
+    for (const card of cards) {
+      expect(card.getAttribute("href")?.trim()).not.toBe("");
+      // The three provider-derived entries carry the artwork the provider gave.
+      // The search card has none *by construction* — it names a query, not a
+      // release — so it keeps the icon placeholder, and that is the correct
+      // rendering rather than a missing cover.
+      const isSearch = card.getAttribute("data-quick-pick-kind") === "search";
+      expect(card.querySelector("img") !== null).toBe(!isSearch);
+    }
+  });
+});
+
 describe("quickPicks: nothing has an unresolvable target", () => {
   it("emits only recognised kinds with a non-empty target that resolves", () => {
     const picks = derive(["en", "es"]);

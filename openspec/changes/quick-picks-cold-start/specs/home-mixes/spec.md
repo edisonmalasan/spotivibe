@@ -39,10 +39,18 @@ they SHALL NOT occupy the whole bound: at least the language entries SHALL remai
 
 #### Scenario: A device with no local material is offered more than the language entry
 
-- **WHEN** Quick Picks are derived for a device with no liked tracks and no listening events, and
-  the Home surface holds provider results
+- **WHEN** Quick Picks are derived for a device with no liked tracks and no listening events, the
+  Home surface holds provider results, and the selected languages leave at least one slot free
 - **THEN** the shelf offers artist and release entries derived from those results ahead of the
   language entries, each resolving to a surface that already exists
+
+#### Scenario: A full set of selected languages keeps the rail to itself
+
+- **WHEN** Quick Picks are derived for a device with no local material whose selected languages
+  already fill the shelf's bound
+- **THEN** the shelf offers the language entries and no provider-derived entry, because the
+  reservation exists to keep the language entries from being crowded out by provider volume and not
+  to be squeezed by them
 
 #### Scenario: Local evidence is never displaced by provider results
 

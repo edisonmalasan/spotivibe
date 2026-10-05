@@ -250,6 +250,49 @@ describe("HomeView: a fresh user", () => {
     ).toBeInTheDocument();
   });
 
+  it("completes Quick Picks from the feed it already fetched, with no extra request", async () => {
+    // M22 task 3.4. `deriveQuickPicks` can be fully correct as a pure function
+    // while `HomeView` silently forgets to pass the fourth source down, so the
+    // wiring is asserted here rather than assumed from the derivation's tests.
+    //
+    // Fresh user: no likes, no plays. Trending resolves with one credited track
+    // carrying an album; every other feed comes back empty.
+    const { calls } = stubDiscovery((kind) =>
+      kind === "trending"
+        ? { tracks: [credited("t1", "Trending Song", "Nova", { album: { title: "Signal Fire" } })] }
+        : { tracks: [] },
+    );
+    render(<HomeView />);
+    await settleFeed();
+
+    const cards = screen.getAllByTestId("quick-pick");
+    expect(cards.map((card) => card.getAttribute("data-quick-pick-kind"))).toEqual([
+      "artist",
+      "album",
+      "search",
+    ]);
+    expect(cards[0]?.getAttribute("href")).toBe("/artist/Nova");
+    expect(cards[1]?.getAttribute("href")).toBe("/album/Signal%20Fire");
+    expect(cards[2]?.getAttribute("data-quick-pick-target")).toBe("English");
+
+    // The whole point of reading the feed rather than fetching: no kind the
+    // Quick Picks stand-in could have asked for appears in the request log.
+    expect(requestedKinds(calls).sort()).toEqual(["collection", "podcast", "trending"]);
+    for (const call of calls) expect(call.params.get("kind")).not.toBe("quick-picks");
+  });
+
+  it("keeps Quick Picks at one language entry when no feed resolved", async () => {
+    // The degradation path: every discovery request failed, so the stand-in is
+    // empty and the rail is exactly what it was before M22.
+    stubDiscovery(() => ({ fail: 500, code: "upstream" }));
+    render(<HomeView />);
+    await settleFeed();
+
+    const cards = screen.getAllByTestId("quick-pick");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.getAttribute("data-quick-pick-kind")).toBe("search");
+  });
+
   it("never starts playback on its own", async () => {
     stubDiscovery(() => ({ tracks: [credited("a", "Alpha", "Aurora")] }));
     render(<HomeView />);

@@ -50,26 +50,66 @@ export const PRE_M19_CLIENT_BUDGET = Object.freeze({
 });
 
 /**
- * The recorded ceiling, re-measured after M20 (personal-use media downloading).
+ * M20's record, preserved rather than overwritten.
  *
- * Same toolchain and method as {@link PRE_M19_CLIENT_BUDGET}: 2026-10-03, Windows,
- * Node 24.21.0, `next build` (Next.js 16.3.6, Turbopack). Reproduce with
+ * Measured 2026-10-03, Windows, Node 24.21.0, `next build` (Next.js 16.3.6, Turbopack),
+ * after personal-use media downloading: 25 emitted chunks, 387,992 bytes gzipped in
+ * total, largest single chunk 96,667, `/` first load 230,555 across 13 chunks.
+ *
+ * Kept for the same reason {@link PRE_M19_CLIENT_BUDGET} is: M22 re-recorded the
+ * ceiling, and a ceiling that silently replaced its predecessor would erase the only
+ * evidence the number ever moved twice. A reviewer asking "what did this cost?" now has
+ * three records and the deltas between them.
+ */
+export const M20_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 387992,
+  largestChunkGzippedBytes: 96667,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 230555,
+  homeFirstLoadChunkCount: 13,
+});
+
+/**
+ * The recorded ceiling, re-measured after M22 (Quick Picks cold start).
+ *
+ * Same toolchain and method as both records above: 2026-10-05, Windows, Node 24.21.0,
+ * `next build` (Next.js 16.3.6, Turbopack), clean `.next`. Reproduce with
  * `node scripts/measure-client-bundle.mjs`.
  *
- * **What moved, and what it cost.** The total grew by 3,161 bytes gzipped (384,831 ->
- * 387,992), the largest chunk by 23 bytes, and the emitted and `/`-first-load chunk
- * counts by one each. All of it is first-party code: the overflow menu shell lifted out
- * of `ResultMenu`, the download affordance it now appears in, and the client half of the
- * download request. **No dependency was added to the client at all** —
- * `@distube/ytdl-core` is reached only through a dynamic `import()` inside
- * `src/server/download/sources.ts`, which `tests/download-non-goals.test.ts` asserts.
+ * **The `main` control, measured the same way.** `main` at `0401573` on a clean build
+ * reproduced M20's record **byte for byte** — 25 chunks, 387,992 B, largest 96,667, `/`
+ * 230,555 across 13 — so the figures below are attributable to M22's own change and not
+ * to build drift on this machine. That control is the only reason this re-record is a
+ * measurement rather than an assumption.
+ *
+ * **What moved, and what it cost.** The total grew by 1,580 bytes gzipped (387,992 ->
+ * 389,572), the largest chunk did not move at all (96,667), and the emitted and `/`-
+ * first-load chunk counts by one each (25 -> 26, 13 -> 14). All of it is first-party
+ * code: the Quick Picks stand-in pass and its two shared helpers in
+ * `src/features/home/quickPicks.ts`. **No dependency was added to the client at all**, and
+ * no new import edge reached the client graph.
+ *
+ * **What was measured about the extra chunk, and what was not.** Two probes, both on clean
+ * builds. Reverting `HomeView`'s wiring — so that nothing passes `providerTracks` at all and
+ * the new path is unreachable — still emitted 26 chunks and 389,564 B, so the split is
+ * caused by the code being *present*, not by the new behaviour being reachable. Replacing
+ * the one added `import type { Track }` with a type alias borrowed from `LocalTaste`, to
+ * drop the import edge, changed nothing at all: 26 chunks, 389,564 B, identical. (Those
+ * two probes were taken before the shelf's description line was reworded, which added the
+ * final 8 bytes; the figures above are from the finished tree.) The mechanism behind
+ * Turbopack's decision is **not** established and is not claimed here.
+ * Chasing it further would mean writing worse code — duplicating the artist and release
+ * passes inline to nudge a chunk graph — so it was left, and is recorded as unattributed
+ * rather than dressed up as understood.
  *
  * That is the distinction the ceiling exists to draw. The whole reason this file exists is
  * that M19 declined `framer-motion`, which measured **+41.4 kB** — more than ten times
- * the 4,096-byte headroom. M20 spent 3,161 bytes of *its own* source and stayed inside the
- * tolerance the first record already allowed; the spike would still fail by a factor of
- * ten. Re-recording the ceilings does not weaken that: `totalGzippedBytes` keeps its
- * 4,096-byte tolerance on top of the new figure, and a library cannot hide inside that.
+ * the 4,096-byte headroom, and it cost *one* chunk, the same shape as this. What separates
+ * them is size and origin, not chunk count: M22's move is 1,572 bytes of the project's own
+ * source, inside the tolerance the *first* record already allowed, and `framer-motion` is
+ * 26 times larger than the whole of that tolerance. Re-recording does not weaken the
+ * budget: `totalGzippedBytes` keeps its 4,096-byte tolerance on top of the new figure, so a
+ * library still cannot hide inside it.
  *
  * These are bytes, not "kB", so the assertion cannot move when someone rounds.
  */
@@ -84,12 +124,12 @@ export const CLIENT_BUDGET = Object.freeze({
   method:
     "every .js file under .next/static/chunks, gzipped at level 9; per-route, the <script src> set of the route's emitted .next/server/app HTML",
   /** When and after what this figure was measured, so a drift has something to be compared to. */
-  recordedAt: "2026-10-03, after M20 (personal-use media downloading)",
-  totalGzippedBytes: 387992,
+  recordedAt: "2026-10-05, after M22 (Quick Picks cold start)",
+  totalGzippedBytes: 389572,
   largestChunkGzippedBytes: 96667,
-  chunkCount: 25,
-  homeFirstLoadGzippedBytes: 230555,
-  homeFirstLoadChunkCount: 13,
+  chunkCount: 26,
+  homeFirstLoadGzippedBytes: 232135,
+  homeFirstLoadChunkCount: 14,
   /**
    * How far a rebuild may drift from the recorded figure.
    *

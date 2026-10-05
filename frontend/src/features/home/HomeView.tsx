@@ -455,6 +455,19 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
         likedTracks={likedTracks}
         events={events}
         languages={languages}
+        /*
+         * M22 — the fourth source `home-mixes` specifies: provider results the
+         * feed has already fetched. Both `useDiscoveryShelf` calls above run
+         * unconditionally, so this costs no request and persists nothing; the
+         * derivation reads them only when the device holds no local material.
+         *
+         * This reads the *fetch*, not the section: whether the trending shelf is
+         * displayed is a layout decision and is deliberately not consulted, and
+         * `DiscoveryShelf.tracks` is `[]` until the shelf is ready — so a device
+         * whose discovery request failed or is still in flight falls back to the
+         * language entry exactly as before.
+         */
+        providerTracks={[...feed.trending.tracks, ...feed.collections.tracks]}
         filter={filter}
       />
 
