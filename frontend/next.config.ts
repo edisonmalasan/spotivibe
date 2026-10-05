@@ -34,32 +34,6 @@ const CLIENT_FRAME_ORIGINS = ["https://www.youtube.com"];
  * **M23 correction.** This list previously read `["https://i.ytimg.com", "data:"]` on
  * the stated grounds that `i.ytimg.com` serves "track, album, and artist artwork".
  * That was false against real traffic, and the consequence was severe: the policy
- * refused the host the providers actually return, so **every artist image failed to
- * load in production**.
- *
- * `i.ytimg.com` is only the *fallback* `pickArtwork()` constructs when a tier
- * supplied no artwork at all (`src/server/music/normalize.ts`). Every artwork URL a
- * provider really returns is passed through verbatim, and those come from
- * `yt3.googleusercontent.com` — 84 occurrences across the five captured fixtures in
- * `tests/fixtures/providers/`.
- *
- * Why this went unnoticed: the policy's own test derived the expected origins by
- * scanning `src/**` **source text**, and provider artwork never appears as a string
- * in our code. The detector was structurally incapable of observing the defect it
- * existed to prevent, so its green result was not evidence. It now reads the captured
- * fixtures, which is where the truth actually lives.
- *
- * The browser-side evidence for the mechanism, measured rather than assumed: the
- * URLs are valid (HTTP 200 `image/jpeg`, and 120x120 when navigated to directly), and
- * with one variable changed in one browser, this exact `img-src` fails to load them
- * while the same list plus `yt3` loads them.
- */
-/**
- * Image origins the browser is permitted to load.
- *
- * **M23 correction.** This list previously read `["https://i.ytimg.com", "data:"]` on
- * the stated grounds that `i.ytimg.com` serves "track, album, and artist artwork".
- * That was false against real traffic, and the consequence was severe: the policy
  * refused four of the five hosts the application actually requests artwork from, so
  * **most artist, album and track images failed to load in production** while every
  * status code stayed 200.
@@ -118,8 +92,15 @@ const CLIENT_IMAGE_ORIGINS = [
  * runtime evaluates generated code, which a production build does not. The
  * difference is asserted rather than assumed — `tests/security-policy.test.ts`
  * requires the production policy to contain no `unsafe-eval`.
+ *
+ * `connectSrc` is a parameter rather than a constant because the **service worker
+ * script** is governed by its own policy and legitimately needs a wider one. See
+ * {@link serviceWorkerContentSecurityPolicy}.
  */
-function contentSecurityPolicy(isProduction: boolean): string {
+function contentSecurityPolicy(
+  isProduction: boolean,
+  connectSrc: readonly string[] = ["'self'"],
+): string {
   const scriptSrc = [
     "'self'",
     ...CLIENT_SCRIPT_ORIGINS,
@@ -157,14 +138,48 @@ function contentSecurityPolicy(isProduction: boolean): string {
     `script-src ${scriptSrc.join(" ")}`,
     `style-src ${styleSrc.join(" ")}`,
     // Every client-side request is to the application's own API surface; the provider
-    // calls happen server-side and never appear here.
-    "connect-src 'self'",
+    // calls happen server-side and never appear here. The service worker script is the
+    // one exception and gets its own policy — see below.
+    `connect-src ${connectSrc.join(" ")}`,
     // The player fetches its own media inside its own frame, under its own policy.
     "media-src 'self'",
     "manifest-src 'self'",
     "worker-src 'self' blob:",
     "upgrade-insecure-requests",
   ].join("; ");
+}
+
+/**
+ * The policy served **with the service worker script**, which is not the document's.
+ *
+ * A worker inherits the CSP of the response its script came from, and it is the only
+ * context in this application that performs a deliberate cross-origin `fetch()`:
+ * `artworkFirst` in `public/sw.js` mediates third-party artwork through the Cache API.
+ *
+ * Under the document's `connect-src 'self'` that fetch throws `TypeError: Failed to
+ * fetch`, `artworkFirst` swallows it, finds nothing cached, and rethrows
+ * `artwork unavailable` — so `respondWith` rejects and **every** provider-hosted image
+ * fails to render, for every visitor whose worker is controlling the page. `i.ytimg.com`
+ * masked it: it is in `NEVER_CACHE_HOSTS`, so it bypasses the worker entirely and always
+ * worked, while `yt3.googleusercontent.com`, `invidious.f5.si` and
+ * `piped-proxy.ducks.party` all went through the broken path.
+ *
+ * **Measured, not assumed.** One variable changed, one browser, same page and same
+ * worker script: `connect-src 'self'` → the image errors; the same policy with the
+ * artwork origins added → the same image renders at 120x120. Reproduce in
+ * `tests/security-policy.test.ts`, which asserts this policy's `connect-src` names every
+ * artwork origin the document policy names in `img-src`.
+ *
+ * **This does not widen what the page may do.** A document's policy is not affected by
+ * the policy served with the worker script, so the page still cannot `fetch()` a
+ * provider: the document policy remains exactly `connect-src 'self'`, and the test
+ * requires it to stay that way.
+ *
+ * `data:` is excluded because it is an image scheme, not a fetchable origin.
+ */
+function serviceWorkerContentSecurityPolicy(isProduction: boolean): string {
+  const artworkOrigins = CLIENT_IMAGE_ORIGINS.filter((origin) => origin !== "data:");
+  return contentSecurityPolicy(isProduction, ["'self'", ...artworkOrigins]);
 }
 
 /**
@@ -209,6 +224,22 @@ const nextConfig: NextConfig = {
         // that misses the two files a browser fetches before it renders anything.
         source: "/:path*",
         headers: SECURITY_HEADERS.map(({ key, value }) => ({ key, value: value(isProduction) })),
+      },
+      {
+        // **After** the catch-all, and that order is load-bearing. Next.js applies every
+        // matching rule in declaration order and the last value wins for a given header
+        // key, so this replaces `Content-Security-Policy` for the worker script alone and
+        // leaves every other security header, and the whole document policy, untouched.
+        // Placed before the catch-all it would be silently overwritten by it.
+        //
+        // `tests/security-policy.test.ts` asserts the ordering rather than trusting it.
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: serviceWorkerContentSecurityPolicy(isProduction),
+          },
+        ],
       },
     ];
   },

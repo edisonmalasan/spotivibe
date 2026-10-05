@@ -191,18 +191,47 @@ function fixtureImageOrigins(): Set<string> {
   return origins;
 }
 
-/** The single header rule the config declares, read with the ambient environment. */
-async function policyHeaders(): Promise<Record<string, string>> {
+/** Every declared header rule, in the order Next.js applies them. */
+async function headerRules(): Promise<
+  Array<{ source: string; headers: Array<{ key: string; value: string }> }>
+> {
   const rules = (await nextConfig.headers?.()) as unknown as Array<{
     source: string;
     headers: Array<{ key: string; value: string }>;
   }>;
   expect(Array.isArray(rules), "next.config.ts must declare headers()").toBe(true);
-  expect(rules, "exactly one header rule, so no path can be exempt").toHaveLength(1);
-  // One rule covering every path: a policy that skips `/sw.js` or the manifest leaves
-  // the two files a browser fetches before it renders anything unprotected.
-  expect(rules[0].source).toBe("/:path*");
-  return Object.fromEntries(rules[0].headers.map(({ key, value }) => [key, value]));
+  return rules;
+}
+
+/**
+ * The headers a request to `path` actually receives.
+ *
+ * Next.js applies every matching rule in declaration order and the **last** value wins
+ * for a given header key. That is the behaviour the `/sw.js` rule depends on, so this
+ * helper reproduces it rather than assuming which order is right - and the ordering is
+ * asserted separately below, because getting it backwards produces a silently
+ * overwritten header rather than an error.
+ *
+ * Only the two source patterns this config uses are matched: the `/:path*` catch-all
+ * and an exact path. A third pattern would need real path-to-regexp here, and would
+ * also be a change worth a test of its own.
+ */
+function effectiveHeaders(
+  rules: Array<{ source: string; headers: Array<{ key: string; value: string }> }>,
+  path: string,
+): Record<string, string> {
+  const resolved: Record<string, string> = {};
+  for (const rule of rules) {
+    const matches = rule.source === "/:path*" || rule.source === path;
+    if (!matches) continue;
+    for (const { key, value } of rule.headers) resolved[key] = value;
+  }
+  return resolved;
+}
+
+/** The document's headers: the catch-all, with no `/sw.js` exemption applying to it. */
+async function policyHeaders(): Promise<Record<string, string>> {
+  return effectiveHeaders(await headerRules(), "/");
 }
 
 /**
@@ -213,11 +242,24 @@ async function policyHeaders(): Promise<Record<string, string>> {
  * actually deployed, and the one every claim about production has to be made against.
  */
 async function productionPolicy(): Promise<string> {
+  return (await productionHeadersFor("/"))["Content-Security-Policy"];
+}
+
+/**
+ * The headers `path` receives from a **production** build.
+ *
+ * Comparing the worker's policy against the document's is only meaningful if both come
+ * from the same environment: `script-src` gains `unsafe-eval` outside production, so
+ * reading the worker policy under the ambient test environment and the document policy
+ * under production compares two different things and fails on `script-src` for a reason
+ * that has nothing to do with the worker.
+ */
+async function productionHeadersFor(path: string): Promise<Record<string, string>> {
   const environment = process.env as Record<string, string | undefined>;
   const previous = environment.NODE_ENV;
   environment.NODE_ENV = "production";
   try {
-    return (await policyHeaders())["Content-Security-Policy"];
+    return effectiveHeaders(await headerRules(), path);
   } finally {
     environment.NODE_ENV = previous;
   }
@@ -453,6 +495,76 @@ describe("production carries no development relaxation (task 1.1)", () => {
     // directive would be an unrecorded relaxation.
     for (const name of ["default-src", "frame-src", "connect-src", "media-src", "object-src"]) {
       expect(directives.get(name) ?? [], name).not.toContain("'unsafe-inline'");
+    }
+  });
+});
+
+describe("the service worker script is governed by its own policy (M23)", () => {
+  /**
+   * The defect this guards, in one sentence: the document policy's `connect-src 'self'`
+   * was also being served with `/sw.js`, so the worker inherited it, and the worker's own
+   * cross-origin `fetch()` of provider artwork threw `TypeError: Failed to fetch` — which
+   * `artworkFirst` swallows before rethrowing `artwork unavailable`, so every
+   * provider-hosted image failed to render for every visitor the worker was controlling.
+   *
+   * Nothing about that was visible from the source, the unit tests, or the document
+   * policy: `i.ytimg.com` is in the worker's `NEVER_CACHE_HOSTS`, so it bypassed the
+   * worker entirely and always worked, and every other artwork host went through the
+   * broken path. It was found only by loading the page in a browser and measuring
+   * `naturalWidth`.
+   */
+  it("gives the worker a connect-src naming every artwork origin the document allows", async () => {
+    const workerPolicy = parsePolicy(
+      (await productionHeadersFor("/sw.js"))["Content-Security-Policy"],
+    );
+    const documentPolicy = parsePolicy(await productionPolicy());
+    const documentImgSrc = documentPolicy.get("img-src") ?? [];
+    const workerConnectSrc = workerPolicy.get("connect-src") ?? [];
+
+    expect(workerConnectSrc).toContain("'self'");
+    // The derivation is not accidental: the worker's connect-src is `'self'` plus exactly
+    // the document's img-src origins, which excludes both `'self'` (already present) and
+    // `data:` (an image scheme a worker cannot `fetch`).
+    const expected = documentImgSrc.filter((origin) => origin !== "data:" && origin !== "'self'");
+    expect(workerConnectSrc.slice(1)).toEqual(expected);
+    expect(expected.length, "the derivation is vacuous if it yields nothing").toBeGreaterThan(0);
+  });
+
+  it("does not widen the document's own connect-src", async () => {
+    // The whole reason this is safe: a document's policy is not affected by the policy
+    // served with the worker script, so the page still may not fetch a provider. If this
+    // ever stops holding, the exemption has become a real grant and the change is wrong.
+    expect(parsePolicy(await productionPolicy()).get("connect-src")).toEqual(["'self'"]);
+  });
+
+  it("orders the worker rule after the catch-all, because the last value wins", async () => {
+    // If the `/sw.js` rule were declared first, the catch-all would overwrite its
+    // `Content-Security-Policy` and the defect would return with no error anywhere.
+    const rules = await headerRules();
+    const catchAll = rules.findIndex((rule) => rule.source === "/:path*");
+    const workerRule = rules.findIndex((rule) => rule.source === "/sw.js");
+    expect(catchAll, "the catch-all must still cover every path").toBeGreaterThanOrEqual(0);
+    expect(workerRule, "the worker rule must exist").toBeGreaterThan(catchAll);
+    // The catch-all is still there, and still covers `/sw.js` for everything the worker
+    // rule does not restate - so the exemption is one header, not a whole file.
+    const workerHeaders = effectiveHeaders(rules, "/sw.js");
+    const catchAllHeaders = effectiveHeaders(rules, "/some-other-path");
+    for (const key of Object.keys(catchAllHeaders)) {
+      if (key === "Content-Security-Policy") continue;
+      expect(workerHeaders[key], `${key} must still apply to /sw.js`).toBe(catchAllHeaders[key]);
+    }
+  });
+
+  it("keeps the worker's img-src equal to the document's, so nothing else drifts", async () => {
+    // The worker's policy is the document's with one directive widened. If a future
+    // change relaxed anything else in it, that change would be invisible here otherwise.
+    const workerPolicy = parsePolicy(
+      (await productionHeadersFor("/sw.js"))["Content-Security-Policy"],
+    );
+    const documentPolicy = parsePolicy(await productionPolicy());
+    for (const [name, values] of documentPolicy) {
+      if (name === "connect-src") continue;
+      expect(workerPolicy.get(name), `${name} must match the document policy`).toEqual(values);
     }
   });
 });
