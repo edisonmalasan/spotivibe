@@ -175,7 +175,23 @@ export function attachServiceWorker(options: { timeoutMs?: number } = {}): () =>
   }, timeoutMs);
 
   void navigator.serviceWorker
-    .register(SERVICE_WORKER_URL, { scope: SERVICE_WORKER_SCOPE })
+    // `updateViaCache: 'none'` is load-bearing, not a default worth restating.
+    //
+    // The worker is governed by the CSP served **with its script**, so a worker running
+    // an older copy of `sw.js` is also running under an older policy. Measured in a
+    // browser: after the M23 policy fix, a returning visitor's page kept failing to load
+    // provider artwork while a first-time visitor on a clean origin loaded it correctly
+    // from the very same server — the only difference being whether that origin had ever
+    // registered a worker. The default (`'imports'`) lets the HTTP cache answer the
+    // script request, so a corrected worker can sit unapplied indefinitely.
+    //
+    // The cost is one revalidation of `/sw.js` per update check rather than a possible
+    // cache hit. For a worker whose correctness depends on the policy shipped alongside
+    // it, that is the right trade.
+    .register(SERVICE_WORKER_URL, {
+      scope: SERVICE_WORKER_SCOPE,
+      updateViaCache: "none",
+    })
     .then((registration) => {
       clearTimeout(timer);
       if (!isCurrent()) return;

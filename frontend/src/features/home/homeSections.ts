@@ -30,7 +30,6 @@ export type HomeSectionId =
   | "recently-played"
   | "trending"
   | "made-for-you"
-  | "popular-artists"
   | "smart-mixes"
   | "genres"
   | "podcasts"
@@ -137,16 +136,6 @@ export const HOME_SECTIONS: readonly HomeSection[] = [
     enabled: (signals) => signals.hasLocalArtists,
   },
   {
-    id: "popular-artists",
-    title: "Popular Artists",
-    description: "Artists appearing across the trending shelf. Open one to search their music.",
-    shape: "circular",
-    // Derived from the Trending result — no extra request of its own.
-    kind: "local",
-    filters: ["music"],
-    enabled: always,
-  },
-  {
     id: "smart-mixes",
     title: "Smart Mixes",
     description: "Mixes built on this device from what you like and play.",
@@ -198,30 +187,49 @@ export function selectHomeSections(
   return sections.filter((section) => section.enabled(signals));
 }
 
-/** One reason a rendered section list breaks the geometry rhythm. */
+/** One reason a rendered row list breaks the geometry rhythm. */
 export interface ShelfRhythmViolation {
-  /** Index into the rendered section list the violation was found at. */
+  /** Index into the rendered row list the violation was found at. */
   readonly index: number;
-  /** The section id at that index. */
-  readonly id: HomeSectionId;
+  /** The row's id at that index. */
+  readonly id: string;
   /** What is wrong, in human-readable form. */
   readonly reason: string;
 }
 
+/** The minimum a rendered row must declare for the rhythm rule to judge it. */
+export interface ShelfGeometryRow {
+  readonly id: string;
+  readonly shape: HomeShelfShape;
+}
+
 /**
- * Check the geometry rhythm of a *rendered* section list (spec: "Geometry
- * rhythm keeps circular contrast unclustered").
+ * Check the geometry rhythm of a *rendered* row list (spec: "Geometry rhythm
+ * keeps circular contrast unclustered").
  *
  * Two rules, both stated by the amended spec:
- * 1. no two circular sections are adjacent, and
- * 2. the circular section appears within the first {@link CIRCULAR_WINDOW}
- *    rendered sections rather than trailing the feed.
+ * 1. no two circular rows are adjacent, and
+ * 2. a circular row appears within the first {@link CIRCULAR_WINDOW} rendered
+ *    rows rather than trailing the feed.
  *
  * Returns one entry per violation (empty when the list is valid), so a caller
  * can report every problem rather than only the first.
+ *
+ * **M23: takes any row with an `id` and a `shape`, not a `HomeSection`.** The
+ * circular artist rail is Quick Picks, and Quick Picks is *not* a `HOME_SECTIONS`
+ * entry — it renders above the section stack with the other two M17 surfaces. A
+ * guard that could only see `HOME_SECTIONS` would have become vacuous here: a
+ * list with no circular row produces no violations, so the rule would have kept
+ * reporting green while guarding nothing. The parameter is therefore the narrow
+ * structural shape, and `HomeView` passes the real rendered order.
+ *
+ * Note what rule 2 does *not* say: it does not require a circular row to exist.
+ * Under the `Podcasts` filter the artist rail is filtered out and the feed is all
+ * square, which is valid. Requiring one would make the rule fail on a
+ * legitimately unfiltered presentation.
  */
 export function shelfRhythmViolations(
-  sections: readonly HomeSection[],
+  sections: readonly ShelfGeometryRow[],
   window: number = CIRCULAR_WINDOW,
 ): ShelfRhythmViolation[] {
   const violations: ShelfRhythmViolation[] = [];
@@ -255,7 +263,7 @@ export function shelfRhythmViolations(
  * once local-only sections drop out still fails loudly.
  */
 export function assertShelfRhythm(
-  sections: readonly HomeSection[],
+  sections: readonly ShelfGeometryRow[],
   window: number = CIRCULAR_WINDOW,
 ): void {
   const violations = shelfRhythmViolations(sections, window);

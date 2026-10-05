@@ -324,7 +324,19 @@ describe("result menu go-to items (M9 task 6.1)", () => {
   });
 });
 
-describe("Home popular artists cards (M9 task 6.1)", () => {
+/**
+ * M9 task 6.1's entry-point clauses — a rendered artist card is a navigation
+ * target, not a play control, and its href resolves to the artist route — retargeted
+ * onto the Quick Picks rail in M23.
+ *
+ * Retargeted, not deleted. The assertions are about *rendered* Home cards: that the
+ * card is an `<a>` rather than a button, and that the href carries an identity the
+ * artist route can resolve. M23 removed the `popular-artists` section because it was
+ * measured on production to be a strict prefix of this rail, so those exact claims
+ * now live on the one surface that carries them. Deleting them with the section would
+ * have left M9's requirement unasserted while looking like a clean migration.
+ */
+describe("Home artist cards resolve to the artist route (M9 task 6.1, M23 rail)", () => {
   /** Stub the discovery feed: trending carries the shelf the cards derive from. */
   function stubTrending(tracks: Track[]): void {
     vi.stubGlobal(
@@ -341,31 +353,66 @@ describe("Home popular artists cards (M9 task 6.1)", () => {
     );
   }
 
-  async function artistCards(tracks: Track[]): Promise<HTMLElement[]> {
+  /**
+   * One render of the rail, returning both the anchors and the cards.
+   *
+   * M23 note on which element is which. The anchor carries
+   * `data-testid="quick-pick"`; the circular artist card *inside* it carries
+   * `data-testid="home-artist-card"`, retained from the consolidated Popular Artists
+   * section. This file's original helper returned `home-artist-card` and asserted the
+   * returned element was an `<a>` with an href — true when the card *was* the link, and
+   * no longer true now that the link wraps the card. The navigation assertions read the
+   * anchor; the card is read by the retained id.
+   *
+   * Both are returned from a single render on purpose. Querying them with two helpers
+   * would mean two `render()` calls in one test, and the second Home would answer the
+   * same test ids — the assertion would then be measuring a tree with duplicates in it,
+   * which is a weaker claim than it looks.
+   */
+  async function rail(tracks: Track[]): Promise<{ links: HTMLElement[]; cards: HTMLElement[] }> {
     stubTrending(tracks);
     render(<HomeView />);
-    const shelf = await screen.findByTestId("home-section-popular-artists");
-    await waitFor(() =>
-      expect(within(shelf).queryAllByTestId("home-artist-card")).not.toHaveLength(0),
-    );
-    return within(shelf).getAllByTestId("home-artist-card");
+    // M23: the circular artist rail is Quick Picks. It is not a `home-section-*`
+    // row, so the query names the surface id the shelf actually renders.
+    const shelf = await screen.findByTestId("home-quick-picks");
+    await waitFor(() => {
+      expect(within(shelf).queryAllByTestId("quick-pick")).not.toHaveLength(0);
+      expect(within(shelf).queryAllByTestId("home-artist-card")).not.toHaveLength(0);
+    });
+    return {
+      links: within(shelf).getAllByTestId("quick-pick"),
+      cards: within(shelf).getAllByTestId("home-artist-card"),
+    };
   }
 
-  it("links an identified artist to its artist route", async () => {
-    const cards = await artistCards([
-      makeTrack({
-        id: "youtube:aaa",
-        providerId: "aaa",
-        title: "Run Away",
-        artists: [{ id: CHANNEL_ID, name: "Aurora" }],
-      }),
-    ]);
+  const ONE_IDENTIFIED_ARTIST = [
+    makeTrack({
+      id: "youtube:aaa",
+      providerId: "aaa",
+      title: "Run Away",
+      artists: [{ id: CHANNEL_ID, name: "Aurora" }],
+    }),
+  ];
 
+  it("links an identified artist to its artist route", async () => {
+    const { links, cards } = await rail(ONE_IDENTIFIED_ARTIST);
+
+    expect(links).toHaveLength(1);
     expect(cards).toHaveLength(1);
-    expect(cards[0].tagName).toBe("A"); // a navigation card, never a play control
-    expect(cards[0]).toHaveAttribute("href", `/artist/${CHANNEL_ID}`);
-    expect(cards[0]).toHaveTextContent("Aurora");
-    expect(cards[0]).toHaveTextContent("Artist"); // DESIGN.md circular card composition
+    expect(links[0].tagName).toBe("A"); // a navigation card, never a play control
+    expect(links[0]).toHaveAttribute("href", `/artist/${CHANNEL_ID}`);
+    expect(links[0]).toHaveTextContent("Aurora");
+    expect(links[0]).toHaveTextContent("Artist"); // DESIGN.md circular card composition
+  });
+
+  it("wraps the circular artist card in the artist link", async () => {
+    // The retained `home-artist-card` id is what other assertions address, so the
+    // relationship it now has to the anchor is asserted rather than assumed: the card
+    // is inside a link, and the card is not itself one.
+    const { links, cards } = await rail(ONE_IDENTIFIED_ARTIST);
+
+    expect(cards[0].tagName).toBe("ARTICLE");
+    expect(links[0]).toContainElement(cards[0]);
   });
 
   it("links an artist with no provider id by a resolvable text key", async () => {
@@ -374,7 +421,7 @@ describe("Home popular artists cards (M9 task 6.1)", () => {
     // The card therefore prefers the artist's real name for the route key, so a
     // shared link keeps its capitalization, and only falls back to the derived
     // id when that is a genuine provider id.
-    const cards = await artistCards([
+    const { links } = await rail([
       makeTrack({
         id: "youtube:aaa",
         providerId: "aaa",
@@ -383,9 +430,9 @@ describe("Home popular artists cards (M9 task 6.1)", () => {
       }),
     ]);
 
-    expect(cards).toHaveLength(1);
-    expect(cards[0]).toHaveAttribute("href", "/artist/Aurora%20Sky");
-    const key = cards[0].getAttribute("href")?.replace("/artist/", "") ?? "";
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", "/artist/Aurora%20Sky");
+    const key = links[0].getAttribute("href")?.replace("/artist/", "") ?? "";
     expect(decodeURIComponent(key)).toBe("Aurora Sky");
     expect(artistRequestKey(key)).toEqual({ name: "Aurora Sky" });
   });

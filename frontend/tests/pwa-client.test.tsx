@@ -109,8 +109,15 @@ describe("service worker support and registration (task 2.3)", () => {
     const { container } = stubServiceWorker();
     const detach = attachServiceWorker();
     await waitFor(() => expect(container.register).toHaveBeenCalledTimes(1));
+    // `updateViaCache: 'none'` is asserted rather than left to the implementation: the
+    // worker inherits the CSP shipped with its script, so a worker served from the HTTP
+    // cache also runs under a stale policy. Measured in a browser — a returning visitor
+    // kept failing to load provider artwork after the M23 policy fix while a first-time
+    // visitor on the same server loaded it correctly. The default lets the cache answer
+    // the script request, so the correction can sit unapplied.
     expect(container.register).toHaveBeenCalledWith(SERVICE_WORKER_URL, {
       scope: SERVICE_WORKER_SCOPE,
+      updateViaCache: "none",
     });
     await waitFor(() => expect(useServiceWorkerStore.getState().status).toBe("ready"));
     detach();

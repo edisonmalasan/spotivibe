@@ -29,11 +29,28 @@ export function artworkUrl(artwork: readonly Artwork[] | undefined): string | un
 }
 
 /**
- * Derived playlist cover (design §8): the first ≤4 *distinct* track artwork
- * URLs in track order — 1 tiles as a single image, 2–4 form a 2×2 grid, and
- * an empty result means "use the placeholder tile".
+ * A playlist's cover: its own artwork when it has some, otherwise the first ≤4
+ * *distinct* track artwork URLs in track order.
+ *
+ * Design §8's grid rule is unchanged — 1 tile renders as a single image, 2–4 form a
+ * 2×2 grid, and an empty result means "use the placeholder tile".
+ *
+ * **M23: the playlist's own artwork is preferred here, in the one derivation, rather
+ * than in each caller.** A playlist imported from a provider, or one whose cover the
+ * listener set, carries real artwork that is a truer picture of the collection than a
+ * collage of whatever four of its tracks happen to have. `Sidebar` and
+ * `PlaylistDetailView` were each doing this preference at the call site; `LibraryView`
+ * was not, so the same playlist showed its real cover in the sidebar and a derived
+ * collage in the library grid — one record, two pictures, and which one you saw depended
+ * on where you looked. Putting the rule here makes that disagreement unrepresentable
+ * rather than something a fourth surface can reintroduce.
  */
-export function derivePlaylistArtwork(playlist: Pick<PlaylistRecord, "tracks">): string[] {
+export function derivePlaylistArtwork(
+  playlist: Pick<PlaylistRecord, "tracks" | "artwork">,
+): string[] {
+  const own = artworkUrl(playlist.artwork);
+  if (own !== undefined) return [own];
+
   const urls: string[] = [];
   const seen = new Set<string>();
   for (const entry of playlist.tracks) {

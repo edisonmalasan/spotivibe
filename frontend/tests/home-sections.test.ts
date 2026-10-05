@@ -8,6 +8,11 @@ import {
   type HomeSection,
   type HomeSectionSignals,
 } from "@/features/home/homeSections";
+import {
+  MIX_CARD_SURFACE,
+  QUICK_PICK_SURFACE,
+  TIME_SHELF_SURFACE,
+} from "@/features/home/homeFilter";
 
 /**
  * M8 task 6.1 (design §7 + rhythm risk): the Home feed's *order* is data, and
@@ -22,6 +27,16 @@ import {
  * M11 re-gates Smart Mixes: the section lists the mixes the listener actually
  * has (`hasMixes`) instead of previewing a discovery feed once three local
  * artists existed, so a listener with signal but no mix sees no empty shelf.
+ *
+ * **M23: the rhythm is now checked over the whole rendered feed, not just
+ * `HOME_SECTIONS`.** The circular artist rail is Quick Picks, and Quick Picks is
+ * not a `HOME_SECTIONS` entry — it renders above the section stack beside the
+ * mix-card row and the time-aware shelf. So the rhythm input below is
+ * `M17_ROWS + sections`, matching what `HomeView` renders. Checking `sections`
+ * alone would have left the rule green over a list with no circular row in it,
+ * which is a passing check that guards nothing; {@link renderedRows} is the single
+ * helper both the migrated and the new rhythm tests read, so they cannot drift
+ * apart from what the component asserts.
  */
 
 /** A fresh user: no history, no local artists, no mixes. */
@@ -58,6 +73,23 @@ function allSignalCombinations(): HomeSectionSignals[] {
   return combinations;
 }
 
+/**
+ * The three M17 surfaces in the order `HomeView` renders them (M23).
+ *
+ * Duplicated from the component's own list on purpose. A test that imported
+ * `M17_SURFACE_ROWS` would pass by construction if the component's list were wrong,
+ * which is the opposite of what a rhythm check is for: the point is to pin the
+ * declared order against the rule, so the expectation has to be written down.
+ */
+const M17_ROWS = [MIX_CARD_SURFACE, TIME_SHELF_SURFACE, QUICK_PICK_SURFACE];
+
+/** The rendered feed rows for a signal combination: the M17 rows, then the sections. */
+function renderedRows(
+  signals: HomeSectionSignals,
+): Array<{ id: string; shape: "square" | "circular" }> {
+  return [...M17_ROWS, ...selectHomeSections(signals, HOME_SECTIONS)];
+}
+
 /** A minimal section list, so a rhythm case can be constructed deliberately. */
 function section(id: string, shape: "square" | "circular"): HomeSection {
   return {
@@ -73,11 +105,14 @@ function section(id: string, shape: "square" | "circular"): HomeSection {
 
 describe("homeSections: the ordered feed", () => {
   it("lists the baseline sections in the roadmap's order", () => {
+    // M23: `popular-artists` is gone. It was measured on production to render a
+    // strict prefix of the Quick Picks rail — same artists, same order, same image
+    // URLs — and this spec permits one circular artist section, so the two could not
+    // both ship. Its content is reachable through Quick Picks.
     expect(HOME_SECTIONS.map((entry) => entry.id)).toEqual([
       "recently-played",
       "trending",
       "made-for-you",
-      "popular-artists",
       "smart-mixes",
       "genres",
       "podcasts",
@@ -90,7 +125,6 @@ describe("homeSections: the ordered feed", () => {
       "local",
       "trending",
       "for-you",
-      "local",
       // M11: Smart Mixes is local data now — the section lists generated mixes
       // rather than resolving a discovery feed of its own.
       "local",
@@ -100,10 +134,20 @@ describe("homeSections: the ordered feed", () => {
     ]);
   });
 
-  it("keeps the circular section and every other section square", () => {
-    expect(HOME_SECTIONS.filter((entry) => entry.shape === "circular").map((e) => e.id)).toEqual([
-      "popular-artists",
-    ]);
+  it("holds no circular section of its own, because Quick Picks is that section", () => {
+    // M23. Every `HOME_SECTIONS` row is square now; the feed's one circular artist
+    // rail is the Quick Picks shelf, which renders above this list. The next test
+    // asserts the circular section still exists — in the rendered feed.
+    expect(HOME_SECTIONS.filter((entry) => entry.shape === "circular")).toEqual([]);
+    expect(HOME_SECTIONS.every((entry) => entry.shape === "square")).toBe(true);
+  });
+
+  it("declares Quick Picks as the circular artist surface", () => {
+    // The declaration the rhythm guard and the filter both read, pinned here because
+    // both other behaviours depend on it and neither would fail loudly if it drifted.
+    expect(QUICK_PICK_SURFACE.shape).toBe("circular");
+    expect(MIX_CARD_SURFACE.shape).toBe("square");
+    expect(TIME_SHELF_SURFACE.shape).toBe("square");
   });
 
   it("makes no chart or editorial claim in any section title or description", () => {
@@ -174,7 +218,6 @@ describe("homeSections: local-only sections are gated", () => {
 
     expect(rendered.map((entry) => entry.id)).toEqual([
       "trending",
-      "popular-artists",
       "genres",
       "podcasts",
       "collections",
@@ -257,7 +300,7 @@ describe("homeSections: local-only sections are gated", () => {
 describe("homeSections: the geometry rhythm rule", () => {
   it("passes for the authored feed under every combination of local signals", () => {
     for (const signals of allSignalCombinations()) {
-      const rendered = selectHomeSections(signals, HOME_SECTIONS);
+      const rendered = renderedRows(signals);
       expect(shelfRhythmViolations(rendered), JSON.stringify(signals)).toEqual([]);
       expect(() => {
         assertShelfRhythm(rendered);
@@ -269,20 +312,40 @@ describe("homeSections: the geometry rhythm rule", () => {
     expect(CIRCULAR_WINDOW).toBe(4);
 
     for (const signals of allSignalCombinations()) {
-      const rendered = selectHomeSections(signals, HOME_SECTIONS);
+      const rendered = renderedRows(signals);
       const circularIndex = rendered.findIndex((entry) => entry.shape === "circular");
-      expect(circularIndex).toBeGreaterThanOrEqual(0);
+      expect(circularIndex, JSON.stringify(signals)).toBeGreaterThanOrEqual(0);
       expect(circularIndex, JSON.stringify(signals)).toBeLessThan(CIRCULAR_WINDOW);
     }
   });
 
-  it("lets local-only sections only move the circular section earlier", () => {
-    const fresh = selectHomeSections(NO_SIGNAL, HOME_SECTIONS);
-    const returning = selectHomeSections(FULL_SIGNAL, HOME_SECTIONS);
-    const indexOf = (list: HomeSection[]) => list.findIndex((entry) => entry.shape === "circular");
+  it("renders exactly one circular row, for every combination of local signals", () => {
+    // The "exactly one circular artist section" clause (M23). Asserted on the
+    // *rendered* rows, because a check over `HOME_SECTIONS` alone would find zero
+    // circular rows and pass — the vacuous-pass failure mode this milestone had to
+    // avoid introducing.
+    for (const signals of allSignalCombinations()) {
+      const circular = renderedRows(signals).filter((entry) => entry.shape === "circular");
+      expect(
+        circular.map((entry) => entry.id),
+        JSON.stringify(signals),
+      ).toEqual(["home-quick-picks"]);
+    }
+  });
 
-    expect(indexOf(fresh)).toBeLessThan(indexOf(returning));
-    expect(indexOf(returning)).toBe(3); // fourth, behind the three square shelves
+  it("lets local-only sections only move the circular section earlier", () => {
+    const fresh = renderedRows(NO_SIGNAL);
+    const returning = renderedRows(FULL_SIGNAL);
+    const indexOf = (list: readonly { shape: string }[]) =>
+      list.findIndex((entry) => entry.shape === "circular");
+
+    // M23: the circular rail is the third rendered row (mix cards, time shelf, then
+    // Quick Picks), and the local-only sections all render *below* it — so its
+    // position is now fixed at 2 whether the device is fresh or returning. The
+    // assertion is kept as "never later than before", which is what the spec's
+    // rhythm rule actually protects.
+    expect(indexOf(fresh)).toBeLessThanOrEqual(indexOf(returning));
+    expect(indexOf(returning)).toBe(2);
   });
 
   it("flags two adjacent circular sections", () => {

@@ -104,6 +104,78 @@ describe("library surface (tasks 5.1–5.2)", () => {
     expect(screen.getByRole("link", { name: /Focus/ })).toHaveTextContent("0 songs");
   });
 
+  it("shows a playlist's real artwork on its card, not a derived collage (M23)", async () => {
+    // The grid used to call `derivePlaylistArtwork` with only `tracks`, so a playlist
+    // carrying its own artwork rendered a collage of four of its tracks here while the
+    // sidebar and the detail hero rendered the real cover. One record, two pictures.
+    // The preference now lives in the shared derivation, so all three agree.
+    const withArt = makeTrack({
+      id: "youtube:art",
+      providerId: "art",
+      artwork: [{ url: "https://img.test/track-art.jpg" }],
+    });
+    const otherArt = makeTrack({
+      id: "youtube:art2",
+      providerId: "art2",
+      artwork: [{ url: "https://img.test/track-art2.jpg" }],
+    });
+    // Seeded through `create`, which accepts `artwork`. `update` does not: its patch
+    // type has no artwork field, so a playlist's own artwork can only arrive at
+    // creation or through import. Recorded rather than changed here — see the residual
+    // in the M23 notes.
+    await repositories.playlists.create({
+      name: "Road Trip",
+      artwork: [{ url: "https://img.test/playlist-cover.jpg", width: 640 }],
+    });
+    const stored = (await repositories.playlists.list()).find((p) => p.name === "Road Trip");
+    for (const track of [withArt, otherArt]) {
+      await repositories.playlists.addTrack(stored?.id ?? "", track);
+    }
+
+    render(<LibraryView />);
+
+    const card = await screen.findByRole("link", { name: /Road Trip/ });
+    const images = [...card.querySelectorAll("img")].map((img) => img.getAttribute("src"));
+    // One image, not a grid — and the playlist's own, not either track's.
+    expect(images).toEqual(["https://img.test/playlist-cover.jpg"]);
+  });
+
+  it("still derives a collage for a playlist with no artwork of its own", async () => {
+    // The other half: moving the preference into the derivation must not have cost the
+    // track-artwork fallback that every locally created playlist relies on.
+    const first = makeTrack({
+      id: "youtube:c1",
+      providerId: "c1",
+      artwork: [{ url: "https://img.test/c1.jpg" }],
+    });
+    const second = makeTrack({
+      id: "youtube:c2",
+      providerId: "c2",
+      artwork: [{ url: "https://img.test/c2.jpg" }],
+    });
+    const third = makeTrack({
+      id: "youtube:c3",
+      providerId: "c3",
+      artwork: [{ url: "https://img.test/c3.jpg" }],
+    });
+    await seedPlaylist("Road Trip", [first, second, third]);
+
+    render(<LibraryView />);
+
+    const card = await screen.findByRole("link", { name: /Road Trip/ });
+    const images = [...card.querySelectorAll("img")].map((img) => img.getAttribute("src"));
+    // Three distinct covers → three tiles in the 2×2 grid, in track order. Written
+    // as "all of them, none of them the track's absent artwork" rather than a slice,
+    // so the fallback cannot silently start dropping a cover.
+    expect(images).toHaveLength(3);
+    expect(images).toEqual([
+      "https://img.test/c1.jpg",
+      "https://img.test/c2.jpg",
+      "https://img.test/c3.jpg",
+    ]);
+    expect(images).not.toContain("https://img.test/art.jpg");
+  });
+
   it("filters by name, shows a no-matches line, and restores on clear", async () => {
     await seedPlaylist("Road Trip", [trackA]);
     await seedPlaylist("Focus");

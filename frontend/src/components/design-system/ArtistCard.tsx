@@ -17,6 +17,15 @@ interface ArtistCardProps {
    */
   artworkUrl?: string;
   className?: string;
+  /**
+   * Optional `data-testid` for the card element.
+   *
+   * Present because M23 consolidated the Popular Artists section into the Quick
+   * Picks rail: both the link that identifies a Quick Pick entry and the circular
+   * artist card inside it need to be addressable, and a single element cannot
+   * carry two `data-testid` attributes.
+   */
+  testId?: string;
 }
 
 /**
@@ -29,9 +38,11 @@ export function ArtistCard({
   label = "Artist",
   artworkUrl,
   className = "",
+  testId,
 }: ArtistCardProps) {
   return (
     <article
+      data-testid={testId}
       className={`motion-reveal motion-feedback flex w-full flex-col gap-3 rounded-cards p-3 hover:bg-graphite ${className}`}
     >
       <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-avatars bg-graphite">

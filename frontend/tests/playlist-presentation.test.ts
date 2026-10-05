@@ -102,6 +102,39 @@ describe("derivePlaylistArtwork", () => {
       "https://img.test/four.jpg",
     ]);
   });
+
+  it("prefers the playlist's own artwork over a collage of its tracks (M23)", () => {
+    // The gap this closes: the sidebar and the detail hero both preferred a playlist's
+    // real cover while the library grid derived one, so the same record showed two
+    // different pictures depending on where you looked. The preference now lives here,
+    // where a fourth surface cannot forget it.
+    const playlist = playlistWith([
+      track("a", "https://img.test/one.jpg"),
+      track("d", "https://img.test/two.jpg"),
+    ]);
+    playlist.artwork = [{ url: "https://img.test/playlist-own.jpg", width: 640 }];
+
+    // A single URL, so it renders as one image rather than a grid.
+    expect(derivePlaylistArtwork(playlist)).toEqual(["https://img.test/playlist-own.jpg"]);
+  });
+
+  it("falls back to track artwork when the playlist's own artwork has no usable URL", () => {
+    // Present-but-unusable must not read as "this playlist has a cover". An empty
+    // array is the only value that can honestly mean that, since `artworkUrl` returns
+    // `undefined` for it.
+    const playlist = playlistWith([track("a", "https://img.test/one.jpg")]);
+    playlist.artwork = [];
+    expect(derivePlaylistArtwork(playlist)).toEqual(["https://img.test/one.jpg"]);
+  });
+
+  it("uses the best-resolution entry of a playlist's own artwork", () => {
+    const playlist = playlistWith([]);
+    playlist.artwork = [
+      { url: "https://img.test/own-small.jpg", width: 60 },
+      { url: "https://img.test/own-large.jpg", width: 640 },
+    ];
+    expect(derivePlaylistArtwork(playlist)).toEqual(["https://img.test/own-large.jpg"]);
+  });
 });
 
 describe("duration and count formatting", () => {

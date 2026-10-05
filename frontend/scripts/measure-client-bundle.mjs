@@ -56,10 +56,9 @@ export const PRE_M19_CLIENT_BUDGET = Object.freeze({
  * after personal-use media downloading: 25 emitted chunks, 387,992 bytes gzipped in
  * total, largest single chunk 96,667, `/` first load 230,555 across 13 chunks.
  *
- * Kept for the same reason {@link PRE_M19_CLIENT_BUDGET} is: M22 re-recorded the
- * ceiling, and a ceiling that silently replaced its predecessor would erase the only
- * evidence the number ever moved twice. A reviewer asking "what did this cost?" now has
- * three records and the deltas between them.
+ * Kept for the same reason {@link PRE_M19_CLIENT_BUDGET} is: later milestones re-recorded
+ * the ceiling, and a ceiling that silently replaced its predecessor would erase the only
+ * evidence the number ever moved more than once.
  */
 export const M20_CLIENT_BUDGET = Object.freeze({
   totalGzippedBytes: 387992,
@@ -70,46 +69,62 @@ export const M20_CLIENT_BUDGET = Object.freeze({
 });
 
 /**
- * The recorded ceiling, re-measured after M22 (Quick Picks cold start).
+ * M22's record, preserved rather than overwritten.
  *
- * Same toolchain and method as both records above: 2026-10-05, Windows, Node 24.21.0,
+ * Measured 2026-10-05, Windows, Node 24.21.0, `next build` (Next.js 16.3.6, Turbopack),
+ * clean `.next`: 26 emitted chunks, 389,572 bytes gzipped in total, largest single chunk
+ * 96,667, `/` first load 232,135 across 14 chunks.
+ *
+ * Kept as its own exported constant for the reason {@link PRE_M19_CLIENT_BUDGET} is: M23
+ * re-recorded the ceiling, and a ceiling that silently replaced its predecessor would erase
+ * the only evidence the number ever moved three times. A reviewer asking "what did this
+ * cost?" now has three records and the deltas between them.
+ *
+ * The measurement behind it — the `main` control that reproduced M20's record byte for byte,
+ * the two probes into the extra chunk, and the size-versus-shape argument against the
+ * declined `framer-motion` spike — is recorded in `docs/MOTION.md` §2b and is unchanged.
+ */
+export const M22_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 389572,
+  largestChunkGzippedBytes: 96667,
+  chunkCount: 26,
+  homeFirstLoadGzippedBytes: 232135,
+  homeFirstLoadChunkCount: 14,
+});
+
+/**
+ * The recorded ceiling, re-measured after M23 (artist Quick Picks and artwork parity).
+ *
+ * Same toolchain and method as all three records above: 2026-10-06, Windows, Node 24.21.0,
  * `next build` (Next.js 16.3.6, Turbopack), clean `.next`. Reproduce with
  * `node scripts/measure-client-bundle.mjs`.
  *
- * **The `main` control, measured the same way.** `main` at `0401573` on a clean build
- * reproduced M20's record **byte for byte** — 25 chunks, 387,992 B, largest 96,667, `/`
- * 230,555 across 13 — so the figures below are attributable to M22's own change and not
- * to build drift on this machine. That control is the only reason this re-record is a
- * measurement rather than an assumption.
+ * **The `main` control, measured the same way, reproduced M22's record byte for byte** —
+ * 26 chunks, 389,572 B, largest 96,667, `/` 232,135 across 14 chunks, from `e3c39a4` on a
+ * clean build. So the figures below are attributable to M23's own change and not to build
+ * drift on this machine. That control is the only reason this re-record is a measurement
+ * rather than an assumption, and it is the reason it can be a *negative* delta: a reduction
+ * is precisely the shape of drift that an unverified record would let through unnoticed.
  *
- * **What moved, and what it cost.** The total grew by 1,580 bytes gzipped (387,992 ->
- * 389,572), the largest chunk did not move at all (96,667), and the emitted and `/`-
- * first-load chunk counts by one each (25 -> 26, 13 -> 14). All of it is first-party
- * code: the Quick Picks stand-in pass and its two shared helpers in
- * `src/features/home/quickPicks.ts`. **No dependency was added to the client at all**, and
- * no new import edge reached the client graph.
+ * **M23 made the client bundle smaller, and the record follows it down.** The total fell by
+ * 1,001 bytes gzipped (389,572 → 388,571), the emitted chunk count by one (26 → 25), and
+ * `/`'s first load by 1,002 bytes across one chunk fewer (232,135 across 14 → 231,133
+ * across 13). The largest chunk did not move at all (96,667).
  *
- * **What was measured about the extra chunk, and what was not.** Two probes, both on clean
- * builds. Reverting `HomeView`'s wiring — so that nothing passes `providerTracks` at all and
- * the new path is unreachable — still emitted 26 chunks and 389,564 B, so the split is
- * caused by the code being *present*, not by the new behaviour being reachable. Replacing
- * the one added `import type { Track }` with a type alias borrowed from `LocalTaste`, to
- * drop the import edge, changed nothing at all: 26 chunks, 389,564 B, identical. (Those
- * two probes were taken before the shelf's description line was reworded, which added the
- * final 8 bytes; the figures above are from the finished tree.) The mechanism behind
- * Turbopack's decision is **not** established and is not claimed here.
- * Chasing it further would mean writing worse code — duplicating the artist and release
- * passes inline to nudge a chunk graph — so it was left, and is recorded as unattributed
- * rather than dressed up as understood.
+ * **Why it shrank.** M23 removed a section. `popular-artists` and Quick Picks were measured
+ * on production to be the same seven artists, in the same order, from the same
+ * `groupArtistsByIdentity(trending.tracks)` call, and the `discovery` spec permits one
+ * circular artist section — so the two were consolidated into a single rail. A whole
+ * section's rendering path, its `Shelf` case in `HomeView`, and its dedicated section wiring
+ * left the client graph. That is the opposite of a dependency appearing, which is what this
+ * ceiling exists to catch, and it is why this re-record lowers the figures rather than
+ * raising them.
  *
- * That is the distinction the ceiling exists to draw. The whole reason this file exists is
- * that M19 declined `framer-motion`, which measured **+41.4 kB** — more than ten times
- * the 4,096-byte headroom, and it cost *one* chunk, the same shape as this. What separates
- * them is size and origin, not chunk count: M22's move is 1,572 bytes of the project's own
- * source, inside the tolerance the *first* record already allowed, and `framer-motion` is
- * 26 times larger than the whole of that tolerance. Re-recording does not weaken the
- * budget: `totalGzippedBytes` keeps its 4,096-byte tolerance on top of the new figure, so a
- * library still cannot hide inside it.
+ * **What the milestone added, and where it did land.** `deriveMixPreviewCollage` in
+ * `src/features/home/mixes/collage.ts` is new first-party code and it *is* inside this
+ * figure: the 1,001 bytes is the net of that addition against the removed section, not the
+ * addition alone. No dependency was added to the client at all, and the manifest assertion
+ * (`an animation library in the manifest fails the budget`) is unchanged.
  *
  * These are bytes, not "kB", so the assertion cannot move when someone rounds.
  */
@@ -124,12 +139,12 @@ export const CLIENT_BUDGET = Object.freeze({
   method:
     "every .js file under .next/static/chunks, gzipped at level 9; per-route, the <script src> set of the route's emitted .next/server/app HTML",
   /** When and after what this figure was measured, so a drift has something to be compared to. */
-  recordedAt: "2026-10-05, after M22 (Quick Picks cold start)",
-  totalGzippedBytes: 389572,
+  recordedAt: "2026-10-06, after M23 (artist Quick Picks and artwork parity)",
+  totalGzippedBytes: 388571,
   largestChunkGzippedBytes: 96667,
-  chunkCount: 26,
-  homeFirstLoadGzippedBytes: 232135,
-  homeFirstLoadChunkCount: 14,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 231133,
+  homeFirstLoadChunkCount: 13,
   /**
    * How far a rebuild may drift from the recorded figure.
    *

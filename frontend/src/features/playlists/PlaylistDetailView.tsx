@@ -20,7 +20,6 @@ import { PlaylistTrackRow } from "@/features/playlists/PlaylistTrackRow";
 import { ShareButton } from "@/features/sharing/ShareButton";
 import { playAll, shufflePlay } from "@/lib/libraryPlayback";
 import {
-  artworkUrl,
   derivePlaylistArtwork,
   formatTotalDuration,
   songCountLabel,
@@ -149,8 +148,9 @@ export function PlaylistDetailView({ playlistId }: PlaylistDetailViewProps) {
   const tracks = playlist.tracks.map((entry) => entry.track);
   const empty = tracks.length === 0;
   const duration = formatTotalDuration(sumPlaylistDuration(tracks));
-  const ownCover = artworkUrl(playlist.artwork);
-  const coverUrls = ownCover ? [ownCover] : derivePlaylistArtwork(playlist);
+  // M23: the own-artwork preference lives in the shared derivation, so the hero cover
+  // and the library/sidebar cards cannot show different pictures for one playlist.
+  const coverUrls = derivePlaylistArtwork(playlist);
   const metaLine = [
     "Playlist",
     songCountLabel(tracks.length),

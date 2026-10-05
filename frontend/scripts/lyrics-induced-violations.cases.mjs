@@ -244,8 +244,12 @@ export const CASES = [
   {
     name: "the mix feed is reached from beside the card, not through the generator",
     file: "src/features/home/mixes/MixCards.tsx",
-    from: 'import { deriveMixCollage, type MixCollage } from "@/features/home/mixes/collage";',
-    to: 'import { fetchDiscoveryFeed } from "@/features/home/discoveryApi";\nimport { deriveMixCollage, type MixCollage } from "@/features/home/mixes/collage";\nvoid fetchDiscoveryFeed;',
+    // M23: the anchor follows the import's current shape. The case's subject is
+    // unchanged — a card-specific composer still has to reach the mix feed itself —
+    // but the harness matches exact source text, so a reformatted import would
+    // otherwise make this case *skip itself* and report green while testing nothing.
+    from: 'import { generateMix, type MixOutcome } from "@/features/mixes/generateMix";',
+    to: 'import { fetchDiscoveryFeed } from "@/features/home/discoveryApi";\nimport { generateMix, type MixOutcome } from "@/features/mixes/generateMix";\nvoid fetchDiscoveryFeed;',
     test: "tests/home-mix-cards.test.tsx",
     why: "A card-specific composer would have to reach the mix feed itself, because that is the only thing that builds a mix. Design decision 1 exists so there is exactly one composition path; naming the transport beside the cards is the second one, whatever it is called.",
   },

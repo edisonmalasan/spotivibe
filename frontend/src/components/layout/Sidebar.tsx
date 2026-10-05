@@ -9,7 +9,7 @@ import {
   PlaylistFormDialog,
   type PlaylistFormValue,
 } from "@/features/playlists/PlaylistFormDialog";
-import { artworkUrl, derivePlaylistArtwork } from "@/lib/playlistPresentation";
+import { derivePlaylistArtwork } from "@/lib/playlistPresentation";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { Heart, Plus } from "lucide-react";
 import Link from "next/link";
@@ -100,15 +100,19 @@ export function Sidebar() {
               </span>
             </Link>
             {playlists.map((playlist) => {
-              const ownCover = artworkUrl(playlist.artwork);
-              const coverUrls = ownCover ? [ownCover] : derivePlaylistArtwork(playlist);
+              // M23: the own-artwork preference now lives in the shared derivation,
+              // so this surface and the library grid cannot disagree about a playlist's
+              // cover any more.
               return (
                 <Link
                   key={playlist.id}
                   href={playlistHref(playlist.id)}
                   className="motion-feedback flex items-center gap-3 rounded-cards px-2 py-2 hover:bg-graphite"
                 >
-                  <PlaylistCover urls={coverUrls} className="size-10 shrink-0" />
+                  <PlaylistCover
+                    urls={derivePlaylistArtwork(playlist)}
+                    className="size-10 shrink-0"
+                  />
                   <span className="truncate text-body-lg font-regular text-pure-white">
                     {playlist.name}
                   </span>

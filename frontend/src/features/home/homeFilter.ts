@@ -1,3 +1,5 @@
+import type { HomeShelfShape } from "@/features/home/homeSections";
+
 /**
  * Home's `All` / `Music` / `Podcasts` filter (M17; spec: `discovery` — "Home
  * discovery feed", scenarios "The filter presents a subset of the one section
@@ -10,11 +12,20 @@
  * copies of the section list would drift, and the drift would be invisible until
  * a shelf appeared under the wrong filter.
  *
- * This module deliberately does **not** import `features/home/homeSections`. It
- * selects over anything structural — a `filters` declaration — which keeps the
- * dependency one-directional (`homeSections` names the vocabulary here, this
- * module never reaches back for the list) and lets the same selection serve the
- * mix, quick-pick, and time-aware surfaces without a second vocabulary.
+ * This module deliberately holds no **runtime** import of
+ * `features/home/homeSections`. It selects over anything structural — a
+ * `filters` declaration — which keeps the dependency one-directional
+ * (`homeSections` names the vocabulary here, this module never reaches back for
+ * the list) and lets the same selection serve the mix, quick-pick, and
+ * time-aware surfaces without a second vocabulary.
+ *
+ * **M23: the one import is `import type`.** A surface now also declares its card
+ * geometry, because Quick Picks became the feed's circular artist rail and the
+ * geometry-rhythm guard has to see the rows that are not `HOME_SECTIONS` entries.
+ * The shape type belongs to `homeSections`, so it is imported by type only —
+ * erased at compile time, no runtime edge, no cycle. Imported rather than
+ * re-declared because two spellings of `"square" | "circular"` would be free to
+ * drift apart.
  *
  * `all` is **implicit**: every surface belongs to it, so no declaration has to
  * repeat it and no section can forget it. That also collapses two cases onto one
@@ -94,24 +105,44 @@ export interface HomeFilterSurface {
   readonly id: string;
   /** The filters this surface belongs to. `all` is implicit for every surface. */
   readonly filters: readonly HomeFilter[];
+  /**
+   * Card geometry (M23).
+   *
+   * Declared here so `assertShelfRhythm` can judge the whole rendered feed, not
+   * only the `HOME_SECTIONS` half of it. These rows are written in `HomeView`'s
+   * JSX *before* the section stack, so their position is part of the rhythm, and a
+   * guard that could not see them would silently stop checking the one circular
+   * rail the feed has.
+   *
+   * Kept beside `filters` rather than beside each component because this module is
+   * already the single place a Home surface declares what it is; a second
+   * declaration of the same three surfaces' geometry is exactly the drift
+   * design decision 4 exists to prevent.
+   */
+  readonly shape: HomeShelfShape;
 }
 
 /** The named mix-card row: music, because a mix is music. */
 export const MIX_CARD_SURFACE: HomeFilterSurface = {
   id: "home-mix-cards",
   filters: ["music"],
+  shape: "square",
 };
 
-/** Quick Picks: artists, albums, and searches over the listener's languages. */
+/** Quick Picks: artists over the listener's local material and languages (M23). */
 export const QUICK_PICK_SURFACE: HomeFilterSurface = {
   id: "home-quick-picks",
   filters: ["music"],
+  // The feed's single circular artist rail. Before M23 this shelf rendered square
+  // cards and a separate `popular-artists` section was the circular one.
+  shape: "circular",
 };
 
 /** The time-aware shelf: a music selection seeded by the current band. */
 export const TIME_SHELF_SURFACE: HomeFilterSurface = {
   id: "home-time-shelf",
   filters: ["music"],
+  shape: "square",
 };
 
 /** Whether one declared surface is presented under `filter`. */

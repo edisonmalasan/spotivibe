@@ -210,9 +210,16 @@ describe("HomeView: a fresh user", () => {
     stubDiscovery(() => ({ tracks: [credited("a", "Alpha", "Aurora")] }));
     render(<HomeView />);
 
-    for (const id of ["trending", "popular-artists", "genres", "podcasts", "collections"]) {
+    for (const id of ["trending", "genres", "podcasts", "collections"]) {
       await waitFor(() => expect(screen.getByTestId(`home-section-${id}`)).toBeInTheDocument());
     }
+
+    // M23: `popular-artists` no longer renders as a section of its own. It was
+    // measured on production to be a strict prefix of the Quick Picks rail, and the
+    // spec permits one circular artist section — so its content moved there rather
+    // than being deleted.
+    expect(screen.queryByTestId("home-section-popular-artists")).not.toBeInTheDocument();
+    expect(screen.getByTestId("home-quick-picks")).toBeInTheDocument();
 
     // No likes, no playlists, no listening history → no local-only section.
     expect(screen.queryByTestId("home-section-recently-played")).not.toBeInTheDocument();
@@ -251,9 +258,10 @@ describe("HomeView: a fresh user", () => {
   });
 
   it("completes Quick Picks from the feed it already fetched, with no extra request", async () => {
-    // M22 task 3.4. `deriveQuickPicks` can be fully correct as a pure function
-    // while `HomeView` silently forgets to pass the fourth source down, so the
-    // wiring is asserted here rather than assumed from the derivation's tests.
+    // M22 task 3.4, retained and re-pointed by M23. `deriveQuickPicks` can be fully
+    // correct as a pure function while `HomeView` silently forgets to pass the
+    // provider source down, so the wiring is asserted here rather than assumed from
+    // the derivation's tests.
     //
     // Fresh user: no likes, no plays. Trending resolves with one credited track
     // carrying an album; every other feed comes back empty.
@@ -266,14 +274,12 @@ describe("HomeView: a fresh user", () => {
     await settleFeed();
 
     const cards = screen.getAllByTestId("quick-pick");
-    expect(cards.map((card) => card.getAttribute("data-quick-pick-kind"))).toEqual([
-      "artist",
-      "album",
-      "search",
-    ]);
+    // M23: artist entries only. The album card this test used to expect alongside
+    // the artist is gone — the rail is one kind, so a provider album on a track is
+    // not a card. Asserted explicitly rather than left implicit in the length.
+    expect(cards.map((card) => card.getAttribute("data-quick-pick-kind"))).toEqual(["artist"]);
     expect(cards[0]?.getAttribute("href")).toBe("/artist/Nova");
-    expect(cards[1]?.getAttribute("href")).toBe("/album/Signal%20Fire");
-    expect(cards[2]?.getAttribute("data-quick-pick-target")).toBe("English");
+    expect(screen.queryByText("Signal Fire")).not.toBeInTheDocument();
 
     // The whole point of reading the feed rather than fetching: no kind the
     // Quick Picks stand-in could have asked for appears in the request log.
@@ -281,16 +287,44 @@ describe("HomeView: a fresh user", () => {
     for (const call of calls) expect(call.params.get("kind")).not.toBe("quick-picks");
   });
 
-  it("keeps Quick Picks at one language entry when no feed resolved", async () => {
-    // The degradation path: every discovery request failed, so the stand-in is
-    // empty and the rail is exactly what it was before M22.
+  it("shows no card and a retryable error when no feed resolved", async () => {
+    // The degradation path, and it is a different path from M22's.
+    //
+    // M22 kept one language search entry standing in for an empty rail so the shelf
+    // could never look unfinished. M23 removed that entry, so nothing renders — and
+    // because the provider failed, the rail reports the failure and offers a retry
+    // rather than claiming there is simply nothing here.
+    //
+    // The regression guarded here is specifically M22's behaviour returning: any card
+    // whose kind is not `artist`, in particular the language search entry.
     stubDiscovery(() => ({ fail: 500, code: "upstream" }));
     render(<HomeView />);
     await settleFeed();
 
-    const cards = screen.getAllByTestId("quick-pick");
-    expect(cards).toHaveLength(1);
-    expect(cards[0]?.getAttribute("data-quick-pick-kind")).toBe("search");
+    expect(screen.queryAllByTestId("quick-pick")).toEqual([]);
+    expect(screen.queryByTestId("home-section-popular-artists")).not.toBeInTheDocument();
+
+    const rail = screen.getByTestId("home-quick-picks");
+    expect(within(rail).getByRole("alert")).toBeInTheDocument();
+    // `ErrorState`'s own retry hook, so this asserts the recovery affordance the
+    // `discovery` spec requires rather than only that some button exists.
+    // `Shelf` overrides the label to "Retry" for every shelf error.
+    expect(within(rail).getByTestId("error-retry")).toHaveTextContent("Retry");
+    expect(within(rail).queryByTestId("shelf-rail")).not.toBeInTheDocument();
+  });
+
+  it("shows its empty state when the feed resolves with no artist at all", async () => {
+    // Distinct from the failure above, and the pair matters: a resolved-but-empty feed
+    // is not an error, so it must not offer a retry for a request that already
+    // succeeded.
+    stubDiscovery(() => ({ tracks: [] }));
+    render(<HomeView />);
+    await settleFeed();
+
+    const rail = screen.getByTestId("home-quick-picks");
+    expect(within(rail).getByRole("heading", { name: "Nothing here yet" })).toBeInTheDocument();
+    expect(within(rail).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(rail).queryAllByTestId("quick-pick")).toEqual([]);
   });
 
   it("never starts playback on its own", async () => {
@@ -616,9 +650,34 @@ describe("HomeView: one failing shelf", () => {
     render(<HomeView />);
 
     await within(await screen.findByTestId("home-section-trending")).findByRole("alert");
-    const artists = screen.getByTestId("home-section-popular-artists");
+    // M23: the derived artist shelf is the Quick Picks rail, not a section of its own.
+    // A trending failure still reaches it, so the listener sees the reason rather than
+    // a silently empty rail — the resilience the removed section used to provide.
+    const artists = screen.getByTestId("home-quick-picks");
     await waitFor(() => expect(within(artists).getByRole("alert")).toBeInTheDocument());
     expect(within(artists).queryByTestId("shelf-rail")).not.toBeInTheDocument();
+  });
+
+  it("keeps the artist rail populated when the provider fails but local taste exists", async () => {
+    // The other half of the same rule, and the one that makes the propagation above
+    // honest rather than a regression: a provider failure must not hide artists the
+    // device already knows. Local taste fills the rail, so the rail renders content
+    // and shows no error — while its *sibling* section still reports its own failure.
+    seedStores({
+      events: [event("youtube:r1", "Played", "Aurora", 300)],
+      likedTracks: [credited("l1", "Liked", "Aurora"), credited("l2", "Liked 2", "Beacon")],
+    });
+    stubDiscovery((kind) =>
+      kind === "trending" ? { fail: 503, code: "upstream_unavailable" } : { tracks: [] },
+    );
+    render(<HomeView />);
+
+    const artists = await screen.findByTestId("home-quick-picks");
+    await waitFor(() =>
+      expect(within(artists).getAllByTestId("quick-pick").length).toBeGreaterThan(0),
+    );
+    expect(within(artists).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(artists).getAllByTestId("home-artist-card")).not.toHaveLength(0);
   });
 });
 
@@ -676,7 +735,15 @@ describe("browsePlayback: shelf activation surface", () => {
   });
 });
 
-describe("HomeView: popular artists", () => {
+/**
+ * M9 task 6.1's circular artist section, now the Quick Picks rail (M23).
+ *
+ * Retargeted rather than deleted: the section id changed, but every claim here — one
+ * card per artist, circular geometry, the `Artist` label, navigation by id and by
+ * text key, best artwork, an explained empty state, and no request of its own — is
+ * still live and still belongs to the feed's single circular rail.
+ */
+describe("HomeView: the circular artist rail (M9 section, M23 Quick Picks)", () => {
   it("groups the trending result into one circular card per artist", async () => {
     stubDiscovery((kind) =>
       kind === "trending"
@@ -691,7 +758,7 @@ describe("HomeView: popular artists", () => {
     );
     const { container } = render(<HomeView />);
 
-    const shelf = await screen.findByTestId("home-section-popular-artists");
+    const shelf = await screen.findByTestId("home-quick-picks");
     const cards = await within(shelf).findAllByTestId("home-artist-card");
 
     // One entry per artist, not one per track.
@@ -701,9 +768,7 @@ describe("HomeView: popular artists", () => {
       expect.stringContaining("Beacon"),
     ]);
     // Circular geometry, and the design system's 'Artist' label.
-    const circle = container.querySelector(
-      '[data-testid="home-section-popular-artists"] .rounded-avatars',
-    );
+    const circle = container.querySelector('[data-testid="home-quick-picks"] .rounded-avatars');
     expect(circle).not.toBeNull();
     expect(within(shelf).getAllByText("Artist")).toHaveLength(2);
   });
@@ -713,8 +778,10 @@ describe("HomeView: popular artists", () => {
       kind === "trending" ? { tracks: [credited("a", "Alpha", "Aurora Sky")] } : { tracks: [] },
     );
     render(<HomeView />);
-    const shelf = await screen.findByTestId("home-section-popular-artists");
-    const entry = await within(shelf).findByTestId("home-artist-card");
+    const shelf = await screen.findByTestId("home-quick-picks");
+    // M23: the anchor carries `quick-pick` and wraps the circular card, which keeps
+    // the `home-artist-card` id for the card element itself.
+    const entry = await within(shelf).findByTestId("quick-pick");
     expect(entry.tagName).toBe("A");
     // M9 owns the artist route: the card links the entity, by text key when the
     // shelf had no provider id for it.
@@ -739,8 +806,8 @@ describe("HomeView: popular artists", () => {
     );
     render(<HomeView />);
 
-    const shelf = await screen.findByTestId("home-section-popular-artists");
-    const entry = await within(shelf).findByTestId("home-artist-card");
+    const shelf = await screen.findByTestId("home-quick-picks");
+    const entry = await within(shelf).findByTestId("quick-pick");
     expect(entry.getAttribute("href")).toBe("/artist/UCaurorachannel00000000");
   });
 
@@ -763,8 +830,9 @@ describe("HomeView: popular artists", () => {
     );
     const { container } = render(<HomeView />);
 
-    await within(screen.getByTestId("home-section-popular-artists")).findByText("Aurora");
-    const image = container.querySelector('[data-testid="home-section-popular-artists"] img');
+    const shelf = screen.getByTestId("home-quick-picks");
+    await within(shelf).findByText("Aurora");
+    const image = container.querySelector('[data-testid="home-quick-picks"] img');
     expect(image).toHaveAttribute("src", "https://example.test/large.jpg");
   });
 
@@ -774,10 +842,14 @@ describe("HomeView: popular artists", () => {
     );
     render(<HomeView />);
 
-    const shelf = await screen.findByTestId("home-section-popular-artists");
+    // M23: this used to be the section's own "No artists found yet" copy. The rail now
+    // has one empty state, `Shelf`'s, so the assertion names that — asserting the old
+    // string would pin copy that no longer exists rather than the behaviour.
+    const shelf = await screen.findByTestId("home-quick-picks");
     expect(
-      await within(shelf).findByRole("heading", { name: "No artists found yet" }),
+      await within(shelf).findByRole("heading", { name: "Nothing here yet" }),
     ).toBeInTheDocument();
+    expect(within(shelf).queryByTestId("shelf-rail")).not.toBeInTheDocument();
   });
 
   it("issues no request of its own — it derives from the trending result", async () => {
@@ -993,10 +1065,26 @@ describe("HomeView: M17 adds surfaces without adding requests", () => {
     // The M17 surfaces are *not* `HOME_SECTIONS` entries, so the one section model
     // did not grow — which is what keeps `assertShelfRhythm` guarding the real feed
     // rather than a list with three look-alikes in it.
-    expect(HOME_SECTIONS).toHaveLength(8);
+    //
+    // M23: the count is 7, not 8, because `popular-artists` was removed rather than
+    // consolidated into the list. This test's *point* is that the M17 surfaces never
+    // joined the list, so it is pinned against the current list rather than a number
+    // that would let a section be added unnoticed.
+    expect(HOME_SECTIONS).toHaveLength(7);
     for (const id of ["home-mix-cards", "home-quick-picks", "home-time-shelf"]) {
       expect(HOME_SECTIONS.map((section) => section.id)).not.toContain(id);
     }
+    // And the count matches the list that is actually declared — so this cannot pass
+    // on a stale constant while the list drifted.
+    expect(HOME_SECTIONS.map((section) => section.id)).toEqual([
+      "recently-played",
+      "trending",
+      "made-for-you",
+      "smart-mixes",
+      "genres",
+      "podcasts",
+      "collections",
+    ]);
   });
 });
 

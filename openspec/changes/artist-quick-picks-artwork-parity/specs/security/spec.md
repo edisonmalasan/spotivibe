@@ -8,6 +8,8 @@ The origins named by the `img-src` directive SHALL be derived from the artwork U
 
 Because artwork reaches the browser as opaque provider data rather than as a string in this repository's source, a detector that scans source text alone CANNOT observe it and SHALL NOT be accepted as verification of this requirement.
 
+The service worker script SHALL be governed by a policy of its own rather than by the document's. The worker is the one context in this application that performs a deliberate cross-origin `fetch` — it mediates third-party artwork through the Cache API — and inheriting the document's `connect-src` makes that fetch fail, which prevents every provider-hosted image from rendering for every visitor the worker is controlling. The worker script's policy SHALL differ from the document's in `connect-src` and in no other directive, so the exemption grants the worker nothing the document does not already grant the page.
+
 #### Scenario: Every response is governed by one declared policy
 
 - **WHEN** any route, static asset, the application manifest, or the service worker file is requested
@@ -42,3 +44,18 @@ Because artwork reaches the browser as opaque provider data rather than as a str
 
 - **WHEN** an artwork origin present in the captured provider fixtures is removed from the policy
 - **THEN** the policy's verification fails, naming the omitted origin
+
+#### Scenario: The service worker script is permitted to fetch the artwork it mediates
+
+- **WHEN** the service worker script is requested
+- **THEN** the policy served with it names, in `connect-src`, every origin the document policy names in `img-src`, because the worker mediates third-party artwork through the Cache API and a policy lacking those origins makes its own fetch fail
+
+#### Scenario: The exemption does not widen the document
+
+- **WHEN** the worker script's `connect-src` is compared against the document's
+- **THEN** the document policy still names only the application's own origin in `connect-src`, and every directive other than `connect-src` is identical between the two
+
+#### Scenario: The exemption survives header resolution
+
+- **WHEN** the header rules are resolved for the service worker script's path
+- **THEN** the worker's policy is the one that applies, the remaining hardening headers are still present on that response, and the verification fails if the rule is declared in an order that would let the catch-all overwrite it

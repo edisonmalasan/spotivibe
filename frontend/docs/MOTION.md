@@ -169,6 +169,41 @@ M22's entire move. The manifest assertion (`an animation library in the manifest
 continues to be the check that no such library is present at all, so the byte comparison is not the
 only thing standing between this record and a weakened budget.
 
+### 2c. M23 re-recorded the ceiling a third time, and the record went *down*
+
+M23 (artist Quick Picks and artwork parity) consolidated `popular-artists` into the Quick Picks
+rail. The two were measured on production to be the same seven artists, in the same order, from the
+same `groupArtistsByIdentity(trending.tracks)` call, and the `discovery` spec permits one circular
+artist section — so one of them was removed rather than kept beside the other. Measured 2026-10-06
+from a clean `.next` on the same toolchain:
+
+| Measurement | After M22 | After M23 | M23's delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 389,572 B | 388,571 B | **−1,001 B** |
+| Largest single chunk, gzipped | 96,667 B | 96,667 B | **0 B** |
+| Emitted chunks | 26 | 25 | **−1** |
+| `/` first load, gzipped | 232,135 B (14 chunks) | 231,133 B (13 chunks) | −1,002 B |
+
+**`main` was measured as a control, and it reproduced M22's record byte for byte** — 26 chunks,
+389,572 B, largest 96,667 B, `/` 232,135 B across 14 chunks, from `e3c39a4`. So these figures are
+attributable to M23's own change and not to build drift.
+
+**A negative delta is the reason the control matters here more than in §2b.** A ceiling left at the
+old figure would have reported green: a *smaller* bundle is inside any budget, so every ceiling test
+in `motion-budget.test.ts` passes on a stale record. `states what M23 cost, in bytes, and the
+direction of the move` therefore asserts the sign and the exact figure, not just the ceiling.
+
+**The reduction is not the whole of what M23 added.** `deriveMixPreviewCollage` in
+`src/features/home/mixes/collage.ts` is new first-party code and it is inside these figures — 1,001
+bytes is the *net* of that addition against the removed section, not the addition alone. No
+dependency was added to the client, and the manifest assertion is unchanged.
+
+**All three earlier records are preserved, not overwritten.** `PRE_M19_CLIENT_BUDGET`,
+`M20_CLIENT_BUDGET`, and `M22_CLIENT_BUDGET` each hold their own figures and are asserted on their
+own terms, so each milestone's cost is measured against the record it replaced. Measuring M22's
+delta from M19's record would report the sum of two milestones; measuring M23's from M19's would
+report three.
+
 ## 3. No motion without a reduced-motion path
 
 The floor already existed before this milestone: `src/app/globals.css` sets `animation-duration`,
