@@ -167,9 +167,9 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     // Same shape M20 recorded: one extra emitted chunk and one extra on `/`. Asserted
     // because it is the part a reader would otherwise have to take on trust.
     expect(M22_CLIENT_BUDGET.chunkCount - M20_CLIENT_BUDGET.chunkCount).toBe(1);
-    expect(M22_CLIENT_BUDGET.homeFirstLoadChunkCount - M20_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
-      1,
-    );
+    expect(
+      M22_CLIENT_BUDGET.homeFirstLoadChunkCount - M20_CLIENT_BUDGET.homeFirstLoadChunkCount,
+    ).toBe(1);
 
     // Inside the tolerance that existed before any of this, and nowhere near the
     // library the budget exists to keep out — 26 times the whole tolerance.
@@ -198,7 +198,9 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     // One chunk fewer emitted, and one fewer on `/`. Not asserted as `toBe(-1)` alone
     // because the byte figures are the primary claim; this is the corroborating shape.
     expect(CLIENT_BUDGET.chunkCount).toBe(M22_CLIENT_BUDGET.chunkCount - 1);
-    expect(CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(M22_CLIENT_BUDGET.homeFirstLoadChunkCount - 1);
+    expect(CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
+      M22_CLIENT_BUDGET.homeFirstLoadChunkCount - 1,
+    );
 
     // The largest chunk did not move, which is what makes this a change in first-party
     // code rather than in a vendor's table of chunk sizes.
