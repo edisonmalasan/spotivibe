@@ -28,6 +28,35 @@
 - [ ] 2.3 Confirm no explained-empty state is added, per the withdrawal recorded in `ROADMAP.md`
       §21.7: `normalizeLanguageCodes` guarantees the language pass always contributes.
 
+## 2a. Client-bundle ceiling (found by the gate, decided by measurement)
+
+- [ ] 2a.1 `motion-budget.test.ts` goes red at 26 chunks against a ceiling of 25, and `/` at 14
+      against 13. Record that the byte figures were *inside* tolerance (389,564 B vs a 392,088 B
+      ceiling) and only the two count assertions failed.
+- [ ] 2a.2 **Measure the control first.** Build `main` at `0401573` from a clean `.next`. It must
+      reproduce M20's record byte for byte (25 chunks, 387,992 B, largest 96,667, `/` 230,555 / 13).
+      If it does not, the delta is build drift and this whole section is void.
+- [ ] 2a.3 Probe: revert `HomeView`'s wiring so nothing passes `providerTracks`. Recorded:
+      26 chunks, 389,564 B, unchanged — the split comes from the code being *present*, not from
+      the new path being reachable.
+- [ ] 2a.4 Probe: drop the added `import type { Track }` for a `LocalTaste` alias. Recorded:
+      26 chunks, 389,564 B, byte-identical — the hypothesis was **wrong**. Revert to the plain
+      `readonly Track[]`; do not leave an indirection whose only justification was a false claim.
+- [ ] 2a.5 State that the chunking mechanism is **unattributed**. Do not guess it, and do not
+      duplicate the passes inline to chase it.
+- [ ] 2a.6 Add `M20_CLIENT_BUDGET` as its own frozen record. Retarget M20's delta test at it —
+      required, not optional: the existing evidence test derives M20's cost as
+      `CLIENT_BUDGET − PRE_M19_CLIENT_BUDGET`, which after a re-record reports 4,733 B and would
+      publish M20 as having spent M22's money.
+- [ ] 2a.7 Re-record `CLIENT_BUDGET` to the measured figures. **Widen no tolerance and loosen no
+      assertion.**
+- [ ] 2a.8 Add the M22 delta test: 1,572 B, +1 emitted chunk, +1 on `/`, inside
+      `toleranceBytes`, and far below `SPIKE_COST_BYTES`. The manifest assertion already covers the
+      origin claim — do not duplicate it.
+- [ ] 2a.9 `docs/MOTION.md` §2b: the control, all three records, both probe results, the
+      unattributed mechanism, and why size and origin — not chunk shape — separate this from the
+      declined spike.
+
 ## 3. Tests
 
 - [ ] 3.1 Cold start: no liked tracks, no events, provider tracks supplied → artist and release

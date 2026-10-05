@@ -121,6 +121,51 @@ That is the distinction this budget exists to draw, and the re-recording does no
 `totalGzippedBytes` keeps its 4,096-byte tolerance on top of the new figure, M20 spent less than that
 tolerance of its own code, and the `framer-motion` spike would still fail by a factor of ten.
 
+### 2b. M22 re-recorded the ceiling again, and what that cost
+
+M22 (Quick Picks cold start) completed the Quick Picks rail from provider results the Home feed had
+already fetched. That is first-party code in `src/features/home/quickPicks.ts` and adds no dependency
+and no new import edge to the client graph, so the ceiling is recorded once more — measured
+2026-10-05 from a clean `.next` on the same toolchain:
+
+| Measurement | After M19 | After M20 | After M22 | M22's delta |
+|---|---:|---:|---:|---:|
+| Client JS, total gzipped | 384,831 B | 387,992 B | 389,564 B | **+1,572 B** |
+| Largest single chunk, gzipped | 96,644 B | 96,667 B | 96,667 B | **0 B** |
+| Emitted chunks | 24 | 25 | 26 | **+1** |
+| `/` first load, gzipped | 227,266 B (12 chunks) | 230,555 B (13 chunks) | 232,127 B (14 chunks) | +1,572 B |
+
+**`main` was measured as a control, and it reproduced M20's record byte for byte** — 25 chunks,
+387,992 B, largest 96,667 B, `/` 230,555 B across 13 chunks. So these figures are attributable to
+M22's own change and not to build drift on this machine. Without that control, a re-record is an
+assumption wearing a measurement's clothes.
+
+**Both earlier records are preserved, not overwritten.** `PRE_M19_CLIENT_BUDGET` and
+`M20_CLIENT_BUDGET` each hold their own figures and are asserted on their own terms, so each
+milestone's cost is measured against the record it replaced. Measuring M20's delta from M19's record
+would now report the sum of two milestones and read as though M20 had spent M22's money.
+
+**What was measured about the extra chunk, and what was not.** M22's move is one additional emitted
+chunk, which is the same *shape* the declined `framer-motion` spike produced — so the shape alone
+distinguishes nothing. Two probes were run, each on a clean build:
+
+- Reverting `HomeView`'s wiring, so that nothing passes `providerTracks` at all and the new code path
+  is unreachable, still emitted **26 chunks and 389,564 B**. The split is therefore caused by the code
+  being *present*, not by the new behaviour being reachable.
+- Replacing the one added `import type { Track }` with a type alias borrowed from `LocalTaste`, to
+  remove that import edge entirely, changed **nothing**: 26 chunks, 389,564 B, byte-identical.
+
+The mechanism behind Turbopack's chunking decision is **not established**, and is not claimed here.
+Chasing it further would have meant writing worse code — duplicating the artist and release passes
+inline to nudge a chunk graph — so it was left unattributed rather than dressed up as understood.
+
+**What separates this from the spike is size and origin, not shape.** 1,572 bytes is the project's
+own source and sits inside the 4,096-byte tolerance that existed before any of this;
+`framer-motion` measured **+41.4 kB**, which is more than ten times the whole tolerance and 26 times
+M22's entire move. The manifest assertion (`an animation library in the manifest fails the budget`)
+continues to be the check that no such library is present at all, so the byte comparison is not the
+only thing standing between this record and a weakened budget.
+
 ## 3. No motion without a reduced-motion path
 
 The floor already existed before this milestone: `src/app/globals.css` sets `animation-duration`,

@@ -2553,6 +2553,17 @@ language, and only where local material is absent. Ordering is therefore preserv
 re-derived, and the fallback cannot outrank real local evidence because it is skipped when real local
 evidence exists.
 
+**The bundle cost, stated up front because it is the one judgement call here.** This adds
+first-party code to the client, and `motion-budget.test.ts` went red: **26 emitted chunks against a
+ceiling of 25**, `/` first load **14 against 13**, **+1,572 B gzipped**. The bytes were *inside* the
+recorded 4,096-byte tolerance; only the two chunk-count assertions failed. `main` at `0401573`,
+built clean, reproduced M20's record **byte for byte**, so the delta is this change's and not build
+drift. Two probes are recorded in `frontend/docs/MOTION.md` §2b: the extra chunk appears even with
+the new path made **unreachable**, and removing the one added type-only import changed **nothing** —
+a hypothesis of mine that measurement refuted. The chunking mechanism is **unattributed** and is not
+claimed. The ceiling is re-recorded following M20's precedent, with `M20_CLIENT_BUDGET` preserved as
+its own record; **no tolerance was widened and no assertion loosened.**
+
 **Automated verification.** A device with no likes and no plays derives artist and release entries
 from provider results, each of which resolves and carries artwork where the result supplied one. The
 same device with local material is unchanged. A device with neither local material nor provider

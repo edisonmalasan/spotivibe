@@ -182,6 +182,58 @@ removes the stand-in entirely would keep it green. M4 below is therefore written
 gate, leaving the stand-in reachable, which is the mutation that can actually detect a regression
 here.
 
+### D9 — The client-bundle ceiling is re-recorded, against a `main` control
+
+This change adds first-party code to the client, so `motion-budget.test.ts` went **red**: 26
+emitted chunks against a ceiling of 25, and `/` first load at 14 chunks against 13. The byte
+figures were *inside* the recorded tolerance (389,564 B against a 392,088 B ceiling); only the
+two chunk-count assertions failed.
+
+**The control, and why it was necessary.** Before attributing anything, `main` at `0401573` was
+built from a clean `.next` and measured. It reproduced M20's record **byte for byte** — 25 chunks,
+387,992 B, largest 96,667, `/` 230,555 across 13. So the build is deterministic on this machine and
+the delta is this change's. Without that control a re-record is an assumption in a measurement's
+clothes.
+
+**Two probes, both on clean builds, and one hypothesis that was wrong.**
+
+| Probe | Result | What it ruled in or out |
+|---|---|---|
+| Revert `HomeView`'s wiring, so nothing passes `providerTracks` | 26 chunks, 389,564 B — unchanged | The split is caused by the code being **present**, not by the new path being reachable |
+| Replace the added `import type { Track }` with a `LocalTaste`-borrowed alias | 26 chunks, 389,564 B — byte-identical | The import edge is **not** the cause |
+
+The second probe began as a hypothesis that the new type-only import had added a module edge and
+so a chunk. **It was wrong**, the measurement said so, and the code was reverted to the plain
+`readonly Track[]` rather than left carrying an indirection whose only justification was a false
+claim. A type alias that buys nothing is worse than the import it replaced.
+
+**The mechanism is not established, and is not claimed.** Turbopack split one chunk
+(`3hx8bmalvmktu.js`) into two, with the Quick Picks module landing in its own chunk. What makes
+that happen is not known from the two probes above. Chasing it further would mean writing worse
+code — duplicating the artist and release passes inline to nudge a chunk graph — so the search
+stopped and the result is recorded as unattributed.
+
+**Why re-recording is the right response rather than a source change.** M20 established the
+precedent in this very file, with the same shape: one extra chunk, first-party code, no dependency.
+What separates both from the declined `framer-motion` spike — which cost the same *one chunk* — is
+size and origin, not shape. 1,572 bytes of the project's own source sits inside the 4,096-byte
+tolerance that existed before any of this; the spike measured +41.4 kB, over ten times that whole
+tolerance. The manifest assertion still independently fails on any animation library appearing, so
+the byte comparison is not the only guard.
+
+**What was done to keep the history readable.** `M20_CLIENT_BUDGET` was added as its own frozen
+record, exactly as `PRE_M19_CLIENT_BUDGET` was, and M20's delta test now measures against it. That
+was not optional bookkeeping: the existing evidence test derived M20's cost as
+`CLIENT_BUDGET − PRE_M19_CLIENT_BUDGET`, which after a re-record reports **4,733 B** — the sum of two
+milestones — and would have published M20 as having spent M22's money. Each milestone's cost is now
+measured against the record it replaced, and `docs/MOTION.md` carries all three.
+
+**The uncomfortable part, stated plainly.** This change raised a budget ceiling. That is the kind of
+act that deserves scrutiny rather than a commit message, so the reasoning, the control, the failed
+hypothesis and the unattributed mechanism are all above rather than in a summary. What was *not*
+done: no tolerance was widened, no assertion was loosened, and no source was contorted to protect a
+number.
+
 ## Risks / Trade-offs
 
 **Provider results in a rail documented as local-first.** This is the real cost, and it is why the
