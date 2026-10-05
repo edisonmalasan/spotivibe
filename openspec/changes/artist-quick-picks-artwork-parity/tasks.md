@@ -263,6 +263,17 @@ finding (see 7.6).
       existing visitors only when their worker next updates.** The application already has an
       update surface for exactly this (`update-notice` / `update-reload` are in the DOM).
 
+**Production baseline, measured before the merge.** `https://spotivibe-web.vercel.app`
+currently serves, on **both** `/` and `/sw.js`:
+
+    img-src 'self' https://i.ytimg.com data:
+    connect-src 'self'
+
+So the deployed build refuses the host that supplies 63 of the fixture-measured artwork
+URLs, *and* forbids its worker from fetching them. That is the state this change fixes, and
+it is recorded here as a measurement of the shipped deployment rather than an inference
+from the source.
+
 **Not blocked — the earlier "blocked" note in this file was wrong.** The in-app `browser`
 catalog tools still report `[browser.disconnected]`, but that is not the only path:
 `orca tab create` / `goto` / `eval` / `exec --command "set viewport W H"` / `screenshot`
