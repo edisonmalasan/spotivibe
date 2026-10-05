@@ -139,7 +139,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
 | **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `DONE` - PR #104 `624838f`, sync #105 `e5d502a`, archived `2026-10-05-quick-picks-cold-start` | M17, M8 |
-| **M23** | Lyrix-style artist Quick Picks and Home artwork parity | `PROPOSED` | M22, M19 |
+| **M23** | Lyrix-style artist Quick Picks and Home artwork parity | `DONE` — PR #108 `e99414f`, sync #109 `a44e681`, archived `2026-10-06-artist-quick-picks-artwork-parity` | M22, M19 |
 
 > **M23 supersedes M17/M22's product decision, deliberately and with the user's explicit
 > instruction.** M22 shipped a Quick Picks rail that renders **selected languages as `Search`
@@ -163,6 +163,28 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > origins from `src/**` **source text**, and provider artwork arrives as opaque data rather than as
 > a string in our code. The detector is structurally blind to it and is replaced with a
 > fixture-derived one. Full evidence: `§21.9`.
+
+> **That artwork defect turned out to be three defects, and the second and third were found only
+> by loading the deployed page in a browser after the first was already fixed and green.**
+>
+> 1. **`img-src` refused the hosts the providers actually return.** Widened, and the policy test now
+>    reads the captured fixtures instead of our own source text.
+> 2. **`/sw.js` inherited the document's `connect-src 'self'`.** Next.js served one policy for every
+>    path, and the worker is the one context here that deliberately fetches cross-origin: it mediates
+>    provider artwork through the Cache API. That fetch threw, `artworkFirst` swallowed it and
+>    rethrew, `respondWith` rejected, and **every provider-hosted image failed** for every visitor the
+>    worker controlled. `i.ytimg.com` masked it for as long as it existed — it is in
+>    `NEVER_CACHE_HOSTS`, so it bypasses the worker and always rendered. `/sw.js` is now served a
+>    policy differing from the document's **in `connect-src` and nothing else**.
+> 3. **`register()` omitted `updateViaCache`.** The worker inherits the CSP shipped with its script,
+>    so a corrected worker behind a cached script response keeps the old policy. Now `"none"`.
+>
+> The general lesson is recorded in the archived evidence rather than smoothed over: **a green
+> automated gate said nothing about the user-visible outcome here**, and all three defects sat
+> behind a passing build, a passing type check, and a passing policy test. Also note that the
+> "84 occurrences" figure repeated above was itself wrong — scoped to the keys the providers
+> actually extract, `yt3.googleusercontent.com` occurs **63** times across those fixtures; the
+> larger figures belong to `authorThumbnails`, which the application never reads.
 
 > **M22 is not new scope.** `§21.2` below specifies Quick Picks as derived from "selected languages, the
 > local listening profile, liked artists/tracks, **and existing provider results**", and
