@@ -217,21 +217,61 @@ turned **3 tests red** across `playlist-presentation.test.ts` and `library-surfa
 
 ## 7. Browser verification
 
-- [ ] 7.1 1280×900 and 390×844 against the M23 preview
-- [ ] 7.2 Fresh profile / default language; two languages; eight languages; local history present;
-      no local history
-- [ ] 7.3 Evidence: artist Quick Picks render circular artwork; eight languages produce **no**
-      language cards; labels readable; cards navigate to artist pages; artist page images and
-      releases render
-- [ ] 7.4 Evidence: mix/playlist artwork appears where real source art exists; 2×2 collages crop
-      correctly; no broken-image icons; shelves scroll; no colliding circular shelves; reduced
-      motion correct
-- [ ] 7.5 Confirm artist artwork now loads by measuring `naturalWidth > 0` in-page
+Run against `http://127.0.0.1:4311` — a production build of this branch, served by
+`next start`. **A first-visit origin was chosen deliberately**, and the reason is itself a
+finding (see 7.6).
+
+- [x] 7.1 **Both viewports measured.** Desktop `1280x900` and compact `390x844`, via the
+      browser's own viewport emulation, not a CSS assumption.
+- [x] 7.2 **Scenario A only — fresh profile, default language.** App data deleted
+      (`indexedDB.deleteDatabase` + `localStorage.clear`) and the page reloaded.
+      **Scenarios B–E (two languages, eight languages, local history present, no local
+      history) were NOT run in a browser.** They are covered by unit tests only; see the
+      residual below.
+- [x] 7.3 **Evidence, measured:**
+  - `home-quick-picks` renders **8 cards, and every one has `data-quick-pick-kind="artist"`**
+    — one distinct kind, not merely "mostly artist"
+  - all 8 `href`s start with `/artist/`; card ids are **deduplicated**
+    (8 ids, 8 distinct)
+  - card text reads `LumivoxArtist` — the name plus the secondary label **`Artist`**
+  - **circular geometry measured, not inferred**: `border-radius: 500px` on a `134x134`
+    box at 1280x900 and a `126x126` box at 390x844
+  - **0** anchors inside the shelf point at `/search`
+  - **no `popular-artists` shelf anywhere in the document**; present shelves are
+    `home-section-trending`, `genres`, `podcasts`, `collections`
+  - keyboard reachable: the anchor takes focus (`document.activeElement === a`, tag `A`),
+    and activating it navigates to `/artist/Lumivox` where `artist-view` and
+    `artist-portrait` are both present
+  - artist page: **40/40 images decoded, 0 broken**, portrait decodes at its natural
+    `120x120`, no error copy
+- [x] 7.4 **Partially evidenced — see the residual.** Measured: **68/68 images on the home
+      feed decoded, 0 broken**, so "no broken-image icons" holds. Mix/playlist 2x2 collage
+      cropping was **NOT** visually verified, because a fresh profile has no liked tracks or
+      listening events and therefore renders no mix previews at all. Collage geometry is
+      asserted by unit tests only.
+- [x] 7.5 **`naturalWidth > 0` confirmed in-page, with the worker controlling.** All 8 Quick
+      Picks artist images decoded (`total: 8, decoded: 8`, host `yt3.googleusercontent.com`),
+      at both viewports. This is the check that was blocked for the whole of the previous
+      session, and it is what exposed 3b.
+- [x] 7.6 **A third finding, and it is about delivery rather than behaviour.** After the 3b
+      and 3c fixes, `localhost:4311` still decoded **0/8** while `127.0.0.1:4311` — same
+      server, same build, same page — decoded **8/8**. The only difference was that
+      `localhost` had a long-standing worker registration. `updateViaCache: 'none'` makes
+      the update *check* see fresh bytes, but the check itself is throttled, so a worker
+      installed under the old policy keeps running under it until its next update. Stated
+      plainly because it bounds the claim: **this fix reaches new visitors immediately and
+      existing visitors only when their worker next updates.** The application already has an
+      update surface for exactly this (`update-notice` / `update-reload` are in the DOM).
 
 **Not blocked — the earlier "blocked" note in this file was wrong.** The in-app `browser`
 catalog tools still report `[browser.disconnected]`, but that is not the only path:
-`orca tab create` / `goto` / `eval` / `screenshot` drive a real browser and evaluate
-JavaScript in the page. Section 7 is being run through that.
+`orca tab create` / `goto` / `eval` / `exec --command "set viewport W H"` / `screenshot`
+drive a real browser, evaluate JavaScript in the page, and set the viewport.
+
+**Residual, recorded rather than quietly dropped.** Profile scenarios B–E, mix collage
+cropping, shelf scrolling, and reduced-motion behaviour were **not** exercised in a browser
+in this pass. They are covered by unit tests, several of which are mutation-proven, but a
+unit test is not a visual check and this file does not claim otherwise.
 
 ## 8. Lifecycle
 
