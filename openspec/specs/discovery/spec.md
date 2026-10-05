@@ -8,7 +8,7 @@ The discovery layer that makes Spotivibe feel alive without accounts: a DESIGN.m
 
 ### Requirement: Home discovery feed
 
-The application SHALL replace the placeholder Home route with a discovery feed composed of named sections rendered per `frontend/docs/DESIGN.md`: horizontal card shelves of square track cards, at most one circular artist section, a section header per shelf, and compact vertical section spacing. The baseline feed SHALL include Trending Now, Made For You, Smart Mixes, Popular Artists, genre discovery, a podcast preview, and curated collections; Continue/Recently Played SHALL appear only when local listening history exists, and the Smart Mixes section SHALL appear only when at least one locally generated mix exists, listing those mixes by their generated names. The Smart Mixes section is the one exception to the card-shelf shape: a mix is a named *collection* rather than a single track, so that section renders its header (title plus the authored description) followed by the mixes as a named list with their track counts, and it SHALL NOT offer a generation action or start playback. The circular artist section SHALL never be adjacent to another circular section, and it SHALL interrupt the square shelves within the first four sections rather than trailing the feed. The feed SHALL render skeleton placeholders while a shelf loads, an explanatory empty state when a shelf has no content, and a retryable error state for that shelf alone; one failing shelf SHALL NOT prevent other shelves from rendering. The feed SHALL NOT start playback by itself and every card SHALL be keyboard operable with a visible focus state and an accessible name.
+The application SHALL replace the placeholder Home route with a discovery feed composed of named sections rendered per `frontend/docs/DESIGN.md`: horizontal card shelves of square track cards, **exactly one circular artist section**, a section header per shelf, and compact vertical section spacing. The baseline feed SHALL include Trending Now, Made For You, Smart Mixes, Quick Picks, genre discovery, a podcast preview, and curated collections; Continue/Recently Played SHALL appear only when local listening history exists, and the Smart Mixes section SHALL appear only when at least one locally generated mix exists, listing those mixes by their generated names. The Smart Mixes section is the one exception to the card-shelf shape: a mix is a named *collection* rather than a single track, so that section renders its header (title plus the authored description) followed by the mixes as a named list with their track counts, and it SHALL NOT offer a generation action or start playback. **Quick Picks is the feed's single circular artist section**, and no separate Popular Artists section SHALL render beside it. The circular artist section SHALL never be adjacent to another circular section, and it SHALL interrupt the square shelves within the first four sections rather than trailing the feed. The feed SHALL render skeleton placeholders while a shelf loads, an explanatory empty state when a shelf has no content, and a retryable error state for that shelf alone; one failing shelf SHALL NOT prevent other shelves from rendering. The feed SHALL NOT start playback by itself and every card SHALL be keyboard operable with a visible focus state and an accessible name.
 
 The feed SHALL remain a **single section model**: an `All`/`Music`/`Podcasts` filter SHALL *select* from that one list at render rather than forking it into three divergent copies, an unrecognised filter value SHALL present the whole list rather than none, and no filter SHALL introduce a section the list does not contain. The feed SHALL additionally present named mix cards that start playback of a mix on activation, a Quick Picks shelf whose every entry navigates to a surface that already exists, and a time-of-day shelf whose content follows the listener's local band. These are *additional* sections beside the baseline feed: the Smart Mixes section remains the one that offers no generation action and starts no playback, and the filter narrows the one list rather than adding to it.
 
@@ -17,7 +17,7 @@ Home SHALL remain readable and operable at a compact viewport, with its sections
 #### Scenario: Fresh user sees non-personalized discovery
 
 - **WHEN** a user with no likes, playlists, or listening history opens Home
-- **THEN** Trending Now, Popular Artists, genre, podcast, and curated shelves render from provider queries without any local personalization, and no local-only section is shown
+- **THEN** Trending Now, Quick Picks, genre, podcast, and curated shelves render from provider queries without any local personalization, and no local-only section is shown
 
 #### Scenario: Returning user sees local-informed sections
 
@@ -28,6 +28,11 @@ Home SHALL remain readable and operable at a compact viewport, with its sections
 
 - **WHEN** the Home feed renders its sections
 - **THEN** no two circular artist sections are adjacent, and the circular section appears within the first four rendered sections
+
+#### Scenario: Exactly one circular artist section renders
+
+- **WHEN** Home renders
+- **THEN** exactly one section uses circular artist geometry, and no separate Popular Artists section renders alongside the Quick Picks artist rail
 
 #### Scenario: One failing shelf does not break the feed
 
@@ -73,7 +78,7 @@ Home SHALL remain readable and operable at a compact viewport, with its sections
 #### Scenario: Quick Picks navigate to existing surfaces
 
 - **WHEN** the listener activates a Quick Pick
-- **THEN** the application navigates to the artist, album, or search surface that entry names
+- **THEN** the application navigates to the artist surface that entry names
 
 #### Scenario: The time-aware shelf is seeded by the current band
 
@@ -83,7 +88,8 @@ Home SHALL remain readable and operable at a compact viewport, with its sections
 #### Scenario: Home stays compact-viewport usable
 
 - **WHEN** Home is presented at a compact viewport width
-- **THEN** its sections remain reachable by scrolling and the persistent player region is unmoved
+- **THEN** its sections remain a scrolling region and the persistent player region does not move
+
 ### Requirement: Curated query-driven discovery shelves
 
 Trending, genre, podcast, and curated collection shelves SHALL be produced from a curated catalog of static seed queries executed against the music provider API; the application SHALL NOT claim that these shelves are an official YouTube or Spotify chart, ranking, or editorial selection, and its copy SHALL NOT attribute the content to those services. Shells SHALL require no account, no provider credential, and no user data. The podcast preview SHALL be presented as podcasts and SHALL prefer long-form results when a duration is known. Feed and shelf content SHALL be served with a short-lived cache so repeated visits do not re-query providers unnecessarily.
@@ -200,28 +206,6 @@ When playback of a track starts, the application SHALL record a local listening 
 - **WHEN** the user clears listening history from Settings
 - **THEN** the recently played section is gone on the next Home render
 
-### Requirement: Popular artists shelf
-
-The feed SHALL present a Popular Artists shelf derived by grouping discovery results by canonical artist identity, showing one entry per artist with that artist's artwork when available, rendered as circular artist cards. Artist entries SHALL be deduplicated by artist identity and ordered deterministically. Activating an artist entry SHALL navigate to that artist's own surface — the catalog capability's artist route — using the provider's artist identity when the entry has one and the artist's name otherwise, and SHALL NOT require a search refinement. The shelf SHALL render an explanatory empty state when no artist entries can be derived.
-
-#### Scenario: Grouping yields one entry per artist
-
-- **WHEN** discovery results contain several tracks by the same artist
-- **THEN** the shelf lists that artist once, with the best available artwork and a deterministic position
-
-#### Scenario: Artist cards are circular with artwork
-
-- **WHEN** an artist entry with artwork renders
-- **THEN** it uses the circular artist card with the image, the artist name, and the Artist label
-
-#### Scenario: Activating an artist refines search
-
-<!-- Scenario name retained verbatim: a MODIFIED block must carry every scenario
-     the main spec still has, and the validator matches on names. The asserted
-     behavior changed in M9 — the entry now opens the artist's own page, keyed
-     by provider identity when present and by name otherwise. -->
-- **WHEN** the user activates a Popular Artists entry
-- **THEN** that artist's own page opens, keyed by the provider artist identity when the entry has one and by the artist's name otherwise
 ### Requirement: Discover surface for genres and languages
 
 The application SHALL provide a Discover route presenting genre discovery and the user's selected languages. Each genre entry SHALL resolve a shelf of tracks for that genre through the provider API, and the surface SHALL summarize the selected languages with an affordance to change them. Entries SHALL render skeleton placeholders while loading, explanatory empty states when a genre yields nothing, and a retryable error state for a failing genre alone. The surface SHALL NOT start playback by itself, SHALL NOT claim official chart status, and SHALL remain usable when the device is offline by explaining that remote discovery needs a connection.
