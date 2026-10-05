@@ -130,10 +130,10 @@ and no new import edge to the client graph, so the ceiling is recorded once more
 
 | Measurement | After M19 | After M20 | After M22 | M22's delta |
 |---|---:|---:|---:|---:|
-| Client JS, total gzipped | 384,831 B | 387,992 B | 389,564 B | **+1,572 B** |
+| Client JS, total gzipped | 384,831 B | 387,992 B | 389,572 B | **+1,580 B** |
 | Largest single chunk, gzipped | 96,644 B | 96,667 B | 96,667 B | **0 B** |
 | Emitted chunks | 24 | 25 | 26 | **+1** |
-| `/` first load, gzipped | 227,266 B (12 chunks) | 230,555 B (13 chunks) | 232,127 B (14 chunks) | +1,572 B |
+| `/` first load, gzipped | 227,266 B (12 chunks) | 230,555 B (13 chunks) | 232,135 B (14 chunks) | +1,580 B |
 
 **`main` was measured as a control, and it reproduced M20's record byte for byte** — 25 chunks,
 387,992 B, largest 96,667 B, `/` 230,555 B across 13 chunks. So these figures are attributable to
@@ -155,11 +155,14 @@ distinguishes nothing. Two probes were run, each on a clean build:
 - Replacing the one added `import type { Track }` with a type alias borrowed from `LocalTaste`, to
   remove that import edge entirely, changed **nothing**: 26 chunks, 389,564 B, byte-identical.
 
+Both probes were taken before the rail's description line was reworded to name its third source,
+which accounts for the final 8 bytes (389,564 → 389,572). The table above is from the finished tree.
+
 The mechanism behind Turbopack's chunking decision is **not established**, and is not claimed here.
 Chasing it further would have meant writing worse code — duplicating the artist and release passes
 inline to nudge a chunk graph — so it was left unattributed rather than dressed up as understood.
 
-**What separates this from the spike is size and origin, not shape.** 1,572 bytes is the project's
+**What separates this from the spike is size and origin, not shape.** 1,580 bytes is the project's
 own source and sits inside the 4,096-byte tolerance that existed before any of this;
 `framer-motion` measured **+41.4 kB**, which is more than ten times the whole tolerance and 26 times
 M22's entire move. The manifest assertion (`an animation library in the manifest fails the budget`)

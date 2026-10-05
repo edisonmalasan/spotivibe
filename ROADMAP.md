@@ -138,7 +138,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M19** | Motion and interaction polish | `DONE` | M18 |
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
-| **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `PROPOSE` | M17, M8 |
+| **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `APPLY` | M17, M8 |
 
 > **M22 is not new scope.** `§21.2` below specifies Quick Picks as derived from "selected languages, the
 > local listening profile, liked artists/tracks, **and existing provider results**", and
@@ -2555,7 +2555,7 @@ evidence exists.
 
 **The bundle cost, stated up front because it is the one judgement call here.** This adds
 first-party code to the client, and `motion-budget.test.ts` went red: **26 emitted chunks against a
-ceiling of 25**, `/` first load **14 against 13**, **+1,572 B gzipped**. The bytes were *inside* the
+ceiling of 25**, `/` first load **14 against 13**, **+1,580 B gzipped**. The bytes were *inside* the
 recorded 4,096-byte tolerance; only the two chunk-count assertions failed. `main` at `0401573`,
 built clean, reproduced M20's record **byte for byte**, so the delta is this change's and not build
 drift. Two probes are recorded in `frontend/docs/MOTION.md` §2b: the extra chunk appears even with
@@ -2567,7 +2567,8 @@ its own record; **no tolerance was widened and no assertion loosened.**
 **Automated verification.** A device with no likes and no plays derives artist and release entries
 from provider results, each of which resolves and carries artwork where the result supplied one. The
 same device with local material is unchanged. A device with neither local material nor provider
-results falls back to today's single language entry and then to the explained-empty copy. Every new
+results falls back to today's single language entry. There is no explained-empty copy, for the
+reason given above. Every new
 clause is shown load-bearing by mutation against an unmodified control.
 
 **Browser verification.** Home at 1280×900 and 390×844 on a fresh profile, with the languages

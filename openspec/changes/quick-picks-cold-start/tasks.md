@@ -115,7 +115,7 @@ See §7 for the measured rows.
 | `npm run typecheck` | 0 |
 | `npm run build` | succeeded, clean `.next` |
 | `npm test` | **182 files, 3,360 tests, 0 failed** |
-| bundle measurement | 26 chunks, 389,564 B total, largest 96,667, `/` 232,127 B across 14 |
+| bundle measurement | 26 chunks, 389,572 B total, largest 96,667, `/` 232,135 B across 14 |
 
 ### Mutation verification — control first, rows second
 
@@ -159,3 +159,30 @@ While renaming a type in `quickPicks.ts` I used a PowerShell `-replace` / `Set-C
 no BOM, LF endings preserved, trailing newline intact, and `git diff` showed only the intended lines —
 so no damage shipped. It is recorded because the rule exists precisely because that operation *can*
 damage a file silently, and "it happened to be fine" is not a reason to have done it.
+
+### Independent verification, and what it changed
+
+Read-only review found **no CRITICAL** and three WARNINGs. Two were statements false as written, which
+are repaired regardless of severity:
+
+- `ROADMAP.md` §21.7 said the rail falls back "and then to the explained-empty copy" — thirty lines
+  after the same section recorded that no such copy exists and the state is unreachable. The stray
+  clause is deleted.
+- The orphaned `filter` doc comment in `QuickPicksShelfProps`, orphaned by this diff's own insert.
+  Restored above its field.
+
+The third WARNING is real and is **recorded rather than silently tuned away**: at eight selected
+languages — the maximum, and equal to `MAX_QUICK_PICKS` — the reservation leaves the stand-in no slot,
+so the rail is eight search cards and nothing else. The spec scenario claimed this unconditionally and
+therefore did not hold. The requirement now states the precondition and adds a scenario for the full
+bound, a test pins both sides of the boundary, and `design.md` D7 records the decision with the
+alternative (clamping the reservation so the stand-in wins, at the cost of hiding two of eight chosen
+languages) rejected as a product decision this milestone should not make alone.
+
+Also taken from that review: `QUICK_PICKS_DESCRIPTION` under-described the rail, claiming two sources
+where there are now three. It is the one string every listener reads, so it was reworded — which moved
+the bundle by 8 bytes and is why the recorded figure is 1,580 rather than the 1,572 the probes saw.
+
+Accepted residuals, recorded rather than repaired: the M20/M22 delta test names no origin check of its
+own (the manifest test already covers it, and a second copy would be a second thing to keep in step);
+`ROADMAP.md`'s M22 row is `APPLY` pending archive.

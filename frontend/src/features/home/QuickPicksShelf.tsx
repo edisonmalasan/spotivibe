@@ -33,9 +33,18 @@ import { deriveQuickPicks, quickPickHref, type QuickPick } from "@/features/home
 /** Section title. Says what the shelf is, without claiming it is curated. */
 export const QUICK_PICKS_TITLE = "Quick Picks";
 
-/** Secondary line: where every entry leads. */
+/**
+ * Secondary line: where every entry leads, and — since M22 — where it came from.
+ *
+ * The first half of this line used to claim the rail was derived "from your
+ * languages and what you already played", which stopped being true the moment
+ * the cold-start stand-in was implemented: on a device with no local material
+ * the artist and release entries come from what the feed is already fetching.
+ * The description is the one string every listener reads, so it names all three
+ * sources rather than the two that happen to be true once you have some history.
+ */
 export const QUICK_PICKS_DESCRIPTION =
-  "Artists, releases, and searches from your languages and what you already played.";
+  "Artists, releases, and searches from what you have played, your languages, and what is playing now.";
 
 /** Square cover box at the 6px image radius, per DESIGN.md. */
 const COVER_CLASS =
@@ -105,7 +114,6 @@ export interface QuickPicksShelfProps {
   events: readonly ListeningEventRecord[];
   /** The selected catalog language codes. */
   languages: readonly string[];
-  /** The presented filter, so the shelf follows the one section model's filter. */
   /**
    * Provider results the Home feed already holds, for the cold-start stand-in.
    *
@@ -114,6 +122,7 @@ export interface QuickPicksShelfProps {
    * rail unchanged.
    */
   providerTracks?: readonly Track[];
+  /** The presented filter, so the shelf follows the one section model's filter. */
   filter?: HomeFilterValue;
   className?: string;
 }

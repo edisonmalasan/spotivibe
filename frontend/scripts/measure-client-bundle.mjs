@@ -82,8 +82,8 @@ export const M20_CLIENT_BUDGET = Object.freeze({
  * to build drift on this machine. That control is the only reason this re-record is a
  * measurement rather than an assumption.
  *
- * **What moved, and what it cost.** The total grew by 1,572 bytes gzipped (387,992 ->
- * 389,564), the largest chunk did not move at all (96,667), and the emitted and `/`-
+ * **What moved, and what it cost.** The total grew by 1,580 bytes gzipped (387,992 ->
+ * 389,572), the largest chunk did not move at all (96,667), and the emitted and `/`-
  * first-load chunk counts by one each (25 -> 26, 13 -> 14). All of it is first-party
  * code: the Quick Picks stand-in pass and its two shared helpers in
  * `src/features/home/quickPicks.ts`. **No dependency was added to the client at all**, and
@@ -94,8 +94,10 @@ export const M20_CLIENT_BUDGET = Object.freeze({
  * the new path is unreachable — still emitted 26 chunks and 389,564 B, so the split is
  * caused by the code being *present*, not by the new behaviour being reachable. Replacing
  * the one added `import type { Track }` with a type alias borrowed from `LocalTaste`, to
- * drop the import edge, changed nothing at all: 26 chunks, 389,564 B, identical. The
- * mechanism behind Turbopack's decision is **not** established and is not claimed here.
+ * drop the import edge, changed nothing at all: 26 chunks, 389,564 B, identical. (Those
+ * two probes were taken before the shelf's description line was reworded, which added the
+ * final 8 bytes; the figures above are from the finished tree.) The mechanism behind
+ * Turbopack's decision is **not** established and is not claimed here.
  * Chasing it further would mean writing worse code — duplicating the artist and release
  * passes inline to nudge a chunk graph — so it was left, and is recorded as unattributed
  * rather than dressed up as understood.
@@ -123,10 +125,10 @@ export const CLIENT_BUDGET = Object.freeze({
     "every .js file under .next/static/chunks, gzipped at level 9; per-route, the <script src> set of the route's emitted .next/server/app HTML",
   /** When and after what this figure was measured, so a drift has something to be compared to. */
   recordedAt: "2026-10-05, after M22 (Quick Picks cold start)",
-  totalGzippedBytes: 389564,
+  totalGzippedBytes: 389572,
   largestChunkGzippedBytes: 96667,
   chunkCount: 26,
-  homeFirstLoadGzippedBytes: 232127,
+  homeFirstLoadGzippedBytes: 232135,
   homeFirstLoadChunkCount: 14,
   /**
    * How far a rebuild may drift from the recorded figure.

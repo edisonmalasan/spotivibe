@@ -167,6 +167,23 @@ hidden on a cold device while its data would still be available; a shortcut rail
 popular artist is not a leak of anything the device did not already receive in that same render.
 Whether the trending *section* is displayed is a layout decision and is deliberately not consulted.
 
+**The one configuration where the stand-in contributes nothing, recorded rather than left to be
+discovered.** `MAX_SELECTED_LANGUAGES` is 8 and `MAX_QUICK_PICKS` is 8, so a device that has
+selected eight languages computes `standInLimit = 0` and both helpers return on their first
+iteration: eight search cards, no provider entry. That is the boundary of this decision, found by
+review rather than by a user, and it is deliberate — D5's purpose is to stop provider volume from
+crowding out the language entries, so a listener who has explicitly selected as many languages as
+the rail has slots gets exactly those. It is still strictly better than the pre-M22 behaviour (the
+same device got those same eight language cards and nothing else), but it is **not** the
+improvement, so the requirement now states it as its own scenario and a test pins both sides of the
+boundary. Left unstated, it would have been a spec clause that quietly did not hold.
+
+**Alternative rejected — clamping the reservation** so the stand-in always keeps a slot or two. It
+would make the stand-in win at eight languages, at the cost of hiding two of the eight languages a
+listener explicitly chose. That is a product decision about which promise matters more, it is not
+this milestone's to make unilaterally, and it would change what the language pass promises. If the
+cold-start rail should win at full language selection, that is a separate, deliberate change.
+
 **Alternative rejected — a dedicated provider request for Quick Picks.** It would be the only fetch
 in Home whose sole purpose is a shortcut rail, contradicting "no new request" in the requirement.
 
@@ -194,6 +211,13 @@ built from a clean `.next` and measured. It reproduced M20's record **byte for b
 387,992 B, largest 96,667, `/` 230,555 across 13. So the build is deterministic on this machine and
 the delta is this change's. Without that control a re-record is an assumption in a measurement's
 clothes.
+
+**The finished figure is 1,580 B, not the 1,572 B the probes saw.** Independent review found that
+`QUICK_PICKS_DESCRIPTION` — the one string every listener reads — still claimed the rail was derived
+"from your languages and what you already played", which stopped being true when the stand-in landed.
+Rewording it to name its third source cost 8 gzipped bytes. The record and its test were updated to
+the finished tree rather than left describing a build that no longer exists: a criterion's
+satisfaction may not outlive the tree it was measured on.
 
 **Two probes, both on clean builds, and one hypothesis that was wrong.**
 

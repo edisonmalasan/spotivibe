@@ -152,12 +152,12 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     expect(M20_CLIENT_BUDGET.chunkCount - PRE_M19_CLIENT_BUDGET.chunkCount).toBe(1);
   });
 
-  it("states what M22 cost, in bytes, and that it is first-party code", () => {
+  it("states what M22 cost, in bytes", () => {
     // M22 re-recorded the ceiling, so its move is stated the same way M20's and M19's
     // were: as a measured byte delta against the record it replaced, with the origin
     // of the code asserted rather than assumed.
     const delta = CLIENT_BUDGET.totalGzippedBytes - M20_CLIENT_BUDGET.totalGzippedBytes;
-    expect(delta, "M22's measured cost in gzipped bytes").toBe(1572);
+    expect(delta, "M22's measured cost in gzipped bytes").toBe(1580);
 
     // Same shape M20 recorded: one extra emitted chunk and one extra on `/`. Asserted
     // because it is the part a reader would otherwise have to take on trust.

@@ -299,6 +299,39 @@ describe("quickPicks: the cold-start stand-in (M22)", () => {
     expect(three.filter((pick) => pick.kind !== "search")).toHaveLength(MAX_QUICK_PICKS - 3);
   });
 
+  it("gives the rail to a full set of selected languages, and does not squeeze them out", () => {
+    // The boundary of the reservation, pinned so it is a recorded decision rather
+    // than an accident nobody looked at. `MAX_SELECTED_LANGUAGES` is 8 and
+    // `MAX_QUICK_PICKS` is 8, so eight selected languages leave the stand-in no
+    // slot at all.
+    //
+    // This is the one configuration where the cold-start stand-in contributes
+    // nothing, and it is deliberate: the reservation's purpose (design decision
+    // D5) is to keep the language entries from being crowded out by provider
+    // volume, so a listener who has explicitly selected as many languages as the
+    // rail has slots gets exactly those. It is still strictly better than before
+    // this milestone — the same device previously got these same language cards
+    // and nothing else — but it is not the improvement, and the requirement says so.
+    const eight = deriveQuickPicks({
+      languages: ["en", "es", "fr", "de", "it", "pt", "ja", "ko"],
+      taste: cold,
+      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
+    });
+
+    expect(eight).toHaveLength(MAX_QUICK_PICKS);
+    expect(eight.filter((pick) => pick.kind === "search")).toHaveLength(MAX_QUICK_PICKS);
+    expect(eight.filter((pick) => pick.kind !== "search")).toHaveLength(0);
+
+    // One language fewer and the stand-in gets exactly one slot back.
+    const seven = deriveQuickPicks({
+      languages: ["en", "es", "fr", "de", "it", "pt", "ja"],
+      taste: cold,
+      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
+    });
+    expect(seven.filter((pick) => pick.kind !== "search")).toHaveLength(1);
+    expect(seven).toHaveLength(MAX_QUICK_PICKS);
+  });
+
   it("falls back to exactly today's rail when the provider returned nothing", () => {
     // A cold device whose discovery request failed or is still in flight passes
     // `[]` — `DiscoveryShelf.tracks` is empty until a shelf is ready. That must
