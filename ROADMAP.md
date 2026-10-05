@@ -138,6 +138,14 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M19** | Motion and interaction polish | `DONE` | M18 |
 | **M20** | Personal-use media downloading | `DONE` | M3, M4 |
 | **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
+| **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `PROPOSE` | M17, M8 |
+
+> **M22 is not new scope.** `§21.2` below specifies Quick Picks as derived from "selected languages, the
+> local listening profile, liked artists/tracks, **and existing provider results**", and
+> `openspec/specs/home-mixes/spec.md` carries the same clause. `quickPicks.ts` derives from the first
+> three and **never reads the fourth**, so a device with no local material gets exactly one bare
+> language card. That is a gap in approved work, and §18 approval is not what it needs — it is the
+> reason this table has a row for it.
 
 > **`DONE` means the milestone's criterion was met at its merge commit — verified by a rule, not by
 > assertion.** `design.md` §2.10 requires six consecutive green full gate runs at the tree being merged.
@@ -2498,3 +2506,64 @@ intermittent defect, which is the whole lesson.
 
 **Completion criteria.** Six consecutive green gate runs. Documentation describes the product as
 built, including the two deliberate non-compliance choices.
+
+## 21.7 M22 — Quick Picks cold start: close M17's unimplemented provider-results clause
+
+**Objective.** Make the Home Quick Picks rail useful on a device that has no local taste yet, by
+implementing the clause M17 already specified and did not build.
+
+**Depends on.** M17 (Quick Picks, `quickPicks.ts`, `QuickPicksShelf.tsx`), M8 (`HomeView`,
+`useDiscoveryShelf`, `homeSections`).
+
+**The defect, stated precisely.** `§21.2` specifies Quick Picks as derived from "selected languages,
+the local listening profile, liked artists/tracks, **and existing provider results**", and
+`home-mixes`'s synced requirement repeats it. `deriveQuickPicks` accepts `languages` and `taste` and
+reads no fourth source — its own header states the contract as "only what the device already holds".
+So on a fresh install the rail renders **one** entry: a single search card for the default catalog
+language, carrying no artwork and no artist or release behind it. The heading still promises
+"Artists, releases, and searches".
+
+**In scope.**
+
+- Thread the provider results the Home feed **already holds** into the derivation — `feed.trending`
+  and `feed.collections` are already fetched by the same render, so this adds **no request and no
+  stored data**.
+- Gate that source on the device holding **no local material**, so a device with likes or plays
+  renders byte-identical output to today. A cold-start path must not perturb the warm path. The slot
+  reservation described below applies to the stand-in pass **only** — applying it to the local passes
+  would change the warm path, which is out of scope here.
+- Correct one inaccurate comment in `deriveQuickPicks`: it claims the shared bound means "a device with
+  many artists cannot push the language entries out entirely", which the code below it does not
+  deliver — eight artists fill the bound and the language pass contributes nothing. The comment is
+  wrong as written; the behaviour is **not** changed here, because changing it would change the warm
+  path. The wrongness is recorded rather than quietly left to mislead the next reader.
+- **Not** an explained-empty state. One was scoped here first and then withdrawn: `normalizeLanguageCodes`
+  falls back to `DEFAULT_LANGUAGE` for an empty or wholly invalid selection, so the language pass
+  always contributes at least one entry and the rail cannot render empty. The one exception — a
+  stand-in pass must not consume every slot and crowd out that guaranteed language entry — is handled
+  by reserving its slots rather than by an empty state the code cannot reach.
+
+**Non-goals.** Recommending tracks. Any server-side or cross-user signal. Changing `For You`'s
+`hasLocalArtists` gate, which is a separate decision about a separate shelf. Uploading taste.
+
+**Why the gate matters and is not a fudge.** The evidence-strength ordering the module already
+documents — a liked artist is a place you have been, a release on a liked track is a place you have
+not, a selected language is a way in — places provider results *between* the local material and the
+language, and only where local material is absent. Ordering is therefore preserved rather than
+re-derived, and the fallback cannot outrank real local evidence because it is skipped when real local
+evidence exists.
+
+**Automated verification.** A device with no likes and no plays derives artist and release entries
+from provider results, each of which resolves and carries artwork where the result supplied one. The
+same device with local material is unchanged. A device with neither local material nor provider
+results falls back to today's single language entry and then to the explained-empty copy. Every new
+clause is shown load-bearing by mutation against an unmodified control.
+
+**Browser verification.** Home at 1280×900 and 390×844 on a fresh profile, with the languages
+default and with two languages selected. **No browser automation is available on this machine and
+both Vercel origins sit behind Deployment Protection, so unless that changes this is recorded as
+unverified rather than claimed.**
+
+**Completion criteria.** A fresh device's Quick Picks rail offers more than one entry, drawn from
+results the page had already fetched; a device with local material renders exactly as before; no new
+request, no new persisted state; and every new clause proven able to fail.
