@@ -10,22 +10,29 @@ import {
   QUICK_PICK_KINDS,
   type QuickPick,
 } from "@/features/home/quickPicks";
-import { QuickPicksShelf } from "@/features/home/QuickPicksShelf";
+import { QUICK_PICKS_DESCRIPTION, QuickPicksShelf } from "@/features/home/QuickPicksShelf";
+import * as localData from "@/data/localData";
 import { makeTrack } from "./helpers/music-fixtures";
 import { resetHistoryStore } from "@/stores/historyStore";
 import { resetLibraryStore } from "@/stores/libraryStore";
 
 /**
- * M17 tasks 3.1–3.3 (spec: `home-mixes` — "Quick Picks lead to surfaces that
- * exist", scenarios "Every Quick Pick navigates somewhere", "No Quick Pick has an
- * unresolvable target", "Quick Picks derive from local material"; `discovery` —
- * "Quick Picks navigate to existing surfaces"; design decision 5).
+ * M23 (spec: `home-mixes` — "Quick Picks are artist surfaces that exist" and "Mix
+ * cards present honest preview artwork"; `discovery` — "Home discovery feed").
  *
- * The claim under test is that this shelf has **no dead ends**, and it is checked
- * from both sides: the derivation is asserted to emit only entries the app can
- * resolve, and the *rendered* cards are then asserted one by one to be real
- * anchors with a non-empty target of a recognised kind. A convention in a comment
- * would satisfy neither; a card that renders and goes nowhere fails both.
+ * The central claim is that the rail is **artist-only** and that selected languages
+ * shape which artists lead rather than becoming cards. That is checked from four
+ * directions, because each catches a different way the defect can come back:
+ *
+ * 1. **Card kind.** Every entry is an artist; no entry is a search or a release, and
+ *    no entry is named after a selected language — including at the maximum
+ *    selection, which is where M22 produced eight search cards and zero artists.
+ * 2. **Candidates.** Changing only the selected languages reorders the artists, which
+ *    can only happen if the language metadata on the candidate tracks is being read.
+ * 3. **Navigation.** Every entry resolves to the artist route, by provider identity
+ *    when there is one and by name otherwise.
+ * 4. **Presentation.** Circular geometry, the `Artist` label, real artwork when the
+ *    provider supplied it, and the existing placeholder when it did not.
  */
 
 // Quick Pick cards navigate through next/link.
@@ -47,23 +54,44 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(""),
 }));
 
-function track(id: string, artist: string, album?: string): Track {
+function track(id: string, artist: string, extra: Partial<Track> = {}): Track {
   return makeTrack({
     id: `youtube:${id}`,
     providerId: id,
     title: `Song ${id}`,
     artists: [{ name: artist }],
-    ...(album === undefined ? {} : { album: { title: album } }),
+    artwork: [{ url: `https://example.test/${id}.jpg` }],
+    ...extra,
+  });
+}
+
+/** A track with no artwork at all, for the placeholder clauses. */
+function bareTrack(id: string, artist: string): Track {
+  return makeTrack({
+    id: `youtube:${id}`,
+    providerId: id,
+    title: `Song ${id}`,
+    artists: [{ name: artist }],
+    artwork: [],
+  });
+}
+
+/** A track whose artist carries a provider entity id. */
+function providerArtistTrack(id: string, artistId: string, name: string): Track {
+  return makeTrack({
+    id: `youtube:${id}`,
+    providerId: id,
+    title: `Song ${id}`,
+    artists: [{ id: artistId, name }],
     artwork: [{ url: `https://example.test/${id}.jpg` }],
   });
 }
 
 /**
- * An artist the local data *counts* but cannot *name*: a provider artist whose id
- * is not the entity-id shape and whose display name is blank. The entry is real —
- * the track credits it — but the text key an artist route would be given is blank,
- * so no route resolves it. This is the case the resolvability gate exists for, and
- * it is reachable from real data rather than only from a hand-built pick.
+ * An artist the local data *counts* but cannot *name*: a provider artist whose id is
+ * not the entity-id shape and whose display name is blank. The entry is real — the
+ * track credits it — but the text key an artist route would be given is blank, so no
+ * route resolves it. This is the case the resolvability gate exists for.
  */
 function unnamedArtistTrack(id: string): Track {
   return makeTrack({
@@ -74,28 +102,34 @@ function unnamedArtistTrack(id: string): Track {
   });
 }
 
-function event(id: string, artist: string, album?: string): ListeningEventRecord {
+function event(id: string, artist: string, extra: Partial<Track> = {}): ListeningEventRecord {
   return {
     id: `event-${id}`,
     trackId: `youtube:${id}`,
-    track: track(id, artist, album),
+    track: track(id, artist, extra),
     playedAt: 1_000,
     secondsPlayed: 200,
     context: "home",
   };
 }
 
-/** The three local inputs a derivation may read. */
+/** The local inputs a derivation may read. */
 function material() {
   return {
-    likedTracks: [track("l1", "Aurora", "First Light"), track("l2", "Beacon")],
-    events: [event("e1", "Cobalt", "Deep Field")],
+    likedTracks: [track("l1", "Aurora"), track("l2", "Beacon")],
+    events: [event("e1", "Cobalt")],
   };
 }
+
+/** The empty device: no likes, no plays. */
+const NO_TASTE = { likedTracks: [], events: [] } as const;
 
 function derive(languages: readonly string[] = ["en"], taste = material()): QuickPick[] {
   return deriveQuickPicks({ languages, taste });
 }
+
+/** Eight distinct catalog codes — the maximum selection. */
+const EIGHT_LANGUAGES = ["en", "ja", "ko", "es", "fr", "de", "pt", "it"];
 
 beforeEach(() => {
   resetHistoryStore();
@@ -106,508 +140,337 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("quickPicks: derivation reads only local material", () => {
-  it("builds artist, album, and search entries from those three inputs alone", () => {
-    const picks = derive(["en", "es"]);
-    const kinds = picks.map((pick) => pick.kind);
-    // Artists from liked and played tracks, albums from the tracks that carry one,
-    // and one search entry per selected language.
-    expect(kinds).toContain("artist");
-    expect(kinds).toContain("album");
-    expect(kinds).toContain("search");
-    expect(
-      picks
-        .filter((pick) => pick.kind === "artist")
-        .map((pick) => pick.title)
-        .sort(),
-    ).toEqual(["Aurora", "Beacon", "Cobalt"]);
-    expect(
-      picks
-        .filter((pick) => pick.kind === "album")
-        .map((pick) => pick.title)
-        .sort(),
-    ).toEqual(["Deep Field", "First Light"]);
-    expect(
-      picks
-        .filter((pick) => pick.kind === "search")
-        .map((pick) => pick.target)
-        .sort(),
-    ).toEqual(["English", "Spanish"]);
+describe("quickPicks: the rail is artist-only", () => {
+  it("recognises exactly one kind, and it is the artist kind", () => {
+    // The type-level statement of the whole milestone. M22 permitted three kinds;
+    // narrowing the tuple is what stops a search or release card from being
+    // constructed at all, rather than merely not being emitted today.
+    expect([...QUICK_PICK_KINDS]).toEqual(["artist"]);
+    expect(isQuickPickKind("artist")).toBe(true);
+    expect(isQuickPickKind("search")).toBe(false);
+    expect(isQuickPickKind("album")).toBe(false);
   });
 
-  it("reads no repository and no store while deriving", async () => {
-    // The derivation is a pure function over its arguments; `getLocalData` is the
-    // single accessor every local read goes through, so a spy on it is the honest
-    // place to look for "no new stored data was consulted".
-    const localData = await import("@/data/localData");
-    const getLocalData = vi.spyOn(localData, "getLocalData");
-
-    derive(["en", "es"]);
-
-    expect(getLocalData).not.toHaveBeenCalled();
-    getLocalData.mockRestore();
-  });
-
-  it("reaches the language, the local artists, and the local releases — and nothing else", () => {
-    // A device with no local material still offers the language entries, because a
-    // language is a preference the device holds; and nothing else appears.
-    const picks = derive(["es"], { likedTracks: [], events: [] });
-    expect(picks.map((pick) => pick.kind)).toEqual(["search"]);
-    expect(picks[0]?.target).toBe("Spanish");
-
-    // Conversely, a device with material and a single language offers no second
-    // search entry, because the bound is applied to real entries rather than
-    // padding the rail with language duplicates.
-    const withMaterial = derive(["en"], material());
-    expect(withMaterial.filter((pick) => pick.kind === "search")).toHaveLength(1);
-  });
-
-  it("is bounded, deduped, and deterministic", () => {
-    const many = {
-      likedTracks: Array.from({ length: 20 }, (_unused, index) =>
-        track(`m${index}`, `Artist ${index}`, `Album ${index}`),
-      ),
-      events: [],
-    };
-    const picks = deriveQuickPicks({ languages: ["en", "es"], taste: many });
-
-    expect(picks.length).toBeLessThanOrEqual(MAX_QUICK_PICKS);
-    const identities = picks.map((pick) => `${pick.kind}:${pick.target.toLowerCase()}`);
-    expect(new Set(identities).size).toBe(identities.length);
-    expect(deriveQuickPicks({ languages: ["en", "es"], taste: many })).toEqual(picks);
-    // And it never mutates what it was given.
-    const before = JSON.stringify(many);
-    deriveQuickPicks({ languages: ["en", "es"], taste: many });
-    expect(JSON.stringify(many)).toBe(before);
-  });
-});
-
-describe("quickPicks: the cold-start stand-in (M22)", () => {
-  /**
-   * M22 tasks 3.1–3.3, 3.5, 3.6 (spec: `home-mixes` — "Quick Picks lead to
-   * surfaces that exist", scenarios "A device with no local material is offered
-   * more than the language entry", "Local evidence is never displaced by provider
-   * results", "The language entries survive a full stand-in pass"; design decisions
-   * D2, D3, D5).
-   *
-   * The bug being closed: with no likes and no plays, the rail rendered exactly
-   * one entry — a search card for the default language — under a heading promising
-   * artists and releases. `ROADMAP.md` §21.2 and this requirement both specified a
-   * fourth source, "existing provider results", which the derivation never read.
-   */
-
-  /** A device with no likes and no plays — the state these tests are about. */
-  const cold = { likedTracks: [], events: [] } as const;
-
-  it("offers a cold device real artists and releases ahead of the language entry", () => {
-    const picks = deriveQuickPicks({
-      languages: ["en"],
-      taste: cold,
-      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
-    });
-
-    // Not one entry any more: the two provider artists, then the two releases'
-    // artist-derived pair, then the language entry last.
-    expect(picks.map((pick) => pick.kind)).toEqual(["artist", "artist", "album", "search"]);
-    expect(picks.filter((pick) => pick.kind === "artist").map((pick) => pick.title)).toEqual([
-      "Nova",
-      "Iris",
-    ]);
-    // The ordering claim itself, asserted rather than inferred from the array shape:
-    // every provider entry precedes the language entry.
-    expect(picks.findIndex((pick) => pick.kind === "search")).toBe(picks.length - 1);
-
-    // And every one of them is a link somewhere real, like every other entry. The
-    // provider gave no artist entity ids, so the artist entries are text keys.
-    for (const pick of picks) expect(quickPickHref(pick)).not.toBeNull();
-    expect(quickPickHref(picks[0]!)).toBe("/artist/Nova");
-  });
-
-  it("gives the stand-in entries the artwork the provider supplied", () => {
-    // The complaint that started this was a bare grey icon with no cover. A
-    // provider track carries artwork, so the stand-in entries must use it — the
-    // cover fallback belongs to search entries, which name a query and have none.
-    const picks = deriveQuickPicks({
-      languages: ["en"],
-      taste: cold,
-      providerTracks: [track("p1", "Nova", "Signal Fire")],
-    });
-
-    expect(picks.find((pick) => pick.kind === "artist")?.artworkUrl).toBe(
-      "https://example.test/p1.jpg",
-    );
-    expect(picks.find((pick) => pick.kind === "album")?.artworkUrl).toBe(
-      "https://example.test/p1.jpg",
-    );
-    expect(picks.find((pick) => pick.kind === "search")?.artworkUrl).toBeUndefined();
-  });
-
-  it("never lets provider results displace, reorder, or outrank local evidence", () => {
-    // The warm path, stated as whole-array equality rather than a length: a
-    // stand-in that merely kept the count while swapping entries would pass a
-    // weaker assertion than the one the requirement actually makes.
-    const withProvider = deriveQuickPicks({
-      languages: ["en", "es"],
-      taste: material(),
-      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris", "Low Tide")],
-    });
-    const withoutProvider = deriveQuickPicks({ languages: ["en", "es"], taste: material() });
-
-    expect(withProvider).toEqual(withoutProvider);
-    // Spelled out too, so a failure says *which* guarantee broke.
-    expect(withProvider.map((pick) => pick.title)).not.toContain("Nova");
-    expect(withProvider.map((pick) => pick.title)).not.toContain("Low Tide");
-
-    // One liked track is already "material". The gate is emptiness, not thinness.
-    const barely = deriveQuickPicks({
-      languages: ["en"],
-      taste: { likedTracks: [track("l1", "Aurora", "First Light")], events: [] },
-      providerTracks: [track("p1", "Nova", "Signal Fire")],
-    });
-    expect(barely).toEqual(
-      deriveQuickPicks({
-        languages: ["en"],
-        taste: { likedTracks: [track("l1", "Aurora", "First Light")], events: [] },
-      }),
-    );
-  });
-
-  it("keeps the language entry when the provider returns more than the whole bound", () => {
-    // Without the reservation, a cold device on a healthy network would fill the
-    // bound with provider artists and lose the one entry the derivation guarantees
-    // — making that guarantee depend on the network.
-    const crowded = Array.from({ length: 20 }, (_unused, index) =>
-      track(`p${index}`, `Artist ${index}`, `Album ${index}`),
-    );
-
-    const one = deriveQuickPicks({ languages: ["en"], taste: cold, providerTracks: crowded });
-    expect(one.length).toBeLessThanOrEqual(MAX_QUICK_PICKS);
-    expect(one.filter((pick) => pick.kind === "search").map((pick) => pick.title)).toEqual([
-      "English",
-    ]);
-
-    // Three languages reserve three slots, so fewer stand-in entries survive.
-    const three = deriveQuickPicks({
-      languages: ["en", "es", "ja"],
-      taste: cold,
-      providerTracks: crowded,
-    });
-    const searches = three.filter((pick) => pick.kind === "search");
-    expect(searches).toHaveLength(3);
-    expect(searches.map((pick) => pick.title).sort()).toEqual(["English", "Japanese", "Spanish"]);
-    expect(three.length).toBeLessThanOrEqual(MAX_QUICK_PICKS);
-    expect(three.filter((pick) => pick.kind !== "search")).toHaveLength(MAX_QUICK_PICKS - 3);
-  });
-
-  it("gives the rail to a full set of selected languages, and does not squeeze them out", () => {
-    // The boundary of the reservation, pinned so it is a recorded decision rather
-    // than an accident nobody looked at. `MAX_SELECTED_LANGUAGES` is 8 and
-    // `MAX_QUICK_PICKS` is 8, so eight selected languages leave the stand-in no
-    // slot at all.
-    //
-    // This is the one configuration where the cold-start stand-in contributes
-    // nothing, and it is deliberate: the reservation's purpose (design decision
-    // D5) is to keep the language entries from being crowded out by provider
-    // volume, so a listener who has explicitly selected as many languages as the
-    // rail has slots gets exactly those. It is still strictly better than before
-    // this milestone — the same device previously got these same language cards
-    // and nothing else — but it is not the improvement, and the requirement says so.
-    const eight = deriveQuickPicks({
-      languages: ["en", "es", "fr", "de", "it", "pt", "ja", "ko"],
-      taste: cold,
-      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
-    });
-
-    expect(eight).toHaveLength(MAX_QUICK_PICKS);
-    expect(eight.filter((pick) => pick.kind === "search")).toHaveLength(MAX_QUICK_PICKS);
-    expect(eight.filter((pick) => pick.kind !== "search")).toHaveLength(0);
-
-    // One language fewer and the stand-in gets exactly one slot back.
-    const seven = deriveQuickPicks({
-      languages: ["en", "es", "fr", "de", "it", "pt", "ja"],
-      taste: cold,
-      providerTracks: [track("p1", "Nova", "Signal Fire"), track("p2", "Iris")],
-    });
-    expect(seven.filter((pick) => pick.kind !== "search")).toHaveLength(1);
-    expect(seven).toHaveLength(MAX_QUICK_PICKS);
-  });
-
-  it("falls back to exactly today's rail when the provider returned nothing", () => {
-    // A cold device whose discovery request failed or is still in flight passes
-    // `[]` — `DiscoveryShelf.tracks` is empty until a shelf is ready. That must
-    // degrade to the pre-M22 behaviour, not to an error or an empty rail.
-    const empty = deriveQuickPicks({ languages: ["en"], taste: cold, providerTracks: [] });
-    expect(empty.map((pick) => pick.kind)).toEqual(["search"]);
-    expect(empty[0]?.target).toBe("English");
-
-    // And omitting the field entirely is the same thing, which is what makes it
-    // safe to keep optional.
-    expect(deriveQuickPicks({ languages: ["en"], taste: cold })).toEqual(empty);
-  });
-
-  it("produces no release entry for a stand-in track with no album metadata", () => {
-    // Asserted rather than assumed: the stand-in and the local pass share one
-    // helper, and sharing is exactly the kind of thing that is true until it is
-    // not. "Symmetric with the local pass" is the claim; this is the check.
-    const picks = deriveQuickPicks({
-      languages: ["en"],
-      taste: cold,
-      providerTracks: [
-        track("p1", "Nova"),
-        makeTrack({ id: "youtube:p2", providerId: "p2", title: "Song p2" }),
-      ],
-    });
-
-    expect(picks.map((pick) => pick.kind)).toEqual(["artist", "artist", "search"]);
-    expect(picks.filter((pick) => pick.kind === "album")).toHaveLength(0);
-  });
-
-  it("reads no repository and no store while deriving from provider results", async () => {
-    // The "no new stored data" half of the clause, checked where the existing
-    // local-material test checks it: `getLocalData` is the single accessor every
-    // local read goes through.
-    const localData = await import("@/data/localData");
-    const getLocalData = vi.spyOn(localData, "getLocalData");
-
-    deriveQuickPicks({
-      languages: ["en"],
-      taste: cold,
-      providerTracks: [track("p1", "Nova", "Signal Fire")],
-    });
-
-    expect(getLocalData).not.toHaveBeenCalled();
-    getLocalData.mockRestore();
-  });
-
-  it("renders the stand-in entries as working links on a cold device", () => {
-    // The component path, because a derivation can be correct while the shelf
-    // forgets to pass the fourth source down.
-    render(
-      <QuickPicksShelf
-        likedTracks={[]}
-        events={[]}
-        languages={["en"]}
-        providerTracks={[track("p1", "Nova", "Signal Fire"), track("p2", "Iris")]}
-      />,
-    );
-
-    const cards = screen.getAllByTestId("quick-pick");
-    expect(cards).toHaveLength(4);
-    expect(cards.map((card) => card.getAttribute("data-quick-pick-kind"))).toEqual([
-      "artist",
-      "artist",
-      "album",
-      "search",
-    ]);
-    for (const card of cards) {
-      expect(card.getAttribute("href")?.trim()).not.toBe("");
-      // The three provider-derived entries carry the artwork the provider gave.
-      // The search card has none *by construction* — it names a query, not a
-      // release — so it keeps the icon placeholder, and that is the correct
-      // rendering rather than a missing cover.
-      const isSearch = card.getAttribute("data-quick-pick-kind") === "search";
-      expect(card.querySelector("img") !== null).toBe(!isSearch);
+  it("emits only artist entries from the local material alone", () => {
+    for (const pick of derive()) {
+      expect(pick.kind).toBe("artist");
+      expect(pick.subtitle).toBe("Artist");
     }
   });
-});
 
-describe("quickPicks: nothing has an unresolvable target", () => {
-  it("emits only recognised kinds with a non-empty target that resolves", () => {
-    const picks = derive(["en", "es"]);
-    expect(picks.length).toBeGreaterThan(0);
+  it("emits no release entry for a track that names an album", () => {
+    // M22 derived album entries here. An album tile in an artist rail is the filler
+    // the milestone forbids, so the album metadata is present and unused on purpose.
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: {
+        likedTracks: [track("l1", "Aurora", { album: { title: "First Light" } })],
+        events: [],
+      },
+    });
+    expect(picks.map((p) => p.title)).toEqual(["Aurora"]);
+  });
+
+  it("never emits an entry named after a selected language", () => {
+    const picks = derive(["ja", "ko"]);
     for (const pick of picks) {
-      expect(isQuickPickKind(pick.kind), `${pick.id}: ${pick.kind}`).toBe(true);
-      expect(pick.target.trim(), pick.id).not.toBe("");
-      const href = quickPickHref(pick);
-      expect(href, pick.id).not.toBeNull();
-      expect((href ?? "").startsWith("/"), pick.id).toBe(true);
+      expect(pick.title).not.toBe("Japanese");
+      expect(pick.title).not.toBe("Korean");
     }
   });
 
-  it("resolves each kind to the route that surface already serves", () => {
-    const picks = derive(["en"]);
-    const hrefs = (kind: string) =>
-      picks.filter((pick) => pick.kind === kind).map((pick) => quickPickHref(pick));
+  it("offers no entry of any other kind, at any language count", () => {
+    for (const languages of [["en"], ["ja", "ko"], EIGHT_LANGUAGES]) {
+      const picks = deriveQuickPicks({ languages, taste: NO_TASTE, providerTracks: undefined });
+      // Widened to `string` on purpose. The compiler already guarantees every entry is
+      // an artist, so a `kind === "search"` comparison would be rejected as
+      // impossible — which is the type-level guarantee doing its job. This test
+      // still earns its place at runtime: it holds against a derivation whose kind
+      // widened back, which is exactly the regression that would reintroduce M22's
+      // search and release cards.
+      const kinds = picks.map((p) => p.kind as string);
+      expect(kinds.filter((k) => k !== "artist")).toEqual([]);
+    }
+  });
+});
 
-    expect(hrefs("artist")[0]).toBe("/artist/Aurora");
-    expect(hrefs("album")[0]).toBe("/album/First%20Light");
-    expect(hrefs("search")[0]).toBe("/search?q=English");
+describe("quickPicks: a full set of selected languages still permits artists (M23 regression)", () => {
+  it("offers artists, not eight search cards, at the maximum selection", () => {
+    // The exact defect M22 recorded as deliberate: `MAX_SELECTED_LANGUAGES` equals
+    // `MAX_QUICK_PICKS`, and M22's reservation made the maximum selection render one
+    // `Search` card per language with zero artists. This is the regression clause.
+    const providerTracks = Array.from({ length: 8 }, (_, i) => track(`p${i}`, `Artist ${i}`));
+    const picks = deriveQuickPicks({
+      languages: EIGHT_LANGUAGES,
+      taste: NO_TASTE,
+      providerTracks,
+    });
+
+    expect(picks).toHaveLength(8);
+    expect(picks.every((pick) => pick.kind === "artist")).toBe(true);
+    expect(picks.map((pick) => pick.title)).toEqual([
+      "Artist 0",
+      "Artist 1",
+      "Artist 2",
+      "Artist 3",
+      "Artist 4",
+      "Artist 5",
+      "Artist 6",
+      "Artist 7",
+    ]);
+    // The strongest form of the clause: not one card stands for a language.
+    for (const code of EIGHT_LANGUAGES) {
+      expect(picks.some((pick) => pick.target.toLowerCase() === code.toLowerCase())).toBe(false);
+    }
+  });
+
+  it("offers the same artists at one language as at eight", () => {
+    const providerTracks = Array.from({ length: 8 }, (_, i) => track(`p${i}`, `Artist ${i}`));
+    const one = deriveQuickPicks({ languages: ["en"], taste: NO_TASTE, providerTracks });
+    const eight = deriveQuickPicks({
+      languages: EIGHT_LANGUAGES,
+      taste: NO_TASTE,
+      providerTracks,
+    });
+    expect(eight.map((p) => p.target)).toEqual(one.map((p) => p.target));
+  });
+
+  it("uses the whole bound for artists when the device has no local material", () => {
+    // M22 held one slot back per language, which is why the fresh profile rendered
+    // seven artists plus a card named after the default language.
+    const providerTracks = Array.from({ length: 12 }, (_, i) => track(`p${i}`, `Artist ${i}`));
+    const picks = deriveQuickPicks({ languages: ["en"], taste: NO_TASTE, providerTracks });
+    expect(picks).toHaveLength(MAX_QUICK_PICKS);
+  });
+});
+
+describe("quickPicks: selected languages shape candidates, not card type", () => {
+  const jaTrack = track("ja1", "Aimer", { language: "ja" });
+  const koTrack = track("ko1", "IU", { language: "ko" });
+  const enTrack = track("en1", "Aurora", { language: "en" });
+  const providerTracks = [enTrack, jaTrack, koTrack];
+
+  it("prefers artists whose tracks carry a selected language", () => {
+    // Only the language selection differs between these two derivations; the tracks
+    // are identical. That is what makes this a test of the language link rather than
+    // of the input data.
+    const japanese = deriveQuickPicks({ languages: ["ja"], taste: NO_TASTE, providerTracks });
+    expect(japanese[0]?.title).toBe("Aimer");
+  });
+
+  it("reorders rather than filters, so a selection can never empty the rail", () => {
+    // Selecting a language nobody's tracks carry must not remove those artists: a
+    // filter here would produce the empty rail that ROADMAP §21.7 already withdrew.
+    const unmatched = deriveQuickPicks({ languages: ["sw"], taste: NO_TASTE, providerTracks });
+    expect(unmatched.map((pick) => pick.title)).toEqual(["Aurora", "Aimer", "IU"]);
+  });
+
+  it("keeps first-appearance order within each half of the partition", () => {
+    const picks = deriveQuickPicks({ languages: ["ko", "ja"], taste: NO_TASTE, providerTracks });
+    expect(picks.map((pick) => pick.title)).toEqual(["Aimer", "IU", "Aurora"]);
+  });
+
+  it("is deterministic across repeated derivations", () => {
+    const once = deriveQuickPicks({ languages: ["ja"], taste: NO_TASTE, providerTracks });
+    const twice = deriveQuickPicks({ languages: ["ja"], taste: NO_TASTE, providerTracks });
+    expect(once.map((p) => p.target)).toEqual(twice.map((p) => p.target));
+  });
+
+  it("still derives from a device whose results carry no language metadata", () => {
+    // The documented degradation: no stamp means no preference, not an empty rail.
+    const unstamped = [track("u1", "Aurora"), track("u2", "Beacon")];
+    const picks = deriveQuickPicks({
+      languages: ["ja"],
+      taste: NO_TASTE,
+      providerTracks: unstamped,
+    });
+    expect(picks.map((pick) => pick.title)).toEqual(["Aurora", "Beacon"]);
+  });
+});
+
+describe("quickPicks: every entry is a resolvable artist target", () => {
+  it("emits only recognised kinds with a non-empty target that resolves", () => {
+    for (const pick of derive()) {
+      expect(isQuickPickKind(pick.kind)).toBe(true);
+      expect(pick.target.trim()).not.toBe("");
+      expect(quickPickHref(pick)).not.toBeNull();
+    }
+  });
+
+  it("resolves an artist to the artist route, by name for a text key", () => {
+    const picks = derive();
+    expect(picks.map((pick) => quickPickHref(pick))).toEqual(
+      picks.map((pick) => `/artist/${encodeURIComponent(pick.target)}`),
+    );
+  });
+
+  it("uses the provider identity when the candidate carried one", () => {
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: { likedTracks: [providerArtistTrack("v1", "UCabc123", "Aurora")], events: [] },
+    });
+    expect(picks[0]?.target).toBe("UCabc123");
+    expect(quickPickHref(picks[0]!)).toBe("/artist/UCabc123");
+  });
+
+  it("drops an artist whose text key is blank, so no card goes nowhere", () => {
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: { likedTracks: [unnamedArtistTrack("v1")], events: [] },
+    });
+    expect(picks).toEqual([]);
   });
 
   it("reports an unresolvable entry as unresolvable rather than as a broken link", () => {
-    // The predicate is the contract, so it is asserted directly: an empty target,
-    // or a kind the app has no route for, yields no href at all — and the shelf
-    // drops it instead of rendering a card that goes nowhere.
-    const broken = {
-      id: "artist:blank",
-      kind: "artist",
-      target: "   ",
-      title: "Blank",
-      subtitle: "Artist",
-    } satisfies QuickPick;
-    expect(quickPickHref(broken)).toBeNull();
-
-    const unknownKind = { ...broken, target: "Aurora", kind: "playlist" as QuickPick["kind"] };
-    expect(quickPickHref(unknownKind)).toBeNull();
+    expect(
+      quickPickHref({ id: "x", kind: "artist", target: "   ", title: "x", subtitle: "Artist" }),
+    ).toBeNull();
   });
 
-  it("renders only entries whose target resolves, dropping the rest", () => {
-    // Nothing in this material is unresolvable, so the rendered set is the whole
-    // derivation — which is what makes the DOM assertions below a check rather
-    // than a restatement.
-    const shelf = derive(["en"]);
-    const rendered = derive(["en"]);
-    expect(rendered).toEqual(shelf);
-    for (const pick of rendered) expect(QUICK_PICK_KINDS).toContain(pick.kind);
+  it("deduplicates an artist reached by two different names", () => {
+    // Canonical identity, not spelling: the same artist credited two ways is one card.
+    const byName = deriveQuickPicks({
+      languages: ["en"],
+      taste: { likedTracks: [track("v1", "Aurora")], events: [] },
+    });
+    const bySpelling = deriveQuickPicks({
+      languages: ["en"],
+      taste: {
+        likedTracks: [track("v1", "Aurora"), track("v2", "  aurora  ")],
+        events: [],
+      },
+    });
+    expect(byName).toHaveLength(1);
+    expect(bySpelling).toHaveLength(1);
   });
 });
 
-describe("QuickPicksShelf: every entry is an interactive, resolvable card", () => {
-  function renderShelf() {
-    const { likedTracks, events } = material();
-    return render(
-      <QuickPicksShelf likedTracks={likedTracks} events={events} languages={["en", "es"]} />,
-    );
-  }
+describe("quickPicks: local evidence still outranks provider results", () => {
+  it("reads provider results only when the device holds no local material", () => {
+    const providerTracks = [track("p1", "Trending Someone")];
+    const warm = deriveQuickPicks({ languages: ["en"], taste: material(), providerTracks });
+    expect(warm.map((pick) => pick.title)).toEqual(["Aurora", "Beacon", "Cobalt"]);
+    expect(warm.some((pick) => pick.title === "Trending Someone")).toBe(false);
+  });
 
-  it("renders one anchor per entry, each with a resolvable href and target", () => {
-    renderShelf();
-    const shelf = screen.getByTestId("home-quick-picks");
-    const cards = within(shelf).getAllByTestId("quick-pick");
-    const picks = derive(["en", "es"]);
+  it("reads liked tracks before plays", () => {
+    const picks = derive();
+    expect(picks.map((pick) => pick.title)).toEqual(["Aurora", "Beacon", "Cobalt"]);
+  });
 
-    expect(cards).toHaveLength(picks.length);
-    cards.forEach((card, index) => {
-      const pick = picks[index];
-      if (pick === undefined) throw new Error("the rendered set and the derivation disagree");
-      // A link, with the href the derivation resolved — so the click goes where the
-      // entry promised.
-      expect(card.tagName).toBe("A");
-      expect(card.getAttribute("href")).toBe(quickPickHref(pick));
-      expect(card.getAttribute("data-quick-pick-kind")).toBe(pick.kind);
-      expect(card.getAttribute("data-quick-pick-target")?.trim()).not.toBe("");
-      expect(isQuickPickKind(card.getAttribute("data-quick-pick-kind"))).toBe(true);
+  it("reads no repository and no store while deriving", async () => {
+    const spy = vi.spyOn(localData, "getLocalData");
+    deriveQuickPicks({
+      languages: ["en"],
+      taste: NO_TASTE,
+      providerTracks: [track("p1", "Someone")],
     });
+    expect(spy).not.toHaveBeenCalled();
   });
+});
 
-  it("gives every entry a focusable, activatable role — so a decorative card fails", () => {
-    // The specific regression this guards is a card rendered as a `div` or `span`:
-    // it would still read, still show artwork, and still be unclickable. Asserting
-    // the *role* is what makes that visible, and asserting the element is an
-    // anchor with an href is what makes it operable with a keyboard.
-    renderShelf();
-    const cards = screen.getAllByTestId("quick-pick");
-    expect(cards.length).toBeGreaterThan(0);
-
-    for (const card of cards) {
-      expect(["A", "BUTTON"]).toContain(card.tagName);
-      // A link is focusable and activates on Enter without any tabindex of our own.
-      const anchor = card as HTMLAnchorElement;
-      expect(anchor.getAttribute("href")?.trim()).not.toBe("");
-      expect(anchor.className).not.toMatch(/outline-none/);
-      anchor.focus();
-      expect(anchor).toHaveFocus();
-    }
-  });
-
-  it("leads only to routes the app already serves", () => {
-    renderShelf();
-    for (const card of screen.getAllByTestId("quick-pick")) {
-      const href = card.getAttribute("href") ?? "";
-      expect(href).toMatch(/^\/(artist|album|search)(\?|\/|$)/);
-      // Not an identity: no track id, no provider handle, nothing local leaking
-      // into a URL the listener could share.
-      expect(href).not.toContain("youtube:");
-      expect(href).not.toContain("event-");
-    }
-  });
-
-  it("drops a local entry whose text key is blank, so no card goes nowhere", () => {
-    // The derivation *would* produce an artist entry for this track — the artist is
-    // credited, so `groupArtistsByIdentity` sees it — but its text key is whitespace,
-    // and `/artist/   ` resolves to nothing. Without the resolvability gate it would
-    // be offered as a card that goes nowhere.
+describe("quickPicks: artist artwork", () => {
+  it("gives the artist the artwork the provider supplied", () => {
     const picks = deriveQuickPicks({
       languages: ["en"],
-      taste: { likedTracks: [unnamedArtistTrack("blank")], events: [] },
+      taste: { likedTracks: [track("v1", "Aurora")], events: [] },
     });
-
-    expect(picks.map((pick) => pick.target)).not.toContain("   ");
-    for (const pick of picks) expect(quickPickHref(pick), pick.id).not.toBeNull();
-    // Only the language entry survives.
-    expect(picks.map((pick) => pick.kind)).toEqual(["search"]);
+    expect(picks[0]?.artworkUrl).toBe("https://example.test/v1.jpg");
   });
 
-  it("renders exactly the entries it derived, so a dropped one is not silently added", () => {
-    const { container } = render(
-      <QuickPicksShelf
-        likedTracks={[...material().likedTracks, unnamedArtistTrack("blank")]}
-        events={material().events}
-        languages={["en", "es"]}
-      />,
-    );
-
-    const picks = derive(["en", "es"], {
-      likedTracks: [...material().likedTracks, unnamedArtistTrack("blank")],
-      events: material().events,
+  it("leaves artwork undefined when the artist's tracks carry none", () => {
+    // Undefined, not an empty string: `ArtistCard` decides placeholder-vs-image on
+    // `undefined`, and an empty string would render a broken image instead.
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: { likedTracks: [bareTrack("v1", "Aurora")], events: [] },
     });
-    const cards = [...container.querySelectorAll('[data-testid="quick-pick"]')];
-    expect(cards).toHaveLength(picks.length);
-    // And every rendered card is a resolvable anchor.
+    expect(picks[0]?.artworkUrl).toBeUndefined();
+  });
+
+  it("issues no request to obtain artwork", () => {
+    // The whole reason no Lyrix-style thumbnail endpoint was built: the artwork is
+    // already on the candidate tracks the caller supplied.
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    deriveQuickPicks({
+      languages: ["en"],
+      taste: NO_TASTE,
+      providerTracks: [track("p1", "Someone")],
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("QuickPicksShelf: circular artist cards that navigate", () => {
+  const props = {
+    likedTracks: [track("l1", "Aurora"), track("l2", "Beacon")],
+    events: [] as ListeningEventRecord[],
+    languages: ["en"],
+  };
+
+  it("renders one anchor per entry, each with a resolvable href", () => {
+    render(<QuickPicksShelf {...props} />);
+    const cards = screen.getAllByTestId("quick-pick");
+    expect(cards).toHaveLength(2);
     for (const card of cards) {
       expect(card.tagName).toBe("A");
-      expect(card.getAttribute("href")?.trim()).not.toBe("");
+      expect(card.getAttribute("href")).toMatch(/^\/artist\//);
+      expect(card.getAttribute("data-quick-pick-kind")).toBe("artist");
     }
   });
 
-  it("offers a fresh device only its language entries, and each one navigates", () => {
-    // A selected language is a preference the device genuinely holds and `/search`
-    // resolves it, so a cold device still gets a way in — and gets nothing else,
-    // because there is no local material to derive an artist or a release from.
-    render(<QuickPicksShelf likedTracks={[]} events={[]} languages={["ja"]} />);
-
-    const cards = screen.getAllByTestId("quick-pick");
-    expect(cards).toHaveLength(1);
-    expect(cards[0]?.getAttribute("data-quick-pick-kind")).toBe("search");
-    expect(cards[0]?.getAttribute("href")).toBe("/search?q=Japanese");
+  it("keeps the consolidated circular artist card test id", () => {
+    // The Popular Artists section was consolidated into this rail; assertions written
+    // against `home-artist-card` must still find the circular artist card.
+    render(<QuickPicksShelf {...props} />);
+    expect(screen.getAllByTestId("home-artist-card")).toHaveLength(2);
   });
 
-  it("always offers at least one entry, so the rail is never an unexplained gap", () => {
-    // The shared catalog normalizes an empty or unknown selection to the default
-    // language, which is what makes this true — asserted here because the shelf's
-    // "no cards" rendering is otherwise unreachable code the tests never see.
-    expect(
-      deriveQuickPicks({ languages: [], taste: { likedTracks: [], events: [] } }),
-    ).toHaveLength(1);
-    expect(
-      deriveQuickPicks({ languages: ["zz"], taste: { likedTracks: [], events: [] } }),
-    ).toHaveLength(1);
+  it("renders circular geometry and the Artist label", () => {
+    const { container } = render(<QuickPicksShelf {...props} />);
+    expect(container.querySelectorAll(".rounded-avatars").length).toBeGreaterThan(0);
+    for (const card of screen.getAllByTestId("home-artist-card")) {
+      expect(within(card).getByText("Artist")).toBeTruthy();
+    }
+  });
+
+  it("renders the artist's own image when the provider supplied one", () => {
+    const { container } = render(<QuickPicksShelf {...props} />);
+    const image = container.querySelector<HTMLImageElement>(
+      'img[src="https://example.test/l1.jpg"]',
+    );
+    expect(image).not.toBeNull();
+  });
+
+  it("falls back to the existing artist placeholder when there is no artwork", () => {
+    const { container } = render(
+      <QuickPicksShelf {...props} likedTracks={[bareTrack("b1", "Aurora")]} />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    // `ArtistCard`'s placeholder is the `User` glyph, not a broken image.
+    expect(container.querySelector("svg")).not.toBeNull();
+  });
+
+  it("renders a link for every entry and no decorative card", () => {
+    render(<QuickPicksShelf {...props} />);
+    for (const card of screen.getAllByTestId("quick-pick")) {
+      expect(card.getAttribute("href")).toBeTruthy();
+      expect(card.getAttribute("tabindex")).toBeNull();
+    }
+  });
+
+  it("does not claim to offer releases or searches", () => {
+    render(<QuickPicksShelf {...props} />);
+    expect(screen.getByText(QUICK_PICKS_DESCRIPTION)).toBeTruthy();
+    expect(QUICK_PICKS_DESCRIPTION).not.toMatch(/release|search/i);
   });
 
   it("is not presented under the Podcasts filter, and is under the other two", () => {
-    const { likedTracks, events } = material();
-    const { unmount } = render(
-      <QuickPicksShelf
-        likedTracks={likedTracks}
-        events={events}
-        languages={["en"]}
-        filter="podcasts"
-      />,
-    );
-    expect(screen.queryByTestId("home-quick-picks")).not.toBeInTheDocument();
-    unmount();
-
+    const { rerender } = render(<QuickPicksShelf {...props} filter="podcasts" />);
+    expect(screen.queryByTestId("home-quick-picks")).toBeNull();
     for (const filter of ["all", "music"] as const) {
-      const { unmount: next } = render(
-        <QuickPicksShelf
-          likedTracks={likedTracks}
-          events={events}
-          languages={["en"]}
-          filter={filter}
-        />,
-      );
-      expect(screen.getByTestId("home-quick-picks")).toBeInTheDocument();
-      next();
+      rerender(<QuickPicksShelf {...props} filter={filter} />);
+      expect(screen.getByTestId("home-quick-picks")).toBeTruthy();
     }
   });
 });

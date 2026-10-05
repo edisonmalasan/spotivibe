@@ -226,9 +226,14 @@ describe("route shells", () => {
     expect(heading).toHaveClass("sr-only");
     expect(await screen.findByTestId("home-view")).toBeInTheDocument();
 
-    for (const id of ["trending", "popular-artists", "genres", "podcasts", "collections"]) {
+    for (const id of ["trending", "genres", "podcasts", "collections"]) {
       await waitFor(() => expect(screen.getByTestId(`home-section-${id}`)).toBeInTheDocument());
     }
+    // M23: the circular artist rail is Quick Picks. `popular-artists` no longer
+    // renders as its own section — it was measured to be a strict prefix of this
+    // rail and the spec permits one circular artist section.
+    expect(screen.queryByTestId("home-section-popular-artists")).not.toBeInTheDocument();
+    expect(screen.getByTestId("home-quick-picks")).toBeInTheDocument();
     // No likes and no history yet, so no local-only section renders at all.
     expect(screen.queryByTestId("home-section-recently-played")).not.toBeInTheDocument();
     expect(screen.queryByTestId("home-section-made-for-you")).not.toBeInTheDocument();
@@ -249,22 +254,34 @@ describe("route shells", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps the circular Popular Artists shelf inside the first four rendered sections", async () => {
+  it("keeps the circular artist rail inside the first four rendered sections", async () => {
     const { container } = render(<HomePage />);
     await screen.findByTestId("home-view");
 
-    // Document order of the rendered sections — the rhythm rule is about what
-    // the user sees, not about the authored list.
-    const rendered = [...container.querySelectorAll("[data-testid^='home-section-']")].map(
-      (section) => section.getAttribute("data-testid") ?? "",
-    );
-    const circularIndex = rendered.indexOf("home-section-popular-artists");
+    // Document order of every rendered shelf row — the rhythm rule is about what the
+    // user sees, not about the authored list.
+    //
+    // M23: the selector covers the three M17 surfaces as well as the section stack.
+    // It previously matched only `home-section-*`, which is precisely the gap that
+    // let the circular rail move out of the checked set: Quick Picks is not a
+    // `home-section-` row, so a `home-section-`-only query would have found a feed
+    // with no circular row and called the rhythm satisfied.
+    const rendered = [
+      ...container.querySelectorAll(
+        "[data-testid^='home-section-'], [data-testid^='home-mix-cards'], [data-testid^='home-time-shelf'], [data-testid^='home-quick-picks']",
+      ),
+    ].map((row) => row.getAttribute("data-testid") ?? "");
+    const circularIndex = rendered.indexOf("home-quick-picks");
 
     expect(rendered.length).toBeGreaterThan(CIRCULAR_WINDOW);
     expect(circularIndex).toBeGreaterThanOrEqual(0);
     // The spec's number, spelled once: four rendered sections.
     expect(CIRCULAR_WINDOW).toBe(4);
     expect(circularIndex).toBeLessThan(CIRCULAR_WINDOW);
+    // And it is the only circular row on the page: exactly one circular artist
+    // section, which is what consolidating Popular Artists was for.
+    expect(rendered.filter((id) => id === "home-quick-picks")).toHaveLength(1);
+    expect(rendered).not.toContain("home-section-popular-artists");
   });
 
   it("mounts the first-run language onboarding while preferences are incomplete", async () => {

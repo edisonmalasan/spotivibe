@@ -3,15 +3,18 @@
 import { Disc3 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArtistCard } from "@/components/design-system/ArtistCard";
 import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
 import type { Track } from "@/data/repositories";
-import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
 import { genreHref, GENRE_CATALOG } from "@/features/home/genreCatalog";
 import { HomeFilterBar } from "@/features/home/HomeFilterBar";
 import {
+  MIX_CARD_SURFACE,
+  presentsSurface,
+  QUICK_PICK_SURFACE,
   sectionsForFilter,
+  TIME_SHELF_SURFACE,
   type HomeFilter,
+  type HomeFilterSurface,
   type HomeFilterValue,
 } from "@/features/home/homeFilter";
 import {
@@ -28,14 +31,13 @@ import {
   RECENT_LIMIT,
 } from "@/features/home/localSeeds";
 import { MixCards } from "@/features/home/mixes/MixCards";
-import { QuickPicksShelf } from "@/features/home/QuickPicksShelf";
+import { QUICK_PICKS_ERROR, QuickPicksShelf } from "@/features/home/QuickPicksShelf";
 import { ShelfTrackCard } from "@/features/home/ShelfTrackCard";
 import { TimeShelf } from "@/features/home/TimeShelf";
 import { systemClock, type Clock } from "@/features/home/timeBands";
 import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDiscoveryShelf";
 import { MixList } from "@/features/mixes/MixList";
 import { LanguageOnboarding } from "@/features/preferences/LanguageOnboarding";
-import { groupArtistsByIdentity } from "@/features/recommendations/artists";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { useMixStore } from "@/stores/mixStore";
@@ -101,11 +103,35 @@ export function preferLongFormTracks(tracks: readonly Track[]): Track[] {
   return longForm.length >= LONG_FORM_PREFERENCE_MINIMUM ? longForm : [...tracks];
 }
 
-/** Shared retryable failure copy — no chart claim, no blame on any service. */
-const SHELF_ERROR = {
-  title: "This shelf didn't load",
-  description: "We couldn't reach the music provider. Check your connection and try again.",
-};
+/**
+ * The three M17 surfaces, in the order `HomeView`'s JSX renders them.
+ *
+ * **M23.** These rows are not `HOME_SECTIONS` entries, so they were invisible to
+ * `assertShelfRhythm` — and Quick Picks becoming the feed's circular artist rail
+ * meant the guard would have been left checking a list with no circular row in it,
+ * which passes for the wrong reason. Naming them here keeps the rhythm check over
+ * the feed Home actually renders.
+ *
+ * The order is load-bearing and mirrors the JSX below. It is not derived from the
+ * components: those render their own `shape` prop internally, and reading it back
+ * would mean the check depends on a render. This is the declaration the check reads,
+ * so a future surface that is added to the JSX but not here is a gap the tests
+ * below are written to catch.
+ */
+const M17_SURFACE_ROWS: readonly HomeFilterSurface[] = [
+  MIX_CARD_SURFACE,
+  TIME_SHELF_SURFACE,
+  QUICK_PICK_SURFACE,
+];
+
+/**
+ * Shared retryable failure copy — no chart claim, no blame on any service.
+ *
+ * M23: the Quick Picks rail needs this too, since it absorbed the Popular Artists
+ * section's provider error state. It is re-exported from `QuickPicksShelf` so the
+ * copy exists once rather than being typed into two components.
+ */
+const SHELF_ERROR = QUICK_PICKS_ERROR;
 
 /** Map a shelf status onto the `Shelf` primitive's state vocabulary. */
 function toShelfState(status: string): ShelfState {
@@ -269,54 +295,6 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
           ))}
         </Shelf>
       );
-
-    case "popular-artists": {
-      // Derived from the Trending result: no extra request, and its loading and
-      // error states are the trending shelf's.
-      const trending = feed.trending;
-      if (toShelfState(trending.status) !== "ready") {
-        return (
-          <Shelf
-            title={section.title}
-            description={section.description}
-            shape={section.shape}
-            state={toShelfState(trending.status)}
-            onRetry={trending.retry}
-            error={SHELF_ERROR}
-            data-testid={testId}
-          />
-        );
-      }
-      const artists = groupArtistsByIdentity(trending.tracks);
-      return (
-        <Shelf
-          title={section.title}
-          description={section.description}
-          shape={section.shape}
-          state={artists.length > 0 ? "ready" : "empty"}
-          empty={{
-            title: "No artists found yet",
-            description: "Artist entries appear once the trending shelf resolves with credits.",
-          }}
-          data-testid={testId}
-        >
-          {artists.map((artist) => (
-            <Link
-              key={artist.id}
-              // M9 (task 6.1): the card opens the artist page. The entry id is
-              // the provider's artist id when the shelf had one and the
-              // normalized name otherwise, and the artist route resolves either
-              // shape — so an id-less entry is a text-key link, not a dead card.
-              href={artistHref(isProviderEntityId(artist.id) ? artist.id : artist.name)}
-              data-testid="home-artist-card"
-              className="block w-full"
-            >
-              <ArtistCard name={artist.name} artworkUrl={artist.artworkUrl} />
-            </Link>
-          ))}
-        </Shelf>
-      );
-    }
   }
 }
 
@@ -395,7 +373,22 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
   // unrecognised filter value presents everything, never nothing.
   const enabled = selectHomeSections(signals, HOME_SECTIONS);
   const sections = sectionsForFilter(enabled, filter);
-  assertShelfRhythm(sections);
+  /*
+   * M23: the rhythm is checked against the **rendered** order, which now includes the
+   * M17 surfaces above the section stack.
+   *
+   * Quick Picks became the feed's circular artist rail (M23), and it is not a
+   * `HOME_SECTIONS` entry — it renders with the mix-card row and the time-aware
+   * shelf. Checking only `sections` would therefore have checked a list containing no
+   * circular row at all, and a rule that finds no circular row reports green while
+   * guarding nothing. The geometry below is the real order the JSX below produces:
+   * the three M17 rows in the order they are written, then the section stack.
+   */
+  const renderedGeometry = [
+    ...M17_SURFACE_ROWS.filter((row) => presentsSurface(row, filter)),
+    ...sections,
+  ];
+  assertShelfRhythm(renderedGeometry);
 
   const feed: Feed = {
     trending: useDiscoveryShelf({ kind: "trending", languages }),
@@ -464,10 +457,16 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
          * This reads the *fetch*, not the section: whether the trending shelf is
          * displayed is a layout decision and is deliberately not consulted, and
          * `DiscoveryShelf.tracks` is `[]` until the shelf is ready — so a device
-         * whose discovery request failed or is still in flight falls back to the
-         * language entry exactly as before.
+         * whose discovery request failed or is still in flight renders the rail's
+         * error state rather than a silently empty rail.
+         *
+         * M23: the state is only consulted when the rail has no picks of its own — see
+         * `QuickPicksShelf`. Passing it is what keeps the consolidated rail's resilience
+         * equal to the Popular Artists section it replaced.
          */
         providerTracks={[...feed.trending.tracks, ...feed.collections.tracks]}
+        providerState={toShelfState(feed.trending.status)}
+        onRetry={feed.trending.retry}
         filter={filter}
       />
 

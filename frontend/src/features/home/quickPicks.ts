@@ -1,43 +1,32 @@
-import { albumHref } from "@/features/album/albumKeys";
 import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
 import type { Track } from "@/data/repositories";
 import type { LocalTaste } from "@/features/home/localSeeds";
 import { groupArtistsByIdentity } from "@/features/recommendations/artists";
-import { bestArtworkUrl } from "@/lib/playlistPresentation";
-import { buildSearchUrl } from "@/lib/searchUrl";
-import { languageName, normalizeLanguageCodes } from "@/lib/languages";
+import { normalizeLanguageCodes } from "@/lib/languages";
 
 /**
- * Quick Picks for Home (M17; spec: `home-mixes` — "Quick Picks lead to surfaces
- * that exist"; design decision 5).
+ * Quick Picks for Home (M23; spec: `home-mixes` — "Quick Picks are artist
+ * surfaces that exist"; design decisions D1–D3).
  *
- * The whole point of this shelf is that **nothing in it is a dead end**. Every
- * entry carries a `kind` and a `target` that one of the app's existing routes
- * already resolves — an artist id or text key, an album key, or a search query —
- * and the component renders it as a real link. An entry with an empty target, or
- * one whose href cannot be resolved, is dropped here rather than rendered and
- * discovered by a listener clicking it.
+ * The rail is **artist-only**. M17 and M22 also allowed release and search
+ * entries, and M22 went further: it reserved rail capacity for one `Search` card
+ * per selected language. That produced the outcome this milestone reverses — with
+ * the maximum selection the rail was eight language cards and zero artists, and
+ * even on a brand-new device with one default language the last card was a search
+ * for that language. Languages are **inputs to which artists are surfaced**, not
+ * things to be surfaced; see `deriveQuickPicks`.
  *
- * Inputs are what the device already holds: the selected languages (a
- * preference), the liked tracks, the listening events, and — as the fourth
- * source `home-mixes` specifies — **provider results the Home surface has
- * already fetched**. Nothing here stores, requests, or profiles: the provider
- * results arrive as arguments from the feed's own shelves, so the derivation
- * stays a pure function over its inputs rather than a hook that fetches
- * something.
+ * Every entry is a real artist: it carries a canonical identity, resolves to the
+ * artist route through `artistHref`, and renders as the circular artist card. An
+ * entry that cannot resolve is dropped here rather than rendered and discovered
+ * by a listener clicking it.
  *
- * That fourth source is the cold-start path, and it is deliberately narrow
- * (see design decision D2): it contributes **only** when the device holds no
- * local material at all. A device with one liked track reads exactly what it
- * read before this source existed — not because a test noticed, but because
- * the stand-in array is empty when `material` is not.
- *
- * Pure and deterministic: the same local material always yields the same entries
- * in the same order, and nothing is mutated.
+ * Pure and deterministic: the same inputs always yield the same entries in the
+ * same order, and nothing is mutated.
  */
 
-/** The kinds of surface a Quick Pick can lead to — all of which exist today. */
-export const QUICK_PICK_KINDS = ["artist", "album", "search"] as const;
+/** The kinds of surface a Quick Pick can lead to — now exactly one. */
+export const QUICK_PICK_KINDS = ["artist"] as const;
 
 export type QuickPickKind = (typeof QUICK_PICK_KINDS)[number];
 
@@ -59,19 +48,19 @@ export const MAX_QUICK_PICKS = 8;
 export interface QuickPick {
   /** Stable id — the card's `data-quick-pick-id` and its React key. */
   readonly id: string;
-  /** Which existing surface this entry leads to. */
+  /** Which existing surface this entry leads to. Always `"artist"`. */
   readonly kind: QuickPickKind;
   /**
-   * The value that surface resolves: a provider entity id or text key for an
-   * artist, a release key for an album, a raw query for a search. Never empty —
-   * `deriveQuickPicks` drops anything that would be.
+   * The artist's canonical identity: a provider artist id when the candidate
+   * carried one, else the artist's name. Never empty — `deriveQuickPicks` drops
+   * anything that would be. Both shapes resolve through `artistHref`.
    */
   readonly target: string;
-  /** Display label — the artist's name, the release title, or the language. */
+  /** Display label — the artist's name, as the provider spelled it. */
   readonly title: string;
   /** Secondary line; says which kind of surface this is, never a ranking. */
   readonly subtitle: string;
-  /** The best cover the local material offers, when it has one. */
+  /** The artist's own artwork when the candidate tracks offered one. */
   readonly artworkUrl?: string;
 }
 
@@ -85,22 +74,16 @@ export interface QuickPickInput {
    * Provider results the Home surface **already holds** — its trending and
    * collection shelves' tracks.
    *
-   * Optional because most callers cannot answer the question it answers: only
-   * the Home surface knows what its own feed fetched. Omitting it is the
-   * honest default and yields exactly the pre-M22 behaviour, which is also why
-   * the field is optional rather than required — a required one would make every
-   * call site state an answer, and the compiler cannot tell a caller that
-   * passed `[]` on purpose from one that forgot.
+   * Optional because most callers cannot answer the question it answers: only the
+   * Home surface knows what its own feed fetched. Omitting it is the honest
+   * default and yields exactly the pre-M22 behaviour, which is also why the field
+   * is optional rather than required — a required one would make every call site
+   * state an answer, and the compiler cannot tell a caller that passed `[]` on
+   * purpose from one that forgot.
    *
    * Read only when there is no local material. See `deriveQuickPicks`.
    */
   readonly providerTracks?: readonly Track[];
-}
-
-/** `Daft Punk, Pharrell Williams`, or a neutral label for no credited artist. */
-function artistText(artists: readonly { name: string }[]): string {
-  const names = artists.map((artist) => artist.name.trim()).filter((name) => name !== "");
-  return names.length > 0 ? names.join(", ") : "Unknown artist";
 }
 
 /** Identity fallback: the provider id when the entry has one, else the name. */
@@ -123,10 +106,6 @@ export function quickPickHref(pick: QuickPick): string | null {
   switch (pick.kind) {
     case "artist":
       return artistHref(target);
-    case "album":
-      return albumHref(target);
-    case "search":
-      return buildSearchUrl(target);
   }
 }
 
@@ -134,8 +113,8 @@ export function quickPickHref(pick: QuickPick): string | null {
  * Append an entry if it is resolvable and not already offered.
  *
  * The resolvability check lives here rather than at the call sites so an entry
- * cannot be constructed unrenderable by a future kind: three call sites all
- * remembering "…and only if the href resolves" is three chances to forget.
+ * cannot be constructed unrenderable by a future kind: two call sites all
+ * remembering "…and only if the href resolves" is two chances to forget.
  */
 function collect(picks: QuickPick[], seen: Set<string>, pick: QuickPick): void {
   if (picks.length >= MAX_QUICK_PICKS) return;
@@ -146,128 +125,140 @@ function collect(picks: QuickPick[], seen: Set<string>, pick: QuickPick): void {
   picks.push(pick);
 }
 
+/** One artist candidate: the grouped entry plus whether a selected language spoke for it. */
+interface Candidate {
+  readonly entry: ReturnType<typeof groupArtistsByIdentity>[number];
+  readonly languageMatched: boolean;
+}
+
 /**
- * The artist pass, over one array of tracks.
+ * Group tracks into artist candidates and note which of them a selected language
+ * vouched for.
  *
- * Extracted rather than inlined so the local and stand-in paths share one
- * implementation. `groupArtistsByIdentity` is the existing derivation behind
- * the Popular Artists shelf, reused so an artist is grouped the same way in
- * every place it appears.
+ * `groupArtistsByIdentity` is the existing derivation behind the former Popular
+ * Artists shelf, reused so an artist is grouped the same way in every place it
+ * appears. It already reads each artist's best artwork off that artist's own
+ * tracks, which is why this milestone needs no provider artwork endpoint.
+ *
+ * The language test reads `Track.language`, which the discovery feed stamps with
+ * the language of the seed that produced the track (`server/music/discovery.ts`).
+ * That stamp is what makes the selection able to shape candidates at all; a
+ * device whose results carry no stamp simply leaves every candidate unmatched,
+ * which is the documented degradation rather than an empty rail.
  */
-function collectArtists(
-  picks: QuickPick[],
-  seen: Set<string>,
+function collectCandidates(
   material: readonly Track[],
+  selected: ReadonlySet<string>,
   limit: number,
-): void {
-  for (const entry of groupArtistsByIdentity(material)) {
-    if (picks.length >= limit) return;
+): Candidate[] {
+  const byIdentity = new Map<string, Candidate>();
+  // A second pass would be needed to learn an artist's languages from tracks that
+  // arrive after it, so languages are accumulated as the grouping runs and the
+  // verdict is read once every track has been seen.
+  const spokenFor = new Map<string, boolean>();
+
+  for (const entry of groupArtistsByIdentity(material, limit)) {
+    byIdentity.set(entry.id, { entry, languageMatched: false });
+    spokenFor.set(entry.id, false);
+  }
+  if (byIdentity.size === 0 || selected.size === 0) {
+    return [...byIdentity.values()];
+  }
+
+  for (const track of material) {
+    const language = track.language;
+    if (language === undefined || !selected.has(language)) continue;
+    const artist = track.artists[0];
+    if (artist === undefined) continue;
+    // `groupArtistsByIdentity` keys an artist by its provider id when the track
+    // carried one and by its normalized name otherwise, so the same key has to be
+    // derived here or a language would vouch for an entry that does not exist.
+    const id = artist.id ?? artist.name.trim().toLowerCase();
+    if (spokenFor.get(id) === true) continue;
+    spokenFor.set(id, true);
+  }
+
+  return [...byIdentity.values()].map(({ entry }) => ({
+    entry,
+    languageMatched: spokenFor.get(entry.id) === true,
+  }));
+}
+
+/**
+ * Order candidates so a selected language decides *which* artists lead, not what
+ * kind of card appears.
+ *
+ * A **stable partition**, not a filter: artists a selected language vouched for
+ * come first in their existing order and the rest follow. Nothing is removed, so
+ * the rail cannot be emptied by a selection — the outcome `ROADMAP.md` §21.7
+ * already withdrew once, for a state the code could not reach.
+ *
+ * Determinism comes free from the partition: both halves keep first-appearance
+ * order, so the same material and selection always produce the same rail.
+ */
+function byLanguagePreference(candidates: readonly Candidate[]): Candidate[] {
+  const preferred: Candidate[] = [];
+  const rest: Candidate[] = [];
+  for (const candidate of candidates) {
+    (candidate.languageMatched ? preferred : rest).push(candidate);
+  }
+  return [...preferred, ...rest];
+}
+
+/**
+ * Derive the Quick Picks from the listener's own material.
+ *
+ * Artist candidates come from two sources, in that order, because the order is
+ * the *strength* of the evidence: an artist the listener liked is a place they
+ * have already been; an artist that merely appears in what Home fetched is a
+ * place they have not.
+ *
+ * The provider source is deliberately narrow (design decision D2): it contributes
+ * **only** when the device holds no local material at all. A device with one liked
+ * track reads exactly what it read before this source existed — not because a
+ * test noticed, but because the stand-in array is empty when `material` is not.
+ *
+ * Two properties hold by construction rather than by testing:
+ *
+ * - **It cannot outrank local evidence, because it is never considered alongside
+ *   it.** When `material` is non-empty the stand-in array is empty; there is no
+ *   case in which a provider result competes with a liked artist.
+ * - **There is no reserved capacity for anything.** M22 held one slot back per
+ *   selected language so that a language entry could survive; with no language
+ *   entry there is nothing to reserve, so the provider source may use the whole
+ *   bound. That is what makes a cold device with the maximum language selection
+ *   offer eight artists instead of eight searches.
+ */
+export function deriveQuickPicks(input: QuickPickInput): QuickPick[] {
+  const picks: QuickPick[] = [];
+  const seen = new Set<string>();
+
+  // Normalised once, above the passes, because both the preference test and the
+  // documented degradation depend on it being a fixed set rather than the raw
+  // input: an empty or wholly invalid selection normalizes to the default
+  // language, so `selected` is never empty.
+  const selected = new Set(normalizeLanguageCodes(input.languages));
+
+  // The local material: liked tracks first, then plays, both newest-first as the
+  // stores hand them over.
+  const material = [...input.taste.likedTracks, ...input.taste.events.map((e) => e.track)];
+
+  // The cold-start stand-in. `material.length === 0` is the whole gate: when
+  // there is any local material at all this is `[]` and the pass below reads
+  // exactly what it read before this source existed.
+  const source = material.length === 0 ? (input.providerTracks ?? []) : material;
+
+  for (const candidate of byLanguagePreference(
+    collectCandidates(source, selected, MAX_QUICK_PICKS),
+  )) {
+    const { entry } = candidate;
     collect(picks, seen, {
       id: `artist:${entry.id}`,
       kind: "artist",
       target: entityTarget(entry.id, entry.name),
       title: entry.name,
       subtitle: "Artist",
-      artworkUrl: entry.artworkUrl,
-    });
-  }
-}
-
-/**
- * The release pass, over one array of tracks.
- *
- * Extracted for the same reason as `collectArtists`, and with the same caveat:
- * a second inline copy would be character-identical at the moment of writing
- * and free to drift afterwards, so any later change to the artwork choice or
- * the album-key rules would have to be made twice and would be made once.
- */
-function collectReleases(
-  picks: QuickPick[],
-  seen: Set<string>,
-  material: readonly Track[],
-  limit: number,
-): void {
-  for (const track of material) {
-    if (picks.length >= limit) return;
-    const album = track.album;
-    const title = album?.title.trim() ?? "";
-    // A track with no album metadata is not an album entry wearing a title.
-    if (album === undefined || title === "") continue;
-    const id = album.id?.trim() ?? "";
-    collect(picks, seen, {
-      id: `album:${id === "" ? title : id}`,
-      kind: "album",
-      // The provider's release id when it supplied one, else the bare title —
-      // both shapes the album route already resolves.
-      target: id === "" ? title : id,
-      title,
-      subtitle: artistText(track.artists),
-      artworkUrl: bestArtworkUrl(track),
-    });
-  }
-}
-
-/**
- * Derive the Quick Picks from the listener's own material.
- *
- * The sources, in that order, because the order is the *strength* of the
- * evidence: an artist the listener liked is a place they have already been, an
- * album on a track they liked is a place they have not, and a language they
- * selected is a way in rather than something they chose to follow.
- *
- * **The bound is one shared `MAX_QUICK_PICKS` across all of these passes, and
- * that means a device with eight local artists gets no language entry at all.**
- * An earlier version of this comment claimed the opposite — that a device with
- * many artists could not push the language entries out. It could; the comment
- * was wrong about the code beneath it. The behaviour is left as it is, because
- * changing it would change what every device with material renders, and the only
- * reason the stand-in below behaves differently is that it is new. See design
- * decision D6.
- *
- * The stand-in pass sits between the releases and the languages, and exists only
- * for a device with no local material at all. It reads `providerTracks` — the
- * results the Home surface already fetched — so it costs no request and stores
- * nothing. Two properties hold by construction rather than by testing:
- *
- * - **It cannot outrank local evidence, because it is never considered alongside
- *   it.** When `material` is non-empty the stand-in array is empty; there is no
- *   case in which a provider result competes with a liked artist.
- * - **It cannot crowd out the language entries**, because its limit reserves
- *   them. Without the reservation a cold device on a healthy network would fill
- *   the bound with trending artists and lose the one entry the derivation
- *   guarantees, making that guarantee depend on the network.
- */
-export function deriveQuickPicks(input: QuickPickInput): QuickPick[] {
-  const picks: QuickPick[] = [];
-  const seen = new Set<string>();
-
-  // Normalised once, above the passes, because the stand-in's limit is derived
-  // from how many language entries there are to preserve.
-  const languageCodes = normalizeLanguageCodes(input.languages);
-
-  // The local material: liked tracks first, then plays, both newest-first as the
-  // stores hand them over.
-  const material = [...input.taste.likedTracks, ...input.taste.events.map((e) => e.track)];
-  collectArtists(picks, seen, material, MAX_QUICK_PICKS);
-  collectReleases(picks, seen, material, MAX_QUICK_PICKS);
-
-  // The cold-start stand-in. `material.length === 0` is the whole gate: when
-  // there is any local material at all this is `[]` and every pass below reads
-  // exactly what it read before this source existed.
-  const standIn = material.length === 0 ? (input.providerTracks ?? []) : [];
-  // At least one language entry always survives, whatever the provider returned.
-  const standInLimit = Math.max(0, MAX_QUICK_PICKS - languageCodes.length);
-  collectArtists(picks, seen, standIn, standInLimit);
-  collectReleases(picks, seen, standIn, standInLimit);
-
-  for (const code of languageCodes) {
-    const label = languageName(code);
-    collect(picks, seen, {
-      id: `search:${code}`,
-      kind: "search",
-      target: label,
-      title: label,
-      subtitle: "Search",
+      ...(entry.artworkUrl === undefined ? {} : { artworkUrl: entry.artworkUrl }),
     });
   }
 
