@@ -102,7 +102,11 @@ See §7 for the measured rows.
 ## 6. Lifecycle
 
 - [x] 6.1 Independent read-only verification before the Apply PR was merged; see §7.
-- [ ] 6.2 Sync the delta into `openspec/specs/home-mixes/spec.md`, then archive.
+- [x] 6.2 Sync merged as `e5d502a` (PR #105), adding five scenarios to
+      `openspec/specs/home-mixes/spec.md`; `openspec validate --specs --strict` 27 passed, 0 failed.
+      Archived as `2026-10-05-quick-picks-cold-start` with `--skip-specs`, because the delta had
+      already been applied by the Sync PR — running the spec step again would have duplicated all
+      five scenarios.
 
 ## 7. Measured results
 
