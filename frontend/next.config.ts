@@ -14,20 +14,102 @@ import type { NextConfig } from "next";
  *   embed frame the API creates (no `host` player variable is set, so the default
  *   `https://www.youtube.com/embed/...` frame is what loads). This is the one
  *   third-party frame the application depends on for playback.
- * - `i.ytimg.com` — track, album, and artist artwork.
+ *
+ * The image origins are a different kind of claim and are listed separately below.
  *
  * The provider origins (`music.youtube.com`, `invidious.f5.si`, `yewtu.be`, the
  * Piped API hosts) are deliberately **absent**: they are contacted by the route
  * handlers in Node, never by the browser, so permitting them in a browser policy
  * would grant the page access it does not use.
  *
- * `tests/security-policy.test.ts` reads the origins out of `src/**` and fails on a
- * host that the client uses and the policy does not permit, and on a host the policy
- * permits and nothing in the client uses.
+ * `tests/security-policy.test.ts` fails on a host that the client uses and the policy
+ * does not permit, and on a host the policy permits and nothing uses.
  */
 const CLIENT_SCRIPT_ORIGINS = ["https://www.youtube.com"];
 const CLIENT_FRAME_ORIGINS = ["https://www.youtube.com"];
-const CLIENT_IMAGE_ORIGINS = ["https://i.ytimg.com", "data:"];
+
+/**
+ * Image origins the browser is permitted to load.
+ *
+ * **M23 correction.** This list previously read `["https://i.ytimg.com", "data:"]` on
+ * the stated grounds that `i.ytimg.com` serves "track, album, and artist artwork".
+ * That was false against real traffic, and the consequence was severe: the policy
+ * refused the host the providers actually return, so **every artist image failed to
+ * load in production**.
+ *
+ * `i.ytimg.com` is only the *fallback* `pickArtwork()` constructs when a tier
+ * supplied no artwork at all (`src/server/music/normalize.ts`). Every artwork URL a
+ * provider really returns is passed through verbatim, and those come from
+ * `yt3.googleusercontent.com` — 84 occurrences across the five captured fixtures in
+ * `tests/fixtures/providers/`.
+ *
+ * Why this went unnoticed: the policy's own test derived the expected origins by
+ * scanning `src/**` **source text**, and provider artwork never appears as a string
+ * in our code. The detector was structurally incapable of observing the defect it
+ * existed to prevent, so its green result was not evidence. It now reads the captured
+ * fixtures, which is where the truth actually lives.
+ *
+ * The browser-side evidence for the mechanism, measured rather than assumed: the
+ * URLs are valid (HTTP 200 `image/jpeg`, and 120x120 when navigated to directly), and
+ * with one variable changed in one browser, this exact `img-src` fails to load them
+ * while the same list plus `yt3` loads them.
+ */
+/**
+ * Image origins the browser is permitted to load.
+ *
+ * **M23 correction.** This list previously read `["https://i.ytimg.com", "data:"]` on
+ * the stated grounds that `i.ytimg.com` serves "track, album, and artist artwork".
+ * That was false against real traffic, and the consequence was severe: the policy
+ * refused four of the five hosts the application actually requests artwork from, so
+ * **most artist, album and track images failed to load in production** while every
+ * status code stayed 200.
+ *
+ * The hosts are derived from the captured provider payloads in
+ * `tests/fixtures/providers/`, read from the keys the providers really extract
+ * (`videoThumbnails`, `thumbnails`, `thumbnail`). Measured across those fixtures:
+ *
+ * | origin | occurrences | role |
+ * |---|---|---|
+ * | `i.ytimg.com` | 291 | YouTube video thumbnails; also the fallback `pickArtwork` constructs |
+ * | `yt3.googleusercontent.com` | 63 | artist/channel artwork from Innertube |
+ * | `yt3.ggpht.com` | 26 | channel avatars returned inside thumbnail payloads |
+ * | `invidious.f5.si` | 1980 | Invidious **proxied** thumbnails |
+ * | `piped-proxy.ducks.party` | 40 | Piped **proxied** thumbnails |
+ *
+ * The two proxy hosts are the reason the old comment was not merely incomplete but
+ * wrong in its reasoning. It claimed provider origins are "contacted by the route
+ * handlers in Node, never by the browser". That is true of the provider **APIs** and
+ * false of provider **artwork**: `providers/invidious.ts` and `providers/piped.ts`
+ * hand the browser image URLs pointing at the instance itself
+ * (`https://invidious.f5.si/vi/<videoId>/maxres.jpg`), so those hosts are genuinely
+ * browser image origins. They are permitted in `img-src` only, and
+ * `tests/security-policy.test.ts` keeps them out of `script-src`, `frame-src` and
+ * `connect-src`, where a provider host would be a real grant of access.
+ *
+ * `yewtu.be` is included because it is the other default Invidious instance
+ * (`providers/invidious.ts` `DEFAULT_INSTANCES`) and serves the same proxied
+ * thumbnails; whichever instance answers a request, its artwork must render.
+ *
+ * **Known residual, stated rather than hidden.** A CSP header is static while the
+ * Invidious instance list is configurable at runtime through
+ * `SPOTIVIBE_INVIDIOUS_INSTANCES`. An operator who configures a *different* instance
+ * will get proxied artwork from a host this policy does not permit, so those images
+ * will be refused — the same failure this milestone fixes, for a configuration that
+ * is not the shipped default. The durable fix is to canonicalise artwork URLs to a
+ * single permitted host at the normalization boundary (`videoId` is already on every
+ * track, and `pickArtwork` already constructs the canonical fallback). That is a
+ * cross-provider change with real resolution trade-offs and is deliberately not
+ * smuggled into this milestone.
+ */
+const CLIENT_IMAGE_ORIGINS = [
+  "https://i.ytimg.com",
+  "https://yt3.googleusercontent.com",
+  "https://yt3.ggpht.com",
+  "https://invidious.f5.si",
+  "https://yewtu.be",
+  "https://piped-proxy.ducks.party",
+  "data:",
+];
 
 /**
  * Build the policy.

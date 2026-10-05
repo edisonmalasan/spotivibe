@@ -35,6 +35,21 @@ const SRC = join(FRONTEND, "src");
  */
 const CLIENT_DIRECTORIES = ["app", "components", "features", "lib", "player", "stores"];
 
+/**
+ * Provider hosts that serve artwork to the browser by proxying it.
+ *
+ * These are permitted in `img-src` and nowhere else. They are listed here, separately
+ * from the fixture-derived origins, for the one case fixtures cannot cover: the second
+ * default Invidious instance. Whichever instance answers a request returns proxied
+ * thumbnails from its own host, so both must be permitted even though the captured
+ * fixtures happen to record only one of them.
+ *
+ * Each entry is asserted below to be either a captured-fixture artwork origin or a
+ * member of a provider's `DEFAULT_INSTANCES` list, so this cannot become a place to
+ * grant access to an arbitrary host.
+ */
+const PROXY_ARTWORK_ORIGINS = ["https://invidious.f5.si", "https://yewtu.be"];
+
 /** Every `https://host` literal under a path, with the file it came from. */
 function externalOrigins(path: string): Array<{ origin: string; file: string }> {
   const found: Array<{ origin: string; file: string }> = [];
@@ -68,12 +83,23 @@ function externalOrigins(path: string): Array<{ origin: string; file: string }> 
 /**
  * Origins the browser renders but never fetches from its own source.
  *
- * Artwork is the case that matters: the *server* builds the thumbnail URL
- * (`server/music/normalize.ts`) and hands it to the client as data, so no client file
- * contains a literal for it - yet the browser still loads an image from it, and a
- * policy without it shows every album cover as a broken image. An origin constructed
- * server-side for rendering is therefore legitimately an `img-src` entry, and that is
- * the one directive where a server-side origin belongs.
+ * Artwork is the case that matters, and it is where this function previously failed
+ * the whole suite for a year. Artwork reaches the browser as *data*: the server builds
+ * a fallback URL (`server/music/normalize.ts`) and passes every provider URL through
+ * verbatim, so no client or server file contains a literal for the host the providers
+ * actually return. Yet the browser still loads an image from it, and a policy without
+ * it shows every artist photo as a broken image — which is exactly what shipped.
+ *
+ * So the origins are taken from **two** places, and both are necessary:
+ *
+ * 1. the fallback URL our own code constructs, and
+ * 2. the artwork hosts present in the **captured provider fixtures**.
+ *
+ * The second source is the one that matters and the one that was missing. A detector
+ * built only from source text is structurally incapable of observing an origin that
+ * arrives as opaque provider data, so its green result is not evidence about artwork
+ * at all. `tests/fixtures/providers/` is where the truth lives: those files are real
+ * provider payloads, and the artwork URLs in them are what production really requests.
  */
 function serverConstructedImageOrigins(): Set<string> {
   const normalize = readFileSync(join(SRC, "server", "music", "normalize.ts"), "utf8");
@@ -82,6 +108,87 @@ function serverConstructedImageOrigins(): Set<string> {
       (match) => `https://${match[1].toLowerCase()}`,
     ),
   );
+}
+
+/**
+ * The JSON keys the providers read artwork from.
+ *
+ * Named rather than inferred, because the difference between them is the difference
+ * between a necessary policy entry and an unnecessary grant of access:
+ *
+ * - `videoThumbnails` — Invidious (`providers/invidious.ts`), an array of
+ *   `{ url, width, height }`.
+ * - `thumbnails` — the Innertube renderers (`providers/ytmusic.ts`,
+ *   `providers/ytweb.ts`), nested under a `thumbnail` renderer.
+ * - `thumbnail` — Piped (`providers/piped.ts`), a bare URL string.
+ *
+ * **Not** `authorThumbnails`, which the Invidious fixtures carry 380+ times. Those are
+ * channel avatars that Spotivibe's normalizers never read, so those URLs never reach
+ * the browser and their host must stay out of the policy. A detector that swept every
+ * URL in every fixture would have permitted `yt3.ggpht.com` on the strength of data
+ * this application discards — which is the "too loose" failure this suite exists to
+ * prevent, arriving through the very detector meant to prevent it.
+ */
+const ARTWORK_KEYS = new Set(["videoThumbnails", "thumbnails", "thumbnail"]);
+
+/** Every `https://host` origin in a URL-ish string. */
+function originsIn(value: unknown, into: Set<string>): void {
+  if (typeof value === "string") {
+    for (const match of value.matchAll(/https:\/\/([a-z0-9.-]+)/gi)) {
+      into.add(`https://${match[1].toLowerCase()}`);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) originsIn(item, into);
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const nested of Object.values(value)) originsIn(nested, into);
+  }
+}
+
+/**
+ * Artwork origins present in the captured provider fixtures, read from the keys the
+ * providers actually extract.
+ *
+ * This is the source that was missing when production shipped a policy refusing every
+ * artist image. Artwork reaches the browser as data, so no file in `src/` contains a
+ * literal for the host the providers return; the captured payloads do, and those are
+ * what production really requests.
+ */
+function fixtureImageOrigins(): Set<string> {
+  const directory = join(FRONTEND, "tests", "fixtures", "providers");
+  const origins = new Set<string>();
+  let files = 0;
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (ARTWORK_KEYS.has(key)) originsIn(value, origins);
+      else walk(value);
+    }
+  };
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (!entry.isFile() || extname(entry.name) !== ".json") continue;
+    files += 1;
+    walk(JSON.parse(readFileSync(join(directory, entry.name), "utf8")));
+  }
+  // A scan that silently found nothing would make every assertion below vacuous, so
+  // the corpus itself is asserted: no fixtures, or no artwork in them, means the
+  // detector has stopped detecting rather than that the policy is correct.
+  expect(
+    files,
+    "captured provider fixtures must be present to derive artwork origins",
+  ).toBeGreaterThan(0);
+  expect(
+    origins.size,
+    "captured provider fixtures must contain artwork URLs to derive origins from",
+  ).toBeGreaterThan(0);
+  return origins;
 }
 
 /** The single header rule the config declares, read with the ambient environment. */
@@ -187,12 +294,13 @@ describe("the policy permits what the browser needs and nothing else (task 1.1)"
       expect(directives.get("script-src"), entry.file).toContain(entry.origin);
       expect(directives.get("frame-src"), entry.file).toContain(entry.origin);
     }
-    // Artwork: rendered from a URL the server built, so the check is against the
-    // server's construction rather than a client literal.
-    const images = serverConstructedImageOrigins();
+    // Artwork: rendered from URLs the server built *or* passed through from a
+    // provider, so the check is against both the server's construction and the
+    // captured provider payloads rather than a client literal.
+    const images = new Set([...serverConstructedImageOrigins(), ...fixtureImageOrigins()]);
     expect(images.size, "the artwork origin must be discoverable").toBeGreaterThan(0);
     for (const origin of images) {
-      expect(directives.get("img-src"), "server-constructed artwork").toContain(origin);
+      expect(directives.get("img-src"), "provider-supplied artwork").toContain(origin);
     }
     // The client's network calls all go to its own origin, which `connect-src` must
     // state explicitly rather than leaving to `default-src`.
@@ -204,6 +312,8 @@ describe("the policy permits what the browser needs and nothing else (task 1.1)"
     const needed = new Set([
       ...CLIENT_DIRECTORIES.flatMap((dir) => externalOrigins(join(SRC, dir))).map((e) => e.origin),
       ...serverConstructedImageOrigins(),
+      ...fixtureImageOrigins(),
+      ...PROXY_ARTWORK_ORIGINS,
     ]);
 
     const offenders: string[] = [];
@@ -225,6 +335,12 @@ describe("the policy permits what the browser needs and nothing else (task 1.1)"
     const serverOrigins = externalOrigins(join(SRC, "server"));
     expect(serverOrigins.length, "the provider layer must be found").toBeGreaterThan(0);
     const images = serverConstructedImageOrigins();
+    // **M23.** A provider host can also be a genuine browser *image* origin without
+    // being constructed by our code: `providers/invidious.ts` and
+    // `providers/piped.ts` return proxied thumbnails pointing at the instance itself,
+    // so the browser fetches images from a provider host. Those hosts belong in
+    // `img-src` — and still nowhere else, which is what the loop below now pins.
+    const providerArtwork = fixtureImageOrigins();
 
     // Two server origins are legitimately reachable from the browser as well, for two
     // different reasons, and conflating them is how this rule gets weakened into
@@ -240,7 +356,11 @@ describe("the policy permits what the browser needs and nothing else (task 1.1)"
     );
 
     for (const { origin, file } of serverOrigins) {
-      if (images.has(origin)) {
+      if (
+        images.has(origin) ||
+        providerArtwork.has(origin) ||
+        PROXY_ARTWORK_ORIGINS.includes(origin)
+      ) {
         expect(directives.get("img-src"), `${file} artwork origin`).toContain(origin);
         for (const directive of ["script-src", "frame-src", "connect-src", "default-src"]) {
           expect(directives.get(directive) ?? [], `${file} in ${directive}`).not.toContain(origin);
@@ -258,6 +378,44 @@ describe("the policy permits what the browser needs and nothing else (task 1.1)"
       for (const [name, values] of directives) {
         expect(values ?? [], `${file} in ${name}`).not.toContain(origin);
       }
+    }
+  });
+
+  it("permits the artwork origin real provider payloads actually use", async () => {
+    // M23 regression, stated as its own test because the general assertions above
+    // would also have passed while this defect shipped: they read artwork origins
+    // from source text, and these hosts never appear in source text.
+    //
+    // With them absent from `img-src` the policy refuses the images, and the page
+    // renders broken artist photos while every status code stays 200.
+    const directives = parsePolicy(await productionPolicy());
+    const fromFixtures = [...fixtureImageOrigins()];
+    for (const origin of ["https://yt3.googleusercontent.com", "https://yt3.ggpht.com"]) {
+      expect(
+        fromFixtures,
+        "the captured fixtures must still carry the artwork host, or this test is vacuous",
+      ).toContain(origin);
+      expect(directives.get("img-src"), origin).toContain(origin);
+    }
+  });
+
+  it("permits a proxied-artwork provider host only with evidence for it", () => {
+    // `PROXY_ARTWORK_ORIGINS` exists for the one case fixtures cannot cover: the second
+    // default Invidious instance. It is the one place this suite could be talked into
+    // granting image access to an arbitrary host, so each entry must be justified by
+    // either a captured payload or a provider's own default instance list.
+    const providers = readFileSync(
+      join(SRC, "server", "music", "providers", "invidious.ts"),
+      "utf8",
+    );
+    const fromFixtures = fixtureImageOrigins();
+    for (const origin of PROXY_ARTWORK_ORIGINS) {
+      const inFixtures = fromFixtures.has(origin);
+      const inDefaults = providers.includes(origin);
+      expect(
+        inFixtures || inDefaults,
+        `${origin} is permitted for artwork with no captured payload and no default instance`,
+      ).toBe(true);
     }
   });
 
