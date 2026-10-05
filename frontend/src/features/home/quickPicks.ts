@@ -1,5 +1,6 @@
 import { albumHref } from "@/features/album/albumKeys";
 import { artistHref, isProviderEntityId } from "@/features/artist/artistKeys";
+import type { Track } from "@/data/repositories";
 import type { LocalTaste } from "@/features/home/localSeeds";
 import { groupArtistsByIdentity } from "@/features/recommendations/artists";
 import { bestArtworkUrl } from "@/lib/playlistPresentation";
@@ -17,11 +18,19 @@ import { languageName, normalizeLanguageCodes } from "@/lib/languages";
  * one whose href cannot be resolved, is dropped here rather than rendered and
  * discovered by a listener clicking it.
  *
- * Inputs are only what the device already holds: the selected languages (a
- * preference), the liked tracks, and the listening events. No new stored data, no
- * request, and no profile — the same local-first contract `deriveSeedTerms`
- * keeps, which is why the derivation is a pure function over its inputs rather
- * than a hook that fetches something.
+ * Inputs are what the device already holds: the selected languages (a
+ * preference), the liked tracks, the listening events, and — as the fourth
+ * source `home-mixes` specifies — **provider results the Home surface has
+ * already fetched**. Nothing here stores, requests, or profiles: the provider
+ * results arrive as arguments from the feed's own shelves, so the derivation
+ * stays a pure function over its inputs rather than a hook that fetches
+ * something.
+ *
+ * That fourth source is the cold-start path, and it is deliberately narrow
+ * (see design decision D2): it contributes **only** when the device holds no
+ * local material at all. A device with one liked track reads exactly what it
+ * read before this source existed — not because a test noticed, but because
+ * the stand-in array is empty when `material` is not.
  *
  * Pure and deterministic: the same local material always yields the same entries
  * in the same order, and nothing is mutated.
@@ -72,6 +81,20 @@ export interface QuickPickInput {
   readonly languages: readonly string[];
   /** Liked tracks and listening events, as the stores expose them. */
   readonly taste: LocalTaste;
+  /**
+   * Provider results the Home surface **already holds** — its trending and
+   * collection shelves' tracks.
+   *
+   * Optional because most callers cannot answer the question it answers: only
+   * the Home surface knows what its own feed fetched. Omitting it is the
+   * honest default and yields exactly the pre-M22 behaviour, which is also why
+   * the field is optional rather than required — a required one would make every
+   * call site state an answer, and the compiler cannot tell a caller that
+   * passed `[]` on purpose from one that forgot.
+   *
+   * Read only when there is no local material. See `deriveQuickPicks`.
+   */
+  readonly providerTracks?: readonly Track[];
 }
 
 /** `Daft Punk, Pharrell Williams`, or a neutral label for no credited artist. */
@@ -124,25 +147,21 @@ function collect(picks: QuickPick[], seen: Set<string>, pick: QuickPick): void {
 }
 
 /**
- * Derive the Quick Picks from the listener's own material.
+ * The artist pass, over one array of tracks.
  *
- * Three sources, in that order, because the order is the *strength* of the
- * evidence: an artist the listener liked is a place they have already been, an
- * album on a track they liked is a place they have not, and a language they
- * selected is the weakest of the three — a way in rather than something they
- * chose to follow. The bound is applied across all three, so a device with many
- * artists cannot push the language entries out entirely.
+ * Extracted rather than inlined so the local and stand-in paths share one
+ * implementation. `groupArtistsByIdentity` is the existing derivation behind
+ * the Popular Artists shelf, reused so an artist is grouped the same way in
+ * every place it appears.
  */
-export function deriveQuickPicks(input: QuickPickInput): QuickPick[] {
-  const picks: QuickPick[] = [];
-  const seen = new Set<string>();
-
-  // The local material: liked tracks first, then plays, both newest-first as the
-  // stores hand them over. `groupArtistsByIdentity` is the existing derivation
-  // behind the Popular Artists shelf, reused so an artist is grouped the same way
-  // in both places.
-  const material = [...input.taste.likedTracks, ...input.taste.events.map((e) => e.track)];
+function collectArtists(
+  picks: QuickPick[],
+  seen: Set<string>,
+  material: readonly Track[],
+  limit: number,
+): void {
   for (const entry of groupArtistsByIdentity(material)) {
+    if (picks.length >= limit) return;
     collect(picks, seen, {
       id: `artist:${entry.id}`,
       kind: "artist",
@@ -152,8 +171,24 @@ export function deriveQuickPicks(input: QuickPickInput): QuickPick[] {
       artworkUrl: entry.artworkUrl,
     });
   }
+}
 
+/**
+ * The release pass, over one array of tracks.
+ *
+ * Extracted for the same reason as `collectArtists`, and with the same caveat:
+ * a second inline copy would be character-identical at the moment of writing
+ * and free to drift afterwards, so any later change to the artwork choice or
+ * the album-key rules would have to be made twice and would be made once.
+ */
+function collectReleases(
+  picks: QuickPick[],
+  seen: Set<string>,
+  material: readonly Track[],
+  limit: number,
+): void {
   for (const track of material) {
+    if (picks.length >= limit) return;
     const album = track.album;
     const title = album?.title.trim() ?? "";
     // A track with no album metadata is not an album entry wearing a title.
@@ -170,8 +205,62 @@ export function deriveQuickPicks(input: QuickPickInput): QuickPick[] {
       artworkUrl: bestArtworkUrl(track),
     });
   }
+}
 
-  for (const code of normalizeLanguageCodes(input.languages)) {
+/**
+ * Derive the Quick Picks from the listener's own material.
+ *
+ * The sources, in that order, because the order is the *strength* of the
+ * evidence: an artist the listener liked is a place they have already been, an
+ * album on a track they liked is a place they have not, and a language they
+ * selected is a way in rather than something they chose to follow.
+ *
+ * **The bound is one shared `MAX_QUICK_PICKS` across all of these passes, and
+ * that means a device with eight local artists gets no language entry at all.**
+ * An earlier version of this comment claimed the opposite — that a device with
+ * many artists could not push the language entries out. It could; the comment
+ * was wrong about the code beneath it. The behaviour is left as it is, because
+ * changing it would change what every device with material renders, and the only
+ * reason the stand-in below behaves differently is that it is new. See design
+ * decision D6.
+ *
+ * The stand-in pass sits between the releases and the languages, and exists only
+ * for a device with no local material at all. It reads `providerTracks` — the
+ * results the Home surface already fetched — so it costs no request and stores
+ * nothing. Two properties hold by construction rather than by testing:
+ *
+ * - **It cannot outrank local evidence, because it is never considered alongside
+ *   it.** When `material` is non-empty the stand-in array is empty; there is no
+ *   case in which a provider result competes with a liked artist.
+ * - **It cannot crowd out the language entries**, because its limit reserves
+ *   them. Without the reservation a cold device on a healthy network would fill
+ *   the bound with trending artists and lose the one entry the derivation
+ *   guarantees, making that guarantee depend on the network.
+ */
+export function deriveQuickPicks(input: QuickPickInput): QuickPick[] {
+  const picks: QuickPick[] = [];
+  const seen = new Set<string>();
+
+  // Normalised once, above the passes, because the stand-in's limit is derived
+  // from how many language entries there are to preserve.
+  const languageCodes = normalizeLanguageCodes(input.languages);
+
+  // The local material: liked tracks first, then plays, both newest-first as the
+  // stores hand them over.
+  const material = [...input.taste.likedTracks, ...input.taste.events.map((e) => e.track)];
+  collectArtists(picks, seen, material, MAX_QUICK_PICKS);
+  collectReleases(picks, seen, material, MAX_QUICK_PICKS);
+
+  // The cold-start stand-in. `material.length === 0` is the whole gate: when
+  // there is any local material at all this is `[]` and every pass below reads
+  // exactly what it read before this source existed.
+  const standIn = material.length === 0 ? (input.providerTracks ?? []) : [];
+  // At least one language entry always survives, whatever the provider returned.
+  const standInLimit = Math.max(0, MAX_QUICK_PICKS - languageCodes.length);
+  collectArtists(picks, seen, standIn, standInLimit);
+  collectReleases(picks, seen, standIn, standInLimit);
+
+  for (const code of languageCodes) {
     const label = languageName(code);
     collect(picks, seen, {
       id: `search:${code}`,

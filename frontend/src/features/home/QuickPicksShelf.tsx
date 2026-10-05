@@ -106,6 +106,14 @@ export interface QuickPicksShelfProps {
   /** The selected catalog language codes. */
   languages: readonly string[];
   /** The presented filter, so the shelf follows the one section model's filter. */
+  /**
+   * Provider results the Home feed already holds, for the cold-start stand-in.
+   *
+   * Optional and read only when there is no local material, so a caller that has
+   * none — every warm-path test of the derivation, for instance — renders today's
+   * rail unchanged.
+   */
+  providerTracks?: readonly Track[];
   filter?: HomeFilterValue;
   className?: string;
 }
@@ -117,19 +125,25 @@ export interface QuickPicksShelfProps {
  * selected language is a preference the device genuinely holds and `/search`
  * resolves it — so the derivation always yields at least one entry, and the
  * `Shelf` primitive's own ready-with-no-children rule is the only empty handling
- * needed. What the rail never does is render a card whose target cannot be
- * resolved: every one of them navigates.
+ * needed. That is why this shelf passes no `empty` copy: the state is
+ * unreachable, and copy for it would be copy no test could reach.
+ *
+ * When such a device is also handed `providerTracks`, the rail fills with real
+ * artists and releases ahead of that language entry. What the rail never does —
+ * cold, warm, or in between — is render a card whose target cannot be resolved:
+ * every one of them navigates.
  */
 export function QuickPicksShelf({
   likedTracks,
   events,
   languages,
+  providerTracks,
   filter = "all",
   className = "",
 }: QuickPicksShelfProps) {
   const picks = useMemo(
-    () => deriveQuickPicks({ languages, taste: { likedTracks, events } }),
-    [events, languages, likedTracks],
+    () => deriveQuickPicks({ languages, taste: { likedTracks, events }, providerTracks }),
+    [events, languages, likedTracks, providerTracks],
   );
 
   if (!presentsSurface(QUICK_PICK_SURFACE, filter)) return null;
