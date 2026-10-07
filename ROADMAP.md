@@ -186,6 +186,59 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > actually extract, `yt3.googleusercontent.com` occurs **63** times across those fixtures; the
 > larger figures belong to `authorThumbnails`, which the application never reads.
 
+> **M23's own `DONE` criterion was measured late, and the first two attempts failed in ways worth keeping.**
+> M23 was initially marked `DONE` citing its merge commits alone. That proves the tree merged; it does
+> **not** prove six consecutive green full gate runs at that tree, which is what the definition above
+> requires. Measuring it surfaced **two defects in the criterion apparatus itself**, both before a single
+> gate ran:
+>
+> 1. **`run-gate-batch.ps1` cannot be run from where it now lives.** It computes the repository root by
+>    walking four parents up from its own directory, which was correct while the change sat at
+>    `openspec/changes/<name>/evidence`. **Archiving inserted a level**, so the identical arithmetic now
+>    resolves to `<root>/openspec`, and the script's own guard refuses to proceed:
+>    `FAIL the computed repository root is not a repository root`. **The guard is correct** — it fails
+>    loud rather than printing a plausible wrong path, which would have sent the gate's output somewhere
+>    meaningless while the run still exited 0. But the consequence is that **the documented route to this
+>    criterion has been unrunnable for every archived change since.** This is inherited from M21 and was
+>    not introduced by M23; M23 is simply the first milestone to discover it, because M23 is the first to
+>    need the batch measured after its own archive.
+> 2. **The corroborator's default expectations are stale, and they are asserted rather than reported.**
+>    `--expect-budget` defaults to `21`; this tree executes **24**. Run with defaults, the checker exits
+>    **1** on `FAIL motion-budget across the logs: 24 (asserted 21)` while every other line reads `ok`.
+>    That failure is the detector proving it can still fail, and it is exactly why `24` was established
+>    **by measurement** — running `vitest run tests/motion-budget.test.ts` directly and reading its own
+>    `Tests` line — rather than by passing the flag that makes it green. (The file's count is 18 `it(`
+>    plus 6 `it.skipIf(`, and that conditional form is why this figure is build-sensitive: it is the
+>    mechanism behind the with-build/without-build distinction the whole apparatus exists to catch.)
+>
+> **The batch.** Batch 25, at `8a35eb6921b6`, is **6 of 6 green** with the corroborator at **exit 0**: six
+> distinct log digests, one frozen commit named in all six, `Test Files 182` in all six, `motion-budget
+> 24` in all six, **0 skipped**, 0 NUL and 0 U+FFFD bytes, `gate exit0` in all six, and independent
+> enumeration at 3071 templates against 3393 executed = 0.905 over the 0.8 floor.
+> `git rev-parse 8a35eb6921b6^{tree}` is `e3718aa3c232158794d97121493f58a5f11ade3d`, and
+> `git merge-base --is-ancestor origin/main 8a35eb6921b6` exits 0 — so the batched tree is exactly the tree
+> the merge carries, which is the invariant the rule below defines.
+> **The authoritative record of this batch is the PR body, not this file**, because that rule makes an
+> in-tree batch record circular: any such record is itself a commit, so its tree can never equal the
+> batched tree.
+>
+> **How the batch was produced, given the driver could not be run as shipped.** Both scripts were copied
+> **unmodified, verified hash-identical to the archived originals**, to a path depth the existing
+> arithmetic already resolves to the repository root, and run from the repository root; the temporary copy
+> was deleted afterwards and the tree is clean. **No script was patched and no assertion was bypassed** —
+> the guard passed at the new depth because the computed root genuinely *is* the repository root, with
+> `frontend/package.json` beneath it. **The archived scripts were deliberately not edited:** they are frozen
+> evidence of what M21 shipped, and patching the symptom there would destroy that record while making the
+> defect invisible to the next reader. Repairing the driver's path arithmetic, its stale default, and its
+> usage line is **a future change's work and is deliberately not smuggled into this one.**
+>
+> **One environment note, recorded because the script's printed interface does not run here.** The driver's
+> usage line says `pwsh -File`; this machine has only Windows PowerShell 5.1, so it must be invoked as
+> `powershell -File`. The script's *body* is written for 5.1 — it deliberately avoids `` `e `` and
+> `Tee-Object`` for precisely the 5.1 failures its own header documents — so its prose and its code
+> disagree about the interpreter. A path a script prints is an interface, and it is only correct if
+> something runs it.
+
 > **M22 is not new scope.** `§21.2` below specifies Quick Picks as derived from "selected languages, the
 > local listening profile, liked artists/tracks, **and existing provider results**", and
 > `openspec/specs/home-mixes/spec.md` carries the same clause. `quickPicks.ts` derives from the first
