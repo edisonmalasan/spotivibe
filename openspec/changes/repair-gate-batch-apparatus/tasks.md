@@ -209,15 +209,44 @@ assuming no group touched the archive.
 > known one-in-six flake exists must not be presented as though the suite were deterministic. The
 > flake is the honest headline of this integration group, not the 6 of 6.
 
-- [ ] 5.1 Run the documented route end to end from the canonical home: six `npm run gate` runs, then
+- [x] 5.1 Run the documented route end to end from the canonical home: six `npm run gate` runs, then
       the corroborator, and verify the corroborator exits 0 with six distinct log digests, one frozen
       commit, and 0 skipped
-- [ ] 5.2 Record the batch commit, its tree, and the `git merge-base --is-ancestor` result in the **PR
+      — **DONE.** Batch 27 at `f6bc054` (tree `7b80096`): **6 of 6 green**, corroborated **exit 0**.
+      Six distinct digests, **one** commit `f6bc054` across all six, 183 files, 3411 tests,
+      motion-budget 24, **0 skipped** in every run, enumeration 3084/3411 = **0.904** over the 0.8
+      floor.
+
+      **The detector was re-proven able to fail on this very batch, immediately after it passed.**
+      Re-run with defaults and no `--expect-*`, it exits **1** with all six rows
+      `ASSERTED MISMATCH`:
+      `found 183, expected 182. this default is stale — it is the M21 tree (182 files at 6f86211)` and
+      `found 24, expected 21. … Re-run with --expect-budget 24`. A green obtained only by passing the
+      figures a prior run produced would be the driver agreeing with itself, so the passing run and the
+      failing run are both recorded. The `--expect-*` values used are `183` and `24`, taken from the
+      gate's own summary — **established by measurement, never chosen to make a check pass.**
+- [x] 5.2 Record the batch commit, its tree, and the `git merge-base --is-ancestor` result in the **PR
       body**, not in a repository file, because the rule at `ROADMAP.md` makes an in-tree batch record
       circular
-- [ ] 5.3 State explicitly in this file and in the PR body that M21 CRITICAL 1 and CRITICAL 2 remain
+      — **DONE, in the PR body only.** Batch commit `f6bc05404c5cd888461cd365a6a757b6f470b851`, tree
+      `7b80096c288d54855d48306b6cdc4f157a52df26`,
+      `git merge-base --is-ancestor origin/main f6bc054` → **exit 0**. Logs live outside the tree at
+      `%LOCALAPPDATA%\Temp\opencode\m24-batch\`. **This file deliberately does not carry those figures
+      as a criterion record** — an in-tree record is itself a commit, so its tree can never equal the
+      batched tree, and a rule demanding one can only ever be unsatisfied.
+- [x] 5.3 State explicitly in this file and in the PR body that M21 CRITICAL 1 and CRITICAL 2 remain
       open and are **not** closed by this change, and that repairing the apparatus is not a claim that
       the gate cannot lie
+      — **DONE.** Stated verbatim in the PR body's *What this does NOT close* section, and here:
+
+      > **M21 CRITICAL 1 and CRITICAL 2 remain open and are not closed by this change.** Repairing the
+      > apparatus by which a milestone's completion is claimed is **not** a claim that the gate cannot
+      > lie. A runnable instrument is a precondition for an honest measurement, never a substitute for
+      > one. Batch 27 being 6 of 6 says the criterion is now *checkable*; it says nothing about
+      > whether the gate would have caught a regression, and this change did not make it more able to.
+
+      The PR body additionally records that **batch 27 is partly luck** — see the race above — so that
+      the green cannot be read as evidence of a deterministic suite.
 - [x] 5.4 Run `npm run gate` to completion and `openspec validate --specs --strict`, and record the
       actual figures rather than asserting the change is green
       — **DONE.** `npm run gate` **exit 0**: **183 test files, 3411 tests**, `motion-budget 24`,
