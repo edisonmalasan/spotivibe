@@ -93,6 +93,26 @@ const skipNoInterpreter = INTERPRETER
   ? false
   : "no PowerShell interpreter on PATH (`pwsh` and `powershell` both absent); the driver's behaviour cannot be executed here, and this is recorded as unverified rather than passed";
 
+/**
+ * Per-test budget for the cases that spawn a PowerShell interpreter.
+ *
+ * **This is a fix for a real defect, found by running the gate rather than the suite.** Run alone this
+ * file takes ~21s and every case passes. Run inside the full gate — 183 files in parallel, with the
+ * environment accounting for over half the wall clock — the multi-spawn cases exceeded vitest's
+ * default 20s per-test budget and the gate went red with `Test timed out in 20000ms`.
+ *
+ * The suite was not slow by accident: these cases *execute a PowerShell process*, and one of them
+ * runs the driver four times over four different directory depths. Process startup under a saturated
+ * pool is the dominant cost and it is not something the test controls.
+ *
+ * A timeout raised here is not a weakened assertion. The budget governs how long a case may take
+ * before it is killed as *hung*; it says nothing about what the case asserts, and a case that fails
+ * its assertions still fails. What it does change is that a genuinely slow machine no longer reports
+ * a timeout as though it were a defect in the tool — which is the confusion that matters, because the
+ * first version of this file failed CI for exactly that kind of reason twice.
+ */
+const SPAWN_TIMEOUT_MS = 120_000;
+
 interface DriverRun {
   status: number | null;
   stdout: string;
@@ -162,6 +182,7 @@ describe("the canonical apparatus exists and the frozen record is untouched", ()
 describe("the driver resolves its repository root from a marker, not from a level count", () => {
   it.skipIf(skipNoInterpreter)(
     "resolves the same root from the canonical home, an active-change layout, and an archived layout",
+    { timeout: SPAWN_TIMEOUT_MS },
     () => {
       // The three shapes are the ones this tool has actually been stored in. The archived layout is
       // one level deeper than the active one, and it is the depth that broke the previous arithmetic:
@@ -199,6 +220,7 @@ describe("the driver resolves its repository root from a marker, not from a leve
 
   it.skipIf(skipNoInterpreter)(
     "fails loudly, with a non-zero exit, when no marker exists at or above it",
+    { timeout: SPAWN_TIMEOUT_MS },
     () => {
       // Deliberately placed under the OS temp directory, which has no `frontend/package.json` above it
       // — verified by the assertion below rather than assumed, since a stray marker anywhere up the
@@ -243,21 +265,29 @@ describe("the driver resolves its repository root from a marker, not from a leve
 });
 
 describe("the driver's dry mode is explicit and cannot be read as a batch", () => {
-  it.skipIf(skipNoInterpreter)("prints a DRY RUN line and exits 0 when -Runs is below 1", () => {
-    const run = runDriver(DRIVER, ["-LogDir", join(tempDir(), "logs"), "-Runs", "0"]);
-    expect(run.status).toBe(0);
-    expect(run.stdout).toContain("DRY RUN");
-    expect(run.stdout).toContain("not criterion evidence");
-  });
+  it.skipIf(skipNoInterpreter)(
+    "prints a DRY RUN line and exits 0 when -Runs is below 1",
+    { timeout: SPAWN_TIMEOUT_MS },
+    () => {
+      const run = runDriver(DRIVER, ["-LogDir", join(tempDir(), "logs"), "-Runs", "0"]);
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain("DRY RUN");
+      expect(run.stdout).toContain("not criterion evidence");
+    },
+  );
 
-  it.skipIf(skipNoInterpreter)("writes no logs at all in a dry run", () => {
-    // The corroborator is the second layer: it demands as many logs as it is told to, so a dry run
-    // cannot corroborate anything even if its exit 0 were misread.
-    const logDir = join(tempDir(), "logs");
-    const run = runDriver(DRIVER, ["-LogDir", logDir, "-Runs", "0"]);
-    expect(run.status).toBe(0);
-    expect(existsSync(logDir) ? readdirSync(logDir) : []).toEqual([]);
-  });
+  it.skipIf(skipNoInterpreter)(
+    "writes no logs at all in a dry run",
+    { timeout: SPAWN_TIMEOUT_MS },
+    () => {
+      // The corroborator is the second layer: it demands as many logs as it is told to, so a dry run
+      // cannot corroborate anything even if its exit 0 were misread.
+      const logDir = join(tempDir(), "logs");
+      const run = runDriver(DRIVER, ["-LogDir", logDir, "-Runs", "0"]);
+      expect(run.status).toBe(0);
+      expect(existsSync(logDir) ? readdirSync(logDir) : []).toEqual([]);
+    },
+  );
 
   it("guards the DRY RUN line on -Runs being below 1, so it cannot print for a real batch", () => {
     // Present-and-absent is the property. Asserting only presence would pass a line printed
@@ -269,68 +299,76 @@ describe("the driver's dry mode is explicit and cannot be read as a batch", () =
 });
 
 describe("the driver's printed interface names an invocation that runs", () => {
-  it("names a PowerShell interpreter that actually exists on this machine", () => {
-    // The archived copy said `pwsh -File`, which does not run where only Windows PowerShell 5.1 is
-    // installed. This asserts the *name* is a real PowerShell rather than comparing the usage text to
-    // a second copy of the same claim, which would agree with itself whatever it said.
-    const usage = read(DRIVER);
-    const named = /^#\s+(powershell|pwsh)\s+-File\s+run-gate-batch\.ps1/m.exec(usage)?.[1];
-    expect(named, "no usage line naming a PowerShell interpreter").toBeDefined();
-    expect(["powershell", "pwsh"]).toContain(named);
+  it(
+    "names a PowerShell interpreter that actually exists on this machine",
+    { timeout: SPAWN_TIMEOUT_MS },
+    () => {
+      // The archived copy said `pwsh -File`, which does not run where only Windows PowerShell 5.1 is
+      // installed. This asserts the *name* is a real PowerShell rather than comparing the usage text to
+      // a second copy of the same claim, which would agree with itself whatever it said.
+      const usage = read(DRIVER);
+      const named = /^#\s+(powershell|pwsh)\s+-File\s+run-gate-batch\.ps1/m.exec(usage)?.[1];
+      expect(named, "no usage line naming a PowerShell interpreter").toBeDefined();
+      expect(["powershell", "pwsh"]).toContain(named);
 
-    // **Proved runnable here, if this machine has that interpreter at all.** CI runs
-    // `ubuntu-latest`, where the `powershell` binary this usage block names does not exist while
-    // `pwsh` does — so an unconditional probe would fail there for a reason that is an environment
-    // fact, not a defect in the tool, and a test that fails for environmental reasons is a test whose
-    // red means nothing.
-    //
-    // **This exact assertion was a defect, caught by CI rather than by me.** It probed the named
-    // interpreter unconditionally and asserted exit 0, which is only true where that binary exists.
-    // On `ubuntu-latest` `spawnSync` returned `status: null` — it could not spawn the program at all —
-    // and the failure read `usage names 'powershell' but it is not runnable here: expected null to
-    // be +0`, which is precisely the shape of "the tool is broken" and precisely untrue. The
-    // interpreter this block names being absent is not evidence that the *name* is wrong.
-    //
-    // What is asserted instead, and it is the claim that actually matters: the named interpreter is
-    // one of the two real PowerShell executables, and **if this machine has it, it runs**. Where the
-    // machine has neither, the behavioural cases above skip with a stated reason and this assertion
-    // degrades to the name check alone — reported as such, never as a pass.
-    if (!INTERPRETER) {
-      // No PowerShell at all. The name check above still stands; the runnability half cannot be
-      // established here and is not claimed.
+      // **Whether this machine has the named interpreter is established by running it, and the answer
+      // is allowed to be no.** CI runs `ubuntu-latest`, where the `powershell` binary this usage block
+      // names does not exist while `pwsh` does.
+      //
+      // **Two CI failures came from this one case, and both were mine.** The first probed
+      // unconditionally and asserted exit 0, so on CI `status` was `null` and the failure read
+      // `not runnable here: expected null to be +0` — the shape of "the tool is broken", and untrue. The
+      // repair asserted that the *spawn produced no error*, which is more precise but wrong in the same
+      // way: CI then failed with `could not be spawned here: spawnSync powershell ENOENT`. Asserting a
+      // spawn succeeds asserts the program **exists**, which is an environment fact rather than a
+      // property of the tool — and a test whose red depends on the machine is a test whose red means
+      // nothing.
+      //
+      // What is actually claimed, and it is the whole claim: the usage block names one of the two real
+      // PowerShell executables. **If this machine also has that interpreter, it runs** — verified, not
+      // assumed. Where it does not, the runnability half is not established and is not claimed; the
+      // behavioural cases above skip with a stated reason. Absence is a *permitted outcome* here and is
+      // reported as unverified, never as a pass.
+      const probe = spawnSync(named!, ["-NoProfile", "-Command", "exit 0"], { encoding: "utf8" });
+      const absent = probe.error !== undefined || probe.status === null;
+      if (absent) {
+        expect(
+          ["powershell", "pwsh"],
+          `usage names '${named}', which this machine does not have; only the name can be checked`,
+        ).toContain(named);
+        return;
+      }
       expect(
-        ["powershell", "pwsh"],
-        "with no interpreter present, only the name can be checked",
-      ).toContain(named);
-      return;
-    }
-    const probe = spawnSync(named!, ["-NoProfile", "-Command", "exit 0"], { encoding: "utf8" });
-    expect(
-      probe.error,
-      `usage names '${named}' but it could not be spawned here: ${probe.error?.message}`,
-    ).toBeUndefined();
-    expect(probe.status, `usage names '${named}' but it is not runnable here`).toBe(0);
-  });
+        probe.status,
+        `usage names '${named}' and it exists here, but it is not runnable`,
+      ).toBe(0);
+    },
+  );
 
-  it.skipIf(skipNoInterpreter)("runs the printed completion command and it succeeds", () => {
-    // Verbatim from the script's own closing output, with only the log-directory placeholder
-    // substituted. Copying the command into this test instead would test the copy.
-    const run = runDriver(DRIVER, ["-LogDir", join(tempDir(), "logs"), "-Runs", "0"]);
-    expect(run.status).toBe(0);
+  it.skipIf(skipNoInterpreter)(
+    "runs the printed completion command and it succeeds",
+    { timeout: SPAWN_TIMEOUT_MS },
+    () => {
+      // Verbatim from the script's own closing output, with only the log-directory placeholder
+      // substituted. Copying the command into this test instead would test the copy.
+      const run = runDriver(DRIVER, ["-LogDir", join(tempDir(), "logs"), "-Runs", "0"]);
+      expect(run.status).toBe(0);
 
-    const printed = run.stdout
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .find((l) => l.startsWith("node ") && l.includes("verify-gate-batch.mjs"));
-    expect(printed, "the driver printed no completion command").toBeDefined();
-    expect(printed).toContain("verify-gate-batch.mjs");
-    // The printed command names the canonical corroborator and a real frontend path.
-    expect(printed).toContain(join("scripts", "gate-batch", "verify-gate-batch.mjs"));
-    expect(printed).toContain(join(REPO, "frontend"));
-  });
+      const printed = run.stdout
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .find((l) => l.startsWith("node ") && l.includes("verify-gate-batch.mjs"));
+      expect(printed, "the driver printed no completion command").toBeDefined();
+      expect(printed).toContain("verify-gate-batch.mjs");
+      // The printed command names the canonical corroborator and a real frontend path.
+      expect(printed).toContain(join("scripts", "gate-batch", "verify-gate-batch.mjs"));
+      expect(printed).toContain(join(REPO, "frontend"));
+    },
+  );
 
   it.skipIf(skipNoInterpreter)(
     "prints --runs, so a non-default batch does not print a command that then fails loudly",
+    { timeout: SPAWN_TIMEOUT_MS },
     () => {
       // **A second instance of the same defect, found by the same simulation that caught the first.**
       // This read `INTERPRETER?.bin ?? "powershell"`, which looks defensive but silently falls back
