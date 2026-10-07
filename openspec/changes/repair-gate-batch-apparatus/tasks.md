@@ -11,35 +11,88 @@ rather than assuming it did not.
 
 ## 1. Canonical home
 
-- [ ] 1.1 Copy `run-gate-batch.ps1` and `verify-gate-batch.mjs` to `frontend/scripts/gate-batch/`, and
+- [x] 1.1 Copy `run-gate-batch.ps1` and `verify-gate-batch.mjs` to `frontend/scripts/gate-batch/`, and
       verify by SHA-256 that each copy is byte-identical to its archived original
-- [ ] 1.2 Record the archived pair's hashes in this file, and verify `git status` shows no modification
+      — **DONE.** Both `identical=True` against the archived originals.
+- [x] 1.2 Record the archived pair's hashes in this file, and verify `git status` shows no modification
       to anything under `openspec/changes/archive/` — the copies are new files, not a move
-- [ ] 1.3 Add a header to each canonical copy naming the canonical path and stating that the archived
+      — **DONE.** Hashes recorded under §1.2 below; `git diff --name-only HEAD -- openspec/changes/archive`
+      returned nothing, and `git status --porcelain` shows only `?? frontend/scripts/gate-batch/`.
+
+### 1.2 Archived originals — frozen, SHA-256 as of `073a441`
+
+```
+openspec/changes/archive/2026-10-05-harden-post-v1-verification/evidence/run-gate-batch.ps1
+  1eefeeeb5bba598cfbea273f7a79a2bb6f8143250c40569c615c9b28277799fd
+openspec/changes/archive/2026-10-05-harden-post-v1-verification/evidence/verify-gate-batch.mjs
+  65c81e956e16cc9da64a475839280b2c98668fb57d57fffab5cb8ce08a22f451
+```
+
+**These are the frozen record and must not change.** The canonical copies at
+`frontend/scripts/gate-batch/` are *expected* to differ from these hashes from task 1.3 onward, and
+every later group re-checks that the two hashes above still match the files on disk rather than
+assuming no group touched the archive.
+- [x] 1.3 Add a header to each canonical copy naming the canonical path and stating that the archived
       copies are M21's frozen record and are deliberately unrepaired, and verify by test that the
       archived pair does **not** carry that header (which is what proves the archive was not edited)
+      — **DONE.** Headers added to both canonical copies. `gate-batch-apparatus.test.ts` asserts the
+      header's **presence** in each canonical copy and its **absence** in each archived one; the
+      negative direction is load-bearing, because a header on both pairs would satisfy the positive
+      assertion while silently rewriting M21's record.
+
+> **A defect this milestone's own tooling caught in me.** While writing the usage block I added
+> `[-NoLogo]` to the printed invocation. **The script has no such parameter.** Running the printed
+> interface verbatim — which task 2.4 requires — failed immediately. That is precisely the defect
+> class this milestone repairs (a printed path that nothing can run), reproduced in the repair itself,
+> and it was removed rather than documented as intended-but-unimplemented.
 
 ## 2. Driver: resolution, dry mode, interface
 
-- [ ] 2.1 Replace the four-`Split-Path -Parent` root computation with a walk upward from
+- [x] 2.1 Replace the four-`Split-Path -Parent` root computation with a walk upward from
       `$PSScriptRoot` until a directory containing `frontend\package.json` is found, preserving the
       fail-loud guard, and verify by running the driver with `-Runs 0` from the canonical home and
       observing the reported root is the repository root
-- [ ] 2.2 Verify the "no marker found" path still fails loudly: drop a copy of the driver into a
+      — **DONE.** Observed root `C:\Users\Edison\Desktop\Projects\spotivibe`, having examined
+      `frontend\scripts\gate-batch -> frontend\scripts -> frontend -> <repo>`. The guard is preserved
+      and now reports what it searched.
+- [x] 2.2 Verify the "no marker found" path still fails loudly: drop a copy of the driver into a
       temporary tree with no `frontend\package.json` above it, run it, and confirm a non-zero exit that
       names the directory it started from and the directories it examined
-- [ ] 2.3 Make `-Runs 0` an explicit dry mode that resolves the root, prints the completion command,
+      — **DONE.** `EXIT=1`, and the message enumerated all ten directories walked, `…\a\b\c` through
+      `C:\`. Verified first that no temp ancestor contains the marker, so the case cannot pass for the
+      wrong reason.
+- [x] 2.3 Make `-Runs 0` an explicit dry mode that resolves the root, prints the completion command,
       prints a `DRY RUN — no gate was invoked — this is not criterion evidence` line, and exits 0,
       and verify by test that the line is present when `$Runs` is below 1 and absent otherwise
-- [ ] 2.4 Correct the usage block so it names an interpreter that is actually installed and does not
+      — **DONE.** Line observed, `EXIT=0`, and a dry run writes **no** logs (asserted), so it cannot
+      corroborate anything. "Absent otherwise" is asserted **structurally** on the `$Runs -lt 1` guard,
+      because asserting it at runtime would mean running a real gate.
+- [x] 2.4 Correct the usage block so it names an interpreter that is actually installed and does not
       claim a PowerShell edition the implementation does not target, and verify by **executing the
       printed usage verbatim** — not by comparing text against a second copy of the same claim
-- [ ] 2.5 Add tests that resolve the root from at least three nesting depths — the canonical home, an
+      — **DONE.** The `pwsh -File` line is now `powershell -File`, which runs here; `pwsh` is documented
+      as also acceptable. Executing the printed line is what exposed the `[-NoLogo]` defect recorded
+      under 1.3.
+- [x] 2.5 Add tests that resolve the root from at least three nesting depths — the canonical home, an
       active-change-shaped tree, and an archive-shaped tree one level deeper — and require the same
       root from each; verify by reverting the walk-up to parent-counting and confirming the
       archive-shaped case turns red
-- [ ] 2.6 Verify `frontend/tests/evidence-scripts.test.ts` still passes unmodified, which is the check
+      — **DONE.** **Four** depths, not three: canonical home, active-change, archived-change, and a
+      six-deep unrelated shape. All resolve the same fake root.
+      **Mutation proved the detector can fail** — reverting to the four-parent count turned **3 of 13**
+      red: the depth case resolved `…\Local\Temp` instead of the fake root, the no-marker case exited
+      **0** instead of non-zero, and the structural detector lost its `while ($true)`. Source restored
+      and confirmed.
+- [x] 2.6 Verify `frontend/tests/evidence-scripts.test.ts` still passes unmodified, which is the check
       that the frozen archive remains intact and that this change did not repoint it
+      — **DONE.** Both suites together: **2 files, 41 tests passed**. Archived SHA-256 re-checked
+      against §1.2 after every mutation.
+
+> **Interpreter gating, stated rather than hidden.** CI runs `ubuntu-latest`, where PowerShell 7 exists
+> as `pwsh` but the `powershell` binary named by the usage block does not. The behavioural cases
+> therefore resolve an available interpreter at runtime (`named -> pwsh -> powershell`) and **skip with
+> a stated reason where none exists**. All 13 cases ran here on Windows PowerShell 5.1. A skipped case
+> is reported as skipped, never as a pass.
 
 ## 3. Corroborator: diagnosable asserted defaults
 
