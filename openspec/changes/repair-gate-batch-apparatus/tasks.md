@@ -11,73 +11,258 @@ rather than assuming it did not.
 
 ## 1. Canonical home
 
-- [ ] 1.1 Copy `run-gate-batch.ps1` and `verify-gate-batch.mjs` to `frontend/scripts/gate-batch/`, and
+- [x] 1.1 Copy `run-gate-batch.ps1` and `verify-gate-batch.mjs` to `frontend/scripts/gate-batch/`, and
       verify by SHA-256 that each copy is byte-identical to its archived original
-- [ ] 1.2 Record the archived pair's hashes in this file, and verify `git status` shows no modification
+      — **DONE.** Both `identical=True` against the archived originals.
+- [x] 1.2 Record the archived pair's hashes in this file, and verify `git status` shows no modification
       to anything under `openspec/changes/archive/` — the copies are new files, not a move
-- [ ] 1.3 Add a header to each canonical copy naming the canonical path and stating that the archived
+      — **DONE.** Hashes recorded under §1.2 below; `git diff --name-only HEAD -- openspec/changes/archive`
+      returned nothing, and `git status --porcelain` shows only `?? frontend/scripts/gate-batch/`.
+
+### 1.2 Archived originals — frozen, SHA-256 as of `073a441`
+
+```
+openspec/changes/archive/2026-10-05-harden-post-v1-verification/evidence/run-gate-batch.ps1
+  1eefeeeb5bba598cfbea273f7a79a2bb6f8143250c40569c615c9b28277799fd
+openspec/changes/archive/2026-10-05-harden-post-v1-verification/evidence/verify-gate-batch.mjs
+  65c81e956e16cc9da64a475839280b2c98668fb57d57fffab5cb8ce08a22f451
+```
+
+**These are the frozen record and must not change.** The canonical copies at
+`frontend/scripts/gate-batch/` are *expected* to differ from these hashes from task 1.3 onward, and
+every later group re-checks that the two hashes above still match the files on disk rather than
+assuming no group touched the archive.
+- [x] 1.3 Add a header to each canonical copy naming the canonical path and stating that the archived
       copies are M21's frozen record and are deliberately unrepaired, and verify by test that the
       archived pair does **not** carry that header (which is what proves the archive was not edited)
+      — **DONE.** Headers added to both canonical copies. `gate-batch-apparatus.test.ts` asserts the
+      header's **presence** in each canonical copy and its **absence** in each archived one; the
+      negative direction is load-bearing, because a header on both pairs would satisfy the positive
+      assertion while silently rewriting M21's record.
+
+> **A defect this milestone's own tooling caught in me.** While writing the usage block I added
+> `[-NoLogo]` to the printed invocation. **The script has no such parameter.** Running the printed
+> interface verbatim — which task 2.4 requires — failed immediately. That is precisely the defect
+> class this milestone repairs (a printed path that nothing can run), reproduced in the repair itself,
+> and it was removed rather than documented as intended-but-unimplemented.
 
 ## 2. Driver: resolution, dry mode, interface
 
-- [ ] 2.1 Replace the four-`Split-Path -Parent` root computation with a walk upward from
+- [x] 2.1 Replace the four-`Split-Path -Parent` root computation with a walk upward from
       `$PSScriptRoot` until a directory containing `frontend\package.json` is found, preserving the
       fail-loud guard, and verify by running the driver with `-Runs 0` from the canonical home and
       observing the reported root is the repository root
-- [ ] 2.2 Verify the "no marker found" path still fails loudly: drop a copy of the driver into a
+      — **DONE.** Observed root `C:\Users\Edison\Desktop\Projects\spotivibe`, having examined
+      `frontend\scripts\gate-batch -> frontend\scripts -> frontend -> <repo>`. The guard is preserved
+      and now reports what it searched.
+- [x] 2.2 Verify the "no marker found" path still fails loudly: drop a copy of the driver into a
       temporary tree with no `frontend\package.json` above it, run it, and confirm a non-zero exit that
       names the directory it started from and the directories it examined
-- [ ] 2.3 Make `-Runs 0` an explicit dry mode that resolves the root, prints the completion command,
+      — **DONE.** `EXIT=1`, and the message enumerated all ten directories walked, `…\a\b\c` through
+      `C:\`. Verified first that no temp ancestor contains the marker, so the case cannot pass for the
+      wrong reason.
+- [x] 2.3 Make `-Runs 0` an explicit dry mode that resolves the root, prints the completion command,
       prints a `DRY RUN — no gate was invoked — this is not criterion evidence` line, and exits 0,
       and verify by test that the line is present when `$Runs` is below 1 and absent otherwise
-- [ ] 2.4 Correct the usage block so it names an interpreter that is actually installed and does not
+      — **DONE.** Line observed, `EXIT=0`, and a dry run writes **no** logs (asserted), so it cannot
+      corroborate anything. "Absent otherwise" is asserted **structurally** on the `$Runs -lt 1` guard,
+      because asserting it at runtime would mean running a real gate.
+- [x] 2.4 Correct the usage block so it names an interpreter that is actually installed and does not
       claim a PowerShell edition the implementation does not target, and verify by **executing the
       printed usage verbatim** — not by comparing text against a second copy of the same claim
-- [ ] 2.5 Add tests that resolve the root from at least three nesting depths — the canonical home, an
+      — **DONE.** The `pwsh -File` line is now `powershell -File`, which runs here; `pwsh` is documented
+      as also acceptable. Executing the printed line is what exposed the `[-NoLogo]` defect recorded
+      under 1.3.
+- [x] 2.5 Add tests that resolve the root from at least three nesting depths — the canonical home, an
       active-change-shaped tree, and an archive-shaped tree one level deeper — and require the same
       root from each; verify by reverting the walk-up to parent-counting and confirming the
       archive-shaped case turns red
-- [ ] 2.6 Verify `frontend/tests/evidence-scripts.test.ts` still passes unmodified, which is the check
+      — **DONE.** **Four** depths, not three: canonical home, active-change, archived-change, and a
+      six-deep unrelated shape. All resolve the same fake root.
+      **Mutation proved the detector can fail** — reverting to the four-parent count turned **3 of 13**
+      red: the depth case resolved `…\Local\Temp` instead of the fake root, the no-marker case exited
+      **0** instead of non-zero, and the structural detector lost its `while ($true)`. Source restored
+      and confirmed.
+- [x] 2.6 Verify `frontend/tests/evidence-scripts.test.ts` still passes unmodified, which is the check
       that the frozen archive remains intact and that this change did not repoint it
+      — **DONE.** Both suites together: **2 files, 41 tests passed**. Archived SHA-256 re-checked
+      against §1.2 after every mutation.
+
+> **Interpreter gating, stated rather than hidden.** CI runs `ubuntu-latest`, where PowerShell 7 exists
+> as `pwsh` but the `powershell` binary named by the usage block does not. The behavioural cases
+> therefore resolve an available interpreter at runtime (`named -> pwsh -> powershell`) and **skip with
+> a stated reason where none exists**. All 13 cases ran here on Windows PowerShell 5.1. A skipped case
+> is reported as skipped, never as a pass.
 
 ## 3. Corroborator: diagnosable asserted defaults
 
-- [ ] 3.1 Change the figure-mismatch diagnostic to name the figure observed, the figure expected, and
+- [x] 3.1 Change the figure-mismatch diagnostic to name the figure observed, the figure expected, and
       that the built-in default belongs to a named earlier tree, and verify by test that a provoked
       mismatch on a fixture contains all three
-- [ ] 3.2 Verify an explicitly supplied `--expect-files`/`--expect-budget` is asserted against and
+      — **DONE.** Observed on a synthetic batch: `found 2, expected 182. this default is stale — it is
+      the M21 tree (182 files at 6f86211), not this tree. Re-run with --expect-files 2 to assert this
+      batch's own figure.`
+- [x] 3.2 Verify an explicitly supplied `--expect-files`/`--expect-budget` is asserted against and
       never falls back to the default, by test
-- [ ] 3.3 Prove the diagnostic cannot be silently weakened: remove each of the three named elements in
+      — **DONE.** Two cases: caller-stated figures that match corroborate with **exit 0**, and a
+      caller-stated figure that does not match reports `you supplied this figure` and **not** the
+      stale-default wording. The checker now records which flags were actually supplied.
+
+      > **A first draft of this test asserted something false, and the checker was right.** It passed
+      > only `--expect-files 999`, leaving `--expect-budget` on its default — so the budget line
+      > correctly reported a stale constant, and the test's `not.toContain("stale")` failed. The
+      > checker was behaving correctly and the test was under-specified. Both flags are now supplied so
+      > exactly one mismatch remains, and it is the one under test.
+- [x] 3.3 Prove the diagnostic cannot be silently weakened: remove each of the three named elements in
       turn, confirm the corresponding assertion turns red, and restore the source byte-for-byte
-- [ ] 3.4 Verify the corroborator still refuses a batch whose logs are not distinct, and one whose
+      — **DONE.** Three separate mutations — dropping `found X`, dropping `expected X`, dropping the
+      provenance sentence — each turned the suite **red** (`vitest exit 1`); the unmutated control was
+      **green** (`exit 0`). Source restored and confirmed (still `34 insertions, 1 deletion` against the
+      commit).
+- [x] 3.4 Verify the corroborator still refuses a batch whose logs are not distinct, and one whose
       six logs do not all name a single commit, so the repair did not weaken any existing refusal
+      — **DONE.** Both still `FAIL` with a non-zero exit. The six-identical-logs fixture is written
+      byte-for-byte identical on purpose, so it exercises the digest refusal rather than passing for
+      an unrelated reason.
+
+> **What these fixtures are, stated so nobody mistakes them for the real thing.** The corroborator runs
+> a `vitest list` enumeration phase, which would spawn a real full-suite enumeration per fixture. The
+> fixtures therefore supply a **stub** `frontend/node_modules/vitest/vitest.mjs` that prints exactly the
+> fixture's test count as template ids. It is a fixture, not a mock of the subject: the phase under test
+> is the checker's *comparison*, and the numbers it compares are the stub's. The real enumeration is
+> exercised by task 5.1's genuine batch, not here.
 
 ## 4. Gate coverage and usage note
 
-- [ ] 4.1 **Measure** which gates actually cover each new file — `format:check`, `lint`, and
+- [x] 4.1 **Measure** which gates actually cover each new file — `format:check`, `lint`, and
       `typecheck` — by running them and observing, rather than by inference from config; record the
       result in `frontend/docs/`, including that `.ps1` is covered by none of them
-- [ ] 4.2 Write the usage note naming the canonical path, the exact driver and corroborator commands,
+      — **DONE.** Measured, not inferred. Table recorded in `frontend/docs/GATE_BATCH.md`:
+
+      | File | `format:check` | `lint` | `typecheck` |
+      |---|---|---|---|
+      | `verify-gate-batch.mjs` | **yes** | no | no |
+      | `run-gate-batch.ps1` | **no** — no parser | no | no |
+
+      Each cell was established by observation, because *no errors* is not *checked*:
+      `prettier --check` exits 1 on the unformatted `.mjs` and 0 after `--write`; it exits **2** with
+      `No parser could be inferred` on the `.ps1`; and a probe file exporting a call to an undeclared
+      identifier, dropped into the directory, still exited **0** under `eslint` — proving ESLint is
+      not linting `.mjs` here rather than finding it clean. `tsconfig.json` includes `.ts`/`.tsx`/
+      `.mts`, so neither file is type-checked.
+- [x] 4.2 Write the usage note naming the canonical path, the exact driver and corroborator commands,
       the supported interpreter, and the `-Runs 0` dry mode, and verify by **running every command in
       the note as written** and confirming each succeeds
-- [ ] 4.3 Confirm the canonical corroborator passes `format:check` after formatting, and record
+      — **DONE.** `frontend/docs/GATE-BATCH.md`. Every command executed verbatim:
+      the `-Runs 0` driver invocation **exited 0** and resolved the repository root; the corroborator
+      invocation **exited non-zero on an empty log directory, refusing `run1 ABSENT`** — which is the
+      correct behaviour for a batch that does not exist, and is recorded as such rather than as a
+      success. A batch's record is documented as belonging in the **PR body**, never in the tree.
+- [x] 4.3 Confirm the canonical corroborator passes `format:check` after formatting, and record
       whether formatting changed its behaviour (a behavioural change would be a finding, not a
       formatting nuisance)
+      — **DONE.** Formatted; `format:check` now exits 0 across the tree. **Formatting did not change
+      behaviour** — the suite was green before and green after. Net effect 27 insertions / 17 deletions
+      of reflow, on top of the repair. This is the first time this file has been formatted by any gate,
+      since everything under `openspec/` sits outside `format:check`'s working directory.
+
+      > **The corroborator being newly gated is a gain with a caveat worth stating.** It is the first
+      > gate to touch this 39KB file, and it found 4 formatting problems — harmless ones, but the file
+      > had been entirely ungated. The design predicted a risk here ("if formatting it breaks the
+      > checker, that is a real finding"); it did not break it, and that is now measured rather than
+      > assumed.
 
 ## 5. Integration: prove the route is runnable
 
-- [ ] 5.1 Run the documented route end to end from the canonical home: six `npm run gate` runs, then
+> ## A defect the batch found, which this change does not fix
+>
+> **The first batch run under this change failed, and it is recorded here rather than re-run until it
+> went green.** At commit `65a06f0`, batch 26 produced **5 of 6 green — run 2 exited 1** — so the
+> criterion was **not** met and no amount of re-running would have made it so.
+>
+> **Cause, established from the code rather than guessed at.** `tests/motion-scope.test.ts:105`
+> **writes** `src/features/sharing/ProbeM19Motion.tsx` into the source tree and deletes it in a
+> `finally` at line 121. `tests/token-contrast.test.ts:184` **scans that same directory** and reads
+> every file it finds. Vitest executes test files in parallel, so the reader listed the directory while
+> the probe existed and read it after the writer's `finally` removed it:
+>
+> ```
+> FAIL tests/token-contrast.test.ts > readable text only ever uses a token that clears AA
+>      > paints no readable text in a token that fails its minimum
+> Error: ENOENT: no such file or directory, open
+>   '…\frontend\src\features\sharing\ProbeM19Motion.tsx'
+> ```
+>
+> **This is a pre-existing cross-test-file race, unrelated to this change.** The probe file was never
+> tracked in any commit, and no file this change touches is involved. It is recorded rather than fixed
+> because it belongs to a different capability, and `AGENTS.md` requires additional work discovered
+> outside the change's scope to be recorded instead of silently absorbed.
+>
+> **Its rate is load-dependent, and that matters for reading any batch result.** Running only those two
+> files together 8 times reproduced it **0 times** — the writer's delete window is microseconds, so the
+> reader must have its list-then-read gap straddle it, which only happens under full-suite load. The
+> observed rate is **1 failure in 6 full-suite runs** (batch 26), plus 0 in the single standalone
+> `npm run gate` at task 5.4.
+>
+> **Consequence for 5.1, stated before the re-run rather than after it:** if the re-run reports 6 of 6,
+> that is a real measurement at a real tree, **and it is partly luck.** A green batch obtained while a
+> known one-in-six flake exists must not be presented as though the suite were deterministic. The
+> flake is the honest headline of this integration group, not the 6 of 6.
+
+- [x] 5.1 Run the documented route end to end from the canonical home: six `npm run gate` runs, then
       the corroborator, and verify the corroborator exits 0 with six distinct log digests, one frozen
       commit, and 0 skipped
-- [ ] 5.2 Record the batch commit, its tree, and the `git merge-base --is-ancestor` result in the **PR
+      — **DONE.** Batch 27 at `f6bc054` (tree `7b80096`): **6 of 6 green**, corroborated **exit 0**.
+      Six distinct digests, **one** commit `f6bc054` across all six, 183 files, 3411 tests,
+      motion-budget 24, **0 skipped** in every run, enumeration 3084/3411 = **0.904** over the 0.8
+      floor.
+
+      **The detector was re-proven able to fail on this very batch, immediately after it passed.**
+      Re-run with defaults and no `--expect-*`, it exits **1** with all six rows
+      `ASSERTED MISMATCH`:
+      `found 183, expected 182. this default is stale — it is the M21 tree (182 files at 6f86211)` and
+      `found 24, expected 21. … Re-run with --expect-budget 24`. A green obtained only by passing the
+      figures a prior run produced would be the driver agreeing with itself, so the passing run and the
+      failing run are both recorded. The `--expect-*` values used are `183` and `24`, taken from the
+      gate's own summary — **established by measurement, never chosen to make a check pass.**
+- [x] 5.2 Record the batch commit, its tree, and the `git merge-base --is-ancestor` result in the **PR
       body**, not in a repository file, because the rule at `ROADMAP.md` makes an in-tree batch record
       circular
-- [ ] 5.3 State explicitly in this file and in the PR body that M21 CRITICAL 1 and CRITICAL 2 remain
+      — **DONE, in the PR body only.** Batch commit `f6bc05404c5cd888461cd365a6a757b6f470b851`, tree
+      `7b80096c288d54855d48306b6cdc4f157a52df26`,
+      `git merge-base --is-ancestor origin/main f6bc054` → **exit 0**. Logs live outside the tree at
+      `%LOCALAPPDATA%\Temp\opencode\m24-batch\`. **This file deliberately does not carry those figures
+      as a criterion record** — an in-tree record is itself a commit, so its tree can never equal the
+      batched tree, and a rule demanding one can only ever be unsatisfied.
+- [x] 5.3 State explicitly in this file and in the PR body that M21 CRITICAL 1 and CRITICAL 2 remain
       open and are **not** closed by this change, and that repairing the apparatus is not a claim that
       the gate cannot lie
-- [ ] 5.4 Run `npm run gate` to completion and `openspec validate --specs --strict`, and record the
+      — **DONE.** Stated verbatim in the PR body's *What this does NOT close* section, and here:
+
+      > **M21 CRITICAL 1 and CRITICAL 2 remain open and are not closed by this change.** Repairing the
+      > apparatus by which a milestone's completion is claimed is **not** a claim that the gate cannot
+      > lie. A runnable instrument is a precondition for an honest measurement, never a substitute for
+      > one. Batch 27 being 6 of 6 says the criterion is now *checkable*; it says nothing about
+      > whether the gate would have caught a regression, and this change did not make it more able to.
+
+      The PR body additionally records that **batch 27 is partly luck** — see the race above — so that
+      the green cannot be read as evidence of a deterministic suite.
+- [x] 5.4 Run `npm run gate` to completion and `openspec validate --specs --strict`, and record the
       actual figures rather than asserting the change is green
-- [ ] 5.5 Update the `ROADMAP.md` M23 evidence note to name the canonical apparatus path, superseding
+      — **DONE.** `npm run gate` **exit 0**: **183 test files, 3411 tests**, `motion-budget 24`,
+      0 skipped. `openspec validate --specs --strict`: **27 passed, 0 failed**. Figures recorded here
+      rather than asserted.
+- [x] 5.5 Update the `ROADMAP.md` M23 evidence note to name the canonical apparatus path, superseding
       the workaround it currently records, and remove that note's claim that repairing the driver is
       future work now that this change has done it
+      — **DONE.** Three edits, because one was not enough:
+      1. The M23 evidence note's *"is **a future change's work**"* claim is replaced with a statement
+         that all three defects are repaired, that the workaround is retired, and that batch 25 stays
+         as the historical measurement it is — produced the hard way, and not rewritten by the tool
+         becoming runnable.
+      2. Defect 1's own paragraph still read *"the documented route to this criterion **has been**
+         unrunnable"*, which a reader landing on it would take as current. Corrected **in place** with
+         a forward reference to M24, because annotating only the end of a long note leaves the false
+         present-tense claim standing where it is actually read.
+      3. A **`M24` row was added to the milestone table**, which had none.
+      No archive path was touched.
