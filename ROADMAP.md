@@ -140,7 +140,38 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
 | **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `DONE` - PR #104 `624838f`, sync #105 `e5d502a`, archived `2026-10-05-quick-picks-cold-start` | M17, M8 |
 | **M23** | Lyrix-style artist Quick Picks and Home artwork parity | `DONE` — PR #108 `e99414f`, sync #109 `a44e681`, archived `2026-10-06-artist-quick-picks-artwork-parity` | M22, M19 |
-| **M24** | Repair the gate-batch criterion apparatus — make the `DONE` criterion runnable | `IN PROGRESS` — proposal #112 `802e6ad` | M21, M23 |
+| **M24** | Repair the gate-batch criterion apparatus — make the `DONE` criterion runnable | `DONE` — PR #113, merge `2fc2b16`, archived `2026-10-08-repair-gate-batch-apparatus` | M21, M23 |
+
+> **M24's criterion, measured at the merge rather than at a branch head.** Batch 30 at commit
+> `60baf39`, tree `cfb66d3`: **6 of 6 green**, corroborated exit 0 — six distinct digests, one commit
+> across all six, 183 files, 3411 tests, motion-budget 24, 0 skipped, enumeration ratio 0.904 over the
+> 0.8 floor. `git merge-base --is-ancestor origin/main 60baf39` exits 0, and **the merge commit's tree
+> `2fc2b16` is byte-identical to the batched tree `cfb66d3`** — the check is against the merge, not
+> against a branch that would have moved.
+>
+> **Five batches were needed, and the four that did not count are the honest part of the record.**
+> Batch 26 **failed** 1 of 6 (the cross-test-file race below). Batches 27, 28 and 29 were each **6 of 6
+> green and still unusable**, because each was invalidated by committing a real fix *after* measuring:
+> the rule requires the batch commit's **tree** to equal the merge commit's tree, and the work is what
+> moves the tree. That is M21's circularity approached from the other side — not by putting the record
+> in the tree, but by **changing the tree after measuring it**. The resolution is ordering: measure
+> last, commit nothing afterwards.
+>
+> **CI caught three defects in this change's own tests that local runs declared green.** (1) The
+> interpreter test asserted that a *named binary spawns*, which is an environment fact — on
+> `ubuntu-latest` the `powershell` binary does not exist, and the failure read `not runnable here`,
+> the shape of "the tool is broken" and untrue. (2) My first fix's own verification was wrong: `pwsh`
+> is not installed locally, so hiding `System32` proved only *"no interpreter at all"*, not CI's real
+> case of *pwsh present, `powershell` absent*; a shim reproducing the actual shape gives 12 passed,
+> 6 skipped, 0 failed. (3) The gate caught a 20s per-test timeout the suite hits only under full-suite
+> load. All three are recorded because **three local greens were wrong**, which is the point.
+>
+> **One defect found here is still open and is not closed by this milestone.** `motion-scope.test.ts`
+> writes a probe into `src/features/sharing/` and removes it in a `finally`, while
+> `token-contrast.test.ts` scans that same directory in parallel — a cross-test-file race that failed
+> batch 26 and reproduces roughly **1 in 6 full-suite runs**. It is load-dependent: the two files run
+> together 8 times reproduce it **0 times**. It belongs to a different capability and is recorded
+> rather than silently absorbed.
 
 > **M24 exists because M23 could not close its own criterion by the documented route.** The apparatus
 > `DONE` depends on had been unrunnable from any archived change since M21, so M23's batch had to be
