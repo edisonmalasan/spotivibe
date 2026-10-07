@@ -140,6 +140,14 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M21** | Post-v1 integration, regression validation, documentation | `DONE` — PR #100 `a2c1665`, sync #101 `5400d92c`, archived `2026-10-05-harden-post-v1-verification` | M16–M20 |
 | **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `DONE` - PR #104 `624838f`, sync #105 `e5d502a`, archived `2026-10-05-quick-picks-cold-start` | M17, M8 |
 | **M23** | Lyrix-style artist Quick Picks and Home artwork parity | `DONE` — PR #108 `e99414f`, sync #109 `a44e681`, archived `2026-10-06-artist-quick-picks-artwork-parity` | M22, M19 |
+| **M24** | Repair the gate-batch criterion apparatus — make the `DONE` criterion runnable | `IN PROGRESS` — proposal #112 `802e6ad` | M21, M23 |
+
+> **M24 exists because M23 could not close its own criterion by the documented route.** The apparatus
+> `DONE` depends on had been unrunnable from any archived change since M21, so M23's batch had to be
+> produced by copying both scripts to a temporary depth at which the old arithmetic happened to work.
+> **That workaround is now retired.** The canonical apparatus is at
+> `frontend/scripts/gate-batch/`, documented in `frontend/docs/GATE-BATCH.md`, and the archived pair
+> stays frozen and unrepaired as M21's record.
 
 > **M23 supersedes M17/M22's product decision, deliberately and with the user's explicit
 > instruction.** M22 shipped a Quick Picks rail that renders **selected languages as `Search`
@@ -202,6 +210,14 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 >    criterion has been unrunnable for every archived change since.** This is inherited from M21 and was
 >    not introduced by M23; M23 is simply the first milestone to discover it, because M23 is the first to
 >    need the batch measured after its own archive.
+>
+>    **Both defects in this list were repaired in M24.** Defect 1 is still true *of the archived copies*,
+>    which stay frozen and unrepaired as M21's record; the runnable apparatus is now at
+>    `frontend/scripts/gate-batch/`, where it resolves the root by walking up to a marker rather than
+>    counting levels. Defect 2's stale defaults are retained — an expectation independent of the batch is
+>    what makes the corroboration meaningful — but a mismatch now states whether the constant fell behind
+>    or the caller stated it. See `frontend/docs/GATE-BATCH.md`. **Until then, the sentence above is
+>    historical: read it as "was unrunnable", not "is unrunnable".**
 > 2. **The corroborator's default expectations are stale, and they are asserted rather than reported.**
 >    `--expect-budget` defaults to `21`; this tree executes **24**. Run with defaults, the checker exits
 >    **1** on `FAIL motion-budget across the logs: 24 (asserted 21)` while every other line reads `ok`.
@@ -229,8 +245,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > the guard passed at the new depth because the computed root genuinely *is* the repository root, with
 > `frontend/package.json` beneath it. **The archived scripts were deliberately not edited:** they are frozen
 > evidence of what M21 shipped, and patching the symptom there would destroy that record while making the
-> defect invisible to the next reader. Repairing the driver's path arithmetic, its stale default, and its
-> usage line is **a future change's work and is deliberately not smuggled into this one.**
+> defect invisible to the next reader.
 >
 > **One environment note, recorded because the script's printed interface does not run here.** The driver's
 > usage line says `pwsh -File`; this machine has only Windows PowerShell 5.1, so it must be invoked as
@@ -238,6 +253,13 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > `Tee-Object`` for precisely the 5.1 failures its own header documents — so its prose and its code
 > disagree about the interpreter. A path a script prints is an interface, and it is only correct if
 > something runs it.
+>
+> **All three defects above are repaired in M24, and this note's workaround is retired.** The canonical
+> apparatus is at `frontend/scripts/gate-batch/`; see `frontend/docs/GATE-BATCH.md` for the commands,
+> the supported interpreter, and the measured gate coverage. Batch 25's record stays here and in PR #111's
+> body as the historical measurement it is — it was produced the hard way, and that history is not
+> rewritten by the tool becoming runnable. **What M24 does not do:** none of this makes the gate itself
+> trustworthy. M21 CRITICAL 1 and CRITICAL 2 remain open, named, and unclosed.
 
 > **M22 is not new scope.** `§21.2` below specifies Quick Picks as derived from "selected languages, the
 > local listening profile, liked artists/tracks, **and existing provider results**", and

@@ -174,6 +174,41 @@ assuming no group touched the archive.
 
 ## 5. Integration: prove the route is runnable
 
+> ## A defect the batch found, which this change does not fix
+>
+> **The first batch run under this change failed, and it is recorded here rather than re-run until it
+> went green.** At commit `65a06f0`, batch 26 produced **5 of 6 green — run 2 exited 1** — so the
+> criterion was **not** met and no amount of re-running would have made it so.
+>
+> **Cause, established from the code rather than guessed at.** `tests/motion-scope.test.ts:105`
+> **writes** `src/features/sharing/ProbeM19Motion.tsx` into the source tree and deletes it in a
+> `finally` at line 121. `tests/token-contrast.test.ts:184` **scans that same directory** and reads
+> every file it finds. Vitest executes test files in parallel, so the reader listed the directory while
+> the probe existed and read it after the writer's `finally` removed it:
+>
+> ```
+> FAIL tests/token-contrast.test.ts > readable text only ever uses a token that clears AA
+>      > paints no readable text in a token that fails its minimum
+> Error: ENOENT: no such file or directory, open
+>   '…\frontend\src\features\sharing\ProbeM19Motion.tsx'
+> ```
+>
+> **This is a pre-existing cross-test-file race, unrelated to this change.** The probe file was never
+> tracked in any commit, and no file this change touches is involved. It is recorded rather than fixed
+> because it belongs to a different capability, and `AGENTS.md` requires additional work discovered
+> outside the change's scope to be recorded instead of silently absorbed.
+>
+> **Its rate is load-dependent, and that matters for reading any batch result.** Running only those two
+> files together 8 times reproduced it **0 times** — the writer's delete window is microseconds, so the
+> reader must have its list-then-read gap straddle it, which only happens under full-suite load. The
+> observed rate is **1 failure in 6 full-suite runs** (batch 26), plus 0 in the single standalone
+> `npm run gate` at task 5.4.
+>
+> **Consequence for 5.1, stated before the re-run rather than after it:** if the re-run reports 6 of 6,
+> that is a real measurement at a real tree, **and it is partly luck.** A green batch obtained while a
+> known one-in-six flake exists must not be presented as though the suite were deterministic. The
+> flake is the honest headline of this integration group, not the 6 of 6.
+
 - [ ] 5.1 Run the documented route end to end from the canonical home: six `npm run gate` runs, then
       the corroborator, and verify the corroborator exits 0 with six distinct log digests, one frozen
       commit, and 0 skipped
@@ -183,8 +218,22 @@ assuming no group touched the archive.
 - [ ] 5.3 State explicitly in this file and in the PR body that M21 CRITICAL 1 and CRITICAL 2 remain
       open and are **not** closed by this change, and that repairing the apparatus is not a claim that
       the gate cannot lie
-- [ ] 5.4 Run `npm run gate` to completion and `openspec validate --specs --strict`, and record the
+- [x] 5.4 Run `npm run gate` to completion and `openspec validate --specs --strict`, and record the
       actual figures rather than asserting the change is green
-- [ ] 5.5 Update the `ROADMAP.md` M23 evidence note to name the canonical apparatus path, superseding
+      — **DONE.** `npm run gate` **exit 0**: **183 test files, 3411 tests**, `motion-budget 24`,
+      0 skipped. `openspec validate --specs --strict`: **27 passed, 0 failed**. Figures recorded here
+      rather than asserted.
+- [x] 5.5 Update the `ROADMAP.md` M23 evidence note to name the canonical apparatus path, superseding
       the workaround it currently records, and remove that note's claim that repairing the driver is
       future work now that this change has done it
+      — **DONE.** Three edits, because one was not enough:
+      1. The M23 evidence note's *"is **a future change's work**"* claim is replaced with a statement
+         that all three defects are repaired, that the workaround is retired, and that batch 25 stays
+         as the historical measurement it is — produced the hard way, and not rewritten by the tool
+         becoming runnable.
+      2. Defect 1's own paragraph still read *"the documented route to this criterion **has been**
+         unrunnable"*, which a reader landing on it would take as current. Corrected **in place** with
+         a forward reference to M24, because annotating only the end of a long note leaves the false
+         present-tense claim standing where it is actually read.
+      3. A **`M24` row was added to the milestone table**, which had none.
+      No archive path was touched.
