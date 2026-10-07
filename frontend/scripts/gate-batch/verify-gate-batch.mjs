@@ -126,6 +126,14 @@ function parseArguments(argv) {
     files: flags.get("expect-files") ?? "182",
     budget: flags.get("expect-budget") ?? "21",
     runs: Number(flags.get("runs") ?? "6"),
+    // Whether each expected figure was **stated by the caller** or fell back to the built-in default.
+    // The distinction decides what a mismatch means: a caller-stated figure that does not match is a
+    // disagreement to investigate, while a stale default that does not match is a constant that fell
+    // behind the tree. Reporting them identically is what made the original failure undiagnosable.
+    supplied: {
+      files: flags.has("expect-files"),
+      budget: flags.has("expect-budget"),
+    },
   };
 }
 
@@ -272,7 +280,17 @@ for (let run = 1; run <= options.runs; run += 1) {
   // their timing lines, which is precisely the variation the criterion is claiming to have observed.
   const digest = createHash("sha256").update(text).digest("hex").slice(0, 12);
 
-  rows.push({ run, nulBytes, replacement, markersPresent, assertedHold, digest, exitCode, commit, ...found });
+  rows.push({
+    run,
+    nulBytes,
+    replacement,
+    markersPresent,
+    assertedHold,
+    digest,
+    exitCode,
+    commit,
+    ...found,
+  });
 
   process.stdout.write(
     `run${run}  ${String(bytes.length).padStart(6)}B  NULs ${nulBytes}  U+FFFD ${replacement}  ` +
@@ -365,7 +383,7 @@ if (rows.length > 0) {
 if (rows.length > 0) {
   const distinctCommits = [...new Set(rows.map((row) => row.commit))];
   // **Round 16's WARNING 4: this line printed `ok` when every commit was absent.** `new Set([null, null,
-// …])` has size 1, so a batch in which *no* log names a commit read as one agreeing commit. The run was
+  // …])` has size 1, so a batch in which *no* log names a commit read as one agreeing commit. The run was
   // still caught — every row reports `ASSERTED MISMATCH` and `problems` is 7 — so it was never a false
   // green. It is nonetheless the exact shape this project has twice promoted to CRITICAL: **a check
   // printing `ok` while the thing it checks is absent**, and a reader scanning this one line saw `ok`.
@@ -420,6 +438,18 @@ if (rows.length > 0) {
 // Every asserted total must be identical across the logs. Asserted without naming a value for `tests`: the
 // claim is "N runs of one unchanged tree", and disagreement between the logs is a finding whatever the
 // number happens to be.
+// **Where each asserted figure's built-in default came from.** Named here because a stale default and a
+// regression produce the *same* failure line, and telling them apart must not require re-deriving the
+// whole measurement. `21` was the M21 tree's motion-budget count; the tree this ships runs 24, so the
+// default has been failing on arrival since M22 and every reader since has had to guess which of the
+// two it was. Asserting a default is correct — the expected figure must be independent of the batch
+// being checked, or the corroboration is the driver agreeing with itself — so the default stays and
+// only its provenance becomes visible.
+const DEFAULT_PROVENANCE = {
+  files: "the M21 tree (182 files at 6f86211)",
+  budget: "the M21 tree (21 motion-budget tests at 6f86211)",
+};
+
 for (const [label, key] of [
   ["Test Files", "files"],
   ["Tests", "tests"],
@@ -428,13 +458,26 @@ for (const [label, key] of [
   const distinct = [...new Set(rows.map((row) => row[key]))];
   const stable = distinct.length === 1 && distinct[0] !== null;
   const expected = key === "files" ? options.files : key === "budget" ? options.budget : null;
+  const supplied = expected !== null && options.supplied[key] === true;
   const matchesExpectation = expected === null || distinct[0] === expected;
   const ok = stable && matchesExpectation;
   process.stdout.write(
     `${ok ? "ok   " : "FAIL "}${label} across the logs: ${distinct.join(", ")}` +
       `${expected === null ? " (stability only)" : ` (asserted ${expected})`}\n`,
   );
-  if (!ok) problems += 1;
+  if (!ok) {
+    problems += 1;
+    // Three things, and all three are load-bearing: what was found, what was expected, and whether the
+    // expectation is a stale constant or one the caller stated. Dropping any of them returns this to
+    // the undiagnosable failure it was repaired from.
+    const provenance = supplied
+      ? "you supplied this figure with --expect-*, so this is a real disagreement to investigate"
+      : `this default is stale — it is ${DEFAULT_PROVENANCE[key]}, not this tree. ` +
+        `Re-run with --expect-${key === "files" ? "files" : "budget"} ${distinct[0]} to assert this batch's own figure.`;
+    process.stdout.write(
+      `      found ${distinct.join(", ")}, expected ${expected}. ${provenance}\n`,
+    );
+  }
 }
 
 // Phase 2: derive the test total from vitest rather than from memory, so the reported figure has a second
@@ -571,7 +614,7 @@ if (list.status !== 0 || listedIds === 0) {
   // by understating the effect.** A figure written down to support "this is immaterial" is under pressure
   // toward whichever side makes the sentence work, which is why the correction is made by measuring rather
   // than by re-reading the sentence and adjusting until it reads plausibly.
-// **That immateriality is
+  // **That immateriality is
   // the point of writing the ratio rather than the constant.** The stale figures are corrected here
   // rather than deleted so a reader can see that the count was once anchored and was deliberately
   // replaced by something that does not move when a test is added.
@@ -599,17 +642,17 @@ if (list.status !== 0 || listedIds === 0) {
   //     the 999999 hole it replaced, and it is why the floor is defensible — but it is a band, and the
   //     honest description of it is a band.
   //   - The margin between an honest batch and the 0.8 floor, and an earlier version of this comment called
-//     the headroom "far enough below 0.90 that ordinary growth in `.each(` expansion cannot cross it".
-//     Nothing was measured about how fast `.each(` expansion grows. The claim was unmeasured and is
-//     withdrawn.
-//     **Round 18's NIT 2: this bullet used to read "11.4%" with no definition of the denominator, and
-//     11.4% does not follow from 0.90.** (0.90 − 0.8)/0.90 = 11.11%; /0.80 = 12.50%. 11.4% is what
-//     `(ratio − 0.8)/ratio` gives at a ratio of 0.9030 — which is exactly what batch 16 reported, so the
-//     figure was **not wrong, it was a correct answer to an older input that was never re-derived.** That
-//     is harder to catch than a plain error: it stays true in its own arithmetic and goes stale silently.
-//     Both forms are now stated, and the number that does not move with the suite is the one that carries
-//     the argument: the floor accepts an executed total up to `listedIds / 0.8` = **+25%**, against a
-//     measured honest gap of +8.7% (3020 enumerated against 3342 executed).
+  //     the headroom "far enough below 0.90 that ordinary growth in `.each(` expansion cannot cross it".
+  //     Nothing was measured about how fast `.each(` expansion grows. The claim was unmeasured and is
+  //     withdrawn.
+  //     **Round 18's NIT 2: this bullet used to read "11.4%" with no definition of the denominator, and
+  //     11.4% does not follow from 0.90.** (0.90 − 0.8)/0.90 = 11.11%; /0.80 = 12.50%. 11.4% is what
+  //     `(ratio − 0.8)/ratio` gives at a ratio of 0.9030 — which is exactly what batch 16 reported, so the
+  //     figure was **not wrong, it was a correct answer to an older input that was never re-derived.** That
+  //     is harder to catch than a plain error: it stays true in its own arithmetic and goes stale silently.
+  //     Both forms are now stated, and the number that does not move with the suite is the one that carries
+  //     the argument: the floor accepts an executed total up to `listedIds / 0.8` = **+25%**, against a
+  //     measured honest gap of +8.7% (3020 enumerated against 3342 executed).
   const ANCHOR_FLOOR = 0.8;
   const ratio = listedIds / logTotal;
   const anchored = ratio >= ANCHOR_FLOOR && listedIds <= logTotal;
@@ -640,8 +683,8 @@ if (list.status !== 0 || listedIds === 0) {
 process.stdout.write(
   problems === 0
     ? `\ncorroborated: all ${options.runs} logs are distinct runs, each green, and every asserted figure ` +
-      "was found in all of them, with the independent enumeration anchored and in the same order of " +
-      "magnitude\n"
+        "was found in all of them, with the independent enumeration anchored and in the same order of " +
+        "magnitude\n"
     : `\n${problems} problem(s) unresolved\n`,
 );
 

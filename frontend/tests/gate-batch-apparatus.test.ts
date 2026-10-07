@@ -54,7 +54,8 @@ const ARCHIVED = join(
 );
 
 const read = (path: string): string => readFileSync(path, "utf8");
-const sha256 = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
+const sha256 = (path: string): string =>
+  createHash("sha256").update(readFileSync(path)).digest("hex");
 
 const temps: string[] = [];
 function tempDir(): string {
@@ -76,7 +77,8 @@ afterAll(() => {
  */
 function findInterpreter(): { bin: string; named: string } | null {
   const usage = read(DRIVER);
-  const named = /^#\s+(powershell|pwsh)\s+-File\s+run-gate-batch\.ps1/m.exec(usage)?.[1] ?? "powershell";
+  const named =
+    /^#\s+(powershell|pwsh)\s+-File\s+run-gate-batch\.ps1/m.exec(usage)?.[1] ?? "powershell";
   for (const bin of [named, "pwsh", "powershell"]) {
     const probe = spawnSync(bin, ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.Major"], {
       encoding: "utf8",
@@ -178,7 +180,9 @@ describe("the driver resolves its repository root from a marker, not from a leve
       const roots = shapes.map((relative) => {
         const script = placeDriver(fake, relative);
         const run = runDriver(script, ["-LogDir", join(fake, "logs"), "-Runs", "0"]);
-        expect(run.status, `driver failed at depth ${relative}:\n${run.stdout}${run.stderr}`).toBe(0);
+        expect(run.status, `driver failed at depth ${relative}:\n${run.stdout}${run.stderr}`).toBe(
+          0,
+        );
         const line = run.stdout
           .split(/\r?\n/)
           .find((l) => l.startsWith("repository root resolved by walking up to"));
@@ -299,9 +303,176 @@ describe("the driver's printed interface names an invocation that runs", () => {
   it("prints --runs, so a non-default batch does not print a command that then fails loudly", () => {
     const run = execFileSync(
       INTERPRETER?.bin ?? "powershell",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", DRIVER, "-LogDir", tempDir(), "-Runs", "0"],
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        DRIVER,
+        "-LogDir",
+        tempDir(),
+        "-Runs",
+        "0",
+      ],
       { encoding: "utf8", cwd: REPO },
     );
     expect(run).toContain("--runs 0");
+  });
+});
+
+/**
+ * A batch of logs shaped the way `run-gate-batch.ps1` writes them.
+ *
+ * Each log is byte-distinct by its timing line, because the corroborator hashes each log to tell six
+ * runs from one run copied six times — six identical fixtures would be refused for the right reason
+ * and test the wrong thing. `skipped` is deliberately absent: the checker requires *no* skipped tests,
+ * so a fixture carrying `0 skipped` would be read as skipped-count 0 via a different path than the
+ * real driver's, and one carrying `3 skipped` would fail the run rather than isolate the diagnostic.
+ */
+function writeBatch(
+  dir: string,
+  opts: { runs?: number; files?: number; tests?: number; budget?: number; commits?: string[] } = {},
+): void {
+  const runs = opts.runs ?? 6;
+  const files = opts.files ?? 2;
+  const tests = opts.tests ?? 10;
+  const budget = opts.budget ?? 3;
+  mkdirSync(dir, { recursive: true });
+  for (let run = 1; run <= runs; run += 1) {
+    const commit = opts.commits?.[run - 1] ?? "abc123def456";
+    writeFileSync(
+      join(dir, `run${run}.log`),
+      [
+        "gate exit0",
+        `commit ${commit}`,
+        "",
+        ` Test Files  ${files} passed (${files})`,
+        `      Tests  ${tests} passed (${tests})`,
+        "",
+        ` ✓ tests/motion-budget.test.ts (${budget} tests) ${100 + run}ms`,
+        `   Duration  ${30 + run}.00s`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+  }
+}
+
+/**
+ * A stub standing in for `frontend/`, so the corroborator's independent-enumeration phase runs in
+ * milliseconds instead of spawning a real `vitest list` against the whole suite for every fixture.
+ *
+ * It prints exactly `tests` template ids, which satisfies the phase's anchor: `listedIds <= logTotal`
+ * and a ratio of 1.0 over the 0.8 floor. The stub is a *fixture*, not a mock of the subject — the
+ * phase under test is the checker's comparison, and the numbers it compares are these.
+ */
+function writeFrontendStub(root: string, ids: number): string {
+  const frontend = join(root, "frontend");
+  mkdirSync(join(frontend, "node_modules", "vitest"), { recursive: true });
+  writeFileSync(
+    join(frontend, "node_modules", "vitest", "vitest.mjs"),
+    `for (let i = 0; i < ${ids}; i += 1) process.stdout.write(\`tests/x.test.ts > suite > case \${i}\\n\`);\n`,
+    "utf8",
+  );
+  return frontend;
+}
+
+function runChecker(logDir: string, frontend: string, args: string[] = []): DriverRun {
+  const result = spawnSync(
+    process.execPath,
+    [CHECKER, logDir, "--frontend", frontend, "--runs", "6", ...args],
+    { encoding: "utf8", cwd: REPO },
+  );
+  return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+describe("a figure mismatch is diagnosable rather than merely fatal", () => {
+  it("names the figure found, the figure expected, and that the default is stale", () => {
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, { files: 2, budget: 3 });
+    const frontend = writeFrontendStub(root, 10);
+
+    // No --expect-* flags, so the built-in defaults (182 / 21) apply and the fixture's 2 / 3 disagree.
+    const run = runChecker(logs, frontend);
+
+    expect(run.status).toBe(1);
+    // The three elements the repair added, each required. A message carrying only the first two is
+    // the original undiagnosable failure.
+    expect(run.stdout).toContain("found 2");
+    expect(run.stdout).toContain("expected 182");
+    expect(run.stdout).toContain("this default is stale");
+  });
+
+  it("distinguishes a stale default from a figure the caller stated", () => {
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, { files: 2, budget: 3 });
+    const frontend = writeFrontendStub(root, 10);
+
+    // The caller states a figure that does not match. That is a disagreement to investigate, not a
+    // stale constant, and the diagnostic must not tell the reader to re-run with a different figure.
+    //
+    // **Both** flags are supplied deliberately. Supplying only `--expect-files` leaves `--expect-budget`
+    // on its default, so the budget line correctly reports a stale constant and the assertion below
+    // would fail for a reason that is the checker's correct behaviour rather than a defect. Supplying
+    // both leaves exactly one mismatch, and it is the caller-stated one under test.
+    const run = runChecker(logs, frontend, ["--expect-files", "999", "--expect-budget", "3"]);
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("you supplied this figure");
+    expect(run.stdout).not.toContain("this default is stale");
+  });
+
+  it("asserts a caller-stated figure and corroborates, rather than falling back to the default", () => {
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, { files: 2, budget: 3 });
+    const frontend = writeFrontendStub(root, 10);
+
+    const run = runChecker(logs, frontend, ["--expect-files", "2", "--expect-budget", "3"]);
+
+    expect(run.stdout).toContain("corroborated");
+    expect(run.status).toBe(0);
+    expect(run.stdout).not.toContain("this default is stale");
+  });
+
+  it("still refuses a batch whose logs are not byte-distinct", () => {
+    const root = tempDir();
+    const logs = join(root, "logs");
+    mkdirSync(logs, { recursive: true });
+    const body = [
+      "gate exit0",
+      "commit abc123def456",
+      "",
+      " Test Files  2 passed (2)",
+      "      Tests  10 passed (10)",
+      "",
+      " ✓ tests/motion-budget.test.ts (3 tests) 100ms",
+      "",
+    ].join("\n");
+    for (let run = 1; run <= 6; run += 1) writeFileSync(join(logs, `run${run}.log`), body, "utf8");
+    const frontend = writeFrontendStub(root, 10);
+
+    const result = runChecker(logs, frontend, ["--expect-files", "2", "--expect-budget", "3"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("FAIL log digests");
+  });
+
+  it("still refuses a batch whose logs do not name one commit", () => {
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, {
+      files: 2,
+      budget: 3,
+      commits: ["aaa111", "bbb222", "aaa111", "bbb222", "aaa111", "bbb222"],
+    });
+    const frontend = writeFrontendStub(root, 10);
+
+    const result = runChecker(logs, frontend, ["--expect-files", "2", "--expect-budget", "3"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("FAIL commits named across the logs");
   });
 });

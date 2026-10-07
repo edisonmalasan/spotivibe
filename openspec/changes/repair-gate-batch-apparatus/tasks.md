@@ -96,27 +96,81 @@ assuming no group touched the archive.
 
 ## 3. Corroborator: diagnosable asserted defaults
 
-- [ ] 3.1 Change the figure-mismatch diagnostic to name the figure observed, the figure expected, and
+- [x] 3.1 Change the figure-mismatch diagnostic to name the figure observed, the figure expected, and
       that the built-in default belongs to a named earlier tree, and verify by test that a provoked
       mismatch on a fixture contains all three
-- [ ] 3.2 Verify an explicitly supplied `--expect-files`/`--expect-budget` is asserted against and
+      — **DONE.** Observed on a synthetic batch: `found 2, expected 182. this default is stale — it is
+      the M21 tree (182 files at 6f86211), not this tree. Re-run with --expect-files 2 to assert this
+      batch's own figure.`
+- [x] 3.2 Verify an explicitly supplied `--expect-files`/`--expect-budget` is asserted against and
       never falls back to the default, by test
-- [ ] 3.3 Prove the diagnostic cannot be silently weakened: remove each of the three named elements in
+      — **DONE.** Two cases: caller-stated figures that match corroborate with **exit 0**, and a
+      caller-stated figure that does not match reports `you supplied this figure` and **not** the
+      stale-default wording. The checker now records which flags were actually supplied.
+
+      > **A first draft of this test asserted something false, and the checker was right.** It passed
+      > only `--expect-files 999`, leaving `--expect-budget` on its default — so the budget line
+      > correctly reported a stale constant, and the test's `not.toContain("stale")` failed. The
+      > checker was behaving correctly and the test was under-specified. Both flags are now supplied so
+      > exactly one mismatch remains, and it is the one under test.
+- [x] 3.3 Prove the diagnostic cannot be silently weakened: remove each of the three named elements in
       turn, confirm the corresponding assertion turns red, and restore the source byte-for-byte
-- [ ] 3.4 Verify the corroborator still refuses a batch whose logs are not distinct, and one whose
+      — **DONE.** Three separate mutations — dropping `found X`, dropping `expected X`, dropping the
+      provenance sentence — each turned the suite **red** (`vitest exit 1`); the unmutated control was
+      **green** (`exit 0`). Source restored and confirmed (still `34 insertions, 1 deletion` against the
+      commit).
+- [x] 3.4 Verify the corroborator still refuses a batch whose logs are not distinct, and one whose
       six logs do not all name a single commit, so the repair did not weaken any existing refusal
+      — **DONE.** Both still `FAIL` with a non-zero exit. The six-identical-logs fixture is written
+      byte-for-byte identical on purpose, so it exercises the digest refusal rather than passing for
+      an unrelated reason.
+
+> **What these fixtures are, stated so nobody mistakes them for the real thing.** The corroborator runs
+> a `vitest list` enumeration phase, which would spawn a real full-suite enumeration per fixture. The
+> fixtures therefore supply a **stub** `frontend/node_modules/vitest/vitest.mjs` that prints exactly the
+> fixture's test count as template ids. It is a fixture, not a mock of the subject: the phase under test
+> is the checker's *comparison*, and the numbers it compares are the stub's. The real enumeration is
+> exercised by task 5.1's genuine batch, not here.
 
 ## 4. Gate coverage and usage note
 
-- [ ] 4.1 **Measure** which gates actually cover each new file — `format:check`, `lint`, and
+- [x] 4.1 **Measure** which gates actually cover each new file — `format:check`, `lint`, and
       `typecheck` — by running them and observing, rather than by inference from config; record the
       result in `frontend/docs/`, including that `.ps1` is covered by none of them
-- [ ] 4.2 Write the usage note naming the canonical path, the exact driver and corroborator commands,
+      — **DONE.** Measured, not inferred. Table recorded in `frontend/docs/GATE_BATCH.md`:
+
+      | File | `format:check` | `lint` | `typecheck` |
+      |---|---|---|---|
+      | `verify-gate-batch.mjs` | **yes** | no | no |
+      | `run-gate-batch.ps1` | **no** — no parser | no | no |
+
+      Each cell was established by observation, because *no errors* is not *checked*:
+      `prettier --check` exits 1 on the unformatted `.mjs` and 0 after `--write`; it exits **2** with
+      `No parser could be inferred` on the `.ps1`; and a probe file exporting a call to an undeclared
+      identifier, dropped into the directory, still exited **0** under `eslint` — proving ESLint is
+      not linting `.mjs` here rather than finding it clean. `tsconfig.json` includes `.ts`/`.tsx`/
+      `.mts`, so neither file is type-checked.
+- [x] 4.2 Write the usage note naming the canonical path, the exact driver and corroborator commands,
       the supported interpreter, and the `-Runs 0` dry mode, and verify by **running every command in
       the note as written** and confirming each succeeds
-- [ ] 4.3 Confirm the canonical corroborator passes `format:check` after formatting, and record
+      — **DONE.** `frontend/docs/GATE-BATCH.md`. Every command executed verbatim:
+      the `-Runs 0` driver invocation **exited 0** and resolved the repository root; the corroborator
+      invocation **exited non-zero on an empty log directory, refusing `run1 ABSENT`** — which is the
+      correct behaviour for a batch that does not exist, and is recorded as such rather than as a
+      success. A batch's record is documented as belonging in the **PR body**, never in the tree.
+- [x] 4.3 Confirm the canonical corroborator passes `format:check` after formatting, and record
       whether formatting changed its behaviour (a behavioural change would be a finding, not a
       formatting nuisance)
+      — **DONE.** Formatted; `format:check` now exits 0 across the tree. **Formatting did not change
+      behaviour** — the suite was green before and green after. Net effect 27 insertions / 17 deletions
+      of reflow, on top of the repair. This is the first time this file has been formatted by any gate,
+      since everything under `openspec/` sits outside `format:check`'s working directory.
+
+      > **The corroborator being newly gated is a gain with a caveat worth stating.** It is the first
+      > gate to touch this 39KB file, and it found 4 formatting problems — harmless ones, but the file
+      > had been entirely ungated. The design predicted a risk here ("if formatting it breaks the
+      > checker, that is a real finding"); it did not break it, and that is now measured rather than
+      > assumed.
 
 ## 5. Integration: prove the route is runnable
 
