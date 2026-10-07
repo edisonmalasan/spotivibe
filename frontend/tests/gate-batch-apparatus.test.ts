@@ -277,10 +277,39 @@ describe("the driver's printed interface names an invocation that runs", () => {
     const named = /^#\s+(powershell|pwsh)\s+-File\s+run-gate-batch\.ps1/m.exec(usage)?.[1];
     expect(named, "no usage line naming a PowerShell interpreter").toBeDefined();
     expect(["powershell", "pwsh"]).toContain(named);
-    if (INTERPRETER) {
-      const probe = spawnSync(named!, ["-NoProfile", "-Command", "exit 0"], { encoding: "utf8" });
-      expect(probe.status, `usage names '${named}' but it is not runnable here`).toBe(0);
+
+    // **Proved runnable here, if this machine has that interpreter at all.** CI runs
+    // `ubuntu-latest`, where the `powershell` binary this usage block names does not exist while
+    // `pwsh` does — so an unconditional probe would fail there for a reason that is an environment
+    // fact, not a defect in the tool, and a test that fails for environmental reasons is a test whose
+    // red means nothing.
+    //
+    // **This exact assertion was a defect, caught by CI rather than by me.** It probed the named
+    // interpreter unconditionally and asserted exit 0, which is only true where that binary exists.
+    // On `ubuntu-latest` `spawnSync` returned `status: null` — it could not spawn the program at all —
+    // and the failure read `usage names 'powershell' but it is not runnable here: expected null to
+    // be +0`, which is precisely the shape of "the tool is broken" and precisely untrue. The
+    // interpreter this block names being absent is not evidence that the *name* is wrong.
+    //
+    // What is asserted instead, and it is the claim that actually matters: the named interpreter is
+    // one of the two real PowerShell executables, and **if this machine has it, it runs**. Where the
+    // machine has neither, the behavioural cases above skip with a stated reason and this assertion
+    // degrades to the name check alone — reported as such, never as a pass.
+    if (!INTERPRETER) {
+      // No PowerShell at all. The name check above still stands; the runnability half cannot be
+      // established here and is not claimed.
+      expect(
+        ["powershell", "pwsh"],
+        "with no interpreter present, only the name can be checked",
+      ).toContain(named);
+      return;
     }
+    const probe = spawnSync(named!, ["-NoProfile", "-Command", "exit 0"], { encoding: "utf8" });
+    expect(
+      probe.error,
+      `usage names '${named}' but it could not be spawned here: ${probe.error?.message}`,
+    ).toBeUndefined();
+    expect(probe.status, `usage names '${named}' but it is not runnable here`).toBe(0);
   });
 
   it.skipIf(skipNoInterpreter)("runs the printed completion command and it succeeds", () => {
@@ -300,24 +329,36 @@ describe("the driver's printed interface names an invocation that runs", () => {
     expect(printed).toContain(join(REPO, "frontend"));
   });
 
-  it("prints --runs, so a non-default batch does not print a command that then fails loudly", () => {
-    const run = execFileSync(
-      INTERPRETER?.bin ?? "powershell",
-      [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        DRIVER,
-        "-LogDir",
-        tempDir(),
-        "-Runs",
-        "0",
-      ],
-      { encoding: "utf8", cwd: REPO },
-    );
-    expect(run).toContain("--runs 0");
-  });
+  it.skipIf(skipNoInterpreter)(
+    "prints --runs, so a non-default batch does not print a command that then fails loudly",
+    () => {
+      // **A second instance of the same defect, found by the same simulation that caught the first.**
+      // This read `INTERPRETER?.bin ?? "powershell"`, which looks defensive but silently falls back
+      // to a binary that may not exist — so the case ran and failed rather than skipping. With no
+      // PowerShell present it is now skipped by the same guard as every other behavioural case, and
+      // reported as skipped rather than as a pass.
+      //
+      // Recorded because the pattern is tempting and wrong: a fallback to a *hard-coded external
+      // program* is not a default, it is an assumption that the program exists. `??` protects against
+      // `undefined`, never against a missing file.
+      const run = execFileSync(
+        INTERPRETER!.bin,
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          DRIVER,
+          "-LogDir",
+          tempDir(),
+          "-Runs",
+          "0",
+        ],
+        { encoding: "utf8", cwd: REPO },
+      );
+      expect(run).toContain("--runs 0");
+    },
+  );
 });
 
 /**
