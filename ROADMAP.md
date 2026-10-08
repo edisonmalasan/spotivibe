@@ -142,6 +142,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M23** | Lyrix-style artist Quick Picks and Home artwork parity | `DONE` — PR #108 `e99414f`, sync #109 `a44e681`, archived `2026-10-06-artist-quick-picks-artwork-parity` | M22, M19 |
 | **M24** | Repair the gate-batch criterion apparatus — make the `DONE` criterion runnable | `DONE` — PR #113, merge `2fc2b16`, archived `2026-10-08-repair-gate-batch-apparatus` | M21, M23 |
 | **M25** | Close the cross-test-file scan race in the contrast guard | **MERGED, NOT `DONE`** — PR #115 `3e3cfe6`, archived `2026-10-08-fix-contrast-guard-scan-race`; criterion **5 of 6**, unmet | M24 |
+| **M26** | Synchronise the Settings test on the condition it asserts | `DONE` — PR #117 `546bb31`, archived `2026-10-08-fix-settings-hydration-wait`; batch 32 **6 of 6** at the merge | M25 |
 
 > **M25 closed the race that failed batch 26, and still does not qualify as `DONE`.**
 > `componentFiles()` in `frontend/tests/token-contrast.test.ts` collected paths with `readdirSync` in
@@ -179,6 +180,41 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > **M21 CRITICAL 1 and CRITICAL 2 remain open.** Batch 31 is the sharpest illustration available:
 > the contrast race was absent from all six runs and the batch was still red. Not having a flake is
 > not the same as having a trustworthy gate.
+
+> **M26 fixed the defect that failed batch 31, and M25's criterion stays unmet.**
+> `autofill-setting.test.tsx` waited on `usePreferencesStore.getState().hydrated` — a store-level flag
+> set by `applyPreferences`, which runs **earlier in the same promise chain** than the component's own
+> `.then(() => setStatus("ready"))`. The toggle's `disabled` attribute lifts only after a state update
+> *and* a render commit, so the store flag was a **necessary but not sufficient** precondition for the
+> assertion, with a render commit in the gap. `waitFor` polls, and whether a poll landed before or
+> after that commit was a scheduling question — roughly **1 in 6 full-suite runs**, and **0 times in
+> isolation**. The test now waits on the condition it asserts.
+>
+> **The product was never at fault and is unchanged** — disabling a control while its value loads is
+> correct, and `git diff --name-only HEAD -- frontend/src` is empty for that change. Deriving the
+> component's `status` from the store was rejected despite removing the duplication that caused the
+> bug: the component's status also carries an `"error"` branch rendering `STORAGE_ERROR`, and **the
+> store has no error state to derive it from**, so adopting it would have deleted the error branch — a
+> user-visible regression traded for a test fix.
+>
+> **Proved, not asserted.** Forcing the control permanently disabled turns the file red — **4 failed,
+> 7 passed** — and the failure is `expect(element).toBeEnabled()` with the DOM printing
+> `aria-label="Keep playing when the queue ends"`, raised *from the wait itself*. Under the old wait
+> the same defect would have surfaced as a **timeout on `hydrated`**, naming something unrelated to the
+> fault. Source restored byte-for-byte at SHA-256
+> `d0033592cbff34094b4f4a29f7c0211266cad049e9ed4bdb2c562f8c36ce8e71`.
+>
+> **Batch 32: 6 of 6, corroborated exit 0, measured at the merge.** Commit `2b263080c7bf`, tree
+> `8e0fd35ca181`, six distinct digests, one commit across all six, 183 files, 3412 tests,
+> motion-budget 24, 0 skipped, enumeration 0.904 over the 0.8 floor. **Merge commit `546bb31`'s tree
+> is byte-identical to the batched tree**, checked after the merge rather than assumed. The detector
+> was re-proven able to fail on that same batch immediately after passing.
+>
+> **M25 is not retroactively certified.** Its batch was 5 of 6 and remains recorded as unmet. Batch 32
+> is evidence about a different tree, and using it to repair M25's record would be exactly the
+> substitution the `DONE` rule exists to prevent. **M21 CRITICAL 1 and CRITICAL 2 remain open**, and 6
+> of 6 is a real measurement rather than proof of determinism: batches 26 and 31 each failed 1 of 6,
+> and **neither defect was visible in isolation**.
 
 > **M24's criterion, measured at the merge rather than at a branch head.** Batch 30 at commit
 > `60baf39`, tree `cfb66d3`: **6 of 6 green**, corroborated exit 0 — six distinct digests, one commit
