@@ -62,20 +62,79 @@
 
 ## 4. Batch evidence
 
-- [ ] 4.1 Run six `npm run gate` runs and the corroborator from the canonical home
+- [x] 4.1 Run six `npm run gate` runs and the corroborator from the canonical home
+      — Batch 31 at commit `d8fe9f439cf9`, tree `fe663b3a8bd3`.
 - [ ] 4.2 Require corroborator exit 0, six distinct digests, one commit, 0 skipped
-- [ ] 4.3 Confirm the batch commit's **tree** equals the merge commit's tree — five batches were
-      invalidated during M24 by the tree moving after measurement, and the rule is the reason
+      — **NOT MET. Batch 31 is 5 of 6 and is recorded as unmet.** It was not re-run for green.
+- [ ] 4.3 Confirm the batch commit's **tree** equals the merge commit's tree
+      — moot: there is no green batch to compare, so no criterion can be certified by this change.
 - [ ] 4.4 Record commit, tree and `merge-base` result in the **PR body**, not in this file
+      — done in the PR body; `git merge-base --is-ancestor origin/main d8fe9f4` exits 0.
+
+**What batch 31 actually recorded, in full:**
+
+| Run | Gate exit | Files | Verdict |
+|---|---|---|---|
+| 1 | 0 | 183 | green |
+| 2 | 0 | 183 | green |
+| 3 | 0 | 183 | green |
+| 4 | 0 | 183 | green |
+| **5** | **1** | **182** | **`tests/autofill-setting.test.tsx` — 1 failed** |
+| 6 | 0 | 183 | green |
+
+The corroborator **refused to certify it**, exit non-zero, and said why in its own output:
+
+```
+run5 … files null  tests ?  exit 1  ASSERTED MISMATCH
+      the gate reported exit 1, so this run is not green.
+      the log also carries a failing summary - "Tests  1 failed" - so it holds two
+      verdicts and which one the gate meant is not decidable from the file.
+ok   log digests across the logs: 6 distinct of 6
+```
+
+Six distinct digests and one commit — the apparatus worked. It declined to certify a batch
+containing a red run, which is the behaviour the milestone exists to produce.
+
+**The failing run is not this change's defect, and the log is the evidence.** In run 5 itself:
+
+```
+✓ tests/token-contrast.test.ts (6 tests) 133ms
+✓ tests/motion-scope.test.ts (12 tests) 52ms
+❯ tests/autofill-setting.test.tsx (11 tests | 1 failed) 971ms
+```
+
+Both files involved in the race this change fixes **passed in the very run that failed**.
+`autofill-setting.test.tsx` is not in this change's diff; its last commit is `cb46391`.
+
+**The defect that failed the batch** (`autofill-setting.test.tsx:82`, "renders as enabled on a
+fresh Settings page"): `AutofillSettingsSection` disables its toggle on `status === "loading"`,
+where `status` is the component's **own local** `useState`, flipped to `"ready"` only when *its
+own* `hydrate()` promise settles and React commits the re-render. The test's `renderSettings()`
+instead waits on `usePreferencesStore.getState().hydrated` — a **store-level** flag. Those are two
+different signals, so `hydrated === true` can hold while the component still reads `"loading"`,
+and under full-suite load the promise chain plus render commit lands after the assertion.
+
+**The test waits on the wrong condition.** It is not a product defect and not this change's; it is
+an unsynchronised wait in a different capability (the preferences/Settings surface). It is
+recorded here and filed as separate work rather than absorbed into this change, per the rule that
+a change is not broadened by an opportunity discovered during it.
 
 ## 5. Statements
 
-- [ ] 5.1 State that M21 CRITICAL 1 and CRITICAL 2 remain open and are not closed here
-- [ ] 5.2 State that fixing this flake does not make the gate trustworthy, and that a run that
-      happened to avoid it was never evidence of determinism
+- [x] 5.1 State that M21 CRITICAL 1 and CRITICAL 2 remain open and are not closed here
+- [x] 5.2 State that fixing this flake does not make the gate trustworthy
+      — This change removes **one** known flake from **one** guard's data flow. It says nothing
+      about whether the gate would catch a regression, and it makes the gate no more able to. A run
+      that happened to avoid the contrast race was never evidence of determinism, and batch 31 —
+      which avoided it six times out of six while failing for an unrelated reason — is a concrete
+      demonstration of the point: the race was gone and the batch was still red.
 
 ## 6. Close out
 
-- [ ] 6.1 `openspec validate --specs --strict`
+- [x] 6.1 `openspec validate --specs --strict` — 27 passed, 0 failed
 - [ ] 6.2 Commit, push, open PR, merge with a merge commit, delete the branch
 - [ ] 6.3 Archive, and record the outcome in `ROADMAP.md`
+
+**This change must not be recorded as `DONE`.** The `DONE` criterion is six consecutive green full
+gate runs at the merged tree, and this change has 5 of 6. The defect it fixes is real, reproduced
+and verified; the criterion is not met, and the two statements are kept apart on purpose.
