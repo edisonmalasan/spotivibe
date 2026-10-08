@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -116,18 +116,115 @@ function asHex(background: string): string {
   return background.startsWith("#") ? background : (tokens().get(background) ?? "#000000");
 }
 
-function componentFiles(dir: string): string[] {
-  const found: string[] = [];
+/**
+ * Read a source file, or report it as absent.
+ *
+ * **This tolerance exists because of a real, captured failure, not as defensive coding.**
+ * `tests/motion-scope.test.ts` writes `src/features/sharing/ProbeM19Motion.tsx` into the source
+ * tree and removes it in a `finally`. This guard walks that same directory. Batch 26, run while
+ * proving M24's criterion, failed 1 of 6 with:
+ *
+ *     Error: ENOENT: no such file or directory, open '…\src\features\sharing\ProbeM19Motion.tsx'
+ *
+ * Roughly 1 in 6 full-suite runs. Running only the two files together, 8 trials reproduce it 0
+ * times — the writer's file exists for microseconds, so the race needs full-suite load to align.
+ * That is why it survived so long: invisible in isolation, present roughly one run in six.
+ *
+ * `ENOENT` here can only mean the file was deleted between the walk listing it and this read. A
+ * file genuinely absent from the product is not returned by the walk in the first place, so it
+ * never reaches this function. The guard's subject is the product's source files; a file that has
+ * ceased to exist is not one of them, and asserting a contrast ratio against it is not a stricter
+ * check but an impossible one.
+ *
+ * **Any other error is not tolerated.** A permission failure or an I/O error is a real problem
+ * and is allowed to propagate — otherwise "tolerant" would quietly become "silent".
+ */
+function readIfPresent(file: string): string | null {
+  try {
+    return readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** One component file and the source read from it. */
+interface ComponentSource {
+  /** Absolute path, for reporting where an offence was found. */
+  readonly file: string;
+  /** The file's contents, read inside the walk. */
+  readonly source: string;
+}
+
+/**
+ * Every `.tsx` under `dir`, paired with its source.
+ *
+ * **The source is read here, inside the walk, rather than by the caller afterwards.** The previous
+ * version collected paths in one pass and read them in a later one, so the gap between "listed" and
+ * "read" spanned the rest of the directory walk *and* the caller's whole reading loop — tens of
+ * milliseconds under full-suite load, against a file that lives for microseconds. That gap was the
+ * defect. Reading inside the walk narrows it to the microseconds between `readdirSync` returning
+ * one entry and opening that one file, and {@link readIfPresent} handles what remains.
+ *
+ * Returning the pair rather than the path is what makes that possible: the caller cannot
+ * re-introduce a second, later read.
+ */
+function componentFiles(dir: string): ComponentSource[] {
+  const found: ComponentSource[] = [];
   const walk = (current: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const full = join(current, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if ([".tsx"].includes(extname(entry.name))) found.push(full);
+      else if ([".tsx"].includes(extname(entry.name))) {
+        const source = readIfPresent(full);
+        if (source !== null) found.push({ file: full, source });
+      }
     }
   };
   walk(dir);
   return found;
 }
+
+describe("the reader's tolerance cannot become silence", () => {
+  /**
+   * **Both halves in one test, deliberately.**
+   *
+   * Two separate tests would be weaker than one, and not merely a style preference. Asserting only
+   * "a missing path is tolerated" is satisfied by a reader that returns `null` for everything.
+   * Asserting only "a present path still reads" is satisfied by the reader this change replaced.
+   * Together they pin the behaviour from both sides: absent means absent, present means contents.
+   *
+   * This is the check that stops "make it tolerant" from decaying into "make it quiet". The failure
+   * mode of the fix is a guard that never throws *because it never sees anything*, and that suite
+   * is green — the worst outcome available, and one the contrast rules below could not detect.
+   */
+  it("reports a path that is absent, and still returns the contents of a path that is present", () => {
+    // A path that is genuinely not there. `join` on a name that does not exist, under a directory
+    // that does, so the absence is the file's rather than the directory's.
+    const missing = join(SRC, "features", "sharing", "ProbeM19Motion.tsx");
+    expect(existsSync(missing), "the probe must not exist outside the test that writes it").toBe(
+      false,
+    );
+    expect(readIfPresent(missing), "a path that does not exist must be reported absent").toBeNull();
+
+    // A path that is there — and it is a real component, not a fixture, so the assertion is about
+    // the production tree rather than about a file this test arranged.
+    const present = join(SRC, "features", "sharing", "ShareButton.tsx");
+    expect(existsSync(present), "this test reads a real component, so it must exist").toBe(true);
+    const source = readIfPresent(present);
+    expect(source, "a path that exists must yield its contents, not null").not.toBeNull();
+    expect(source, "the contents must be the file's, not empty").toContain("ShareButton");
+
+    // And the walk still reaches the tree, using the pair form, so a reader that returned nothing
+    // would fail here rather than passing quietly.
+    const files = componentFiles(SRC);
+    expect(files.length, "the walker must reach the components").toBeGreaterThan(30);
+    expect(
+      files.every((entry) => typeof entry.source === "string" && entry.source.length > 0),
+      "every component the walk reports must carry its source",
+    ).toBe(true);
+  });
+});
 
 describe("the declared text tokens meet their minimums (task 4.3)", () => {
   const declared = tokens();
@@ -171,8 +268,10 @@ describe("readable text only ever uses a token that clears AA (task 4.3)", () =>
     // make the rule below vacuous.
     const files = componentFiles(SRC);
     expect(files.length, "the walker must reach the components").toBeGreaterThan(30);
-    const withText = files.filter((file) =>
-      SIZE_UTILITIES.some((utility) => readFileSync(file, "utf8").includes(utility)),
+    // The source comes from the pair, never from a second read: a later `readFileSync` would
+    // reintroduce exactly the window this change closes.
+    const withText = files.filter(({ source }) =>
+      SIZE_UTILITIES.some((utility) => source.includes(utility)),
     );
     expect(withText.length, "components using the type scale").toBeGreaterThan(10);
   });
@@ -180,8 +279,7 @@ describe("readable text only ever uses a token that clears AA (task 4.3)", () =>
   it("paints no readable text in a token that fails its minimum", () => {
     const palette = tokens();
     const offenders: string[] = [];
-    for (const file of componentFiles(SRC)) {
-      const source = readFileSync(file, "utf8");
+    for (const { file, source } of componentFiles(SRC)) {
       const where = relative(SRC, file).replace(/\\/g, "/");
       // One className attribute at a time, so a colour on a parent and a size on a
       // child are not mistaken for one element.
