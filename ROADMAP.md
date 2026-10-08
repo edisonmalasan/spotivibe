@@ -141,6 +141,44 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M22** | Quick Picks cold start — close M17's unimplemented provider-results clause | `DONE` - PR #104 `624838f`, sync #105 `e5d502a`, archived `2026-10-05-quick-picks-cold-start` | M17, M8 |
 | **M23** | Lyrix-style artist Quick Picks and Home artwork parity | `DONE` — PR #108 `e99414f`, sync #109 `a44e681`, archived `2026-10-06-artist-quick-picks-artwork-parity` | M22, M19 |
 | **M24** | Repair the gate-batch criterion apparatus — make the `DONE` criterion runnable | `DONE` — PR #113, merge `2fc2b16`, archived `2026-10-08-repair-gate-batch-apparatus` | M21, M23 |
+| **M25** | Close the cross-test-file scan race in the contrast guard | **MERGED, NOT `DONE`** — PR #115 `3e3cfe6`, archived `2026-10-08-fix-contrast-guard-scan-race`; criterion **5 of 6**, unmet | M24 |
+
+> **M25 closed the race that failed batch 26, and still does not qualify as `DONE`.**
+> `componentFiles()` in `frontend/tests/token-contrast.test.ts` collected paths with `readdirSync` in
+> one pass and let callers read them in a **later** pass, so the window between "listed" and "read"
+> spanned the rest of the directory walk *and* the caller's whole reading loop — tens of milliseconds
+> under full-suite load against a probe that lives for microseconds. Rate **~1 in 6 full-suite runs**;
+> the two-file pair reproduced it **0 times in 8 trials**, which is why it survived so long. It now
+> returns `{ file, source }` pairs read inside the walk, and `readIfPresent()` treats `ENOENT` as
+> absent while **rethrowing every other error**.
+>
+> **Proved twice, not asserted.** Mutating the reader to `return null` turns the suite red in **two**
+> places — the new test, and the pre-existing `the walker must reach the components: expected 0 to be
+> greater than 30` — and the source was restored and verified byte-for-byte at SHA-256
+> `b2762338939956ed950ed32b0e7d247dab3a1c8aed71198c046f0f5c172b63c1`. Separately, a harness reproduced
+> the interleaving deterministically and showed why **tolerance alone was rejected**: it stops the
+> throw but keeps the phantom path in the list (6 entries), whereas reading inside the walk never
+> lists it (5 entries). Tolerance alone would have made the flake rarer without closing it — it would
+> have looked fixed.
+>
+> **Batch 31 was 5 of 6 and is recorded as unmet, not re-run for green.** Run 5 failed on
+> `tests/autofill-setting.test.tsx`, which is **not** in this diff. In that same failing run
+> `token-contrast` passed with 6 tests and `motion-scope` passed with 12 — both files involved in the
+> race — so the fix held where it was tested. The corroborator exited non-zero and refused to
+> certify, naming both verdicts the log held.
+>
+> **That failure is a second, distinct defect and is the next piece of work.**
+> `AutofillSettingsSection` disables its toggle on `status === "loading"`, where `status` is the
+> component's **own local** `useState` flipped only when *its own* `hydrate()` promise settles and
+> React commits. The test's `renderSettings()` instead waits on
+> `usePreferencesStore.getState().hydrated` — a **store-level** flag. Two different signals, so
+> `hydrated` can be `true` while the component still reads `"loading"`, and under load the promise
+> chain plus render commit lands after the assertion. **The test waits on the wrong condition**; it
+> is not a product defect.
+>
+> **M21 CRITICAL 1 and CRITICAL 2 remain open.** Batch 31 is the sharpest illustration available:
+> the contrast race was absent from all six runs and the batch was still red. Not having a flake is
+> not the same as having a trustworthy gate.
 
 > **M24's criterion, measured at the merge rather than at a branch head.** Batch 30 at commit
 > `60baf39`, tree `cfb66d3`: **6 of 6 green**, corroborated exit 0 — six distinct digests, one commit
