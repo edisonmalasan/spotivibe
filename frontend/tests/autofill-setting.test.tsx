@@ -50,11 +50,44 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Render Settings and wait for the shared local-data read to settle. */
+/**
+ * Render Settings and wait for the autofill control to be usable.
+ *
+ * **This used to wait for the wrong thing, and it failed a full gate batch because of it.**
+ * Batch 31, run to try to certify M25, failed 1 of 6 here:
+ *
+ *     FAIL  the autofill preference's default > renders as enabled on a fresh Settings page
+ *     AssertionError: expect(element).toBeEnabled()
+ *     Received element is not enabled: <input … checked="" disabled="" … />
+ *
+ * The old wait was on `usePreferencesStore.getState().hydrated`, and that flag is a **necessary but
+ * not sufficient** precondition for the assertion. `AutofillSettingsSection` disables its toggle on
+ * a **local** `status === "loading"`, flipped only when *its own* `hydrate()` promise settles. One
+ * promise chain, in order:
+ *
+ *   1. the read resolves;
+ *   2. the store's `.then(applyPreferences)` sets `hydrated = true` — **observable from outside
+ *      immediately**;
+ *   3. the component's `.then(() => setStatus("ready"))` schedules a React render;
+ *   4. React commits and the `disabled` attribute is removed — **observable only now**.
+ *
+ * So `hydrated` flips strictly *before* the DOM the test asserts on, with a state update and a
+ * render commit in between. `waitFor` polls, and whether a poll lands before or after step 4 is a
+ * scheduling question — which is why this reproduced in roughly **1 in 6 full-suite runs** and not
+ * at all when the file runs alone.
+ *
+ * Waiting on the control itself removes the window by construction rather than narrowing it: there
+ * is no second signal that can be observed early, so there is nothing left to lose. It is also
+ * self-maintaining — if the component later gates `disabled` on something else, this follows the
+ * assertion instead of silently drifting back to a stale proxy.
+ *
+ * The product is not at fault and is not changed. Disabling a control while its value is still
+ * loading is correct.
+ */
 async function renderSettings(): Promise<ReturnType<typeof render>> {
   const view = render(<SettingsPage />);
   await waitFor(() => {
-    expect(usePreferencesStore.getState().hydrated).toBe(true);
+    expect(autofillToggle()).toBeEnabled();
   });
   return view;
 }
