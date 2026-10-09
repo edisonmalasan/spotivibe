@@ -1061,6 +1061,58 @@ describe("HomeView: M17 adds surfaces without adding requests", () => {
     expect(calls.every((call) => call.kind !== "mix")).toBe(true);
   });
 
+  it("renders the artist rail above the mix cards it used to sit below", async () => {
+    /*
+     * **This is the case `tests/routes.test.tsx` cannot reach.**
+     *
+     * That file's Home fixture is a deliberate fresh device — no likes, no history — and the
+     * mix-card row is gated on `profile.hasSignal`. So its ordering assertion saw `home-time-shelf`
+     * above the rail and never saw `home-mix-cards`, because that row was not in the document at
+     * all. The row the listener actually complained about sat outside the test that claims to
+     * guard the order.
+     *
+     * `moodTaste()` plus an event is the same signal the test above uses, which renders all three
+     * M17 surfaces. So the mix-card row is genuinely present here, and the assertion has something
+     * real to fail on.
+     *
+     * Asserted in document order via `compareDocumentPosition` rather than by index: `indexOf`
+     * over a `querySelectorAll` list is a proxy for order that depends on the query, while this
+     * asks the DOM directly which node comes first.
+     */
+    seedStores({
+      likedTracks: moodTaste(),
+      events: [event("youtube:r1", "Played", "Aurora", 300)],
+    });
+    stubDiscovery(() => ({ tracks: [] }));
+    const { container } = render(<HomeView clock={() => instantAtLocalHour(20)} />);
+    await settleFeed();
+
+    // Precondition, and the reason this test exists: the mix cards really do render.
+    const mixCards = await screen.findByTestId("home-mix-cards");
+    expect(screen.getAllByTestId("mix-card").length).toBeGreaterThan(0);
+
+    const rail = screen.getByTestId("home-quick-picks");
+    const first = mixCards.compareDocumentPosition(rail);
+
+    // `Node.DOCUMENT_POSITION_FOLLOWING` — the rail is after the cards.
+    expect(
+      first & Node.DOCUMENT_POSITION_FOLLOWING,
+      "the artist rail must precede the mix cards",
+    ).toBe(0);
+
+    // And it is first of every rendered row, not merely ahead of this one.
+    const rows = [
+      ...container.querySelectorAll(
+        "[data-testid^='home-section-'], [data-testid^='home-mix-cards'], [data-testid^='home-time-shelf'], [data-testid^='home-quick-picks']",
+      ),
+    ];
+    expect(rows[0]?.getAttribute("data-testid")).toBe("home-quick-picks");
+    // Three M17 surfaces are present, so "first" is a real claim about a non-empty set.
+    expect(
+      rows.filter((row) => row.getAttribute("data-testid") === "home-quick-picks"),
+    ).toHaveLength(1);
+  });
+
   it("keeps the section list itself the same size", () => {
     // The M17 surfaces are *not* `HOME_SECTIONS` entries, so the one section model
     // did not grow — which is what keeps `assertShelfRhythm` guarding the real feed

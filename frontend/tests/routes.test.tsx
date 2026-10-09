@@ -254,7 +254,7 @@ describe("route shells", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps the circular artist rail inside the first four rendered sections", async () => {
+  it("presents the circular artist rail as the very first rendered row", async () => {
     const { container } = render(<HomePage />);
     await screen.findByTestId("home-view");
 
@@ -275,9 +275,31 @@ describe("route shells", () => {
 
     expect(rendered.length).toBeGreaterThan(CIRCULAR_WINDOW);
     expect(circularIndex).toBeGreaterThanOrEqual(0);
-    // The spec's number, spelled once: four rendered sections.
+
+    /*
+     * **This was `expect(circularIndex).toBeLessThan(CIRCULAR_WINDOW)` — "inside the first four
+     * rendered sections" — and that bound could not detect the defect it existed to prevent.**
+     *
+     * The rail rendered at index 2, behind `home-mix-cards` (a rail of mix cards derived from the
+     * selected languages) and `home-time-shelf`. A listener opening Home met language-derived content
+     * first and the artist rail third. A bound of `< 4` is satisfied by the rail rendering first,
+     * second, third, or fourth, so it reported green for exactly the arrangement being reported as
+     * wrong, and would have stayed green if the rail had moved one place further down.
+     *
+     * A bound the present arrangement satisfies is not evidence for the arrangement. The requirement
+     * is a position, so the assertion is a position.
+     *
+     * The rhythm contract is untouched and still asserted separately by `shelfRhythmViolations`:
+     * a circular row must not sit adjacent to another circular row, nor past `CIRCULAR_WINDOW`. The
+     * number is still spelled once, below.
+     */
+    expect(rendered.slice(0, circularIndex), "these rows render above the artist rail").toEqual([]);
+    expect(circularIndex).toBe(0);
+
+    // The spec's number, spelled once: four rendered sections. Asserted so the rhythm window cannot
+    // drift while the position above is asserted absolutely.
     expect(CIRCULAR_WINDOW).toBe(4);
-    expect(circularIndex).toBeLessThan(CIRCULAR_WINDOW);
+
     // And it is the only circular row on the page: exactly one circular artist
     // section, which is what consolidating Popular Artists was for.
     expect(rendered.filter((id) => id === "home-quick-picks")).toHaveLength(1);
