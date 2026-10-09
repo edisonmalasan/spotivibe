@@ -123,6 +123,10 @@ describe("Settings data controls", () => {
       "mixes",
       "playlists",
       "preferences",
+      // First-run artist picks are user data, so they travel in the envelope. This
+      // list is alphabetical and the assertion above sorts, so the entry sits
+      // between `preferences` and `searchHistory`.
+      "quickPickPicks",
       "searchHistory",
       "session",
     ]);

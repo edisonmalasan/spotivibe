@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { expect, it } from "vitest";
 import { createRepositories, openDatabase, STORE } from "@/data/indexeddb";
+import { STORE_DEFINITIONS } from "@/data/indexeddb/schema";
 import { SCHEMA_VERSION } from "@/data/indexeddb/schema";
 import type { SchemaMigration } from "@/data/migrations";
 
@@ -90,6 +91,70 @@ it("creates every schema v1 store before repositories are served", async () => {
   expect(typeof repos.playlists.create).toBe("function");
   expect(typeof repos.likedTracks.like).toBe("function");
   repos.close();
+});
+
+it("adds the picks store to a database that predates it", async () => {
+  /*
+   * A database created *before* this change has no picks store, and that is the
+   * upgrade every existing listener performs. `openDatabase({version: 2})` cannot
+   * model it: the v1 step is `createInitialSchema`, which builds **every** store
+   * in `STORE_DEFINITIONS`, so a "v2" database opened through it already contains
+   * the new one. (An earlier draft of this test asserted otherwise and failed —
+   * the shape it described cannot exist.)
+   *
+   * So the older database is built by hand, from the real definitions minus the
+   * picks store, and reopened at the shipped version.
+   */
+  const name = "picks-upgrade-test";
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open(name, 2);
+    request.onupgradeneeded = () => {
+      for (const definition of STORE_DEFINITIONS) {
+        if (definition.name === STORE.quickPickPicks) continue;
+        const store = request.result.createObjectStore(definition.name, definition.options);
+        for (const index of definition.indexes ?? []) {
+          store.createIndex(index.name, index.keyPath, index.options);
+        }
+      }
+    };
+    request.onsuccess = () => {
+      request.result.close();
+      resolve();
+    };
+    request.onerror = () => reject(request.error);
+  });
+
+  const upgraded = await openDatabase({ name });
+  try {
+    expect(upgraded.version).toBe(SCHEMA_VERSION);
+    expect(upgraded.objectStoreNames.contains(STORE.quickPickPicks)).toBe(true);
+    // The index the ordering and merge rules rely on must exist, not just the store.
+    const store = upgraded
+      .transaction(STORE.quickPickPicks, "readonly")
+      .objectStore(STORE.quickPickPicks);
+    expect([...store.indexNames]).toContain("byPickedAt");
+    // And the v3 step must not have disturbed what was already there.
+    expect(upgraded.objectStoreNames.contains(STORE.mixes)).toBe(true);
+    expect(upgraded.objectStoreNames.contains(STORE.likedTracks)).toBe(true);
+  } finally {
+    upgraded.close();
+  }
+});
+
+it("opens a database already at v3 without failing the upgrade", async () => {
+  /*
+   * The migration guard is what makes this safe: a fresh database is built by
+   * `createInitialSchema`, which already creates every store, and the v3 step
+   * must therefore be a no-op rather than throwing `ConstraintError` on a store
+   * that exists.
+   */
+  const first = await openDatabase({ name: "picks-idempotent-test" });
+  expect(first.objectStoreNames.contains(STORE.quickPickPicks)).toBe(true);
+  first.close();
+
+  const second = await openDatabase({ name: "picks-idempotent-test" });
+  expect(second.objectStoreNames.contains(STORE.quickPickPicks)).toBe(true);
+  second.close();
 });
 
 it("closes the connection on versionchange so upgrades are not blocked", async () => {

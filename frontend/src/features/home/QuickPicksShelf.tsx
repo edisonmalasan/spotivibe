@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
 import { ArtistCard } from "@/components/design-system/ArtistCard";
 import type { ListeningEventRecord, Track } from "@/data/repositories";
@@ -11,6 +11,7 @@ import {
   type HomeFilterValue,
 } from "@/features/home/homeFilter";
 import { deriveQuickPicks, quickPickHref, type QuickPick } from "@/features/home/quickPicks";
+import type { QuickPickPickRecord } from "@/data/repositories";
 
 /**
  * Home's Quick Picks shelf (M23; spec: `home-mixes` — "Quick Picks are artist
@@ -117,6 +118,23 @@ export interface QuickPicksShelfProps {
   providerState?: ShelfState;
   /** Retry handler for `providerState === "error"`. */
   onRetry?: () => void;
+  /**
+   * First-run artist picks, which lead the rail. Supplied by `HomeView` from the
+   * picks store rather than read here, so this component stays free of storage.
+   *
+   * Named `storedPicks` because `picks` is already the derived rail inside this
+   * component, and two different things called `picks` in one scope is how a
+   * reader ends up trusting the wrong one.
+   */
+  storedPicks?: readonly QuickPickPickRecord[];
+  /**
+   * The derived rail, reported upward.
+   *
+   * First-run onboarding offers the *same* entries the rail shows, so deriving
+   * them twice would let the two disagree about which artists exist. The rail is
+   * the single derivation site and the dialog renders what it produced.
+   */
+  onRailChange?(entries: readonly QuickPick[]): void;
 }
 
 /**
@@ -138,11 +156,61 @@ export function QuickPicksShelf({
   className = "",
   providerState = "ready",
   onRetry,
+  storedPicks,
+  onRailChange,
 }: QuickPicksShelfProps) {
   const picks = useMemo(
-    () => deriveQuickPicks({ languages, taste: { likedTracks, events }, providerTracks }),
-    [events, languages, likedTracks, providerTracks],
+    () =>
+      deriveQuickPicks({
+        languages,
+        taste: { likedTracks, events },
+        providerTracks,
+        picks: storedPicks,
+      }),
+    [events, languages, likedTracks, providerTracks, storedPicks],
   );
+
+  /*
+   * Report the derived rail upward so first-run onboarding offers exactly these
+   * artists. Deriving them a second time inside the dialog would let the two
+   * disagree — and the dialog is the surface whose whole claim is "these are the
+   * artists you are choosing between".
+   *
+   * Reported *before* the filter check on purpose: the surface is filtered out
+   * of the feed under some filters, but onboarding still needs the artists.
+   */
+  /*
+   * The report is guarded on **content**, and the callback is held in a ref.
+   *
+   * Two independent hazards, both of which hang the run rather than failing an
+   * assertion:
+   *
+   * 1. `picks` is a fresh array from `useMemo` whenever an input's identity
+   *    changes, and `HomeView`'s `setOnboardingArtists` re-renders when called —
+   *    so reporting on array identity calls `setState` on every render.
+   * 2. A caller passing an inline arrow (`onRailChange={(x) => …}`) hands over a
+   *    new function identity on every render, which re-fires the effect even when
+   *    nothing about the rail changed.
+   *
+   * `railKey` is the rail's actual identity for this purpose, and the ref keeps
+   * the callback out of the dependency list so neither can loop.
+   */
+  const railKey = picks.map((entry) => entry.id).join("|");
+  const onRailChangeRef = useRef(onRailChange);
+  // Written inside an effect rather than during render: assigning `ref.current`
+  // while rendering is exactly the anti-pattern `react-hooks/refs` flags, and it
+  // would publish an uncommitted value to a concurrent render that may be thrown
+  // away. The update runs before the reporting effect below because effects fire
+  // in declaration order, so the latest callback is always the one invoked.
+  useEffect(() => {
+    onRailChangeRef.current = onRailChange;
+  }, [onRailChange]);
+  useEffect(() => {
+    onRailChangeRef.current?.(picks);
+    // `picks` is intentionally excluded: `railKey` is its identity for this
+    // purpose, and depending on the array itself is what caused the loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railKey]);
 
   if (!presentsSurface(QUICK_PICK_SURFACE, filter)) return null;
 

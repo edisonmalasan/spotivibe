@@ -22,6 +22,9 @@ const SUPPORTED_DATASETS = [
   // the dataset *empty*, not untouched (spec `local-data`, "An envelope without
   // the mixes dataset still imports").
   STORE.mixes,
+  // First-run picks, for the same reason: a `"replace"` import must clear them,
+  // and a pre-picks envelope must leave them *empty* rather than untouched.
+  STORE.quickPickPicks,
 ] as const;
 
 export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void> {
@@ -34,6 +37,7 @@ export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void
   if (plan.writes.history.length > 0) stores.add(STORE.listeningHistory);
   if (plan.writes.searchHistory.length > 0) stores.add(STORE.searchHistory);
   if (plan.writes.mixes.length > 0) stores.add(STORE.mixes);
+  if (plan.writes.quickPickPicks.length > 0) stores.add(STORE.quickPickPicks);
   if (plan.writes.preferences !== undefined) stores.add(STORE.preferences);
   if (plan.writes.session !== null && plan.writes.session !== undefined) {
     stores.add(STORE.session);
@@ -78,6 +82,10 @@ export function applyImport(db: IDBDatabase, plan: PreparedImport): Promise<void
       if (plan.writes.mixes.length > 0) {
         const mixes = tx.objectStore(STORE.mixes);
         for (const record of plan.writes.mixes) mixes.put(record);
+      }
+      if (plan.writes.quickPickPicks.length > 0) {
+        const picks = tx.objectStore(STORE.quickPickPicks);
+        for (const record of plan.writes.quickPickPicks) picks.put(record);
       }
       if (plan.writes.preferences !== undefined) {
         tx.objectStore(STORE.preferences).put({

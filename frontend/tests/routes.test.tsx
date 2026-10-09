@@ -13,6 +13,8 @@ import QueuePage from "@/app/queue/page";
 import SearchPage from "@/app/search/page";
 import type { Track } from "@/data/repositories";
 import { CIRCULAR_WINDOW } from "@/features/home/homeSections";
+import { clearOnboardingSeen, markOnboardingSeen } from "@/features/onboarding/onboardingGate";
+import { resetQuickPickPicksStore } from "@/stores/quickPickPicksStore";
 import { resetRefillChannel } from "@/features/personalization/RefillAgent";
 import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
 import { resetMixStore } from "@/stores/mixStore";
@@ -207,6 +209,15 @@ beforeEach(() => {
   resetMixStore();
   resetPreferencesStore();
   resetRadioStore();
+  resetQuickPickPicksStore();
+  /*
+   * First run is ON by default in this suite — it is a fresh-device suite, and the
+   * old gate made that true through `preferences.onboardingComplete`. The gate now
+   * reads the `localStorage` flag, so leaving it unmarked would show the onboarding
+   * dialog over every route in the file. The single case that wants the dialog
+   * clears it explicitly.
+   */
+  markOnboardingSeen();
   resetRefillChannel();
   push.mockClear();
   stubDiscovery();
@@ -306,26 +317,26 @@ describe("route shells", () => {
     expect(rendered).not.toContain("home-section-popular-artists");
   });
 
-  it("mounts the first-run language onboarding while preferences are incomplete", async () => {
+  it("mounts the first-run artist onboarding before anything reaches the dashboard", async () => {
+    // The gate is the `localStorage` flag, so this suite must not have marked it.
+    clearOnboardingSeen();
+    stubDiscovery([FEED_TRACK]);
     render(<HomePage />);
 
     // Nothing local exists yet, so the dialog is the route's only guidance.
-    const dialog = await screen.findByRole("dialog", { name: "Choose your languages" });
-    expect(within(dialog).getByRole("searchbox", { name: "Filter languages" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Save languages" })).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Pick artists you like" });
+    expect(within(dialog).getByRole("button", { name: "Start listening" })).toBeInTheDocument();
     // No account, sign-in, or email step is ever part of this choice.
     expect(dialog.textContent).not.toMatch(/sign in|log in|account|email/i);
   });
 
-  it("exposes the designed shell affordances — focusable shelf rails and the language picker", async () => {
+  it("exposes the designed shell affordances — focusable shelf rails", async () => {
     stubDiscovery([FEED_TRACK]);
     render(<HomePage />);
 
     // The genre shelf's header carries the route into Discover.
     const seeAll = await screen.findByRole("link", { name: "See all" });
     expect(seeAll).toHaveAttribute("href", "/discover");
-    // The reusable language picker is mounted with the onboarding dialog.
-    expect(await screen.findByRole("searchbox", { name: "Filter languages" })).toBeInTheDocument();
 
     // Every rendered card rail is a focusable, named scroll region, so a keyboard
     // user can pan the shelf (DESIGN.md horizontal rail).

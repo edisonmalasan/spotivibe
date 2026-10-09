@@ -112,6 +112,23 @@ export interface MixRecord {
 /** Input for creating a mix; the repository stamps `id` when absent. */
 export type NewMix = Omit<MixRecord, "id"> & { id?: string };
 
+/**
+ * One artist the listener picked during first-run onboarding.
+ *
+ * The name is carried alongside the identity rather than looked up later: the
+ * pick is a statement the listener made about an artist they saw, and resolving
+ * its artwork by name on every read would be a provider request the derivation
+ * is explicitly forbidden from making.
+ */
+export interface QuickPickPickRecord {
+  /** Canonical artist identity — the same id the rail navigates to. */
+  artistId: string;
+  /** Display name at the moment it was picked; never empty. */
+  name: string;
+  /** Epoch milliseconds; most recent first when listed. */
+  pickedAt: number;
+}
+
 /** Where a listening event originated (ROADMAP §8.3 "source context"). */
 export type ListeningContext =
   "search" | "home" | "playlist" | "album" | "artist" | "queue" | "radio" | "library" | "other";

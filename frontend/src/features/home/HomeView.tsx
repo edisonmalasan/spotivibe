@@ -2,7 +2,7 @@
 
 import { Disc3 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
 import type { Track } from "@/data/repositories";
 import { genreHref, GENRE_CATALOG } from "@/features/home/genreCatalog";
@@ -37,7 +37,14 @@ import { TimeShelf } from "@/features/home/TimeShelf";
 import { systemClock, type Clock } from "@/features/home/timeBands";
 import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDiscoveryShelf";
 import { MixList } from "@/features/mixes/MixList";
-import { LanguageOnboarding } from "@/features/preferences/LanguageOnboarding";
+import { ArtistOnboarding } from "@/features/onboarding/ArtistOnboarding";
+import {
+  getOnboardingServerSnapshot,
+  isOnboardingSeen,
+  subscribeToOnboarding,
+} from "@/features/onboarding/onboardingGate";
+import { useQuickPickPicksStore } from "@/stores/quickPickPicksStore";
+import type { QuickPick } from "@/features/home/quickPicks";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { useMixStore } from "@/stores/mixStore";
@@ -138,6 +145,17 @@ const M17_SURFACE_ROWS: readonly HomeFilterSurface[] = [
  * copy exists once rather than being typed into two components.
  */
 const SHELF_ERROR = QUICK_PICKS_ERROR;
+
+/**
+ * The onboarding dialog's `onClose`, which has nothing left to do.
+ *
+ * The dialog owns the gate — it calls `markOnboardingSeen()` on confirmation and
+ * on dismissal — and that write notifies the `useSyncExternalStore` subscription,
+ * so this surface re-renders with the dialog already gone. Kept as a named
+ * module-level no-op rather than an inline arrow so the identity is stable and the
+ * JSX says what it means.
+ */
+function closeOnboarding(): void {}
 
 /** Map a shelf status onto the `Shelf` primitive's state vocabulary. */
 function toShelfState(status: string): ShelfState {
@@ -316,8 +334,6 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
  */
 export function HomeView({ clock = systemClock }: { clock?: Clock }) {
   const languages = usePreferencesStore((state) => state.languages);
-  const preferencesHydrated = usePreferencesStore((state) => state.hydrated);
-  const onboardingComplete = usePreferencesStore((state) => state.onboardingComplete);
   const hydratePreferences = usePreferencesStore((state) => state.hydrate);
   const events = useHistoryStore((state) => state.events);
   const hydrateHistory = useHistoryStore((state) => state.hydrate);
@@ -327,8 +343,31 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
   // know whether the listener has one before it decides to render the section.
   const mixes = useMixStore((state) => state.mixes);
   const hydrateMixes = useMixStore((state) => state.hydrate);
-  // Onboarding is offered until it is confirmed *or* dismissed for this visit.
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  /*
+   * The first-run gate, read through `useSyncExternalStore` rather than a
+   * `useState` + `useEffect` pair.
+   *
+   * An effect that called `setState` on mount is flagged by
+   * `react-hooks/set-state-in-effect`, and rightly: it costs an extra render pass
+   * and, worse, the dialog would appear in that first paint and vanish in the
+   * second. `useSyncExternalStore` reads the flag *during* render, so the correct
+   * value is in the first committed paint and there is no flash in either
+   * direction.
+   *
+   * The explicit server snapshot is what makes that legal: the server cannot read
+   * `localStorage`, so it renders no dialog and the client reconciles on
+   * hydration.
+   */
+  const onboardingSeen = useSyncExternalStore(
+    subscribeToOnboarding,
+    isOnboardingSeen,
+    getOnboardingServerSnapshot,
+  );
+  // The rail's own derived entries, reported upward by `QuickPicksShelf` so the
+  // onboarding dialog offers exactly the artists the feed is showing.
+  const [onboardingArtists, setOnboardingArtists] = useState<readonly QuickPick[]>([]);
+  const storedPicks = useQuickPickPicksStore((state) => state.picks);
+  const hydratePicks = useQuickPickPicksStore((state) => state.load);
   // M17: the presented filter, for this visit only. No store, no preference, no
   // URL — a lens on the feed is not a piece of state the device keeps.
   const [filter, setFilter] = useState<HomeFilterValue>("all");
@@ -351,7 +390,10 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
     void hydrateMixes().catch((error: unknown) => {
       console.warn("[home] smart mixes unavailable:", error);
     });
-  }, [hydrateHistory, hydrateLibrary, hydrateMixes, hydratePreferences]);
+    void hydratePicks().catch((error: unknown) => {
+      console.warn("[home] first-run artist picks unavailable:", error);
+    });
+  }, [hydrateHistory, hydrateLibrary, hydrateMixes, hydratePicks, hydratePreferences]);
 
   // Local signals drive which sections render at all, and — through the seeds —
   // which locally informed shelves may issue a request.
@@ -414,7 +456,7 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
     recent: recentlyPlayedTracks(events, RECENT_LIMIT),
   };
 
-  const showOnboarding = preferencesHydrated && !onboardingComplete && !onboardingDismissed;
+  const showOnboarding = !onboardingSeen;
 
   return (
     <div className="flex flex-col gap-8" data-testid="home-view">
@@ -472,6 +514,8 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
         providerTracks={[...feed.trending.tracks, ...feed.collections.tracks]}
         providerState={toShelfState(feed.trending.status)}
         onRetry={feed.trending.retry}
+        storedPicks={storedPicks}
+        onRailChange={setOnboardingArtists}
         filter={filter}
       />
       <MixCards
@@ -518,11 +562,15 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
       </div>
 
       {showOnboarding && (
-        <LanguageOnboarding
-          onClose={() => {
-            setOnboardingDismissed(true);
-          }}
-        />
+        /*
+         * `onClose` has nothing to set. The dialog owns the gate: it calls
+         * `markOnboardingSeen()` on both confirmation and dismissal, which notifies
+         * the `useSyncExternalStore` subscription and re-renders this surface with
+         * `onboardingSeen === true`. An earlier version also flipped local state
+         * here, which left `setOnboardingSeen` as dead reference to a setter that
+         * no longer existed.
+         */
+        <ArtistOnboarding artists={onboardingArtists} onClose={closeOnboarding} />
       )}
     </div>
   );

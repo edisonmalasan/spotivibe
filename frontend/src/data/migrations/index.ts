@@ -39,6 +39,22 @@ function addMixesStore(db: IDBDatabase): void {
   store.createIndex("byGeneratedAt", "generatedAt");
 }
 
+/**
+ * The first-run artist picker store.
+ *
+ * Idempotent for the same reason `addMixesStore` is: a database created fresh at
+ * version 3 already has this store from `createInitialSchema`, and the upgrade
+ * handler must not fail trying to add it a second time.
+ *
+ * Keyed by artist identity rather than by row id, so picking the same artist
+ * twice is one record and un-picking is a delete — the `likedTracks` precedent.
+ */
+function addQuickPickPicksStore(db: IDBDatabase): void {
+  if (db.objectStoreNames.contains(STORE.quickPickPicks)) return;
+  const store = db.createObjectStore(STORE.quickPickPicks, { keyPath: "artistId" });
+  store.createIndex("byPickedAt", "pickedAt");
+}
+
 /** Ordered registry of schema migrations (append-only, one per version). */
 export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   {
@@ -50,5 +66,10 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
     version: 2,
     description: "Add the Smart Mixes store",
     run: addMixesStore,
+  },
+  {
+    version: 3,
+    description: "Add the first-run Quick Picks store",
+    run: addQuickPickPicksStore,
   },
 ];

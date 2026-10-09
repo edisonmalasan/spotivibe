@@ -202,7 +202,46 @@ dependency was added to the client, and the manifest assertion is unchanged.
 `M20_CLIENT_BUDGET`, and `M22_CLIENT_BUDGET` each hold their own figures and are asserted on their
 own terms, so each milestone's cost is measured against the record it replaced. Measuring M22's
 delta from M19's record would report the sum of two milestones; measuring M23's from M19's would
-report three.
+report three. M23's own record is now `M23_CLIENT_BUDGET`, for the same reason.
+
+### 2d. First-run Quick Picks onboarding re-recorded the ceiling a fourth time, and the two figures disagree
+
+First-run onboarding became an artist picker, replacing the language dialog. `LanguageOnboarding` left
+the client graph entirely; `ArtistOnboarding`, `onboardingGate`, `quickPickPicksStore` and the picks
+path through the repository and backup planner entered it. Measured 2026-10-09 from a clean `.next`
+on the same toolchain:
+
+| Measurement | After M23 | After onboarding | Delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 388,571 B | 388,546 B | **−25 B** |
+| Largest single chunk, gzipped | 96,667 B | 97,470 B | **+803 B** |
+| Emitted chunks | 25 | 25 | **0** |
+| `/` first load, gzipped | 231,133 B (13 chunks) | 231,327 B (13 chunks) | +194 B |
+
+**Publish both numbers, because the total alone inverts the story.** The total went *down* by 25
+bytes, which reads like a free change. The largest chunk went *up* by 803, and that is the figure
+that forced the re-record, because `keeps the largest single chunk under the recorded figure` is the
+one ceiling rule in `motion-budget.test.ts` that carries **no** `toleranceBytes`. A 25-byte reduction
+would have sat comfortably inside the slack and needed no re-record at all; an 803-byte increase
+would have failed without one. Reporting only the total would have described this change as costing
+nothing while it in fact raised a hard ceiling.
+
+**Why the total fell while the largest chunk grew.** The chunk count did not move, so nothing new was
+added to the client graph — code was *moved* within it. The language picker rendered the entire
+catalog (37+ entries) as a filterable multi-select; the artist picker renders only the entries the
+rail already derived. The picker that replaced it is smaller than the picker it removed, and the 803
+bytes are the net of that against the new onboarding surface.
+
+**No dependency was added to the client at all**, which the manifest assertion
+(`an animation library in the manifest fails the budget`) checks independently of these figures.
+`states what first-run onboarding cost, in bytes` pins the +803 so the ceiling cannot be raised again
+without the delta moving with it.
+
+**The motion allowance did not widen.** `MOTION_ALLOWED` is a closed list and
+`features/onboarding/ArtistOnboarding.tsx` is not on it, so the dialog declares no motion class of its
+own — exactly as `LanguageOnboarding` did not. The artist tiles it renders are `ArtistCard`, which is
+already an allowed surface and already carries `motion-reveal` and `motion-feedback`. Selection is
+announced by `aria-pressed` and by the ring rather than by an animation.
 
 ## 3. No motion without a reduced-motion path
 

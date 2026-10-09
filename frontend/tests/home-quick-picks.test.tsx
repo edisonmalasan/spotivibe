@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ListeningEventRecord, Track } from "@/data/repositories";
+import type { ListeningEventRecord, QuickPickPickRecord, Track } from "@/data/repositories";
 import {
   deriveQuickPicks,
   isQuickPickKind,
@@ -285,6 +285,99 @@ describe("quickPicks: selected languages shape candidates, not card type", () =>
       providerTracks: unstamped,
     });
     expect(picks.map((pick) => pick.title)).toEqual(["Aurora", "Beacon"]);
+  });
+});
+
+describe("quickPicks: first-run picks lead the rail", () => {
+  /** A stored pick, in the shape the repository hands back. */
+  const storedPick = (artistId: string, name: string, pickedAt = 1_000): QuickPickPickRecord => ({
+    artistId,
+    name,
+    pickedAt,
+  });
+
+  it("offers a picked artist on a device with no other material", () => {
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: NO_TASTE,
+      picks: [storedPick("UC_picked", "Aurora Vale")],
+    });
+
+    expect(picks).toHaveLength(1);
+    expect(picks[0]?.title).toBe("Aurora Vale");
+    expect(picks[0]?.kind).toBe("artist");
+    expect(picks[0]?.target).toBe("UC_picked");
+  });
+
+  it("ranks a pick above a liked artist", () => {
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      // `material()` likes Aurora; the pick is somebody else entirely.
+      taste: material(),
+      picks: [storedPick("UC_picked", "Aurora Vale")],
+    });
+
+    expect(picks[0]?.title).toBe("Aurora Vale");
+    // And the liked material still follows — picks lead, they do not replace.
+    expect(picks.map((entry) => entry.title)).toContain("Aurora");
+  });
+
+  it("keeps the picks when the listener likes something afterwards", () => {
+    /*
+     * The case that decides whether picks are a source or a cold-start
+     * stand-in. A device with any local material skips provider results entirely;
+     * if picks were gated the same way, liking one track would silently drop the
+     * listener's own stated choices.
+     */
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: { likedTracks: [track("l1", "Aurora")], events: [] },
+      picks: [storedPick("UC_picked", "Aurora Vale")],
+    });
+
+    expect(picks.map((entry) => entry.title)).toEqual(
+      expect.arrayContaining(["Aurora Vale", "Aurora"]),
+    );
+    expect(picks[0]?.title).toBe("Aurora Vale");
+  });
+
+  it("offers one entry for an artist who is both picked and liked", () => {
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: material(), // likes Aurora
+      picks: [storedPick("Aurora", "Aurora")],
+    });
+
+    expect(picks.filter((entry) => entry.title === "Aurora")).toHaveLength(1);
+  });
+
+  it("keeps every pick an artist with a resolvable target", () => {
+    const picks = deriveQuickPicks({
+      languages: ["en"],
+      taste: NO_TASTE,
+      picks: [storedPick("UC_a", "Alpha"), storedPick("UC_b", "Beta")],
+    });
+
+    expect(picks).toHaveLength(2);
+    for (const entry of picks) {
+      expect(entry.kind).toBe("artist");
+      expect(quickPickHref(entry)).not.toBeNull();
+    }
+  });
+
+  it("behaves exactly as before when no picks are supplied", () => {
+    // A caller that has not loaded picks gets the pre-change rail, not an error
+    // and not an empty one.
+    expect(deriveQuickPicks({ languages: ["en"], taste: material() })).toEqual(
+      deriveQuickPicks({ languages: ["en"], taste: material(), picks: [] }),
+    );
+  });
+
+  it("does not let picks exceed the rail bound", () => {
+    const many = Array.from({ length: 12 }, (_, i) => storedPick(`UC_${i}`, `Artist ${i}`));
+    const picks = deriveQuickPicks({ languages: ["en"], taste: NO_TASTE, picks: many });
+
+    expect(picks).toHaveLength(MAX_QUICK_PICKS);
   });
 });
 

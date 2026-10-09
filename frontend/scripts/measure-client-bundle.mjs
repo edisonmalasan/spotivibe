@@ -93,38 +93,51 @@ export const M22_CLIENT_BUDGET = Object.freeze({
 });
 
 /**
- * The recorded ceiling, re-measured after M23 (artist Quick Picks and artwork parity).
+ * M23's record, preserved rather than overwritten.
  *
- * Same toolchain and method as all three records above: 2026-10-06, Windows, Node 24.21.0,
+ * Measured 2026-10-06, Windows, Node 24.21.0, `next build` (Next.js 16.3.6, Turbopack),
+ * clean `.next`: 25 emitted chunks, 388,571 bytes gzipped in total, largest single chunk
+ * 96,667, `/` first load 231,133 across 13 chunks.
+ *
+ * Kept as its own exported constant for the reason {@link M22_CLIENT_BUDGET} is: this change
+ * re-recorded the ceiling, and a ceiling that silently replaced its predecessor would erase
+ * the only evidence the number ever moved four times.
+ */
+export const M23_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 388571,
+  largestChunkGzippedBytes: 96667,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 231133,
+  homeFirstLoadChunkCount: 13,
+});
+
+/**
+ * The recorded ceiling, re-measured after the first-run Quick Picks onboarding change.
+ *
+ * Same toolchain and method as all four records above: 2026-10-09, Windows, Node 24.21.0,
  * `next build` (Next.js 16.3.6, Turbopack), clean `.next`. Reproduce with
  * `node scripts/measure-client-bundle.mjs`.
  *
- * **The `main` control, measured the same way, reproduced M22's record byte for byte** —
- * 26 chunks, 389,572 B, largest 96,667, `/` 232,135 across 14 chunks, from `e3c39a4` on a
- * clean build. So the figures below are attributable to M23's own change and not to build
- * drift on this machine. That control is the only reason this re-record is a measurement
- * rather than an assumption, and it is the reason it can be a *negative* delta: a reduction
- * is precisely the shape of drift that an unverified record would let through unnoticed.
+ * **This change made the client bundle larger, and the record follows it up.** The largest
+ * single chunk grew by 803 bytes gzipped (96,667 → 97,470) and `/`'s first load by 194 bytes
+ * (231,133 → 231,327). The emitted chunk count did not move (25 → 25) and the total fell by
+ * 25 bytes (388,571 → 388,546).
  *
- * **M23 made the client bundle smaller, and the record follows it down.** The total fell by
- * 1,001 bytes gzipped (389,572 → 388,571), the emitted chunk count by one (26 → 25), and
- * `/`'s first load by 1,002 bytes across one chunk fewer (232,135 across 14 → 231,133
- * across 13). The largest chunk did not move at all (96,667).
+ * **Where the 803 bytes are, and why this is not a dependency.** The growth is first-party
+ * code only: `ArtistOnboarding` (`src/features/onboarding/ArtistOnboarding.tsx`), the
+ * `onboardingGate` flag module, the `quickPickPicksStore`, and the picks path through the
+ * repository and backup planner. No package was added to the client at all, which the
+ * manifest assertion (`an animation library in the manifest fails the budget`) continues to
+ * check independently. The total falling while the largest chunk grew is the shape of code
+ * being *moved* rather than added — `LanguageOnboarding` and its language multi-select left
+ * the client graph, and a first-run artist picker is smaller than the catalog picker it
+ * replaces.
  *
- * **Why it shrank.** M23 removed a section. `popular-artists` and Quick Picks were measured
- * on production to be the same seven artists, in the same order, from the same
- * `groupArtistsByIdentity(trending.tracks)` call, and the `discovery` spec permits one
- * circular artist section — so the two were consolidated into a single rail. A whole
- * section's rendering path, its `Shelf` case in `HomeView`, and its dedicated section wiring
- * left the client graph. That is the opposite of a dependency appearing, which is what this
- * ceiling exists to catch, and it is why this re-record lowers the figures rather than
- * raising them.
- *
- * **What the milestone added, and where it did land.** `deriveMixPreviewCollage` in
- * `src/features/home/mixes/collage.ts` is new first-party code and it *is* inside this
- * figure: the 1,001 bytes is the net of that addition against the removed section, not the
- * addition alone. No dependency was added to the client at all, and the manifest assertion
- * (`an animation library in the manifest fails the budget`) is unchanged.
+ * **The largest-chunk rule is the strict one** — it carries no `toleranceBytes`, unlike the
+ * total and the per-route figures — so a re-record was required rather than absorbed by
+ * slack. The delta is asserted in `tests/motion-budget.test.ts` ("states what first-run
+ * onboarding cost, in bytes") exactly as M20's and M22's were, so the number cannot be
+ * quietly raised again without the delta moving with it.
  *
  * These are bytes, not "kB", so the assertion cannot move when someone rounds.
  */
@@ -139,11 +152,11 @@ export const CLIENT_BUDGET = Object.freeze({
   method:
     "every .js file under .next/static/chunks, gzipped at level 9; per-route, the <script src> set of the route's emitted .next/server/app HTML",
   /** When and after what this figure was measured, so a drift has something to be compared to. */
-  recordedAt: "2026-10-06, after M23 (artist Quick Picks and artwork parity)",
-  totalGzippedBytes: 388571,
-  largestChunkGzippedBytes: 96667,
+  recordedAt: "2026-10-09, after the first-run Quick Picks onboarding change",
+  totalGzippedBytes: 388546,
+  largestChunkGzippedBytes: 97470,
   chunkCount: 25,
-  homeFirstLoadGzippedBytes: 231133,
+  homeFirstLoadGzippedBytes: 231327,
   homeFirstLoadChunkCount: 13,
   /**
    * How far a rebuild may drift from the recorded figure.
