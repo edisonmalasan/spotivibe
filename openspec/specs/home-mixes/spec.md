@@ -96,7 +96,7 @@ unresolvable target.
 A Quick Pick SHALL NOT be a search, a release, or any other kind of entry. The shelf SHALL NOT render
 a card for a selected language, and SHALL NOT reserve rail capacity for one. Where the device holds
 no local material, the shelf SHALL complete the rail from provider results the Home surface already
-holds in memory. Completing the rail this way SHALL introduce no new request and no new stored data.
+holds in memory. Completing the rail this way SHALL introduce no new request and no new stored data of its own. **Artists the listener explicitly picked during first-run onboarding are not provider results**: where such picks exist they are a source in their own right, ranked above provider results and above derived local material, and the cold-start gate no longer applies to them.
 
 Provider results SHALL NOT contribute entries while any local material exists, and SHALL NOT
 displace, outrank, or reorder an entry derived from local material. Provider results SHALL NOT be
@@ -204,6 +204,71 @@ placeholder rather than a broken image.
 - **WHEN** Home renders
 - **THEN** exactly one section of the feed uses circular artist geometry, and no two circular
   sections are adjacent
+
+### Requirement: First run asks for artists, not languages
+
+On a device that has not completed first-run onboarding, the application SHALL present a first-run
+surface offering **artist** selections derived from the Quick Picks rail, and SHALL NOT present a
+language-selection dialog.
+
+The language preference SHALL remain available and editable in Settings. Removing the first-run
+question about languages SHALL NOT remove the ability to choose languages, and SHALL NOT change how
+discovery, mix plans, or the time shelf use the selected languages.
+
+The first-run surface SHALL gate the dashboard: the discovery feed SHALL NOT be presented until
+onboarding is completed or dismissed. A listener who dismisses without selecting anything SHALL reach
+the dashboard rather than being held.
+
+#### Scenario: A new device is opened
+
+- **WHEN** the Home route is opened on a device that has not completed onboarding
+- **THEN** the artist onboarding surface is presented, no language dialog is presented, and the
+  discovery feed is not yet presented
+
+#### Scenario: The language preference is still reachable
+
+- **WHEN** the first-run language dialog no longer exists
+- **THEN** the selected languages remain visible and editable in Settings, and discovery still
+  filters by them
+
+### Requirement: Picked artists persist locally and travel through backup
+
+Artists selected during first-run onboarding SHALL be stored in IndexedDB under a dedicated store
+keyed by canonical artist identity, SHALL survive a reload, and SHALL be included in the versioned
+JSON backup envelope so they are restored by import.
+
+The envelope dataset SHALL be **optional**, so that a backup exported before this behaviour existed
+continues to validate and import. This mirrors the `mixes` dataset, and omitting it would produce an
+envelope that exports the picks and silently drops them on import.
+
+**Explicit picks SHALL NOT be stored in `localStorage`.** They are user data rather than a tiny
+boot-time preference: a browser cache clear would silently destroy them, and they would fall outside
+the backup envelope that `AGENTS.md` makes canonical for local-first data.
+
+The gate recording that onboarding has been seen **SHALL** be stored in `localStorage` under a
+namespaced key, and SHALL be readable before the IndexedDB repositories open, so that the onboarding
+surface does not appear and then disappear across the first paint. An unreadable or unwriteable gate
+SHALL be treated as "not seen" rather than as an error.
+
+#### Scenario: Picks survive a reload
+
+- **WHEN** artists are selected during onboarding and the application is reloaded
+- **THEN** the same artists remain selected and are offered by the Quick Picks rail
+
+#### Scenario: Picks round-trip through backup
+
+- **WHEN** picks exist and the data is exported and then imported
+- **THEN** the imported application offers the same picked artists
+
+#### Scenario: A pre-existing backup still imports
+
+- **WHEN** a backup envelope exported before this behaviour is imported
+- **THEN** it validates and imports, and the picks dataset is treated as empty
+
+#### Scenario: Clearing browser storage does not silently lose the picks
+
+- **WHEN** picks are stored and `localStorage` is cleared
+- **THEN** the picks remain, because they are held in IndexedDB rather than in `localStorage`
 
 ### Requirement: Mix cards present honest preview artwork
 
