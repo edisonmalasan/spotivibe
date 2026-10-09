@@ -117,11 +117,17 @@ export function preferLongFormTracks(tracks: readonly Track[]): Track[] {
  * would mean the check depends on a render. This is the declaration the check reads,
  * so a future surface that is added to the JSX but not here is a gap the tests
  * below are written to catch.
+ *
+ * **The circular artist rail is first**, and it was third until it moved. It used to be
+ * declared last, which kept the check honest about the page while the page itself led
+ * with two language-derived rails. Reordering this list alone would have made the
+ * rhythm guard assert an order nothing renders — the failure mode M23 exists to rule
+ * out — so the two declarations move together or not at all.
  */
 const M17_SURFACE_ROWS: readonly HomeFilterSurface[] = [
+  QUICK_PICK_SURFACE,
   MIX_CARD_SURFACE,
   TIME_SHELF_SURFACE,
-  QUICK_PICK_SURFACE,
 ];
 
 /**
@@ -428,22 +434,21 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
         reads the same presented filter the sections do, so they appear and
         disappear together.
       */}
-      <MixCards
-        likedTracks={likedTracks}
-        events={events}
-        languages={languages}
-        now={now}
-        clock={clock}
-        filter={filter}
-      />
-      <TimeShelf
-        likedTracks={likedTracks}
-        events={events}
-        now={now}
-        languages={languages}
-        clock={clock}
-        filter={filter}
-      />
+      {/*
+        The artist rail comes **first**, and that order is the requirement rather than a
+        layout preference.
+
+        It rendered third — behind the mix cards and the time shelf — while the *content*
+        requirement (artist-only) had been satisfied since M23. That combination is what
+        made it read as unfinished: the rail held only artists, but the first thing a
+        listener met was a row of mix cards derived from their selected languages, then a
+        time-of-day band. Both are legitimate surfaces answering a different question, and
+        neither was wrong on its own terms; they were simply ahead of the one surface that
+        speaks to who the listener already is.
+
+        Rendered order is asserted directly in `tests/routes.test.tsx`, against document
+        order rather than this source, so it cannot drift back.
+      */}
       <QuickPicksShelf
         likedTracks={likedTracks}
         events={events}
@@ -467,6 +472,22 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
         providerTracks={[...feed.trending.tracks, ...feed.collections.tracks]}
         providerState={toShelfState(feed.trending.status)}
         onRetry={feed.trending.retry}
+        filter={filter}
+      />
+      <MixCards
+        likedTracks={likedTracks}
+        events={events}
+        languages={languages}
+        now={now}
+        clock={clock}
+        filter={filter}
+      />
+      <TimeShelf
+        likedTracks={likedTracks}
+        events={events}
+        now={now}
+        languages={languages}
+        clock={clock}
         filter={filter}
       />
 
