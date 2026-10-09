@@ -105,8 +105,9 @@
 - [x] 8.1 Six gate runs plus the corroborator, from the canonical home
 - [x] 8.2 Corroborator exit 0, six distinct digests, one commit, 0 skipped — using this tree's own
       `--expect-files` / `--expect-budget`, not the stale defaults
-- [ ] 8.3 Batch commit's **tree** equals the merge commit's tree
-- [ ] 8.4 Record commit, tree and `merge-base` in the **PR body**
+- [x] 8.3 Batch commit's **tree** equals the merge commit's tree — `ab5a627` on both, verified
+      after the merge, with nothing committed in between
+- [x] 8.4 Record commit, tree and `merge-base` in the **PR body**
 
 ## 9. Statements
 

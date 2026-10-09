@@ -143,6 +143,54 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M24** | Repair the gate-batch criterion apparatus — make the `DONE` criterion runnable | `DONE` — PR #113, merge `2fc2b16`, archived `2026-10-08-repair-gate-batch-apparatus` | M21, M23 |
 | **M25** | Close the cross-test-file scan race in the contrast guard | **MERGED, NOT `DONE`** — PR #115 `3e3cfe6`, archived `2026-10-08-fix-contrast-guard-scan-race`; criterion **5 of 6**, unmet | M24 |
 | **M26** | Synchronise the Settings test on the condition it asserts | `DONE` — PR #117 `546bb31`, archived `2026-10-08-fix-settings-hydration-wait`; batch 32 **6 of 6** at the merge | M25 |
+| **M27** | First-run artist Quick Picks picker, replacing the language dialog | `MERGED, ARCHIVED` — PR #120, merge `8d9c80d`, archived `2026-10-10-quick-picks-onboarding`; batch 6 of 6, **but see the two qualifications below** | M23, M26 |
+
+> **M27 is merged and archived, but two of its evidence claims are weaker than the batch number
+> alone suggests, and the row does not say `DONE` for that reason.**
+>
+> **What shipped.** First run now asks which artists the listener likes. `LanguageOnboarding` is
+> deleted; the language *preference* is untouched and still editable in Settings, with its
+> coverage preserved verbatim in `frontend/tests/languages-settings.test.tsx`. Picked artists are
+> stored in **IndexedDB**, not `localStorage` — a deliberate divergence from the literal request,
+> because a cache clear would destroy them and they would fall outside the backup envelope. Only
+> the "has first run happened" flag uses `localStorage`, since that must be readable before the
+> repositories open or the dialog would appear and then vanish across the first paint.
+>
+> **Two qualifications, stated rather than smoothed over.**
+>
+> 1. **`npm run gate` did not complete as one command.** It terminated with `StackOverflowException`
+>    under PowerShell output redirection and did **not** reproduce when the steps ran separately.
+>    Lint, `format:check`, typecheck, build and `npm test` were each run individually and each
+>    exited 0, and the six-run batch is green at the same commit — but that is a reconstruction of
+>    the gate, not one green invocation of it.
+> 2. **No browser verification was possible.** No browser is attached to that session. The rendered
+>    behaviour of the new dialog — layout, focus, backdrop, and that the rail really does lead with
+>    the picks — is **UNVERIFIED**; only jsdom-level tests cover it.
+>
+> **Batch:** 6 of 6 green at commit `f70ba3186d85`, 185 files / 3,440 tests / 25 motion-budget,
+> 0 skipped, corroborator exit 0, and the merge tree `ab5a627` is byte-identical to the tree the
+> batch measured with nothing committed in between. `--expect-files 185 --expect-budget 25` was
+> required: the script's defaults of 182/21 are M21's stale figures and exit 1 on correct logs.
+>
+> **The motion budget was re-recorded upward.** The largest client chunk grew **+803 B**
+> (96,667 → 97,470), and that is the one ceiling rule carrying no `toleranceBytes`. M23's record is
+> preserved as `M23_CLIENT_BUDGET` and the delta is asserted, following the M20/M22 precedent. The
+> **total fell by 25 B**, so `frontend/docs/MOTION.md` publishes both figures — reporting only the
+> total would describe this change as costing nothing while it in fact raised a hard ceiling.
+>
+> **Four bugs were caught by tests rather than review**, all recorded in the archived `tasks.md`:
+> `replaceAll` stored the artist id where the display name belonged; reporting the derived rail
+> upward hung the suite outright rather than failing an assertion; the `storage` event fires only in
+> *other* tabs, so same-tab dismissal never closed the dialog; and the gate had to stop reading
+> `preferences.onboardingComplete`, whose only writer was the dialog being deleted. Each new detector
+> was made red by mutation and its source restored byte-identical by SHA-256.
+>
+> **Out of scope, recorded not absorbed:** M21 CRITICAL 1 and CRITICAL 2 remain open and unclosable
+> without the forbidden archived gate; M25's criterion 5 of 6 stays permanently unmet;
+> `mixes-repository.test.ts` pinned `SCHEMA_VERSION === 2`, which any future store breaks, and was
+> re-pointed at the migration registry here but is a general fragility elsewhere; there is no
+> `openspec verify` subcommand; `.ps1` files have no static gate; and root `scripts/` plus the
+> archived `release-gate.mjs` copies sit outside every gate.
 
 > **M25 closed the race that failed batch 26, and still does not qualify as `DONE`.**
 > `componentFiles()` in `frontend/tests/token-contrast.test.ts` collected paths with `readdirSync` in
