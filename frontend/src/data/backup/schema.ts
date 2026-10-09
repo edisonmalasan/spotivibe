@@ -170,6 +170,21 @@ const mixSchema = z.strictObject({
   updatedAt: z.number().int().min(0),
 });
 
+/**
+ * An artist the listener picked during first-run onboarding.
+ *
+ * Optional in the envelope, for the same reason `mixes` is: a backup exported
+ * before first-run picking existed carries no such key and must keep importing
+ * cleanly (spec `local-data` — "An envelope without the mixes dataset still
+ * imports"). Kept optional rather than required precisely so that a file already
+ * exported by an earlier build is never un-restorable.
+ */
+const quickPickPickSchema = z.strictObject({
+  artistId: z.string().min(1).max(200),
+  name: z.string().min(1).max(200),
+  pickedAt: z.number().int().min(0),
+});
+
 export const backupEnvelopeSchema = z.strictObject({
   format: z.literal(BACKUP_FORMAT),
   version: z.number().int().min(1),
@@ -184,6 +199,7 @@ export const backupEnvelopeSchema = z.strictObject({
     // M11: derived data, optional so a pre-M11 envelope still validates and
     // imports with the dataset empty.
     mixes: z.array(mixSchema).optional(),
+    quickPickPicks: z.array(quickPickPickSchema).optional(),
     session: sessionSchema.nullable(),
   }),
 });

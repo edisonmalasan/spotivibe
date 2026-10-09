@@ -8,7 +8,7 @@
  */
 
 export const DATABASE_NAME = "spotivibe";
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Store key for the single-record stores (preferences, session). */
 export const SINGLE_RECORD_KEY = "app";
@@ -22,6 +22,7 @@ export const STORE = {
   session: "session",
   metadataCache: "metadataCache",
   mixes: "mixes",
+  quickPickPicks: "quickPickPicks",
 } as const;
 
 export interface StoreIndexDefinition {
@@ -56,5 +57,10 @@ export const STORE_DEFINITIONS: readonly StoreDefinition[] = [
     name: STORE.mixes,
     options: { keyPath: "id" },
     indexes: [{ name: "byGeneratedAt", keyPath: "generatedAt" }],
+  },
+  {
+    name: STORE.quickPickPicks,
+    options: { keyPath: "artistId" },
+    indexes: [{ name: "byPickedAt", keyPath: "pickedAt" }],
   },
 ];

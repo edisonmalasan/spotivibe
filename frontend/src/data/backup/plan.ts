@@ -4,6 +4,7 @@ import type {
   MixRecord,
   PlaylistRecord,
   Preferences,
+  QuickPickPickRecord,
   SearchEntryRecord,
 } from "@/data/repositories";
 import type { BackupData, BackupEnvelope, BackupSession } from "./schema";
@@ -31,6 +32,8 @@ export interface ImportStats {
   searchHistory: number;
   /** M11: generated mixes written (0 when the envelope carries none). */
   mixes: number;
+  /** First-run artist picks written (0 when the envelope carries none). */
+  quickPickPicks: number;
   /** 0 or 1 — whether the preferences record will be written. */
   preferences: number;
   /** 0 or 1 — whether the session record will be written. */
@@ -55,6 +58,12 @@ export interface PreparedImport {
      * local ones are left alone.
      */
     mixes: MixRecord[];
+    /**
+     * First-run artist picks. Same empty-means-two-things rule as mixes: `[]`
+     * under `"replace"` means cleared, `[]` under `"merge"` means the backup
+     * predates picking and the local picks are left alone.
+     */
+    quickPickPicks: QuickPickPickRecord[];
     /** `undefined` leaves the session untouched; `null` clears it. */
     session: BackupSession | null | undefined;
   };
@@ -85,6 +94,7 @@ function countWrites(writes: PreparedImport["writes"]): ImportStats {
     history: writes.history.length,
     searchHistory: writes.searchHistory.length,
     mixes: writes.mixes.length,
+    quickPickPicks: writes.quickPickPicks.length,
     preferences: writes.preferences === undefined ? 0 : 1,
     session: writes.session === null || writes.session === undefined ? 0 : 1,
   };
@@ -101,6 +111,7 @@ export function planReplace(envelope: BackupEnvelope): PreparedImport {
     // M11: a pre-M11 envelope carries no mixes, and importing it must succeed
     // with the dataset empty rather than fail.
     mixes: [...(envelope.data.mixes ?? [])],
+    quickPickPicks: [...(envelope.data.quickPickPicks ?? [])],
     session: envelope.data.session,
   };
   return {
@@ -122,6 +133,11 @@ export function planMerge(envelope: BackupEnvelope, local: BackupData): Prepared
   // M11: mixes merge by identity with the newest `updatedAt` winning — the same
   // rule as playlists, because a mix is a named record the listener recognizes.
   const localMixes = new Map((local.mixes ?? []).map((record) => [record.id, record]));
+  // Picks merge by artist identity, newest `pickedAt` winning — a pick is a
+  // statement with a time, exactly as a like is.
+  const localPicks = new Map(
+    (local.quickPickPicks ?? []).map((record) => [record.artistId, record]),
+  );
 
   const likedTracks = envelope.data.likedTracks.filter((record) => {
     const existing = localLiked.get(record.trackId);
@@ -175,6 +191,10 @@ export function planMerge(envelope: BackupEnvelope, local: BackupData): Prepared
     history,
     searchHistory,
     mixes,
+    quickPickPicks: (envelope.data.quickPickPicks ?? []).filter((record) => {
+      const existing = localPicks.get(record.artistId);
+      return existing === undefined || record.pickedAt > existing.pickedAt;
+    }),
     session,
   };
 

@@ -7,6 +7,7 @@ import { createMetadataCacheRepository } from "./metadataCache";
 import { createMixesRepository } from "./mixes";
 import { createPlaylistsRepository } from "./playlists";
 import { createPreferencesRepository } from "./preferences";
+import { createQuickPickPicksRepository } from "./quickPickPicks";
 import { openDatabase, type OpenDatabaseOptions } from "./open";
 import { createSearchHistoryRepository } from "./searchHistory";
 import { createSessionRepository } from "./session";
@@ -38,6 +39,7 @@ export async function createRepositories(
     session: createSessionRepository(db),
     metadataCache: createMetadataCacheRepository(db),
     mixes: createMixesRepository(db),
+    quickPickPicks: createQuickPickPicksRepository(db),
     applyImport: (plan) => runImport(db, plan),
     resetAll: () => resetStores(db),
     close: () => db.close(),

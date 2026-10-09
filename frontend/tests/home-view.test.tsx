@@ -7,6 +7,8 @@ import { act, configure, fireEvent, render, screen, waitFor, within } from "@tes
 import "fake-indexeddb/auto";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearOnboardingSeen, markOnboardingSeen } from "@/features/onboarding/onboardingGate";
+import { resetQuickPickPicksStore } from "@/stores/quickPickPicksStore";
 import HomePage from "@/app/page";
 import { getLocalData } from "@/data/localData";
 import type { ListeningEventRecord, MixRecord, Track } from "@/data/repositories";
@@ -197,8 +199,22 @@ beforeEach(() => {
   resetPlayerStore();
   resetPreferencesStore();
   resetQueueStore();
+  resetQuickPickPicksStore();
   seedStores();
   stubDiscovery();
+  /*
+   * First run is off by default for this suite, and the gate is the `localStorage`
+   * flag rather than `preferences.onboardingComplete`.
+   *
+   * Seeding the repository flag alone stopped suppressing the dialog the moment
+   * the gate moved to `localStorage`, and the visible symptom was unrelated:
+   * `introduces no positioned element that could cover the player region` began
+   * failing on `[ null ]`, because a `fixed` onboarding dialog was rendering in
+   * every test that never asked for one. Marked here so the suite tests the feed,
+   * not the first-run surface; the gate itself is covered in
+   * `artist-onboarding.test.tsx` and the two cases that *want* the dialog clear it.
+   */
+  markOnboardingSeen();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -942,31 +958,51 @@ describe("HomeView: genre tiles", () => {
   });
 });
 
-describe("HomeView: first-run language onboarding", () => {
-  it("offers the language picker until it is confirmed or dismissed", async () => {
-    seedStores({ onboardingComplete: false });
-    stubDiscovery(() => ({ tracks: [] }));
+describe("HomeView: first-run artist onboarding", () => {
+  it("offers the artist picker on a device that has not seen first run", async () => {
+    // The gate is the `localStorage` flag, not the repository preference, so this
+    // is the one place the flag has to be cleared for the dialog to appear.
+    clearOnboardingSeen();
+    stubDiscovery(() => ({ tracks: [credited("a", "Alpha", "Aurora")] }));
     render(<HomeView />);
 
-    const dialog = await screen.findByRole("dialog", { name: "Choose your languages" });
+    const dialog = await screen.findByRole("dialog", { name: "Pick artists you like" });
     expect(dialog).toBeInTheDocument();
 
-    // Dismissal for this visit; the repository is untouched, so it is offered again.
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Choose your languages" }),
+        screen.queryByRole("dialog", { name: "Pick artists you like" }),
       ).not.toBeInTheDocument(),
     );
   });
 
-  it("never offers onboarding once it is complete", async () => {
-    seedStores({ onboardingComplete: true });
+  it("never offers onboarding once the gate is marked", async () => {
+    markOnboardingSeen();
     stubDiscovery(() => ({ tracks: [] }));
     render(<HomeView />);
     await settleFeed();
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("gates on the flag alone, not on the language preference", async () => {
+    /*
+     * The old gate read `preferences.onboardingComplete`, which the language
+     * dialog set as a side effect of confirming languages. Removing that dialog
+     * removed the only writer, so leaving the preference in the condition would
+     * have pinned onboarding *on* for anyone whose stored preferences were
+     * written by an older build.
+     */
+    clearOnboardingSeen();
+    // `onboardingComplete: true` is what an older build left behind.
+    seedStores({ onboardingComplete: true });
+    stubDiscovery(() => ({ tracks: [credited("a", "Alpha", "Aurora")] }));
+    render(<HomeView />);
+
+    expect(
+      await screen.findByRole("dialog", { name: "Pick artists you like" }),
+    ).toBeInTheDocument();
   });
 });
 

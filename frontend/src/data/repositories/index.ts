@@ -132,6 +132,39 @@ export interface MixesRepository {
   clear(): Promise<void>;
 }
 
+/**
+ * Artists the listener explicitly picked during first-run onboarding.
+ *
+ * These are the only Quick Picks the listener *stated* rather than the app
+ * inferred: a liked track is evidence they acted on, a provider artist is
+ * evidence nobody chose. Persisted because they are user data — a cache clear
+ * must not silently forget them, and they travel through the backup envelope —
+ * which is why this is IndexedDB and not the `localStorage` flag that gates the
+ * dialog itself.
+ */
+import type { QuickPickPickRecord } from "./types";
+
+export interface QuickPickPicksRepository {
+  /** Record a pick; re-picking the same artist refreshes `pickedAt`. */
+  pick(artistId: string, name: string, pickedAt?: number): Promise<QuickPickPickRecord>;
+  /** Remove a pick. An unknown id resolves quietly. */
+  unpick(artistId: string): Promise<void>;
+  /** Replace the whole selection in one transaction — how onboarding confirms. */
+  /**
+   * Replace the whole selection in one transaction — how onboarding confirms.
+   *
+   * Takes name *and* identity, because the display name came from a card the
+   * listener looked at and the repository cannot recover it. Storing the id here
+   * would render the rail as `UC_a1b2c3` instead of the artist's name — a real
+   * bug, caught by the store test rather than by review.
+   */
+  replaceAll(entries: readonly { artistId: string; name: string }[]): Promise<void>;
+  has(artistId: string): Promise<boolean>;
+  /** All picks, most recently picked first. */
+  list(): Promise<QuickPickPickRecord[]>;
+  clear(): Promise<void>;
+}
+
 /** Every repository the data layer exposes, grouped for one-stop access. */
 export interface Repositories {
   likedTracks: LikedTracksRepository;
@@ -142,6 +175,7 @@ export interface Repositories {
   session: SessionRepository;
   metadataCache: MetadataCacheRepository;
   mixes: MixesRepository;
+  quickPickPicks: QuickPickPicksRepository;
 }
 
 export * from "./types";

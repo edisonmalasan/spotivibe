@@ -3,6 +3,7 @@ import type { Track } from "@/data/repositories";
 import type { LocalTaste } from "@/features/home/localSeeds";
 import { groupArtistsByIdentity } from "@/features/recommendations/artists";
 import { normalizeLanguageCodes } from "@/lib/languages";
+import type { QuickPickPickRecord } from "@/data/repositories";
 
 /**
  * Quick Picks for Home (M23; spec: `home-mixes` — "Quick Picks are artist
@@ -84,6 +85,17 @@ export interface QuickPickInput {
    * Read only when there is no local material. See `deriveQuickPicks`.
    */
   readonly providerTracks?: readonly Track[];
+  /**
+   * Artists the listener explicitly picked during first-run onboarding.
+   *
+   * The only Quick Picks the listener *stated* rather than the app inferred, so
+   * they lead the rail. Deliberately **not** gated behind "no local material":
+   * a device that picked five artists and has since liked nothing must keep
+   * showing those five, and treating them like a cold-start stand-in would drop
+   * them the moment it liked one track. Optional because a caller that has not
+   * loaded them has no picks, which is the pre-change behaviour.
+   */
+  readonly picks?: readonly QuickPickPickRecord[];
 }
 
 /** Identity fallback: the provider id when the entry has one, else the name. */
@@ -242,6 +254,30 @@ export function deriveQuickPicks(input: QuickPickInput): QuickPick[] {
   // The local material: liked tracks first, then plays, both newest-first as the
   // stores hand them over.
   const material = [...input.taste.likedTracks, ...input.taste.events.map((e) => e.track)];
+
+  /*
+   * **Explicit picks lead**, and they are not a stand-in for anything.
+   *
+   * A pick is the one entry in this rail the listener chose by hand, so it ranks
+   * above inferred evidence: a liked track says they acted on an artist, a
+   * provider result says nobody chose. They are emitted first and, because
+   * `collect` dedupes by canonical identity, an artist who is both picked and
+   * liked appears exactly once — as the pick.
+   *
+   * They deliberately bypass the cold-start gate below. Gating them on
+   * `material.length === 0` would mean a listener who picked five artists and
+   * then liked one track silently lost four of their own choices, which is the
+   * exact failure the cold-start stand-in exists to avoid for the other sources.
+   */
+  for (const pick of input.picks ?? []) {
+    collect(picks, seen, {
+      id: `artist:${pick.artistId}`,
+      kind: "artist",
+      target: entityTarget(pick.artistId, pick.name),
+      title: pick.name,
+      subtitle: "Artist",
+    });
+  }
 
   // The cold-start stand-in. `material.length === 0` is the whole gate: when
   // there is any local material at all this is `[]` and the pass below reads

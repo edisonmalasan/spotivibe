@@ -158,6 +158,7 @@ describe("export → reset → import", () => {
         history: 0,
         searchHistory: 0,
         mixes: 0,
+        quickPickPicks: 0,
         preferences: 0,
         session: 0,
       });
@@ -259,6 +260,135 @@ describe("M11: the mixes dataset in the import pipeline", () => {
       await repos.applyImport(plan);
 
       expect((await repos.mixes.list())[0].name).toBe(makeMix().name);
+    } finally {
+      repos.close();
+    }
+  });
+});
+
+describe("the first-run picks dataset in the import pipeline", () => {
+  const pick = (artistId: string, name: string, pickedAt: number) => ({
+    artistId,
+    name,
+    pickedAt,
+  });
+
+  it("round-trips a selection through export and replace-import", async () => {
+    const repos = await createRepositories({ name: "apply-picks-round-trip" });
+    try {
+      const envelope = JSON.parse(
+        encode(
+          makeEnvelope(makeBackupData({ quickPickPicks: [pick("UC_a", "Aurora Vale", 1_000)] })),
+        ),
+      );
+      const prepared = prepareImport(encode(envelope));
+      expect(prepared.ok, "an envelope carrying picks validates").toBe(true);
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      await repos.applyImport(planReplace(prepared.envelope));
+
+      const stored = await repos.quickPickPicks.list();
+      expect(stored).toHaveLength(1);
+      // The *name* survives, not just the identity: a restore that kept only the id
+      // would put `UC_a` where the rail shows an artist's name.
+      expect(stored[0].name).toBe("Aurora Vale");
+    } finally {
+      repos.close();
+    }
+  });
+
+  it("replace-importing a pre-picks envelope leaves the dataset empty", async () => {
+    /*
+     * The same promise `mixes` gets, and it is the reason the field is optional rather
+     * than required: an envelope exported before first-run picking existed carries no
+     * such key, and "replace" must mean empty rather than silently kept.
+     */
+    const repos = await createRepositories({ name: "apply-pre-picks" });
+    try {
+      await repos.quickPickPicks.replaceAll([{ artistId: "UC_local", name: "Local Pick" }]);
+
+      const prePicks = JSON.parse(encode(makeEnvelope())) as { data: Record<string, unknown> };
+      expect(prePicks.data.quickPickPicks, "the fixture starts without picks").toBeUndefined();
+      const prepared = prepareImport(encode(prePicks));
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      await repos.applyImport(planReplace(prepared.envelope));
+
+      expect(await repos.quickPickPicks.list()).toEqual([]);
+    } finally {
+      repos.close();
+    }
+  });
+
+  it("merge-importing a pre-picks envelope leaves local picks untouched", async () => {
+    // Merge is the opposite promise: a backup that knows nothing about picks must not
+    // be allowed to delete the artist's own stated choices.
+    const repos = await createRepositories({ name: "apply-merge-pre-picks" });
+    try {
+      await repos.quickPickPicks.replaceAll([{ artistId: "UC_local", name: "Local Pick" }]);
+
+      const prePicks = JSON.parse(encode(makeEnvelope())) as { data: Record<string, unknown> };
+      const prepared = prepareImport(encode(prePicks));
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      await repos.applyImport(planMerge(prepared.envelope, await collectLocalData(repos)));
+
+      expect(await repos.quickPickPicks.list()).toHaveLength(1);
+    } finally {
+      repos.close();
+    }
+  });
+
+  it("merge-imports picks by artist identity, newest pickedAt winning", async () => {
+    const repos = await createRepositories({ name: "apply-merge-picks" });
+    try {
+      /*
+       * Seeded with `pick` and an explicit timestamp rather than `replaceAll`, and
+       * that distinction is the whole test. `replaceAll` stamps `Date.now()`, so a
+       * local row written that way is newer than any timestamp a fixture can invent —
+       * the merge would correctly keep it and the incoming row would be planned
+       * nowhere, which reads as "merge is broken" rather than "the fixture is dated".
+       */
+      await repos.quickPickPicks.pick("UC_a", "Stale Local", 1_000);
+      const incoming = makeBackupData({
+        quickPickPicks: [pick("UC_a", "Fresh From Backup", 9_000), pick("UC_b", "New Pick", 8_000)],
+      });
+      const prepared = prepareImport(encode(makeEnvelope(incoming)));
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      const plan = planMerge(prepared.envelope, await collectLocalData(repos));
+      expect(plan.stats.quickPickPicks).toBe(2);
+      await repos.applyImport(plan);
+
+      const byArtist = new Map(
+        (await repos.quickPickPicks.list()).map((record) => [record.artistId, record.name]),
+      );
+      expect(byArtist.get("UC_a")).toBe("Fresh From Backup");
+      expect(byArtist.get("UC_b")).toBe("New Pick");
+
+      // The rules converge: re-merging the same envelope plans nothing.
+      expect(planMerge(prepared.envelope, await collectLocalData(repos)).stats.quickPickPicks).toBe(
+        0,
+      );
+    } finally {
+      repos.close();
+    }
+  });
+
+  it("keeps the local pick when the backup's copy is older", async () => {
+    const repos = await createRepositories({ name: "apply-merge-picks-older" });
+    try {
+      await repos.quickPickPicks.pick("UC_a", "Newer Local", 9_000);
+      const incoming = makeBackupData({ quickPickPicks: [pick("UC_a", "Stale Backup", 1)] });
+      const prepared = prepareImport(encode(makeEnvelope(incoming)));
+      if (!prepared.ok) throw new Error(prepared.error.message);
+
+      const plan = planMerge(prepared.envelope, await collectLocalData(repos));
+      expect(plan.stats.quickPickPicks).toBe(0);
+      await repos.applyImport(plan);
+
+      expect((await repos.quickPickPicks.list())[0].name).toBe("Newer Local");
     } finally {
       repos.close();
     }

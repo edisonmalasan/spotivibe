@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createRepositories, openDatabase, STORE, type RepositorySet } from "@/data/indexeddb";
 import { SCHEMA_VERSION, STORE_DEFINITIONS } from "@/data/indexeddb/schema";
+import { SCHEMA_MIGRATIONS } from "@/data/migrations";
 import { getLocalData } from "@/data/localData";
 import { resetMixStore, useMixStore } from "@/stores/mixStore";
 import type { MixRecord, Track } from "@/data/repositories";
@@ -205,8 +206,19 @@ describe("mix store", () => {
 });
 
 describe("schema version 2 adds the mixes store", () => {
-  it("targets version 2 and defines the store with its index", () => {
-    expect(SCHEMA_VERSION).toBe(2);
+  it("defines the store with its index, at the version that added it", () => {
+    /*
+     * Asserted against the migration registry rather than `SCHEMA_VERSION`.
+     *
+     * This test used to pin `SCHEMA_VERSION` to 2, which is a claim about the whole
+     * schema rather than about mixes — so the first milestone to add a store after
+     * M11 broke a test that had nothing to say about mixes. "Mixes arrived at v2" is
+     * the claim, and the registry is where that claim lives; the head version moves
+     * with every future store and saying so here would only re-break it.
+     */
+    expect(SCHEMA_MIGRATIONS.some((step) => step.version === 2)).toBe(true);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(2);
+
     const definition = STORE_DEFINITIONS.find((entry) => entry.name === STORE.mixes);
     expect(definition?.options.keyPath).toBe("id");
     expect(definition?.indexes?.map((index) => index.name)).toEqual(["byGeneratedAt"]);
