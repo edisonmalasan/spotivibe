@@ -233,9 +233,15 @@ for ($run = 1; $run -le $Runs; $run += 1) {
 }
 
 Write-Host ""
-Write-Host "distinct suite totals:   $((($summary | ForEach-Object { if ($_ -match 'tests (\d+)') { $Matches[1] } }) | Sort-Object -Unique) -join ', ')"
-Write-Host "distinct file counts:    $((($summary | ForEach-Object { if ($_ -match 'files (\d+)') { $Matches[1] } }) | Sort-Object -Unique) -join ', ')"
-Write-Host "distinct motion-budget:  $((($summary | ForEach-Object { if ($_ -match 'motion-budget (\d+)') { $Matches[1] } }) | Sort-Object -Unique) -join ', ')"
+# Bound to variables, because the same three figures are now used twice: once in the summary a reader
+# scans, and once in the command they are told to run next. Deriving the command from the summary by
+# re-parsing `$summary` would be correct today and drift the first time either line changed.
+$suiteTotals = @(($summary | ForEach-Object { if ($_ -match 'tests (\d+)') { $Matches[1] } }) | Sort-Object -Unique)
+$fileCounts = @(($summary | ForEach-Object { if ($_ -match 'files (\d+)') { $Matches[1] } }) | Sort-Object -Unique)
+$budgetCounts = @(($summary | ForEach-Object { if ($_ -match 'motion-budget (\d+)') { $Matches[1] } }) | Sort-Object -Unique)
+Write-Host "distinct suite totals:   $($suiteTotals -join ', ')"
+Write-Host "distinct file counts:    $($fileCounts -join ', ')"
+Write-Host "distinct motion-budget:  $($budgetCounts -join ', ')"
 Write-Host "repository root resolved by walking up to ${markerRelative}: $repoRoot"
 Write-Host "  (examined, nearest first: $($examined -join ' -> '))"
 Write-Host ""
@@ -245,4 +251,24 @@ Write-Host "Now verify the logs with the checker that ships beside this script:"
 # checker's default is 6. A `-Runs 3` batch printed a command that then failed loudly on four unexamined
 # logs. Loud beats silent, so this was a NIT and not a WARNING, but the interface was wrong for every
 # non-default value, which is the whole of what an interface is for.
-Write-Host "  node `"$(Join-Path $PSScriptRoot 'verify-gate-batch.mjs')`" `"$LogDir`" --frontend `"$(Join-Path $repoRoot 'frontend')`" --runs $Runs"
+#
+# **And it omitted `--expect-files` / `--expect-budget`, which was worse than the NIT above, because that
+# one failed silently for the default value.** The checker defaulted to `182`/`21` - the M21 tree - so a
+# command printed by this driver exited 1 on a perfect batch, with every run green and nothing skipped. The
+# driver had the real figures in hand at this exact line, having just printed them three lines above, and
+# did not pass them. Measured against `qpo-batch2`: `8 problem(s) unresolved`, exit 1.
+#
+# So the figures are bound to the values parsed for the summary. That makes the printed command correct by
+# construction rather than by maintenance, and it cannot drift from the batch it describes.
+#
+# **When the batch disagrees with itself, no figure is printed.** Passing one of two competing figures
+# would assert a number the evidence contradicts, and the resulting message would name the wrong problem.
+# The checker reports the disagreement itself, which is the actual finding.
+$expectFlags = ""
+if ($fileCounts.Count -eq 1 -and $budgetCounts.Count -eq 1) {
+  $expectFlags = " --expect-files $($fileCounts[0]) --expect-budget $($budgetCounts[0])"
+} else {
+  Write-Host "  (this batch does not agree on a single file count or motion-budget count, so no --expect-*"
+  Write-Host "   figure is printed - the checker will report the disagreement, which is the real finding.)"
+}
+Write-Host "  node `"$(Join-Path $PSScriptRoot 'verify-gate-batch.mjs')`" `"$LogDir`" --frontend `"$(Join-Path $repoRoot 'frontend')`" --runs $Runs$expectFlags"
