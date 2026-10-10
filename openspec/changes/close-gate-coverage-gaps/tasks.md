@@ -328,12 +328,64 @@ which is precisely how a gate's coverage quietly rots.
 
 ## 5. Verify and close out
 
-- [ ] 5.1 `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run build`, `npm test`,
+- [x] 5.1 `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run build`, `npm test`,
       `npm --prefix frontend run icons:check`, `npm --prefix frontend run ps:check` — each run, each exit 0.
-- [ ] 5.2 `openspec validate close-gate-coverage-gaps --strict` and `openspec validate --specs --strict`.
-- [ ] 5.3 Prove the guard's own cost: record how long the coverage check adds to `npm test`, since it
+- [x] 5.2 `openspec validate close-gate-coverage-gaps --strict` and `openspec validate --specs --strict`.
+- [x] 5.3 Prove the guard's own cost: record how long the coverage check adds to `npm test`, since it
       spawns ESLint. Verify: the number is recorded whether or not it is acceptable, and if it is not,
       the design is revisited rather than the number reinterpreted.
+
+### Recorded output for 5.1 and 5.3
+
+`lint`, `format:check`, `ps:check`, `typecheck`, `build` and `test` each exited `0`. The suite is
+**186 files / 3471 tests**, against 185 / 3446 on `main` — the guard's 23 tests plus the 2 added to
+`motion-budget.test.ts`.
+
+**The guard's cost, measured three runs each way rather than from a single sample:**
+
+```
+with guard:      59.03s  58.46s  58.78s     median 58.78s   (186 files)
+without guard:   57.93s  58.23s  58.43s     median 58.23s   (185 files)
+marginal cost:   0.55s
+```
+
+**0.55 s on a ~58 s suite, under 1%, and the reason matters.** The guard's own file reports 30 s when
+run inside the full suite against 4.7 s in isolation, which looks alarming and is not the cost: the
+suite is dominated by jsdom environment setup (311 s of tracked time across 186 files) and runs its
+files concurrently, so the guard's ~1.7 s ESLint config load overlaps other workers rather than
+adding to them. Reporting the 30 s figure as the cost would be as wrong as reporting nothing — it
+measures contention, not work.
+
+The design is not revisited. The alternative exact alternative, `lintFiles(".")`, was measured at
+13.6 s and is not a saving at all, and dropping to per-extension probing plus a uniformity assertion
+is what made the guard sound while affordable.
+
+### The bundle ceiling moved, and why
+
+`npm test` failed on `keeps the largest single chunk under the recorded figure` — 97,490 against a
+recorded 97,470. **No client source was touched**, so the cause was measured rather than assumed.
+Both strict validations exit `0` (`openspec validate close-gate-coverage-gaps --strict` and
+`openspec validate --specs --strict`; the latter's INFO notices about requirement length are
+pre-existing across every spec and are not this change's):
+
+```
+main, built at the same path:   total 388546   largest 97470   chunks 25     <- exactly the record
+branch, built at the same path: total 388566   largest 97490   chunks 25
+per-chunk diff: 3oq21-7m3zq-f.js (97470)  ->  3ezrpmtu11_zh.js (97490),  all other 24 identical
+```
+
+Next.js inlines the whole of `frontend/package.json` into the client bundle, and the added line
+`"ps:check": "node scripts/powershell-parse-check.mjs"` is **53 raw / 20 gzipped bytes** of it.
+Deleting exactly that substring from the emitted chunk reproduces `main`'s chunk **byte for byte**
+(413,846 bytes, identical content), so nothing else in this change reaches the client. The
+largest-chunk rule carries no `toleranceBytes`, and the project's response to that is a re-record,
+done four times already — so `M29_CLIENT_BUDGET` preserves the onboarding record, `CLIENT_BUDGET`
+is re-recorded at the new figures with the delta asserted, and `docs/MOTION.md` gains section 2e.
+
+Paying 20 bytes for a real gate step is the right direction of trade: the alternative is keeping
+`ps:check` out of `package.json`, which means the coverage step is not a script the root proxy, CI
+and `AGENTS.md` can all name by the same name. The browser never evaluates the string. It is also
+the smallest possible instance of this cost — **any** script added to `frontend/package.json` pays it.
 - [ ] 5.4 Six `npm run gate` runs plus the corroborator, run as the driver prints it, recording the commit
       and tree the batch measured.
 - [ ] 5.5 Record commit, tree and merge-base in the **PR body**, not in this file.
@@ -343,3 +395,26 @@ which is precisely how a gate's coverage quietly rots.
 > **Known limitation, recorded not resolved:** no browser is attached in this environment, so nothing here
 > is visually verified. This change touches no application source, which bounds the claim rather than
 > satisfying it — recorded as UNVERIFIED in the PR body.
+
+### A process failure worth recording, because the gate would not have caught it
+
+Verifying the bundle ceiling needed `main` built **at the same path** as the branch, so `git checkout
+main` was run in place. The subsequent commits then landed on **`main`** rather than on
+`fix/gate-coverage-gaps`, which the OpenSpec branch rules forbid and which no automated check in this
+repository can detect — nothing asserts which branch HEAD is on.
+
+It was caught only because the full suite reported **185 test files instead of 186**: `gate-coverage.
+test.ts` was absent from the tree being tested. Two things about that are worth stating plainly:
+
+- **`npm run gate` passed anyway**, six or more times, against a tree that was missing this change's
+  central test file. A green gate is evidence about the tree it ran on, not about the branch.
+- Repairing it was a **`git branch -f` that first orphaned five commits**, because the commit made
+  while on `main` had `86d76db` as its parent rather than `456dcc2`. All work was recovered from the
+  reflog and re-applied as a cherry-pick, and `main` was verified byte-identical to `86d76db`
+  afterwards. `origin/main` was never pushed to at any point.
+
+The lesson is not "be careful with git" — it is that **this change added a guard about files the gate
+reads and left the larger question of what the gate reads *at all* untouched**. A gate that passes on
+the wrong tree is a green over nothing, which is the same shape as the defect this change exists to
+remove. Whether the gate should assert its own working tree is recorded as an open question in the PR
+body rather than absorbed here, because building that is a separate change with its own design.
