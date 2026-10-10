@@ -115,13 +115,13 @@ too.
 
 ## 2. The PowerShell parse gate
 
-- [ ] 2.1 Write `frontend/scripts/powershell-parse-check.mjs`: enumerate tracked `.ps1` files outside the
+- [x] 2.1 Write `frontend/scripts/powershell-parse-check.mjs`: enumerate tracked `.ps1` files outside the
       frozen roots, parse each with PowerShell's AST parser, and on any parse error print the file, the
       line and the error id, then exit non-zero. Verify: exits 0 on the current tree.
-- [ ] 2.2 Prove it fails on a malformed script rather than only passing on a well-formed one: copy the
+- [x] 2.2 Prove it fails on a malformed script rather than only passing on a well-formed one: copy the
       driver outside the tree, break it, and point the check at the copy. Verify: non-zero exit, and the
       message names the file and the error id.
-- [ ] 2.3 Prove the no-interpreter path reports rather than passes: run with no PowerShell reachable.
+- [x] 2.3 Prove the no-interpreter path reports rather than passes: run with no PowerShell reachable.
       Verify: prints a stated "not run" reason and exits 0 — never a silent pass, per *A run that is
       skipped is never reported as a pass*.
 - [x] 2.4 Wire `ps:check` into `frontend/package.json`, the root proxy, and `.github/workflows/ci.yml`.
@@ -131,6 +131,13 @@ too.
       reports rather than passes when no interpreter is present. Verify: `npm run format:check` exit 0.
 
 ### Recorded output for 2.1 - 2.3
+
+**These three were ticked late, and the record should say why rather than leave the tick looking
+contemporaneous.** The output below was captured when the work was done; the checkboxes were simply
+never marked, so the change would otherwise have archived reporting three incomplete tasks that had in
+fact been run and passed. Ticking them against evidence already in this file is bookkeeping. Had the
+evidence not been here, the correct action would have been to re-run the three commands, not to tick
+them.
 
 ```
 $ node scripts/powershell-parse-check.mjs            # on the real tree
@@ -411,9 +418,33 @@ and `AGENTS.md` can all name by the same name. The browser never evaluates the s
 the smallest possible instance of this cost — **any** script added to `frontend/package.json` pays it.
 - [x] 5.4 Six `npm run gate` runs plus the corroborator, run as the driver prints it, recording the commit
       and tree the batch measured.
-- [ ] 5.5 Record commit, tree and merge-base in the **PR body**, not in this file.
-- [ ] 5.6 Commit, push, PR, merge with a merge commit, delete the branch.
-- [ ] 5.7 Sync the delta into `openspec/specs/`, archive, and record the outcome in `ROADMAP.md`.
+- [x] 5.5 Record commit, tree and merge-base in the **PR body**, not in this file.
+- [x] 5.6 Commit, push, PR, merge with a merge commit, delete the branch.
+- [x] 5.7 Sync the delta into `openspec/specs/`, archive, and record the outcome in `ROADMAP.md`.
+
+**5.7 outcome.** Synced as PR **#129** (merge `8de5849`): `release-validation` 6 → 7 requirements,
+`verification-integrity` 12 → 15, `openspec validate --specs --strict` exit 0, no delta operation header
+reaching a main spec. Archived to
+`openspec/changes/archive/2026-10-11-close-gate-coverage-gaps` with `.openspec.yaml` preserved and the
+move recorded by `git mv` as renames rather than an add-and-delete pair. The M30 row and its note block
+are in `ROADMAP.md`.
+
+**The four requirements were verified present in their main specs before the archive ran**, each matched
+by heading rather than by count alone — 7 scenarios across the three `verification-integrity`
+requirements and 4 across the `release-validation` one. A count matching while a *different* requirement
+held the same name is the failure this avoids.
+
+**Tasks 2.1–2.3 were ticked late**, after the archive check reported 6 of 26 incomplete. Their evidence
+was already recorded above; the checkboxes simply were not marked. Ticking against evidence already in
+this file is bookkeeping. Had it been absent, the correct action would have been to re-run the three
+commands, not to tick them — which is the distinction M29's paragraph about a limitation being *checked*
+rather than described is about, applied to a change's own record of itself.
+
+**5.5 and 5.6 outcome.** PR **#128** merged as `0159f9e` on run `38087241830` (all 8 CI steps green);
+the batch's `--expect-files 186` / `--expect-budget 26` and the `ee3ff4662fcf` commit are in the PR
+body. The sync stage followed as PR **#129**, merged `8de5849`. Merge-base for both was `86d76db`,
+identical to `origin/main` at the time — verified rather than assumed, given that this branch's history
+includes the incident recorded below.
 
 ### Recorded output for 5.4
 
