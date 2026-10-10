@@ -145,7 +145,8 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M26** | Synchronise the Settings test on the condition it asserts | `DONE` — PR #117 `546bb31`, archived `2026-10-08-fix-settings-hydration-wait`; batch 32 **6 of 6** at the merge | M25 |
 | **M27** | Make the artist Quick Picks rail the first thing Home presents | `MERGED, ARCHIVED` — PR #119, merge `d7bf41a`, archived `2026-10-10-quick-picks-first-rail`; batch 6 of 6, corroborator exit 0 | M23, M26 |
 | **M28** | First-run artist Quick Picks picker, replacing the language dialog | `MERGED, ARCHIVED` — PR #120, merge `8d9c80d`, archived `2026-10-10-quick-picks-onboarding`; batch 6 of 6, **but see the two qualifications below** | M27, M23 |
-| **M29** | Stop the gate-batch corroborator failing correct evidence | `MERGED, ARCHIVED` — PR #124, merge `555b020`, sync #125 `906b930`, archived `2026-10-10-gate-batch-default-expectations`; batch 6 of 6 at `a9b5e3c`, corroborator exit 0 **both** with the printed flags and with none | M21, M27, M28 |
+| **M29** | Stop the gate-batch corroborator failing correct evidence | `MERGED, ARCHIVED` - PR #124, merge `555b020`, sync #125 `906b930`, archived `2026-10-10-gate-batch-default-expectations`; batch 6 of 6 at `a9b5e3c`, corroborator exit 0 **both** with the printed flags and with none | M21, M27, M28 |
+| **M30** | Make the gate's own coverage a checked fact rather than a documented gap | `MERGED, ARCHIVED` - PR #128, merge `0159f9e`, sync #129 `8de5849`, archived `2026-10-11-close-gate-coverage-gaps`; batch 6 of 6 at `ee3ff46`, corroborator exit 0; CI all 8 steps green | M29, M21 |
 
 > **M29 exists because a check that cannot pass was being bypassed, and nobody wrote that down.**
 >
@@ -183,6 +184,47 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > change's own `tasks.md` moves the tree after the measurement. The single-file diff is recorded instead,
 > together with why it cannot affect a run — `tasks.md` is Markdown read by no gate step. The batch record
 > itself lives in PR #124's body, not in the repository.
+
+> **M30 exists because the gap that M29 described in prose was itself the kind of gap M29 was about.**
+>
+> `run-gate-batch.ps1` was read by **no** gate step. ESLint returned exit `0` over it carrying
+> `File ignored because no matching configuration was supplied`, and `prettier --check` never asked about
+> it, because Prettier has no parser for `.ps1`. M29 wrote that down honestly — and a paragraph in a
+> documentation file is a comment, which goes stale while still claiming to be true.
+>
+> **Three silent-pass mechanisms, all now covered, and none of them is "the tool is quiet".**
+> ESLint exits `0` over a file it never opened. `prettier.getFileInfo()` ignores `.prettierignore` unless
+> given `ignorePath`, so `prettier --check AGENTS.md` exits `0` on a file it skipped. And `git ls-files`
+> cannot see untracked files, so an added file is invisible to the guard until it is staged — which is why
+> every mutation in the suite had to be `git add`-ed before it could be detected.
+>
+> **The measured gap was 57 files in 7 patterns** (`.gitkeep` ×24, `tests/fixtures/` json+md ×19, `.md`
+> ×11, `.example`, `.gitignore`, `.prettierignore`, `.svg`, `package-lock.json`) — `.ps1` was not the only
+> uncovered type, which corrected the premise the design started from.
+>
+> **Two of sixteen mutations stayed green**, which is the number worth remembering. Weakening a guard turns
+> any suite green by construction, so only tree-level mutations prove coverage; the series mutations
+> exposed two unbreakable guards that were repaired with synthetic witnesses, and one documentation
+> assertion whose regex matched both command lists and so matched nothing. An unbreakable mutation is an
+> unguarded clause wearing a test.
+>
+> **The guard costs 0.55 s on a ~58 s suite**, measured three runs each way. Its own file reports 30 s
+> in-suite against 4.7 s isolated, which is contention — CI later ran it at 2437 ms, confirming it — and
+> reporting the 30 s as the cost would have been as wrong as reporting nothing.
+>
+> **The client ceiling moved 20 bytes and was re-recorded**, the fifth time. Next.js inlines the whole of
+> `frontend/package.json` into the client bundle; `main` built at the same path measured exactly the
+> recorded 97,470, and deleting exactly the added `"ps:check"` substring from the emitted chunk reproduces
+> `main`'s chunk **byte for byte**. Any script added to that file pays this. See `docs/MOTION.md` §2e.
+>
+> **Two corrections are recorded rather than smoothed over.** `icons:check` was ticked exit `0` before its
+> command was run — and running it showed the root manifest has no `icons:check` proxy at all, so the
+> command `AGENTS.md` lists under "Root-level commands" does not work from the root. Separately, this
+> branch's own history contains an incident the gate could not catch: a `git checkout main` needed for a
+> controlled build left three commits on `main`, and **`npm run gate` passed repeatedly against a tree
+> missing this change's central test file**. It surfaced only because the suite reported 185 files instead
+> of 186. This milestone guards *which files the gate reads* and deliberately does not touch *what tree
+> the gate runs on*; that remains an open question rather than an absorbed one.
 
 > **M27 was merged for a long time before it was archived, and the gap was not cosmetic.**
 >
