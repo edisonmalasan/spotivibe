@@ -223,11 +223,16 @@ const liveTreeFiles = (() => {
   return filesOnly.status === 0 && n > 0 ? String(n) : null;
 })();
 
-// What each log is held against, resolved once. A caller-stated figure always wins; otherwise the live tree
-// supplies the file count. `budget` has no live-tree equivalent, so with nothing stated it is not held
-// against any external figure - only against the other logs, in the aggregate block below.
-const expectedFiles = options.supplied.files ? options.files : liveTreeFiles;
-const expectedBudget = options.supplied.budget ? options.budget : null;
+// What each log is held against, resolved ONCE. A caller-stated figure always wins; otherwise the live
+// tree supplies the file count. `budget` has no live-tree equivalent, so with nothing stated it is not
+// held against any external figure - only against the other logs, in the aggregate block below.
+//
+// **Resolved once, and used by both the per-row check and the aggregate check.** These two derived the
+// same expectation independently, and a mutation that changed only the per-row one left the aggregate
+// still reporting the live tree: a batch would fail while the summary claimed the check it had just lost.
+// Deriving once is what makes a disagreement between them unrepresentable rather than merely unlikely.
+const againstFiles = options.supplied.files ? options.files : liveTreeFiles;
+const againstBudget = options.supplied.budget ? options.budget : null;
 
 if (liveTreeFiles === null) {
   // A phase that cannot run is the absence of the check, not a pass — the same reasoning that repaired the
@@ -325,8 +330,8 @@ for (let run = 1; run <= options.runs; run += 1) {
   const failingSummary = /Tests\s+[^\n]*\d+ failed/.exec(text)?.[0] ?? null;
 
   const assertedHold =
-    found.files === expectedFiles &&
-    (expectedBudget === null || found.budget === expectedBudget) &&
+    found.files === againstFiles &&
+    (againstBudget === null || found.budget === againstBudget) &&
     found.skipped === null &&
     exitCode === "0" &&
     commit !== null &&
@@ -543,18 +548,19 @@ if (rows.length > 0) {
 // What each figure was actually checked against, so the verdict can report it rather than imply it.
 const assertedAgainst = {};
 
-for (const [label, key, crossChecked] of [
-  ["Test Files", "files", true],
-  ["Tests", "tests", false],
-  ["motion-budget", "budget", false],
+for (const [label, key] of [
+  ["Test Files", "files"],
+  ["Tests", "tests"],
+  ["motion-budget", "budget"],
 ]) {
   const distinct = [...new Set(rows.map((row) => row[key]))];
   const stable = distinct.length === 1 && distinct[0] !== null;
   const derived = stable ? distinct[0] : null;
 
   const stated = options.supplied[key] === true ? options[key] : null;
-  const against =
-    stated !== null ? stated : crossChecked && derived !== null ? liveTreeFiles : null;
+  // The *same* expectation the per-row check used, read from the variable resolved above rather than
+  // recomputed here. `tests` has no entry, so it is held against nothing - stability only.
+  const against = key === "files" ? againstFiles : key === "budget" ? againstBudget : null;
   assertedAgainst[key] = stated !== null ? "stated" : against !== null ? "liveTree" : "stability";
 
   const ok = stable && (against === null || distinct[0] === against);
