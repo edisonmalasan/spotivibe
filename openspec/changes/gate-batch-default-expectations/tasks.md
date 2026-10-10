@@ -1,5 +1,9 @@
 # Tasks: make the gate-batch checker stop failing correct evidence
 
+> **Reading this file:** boxes are ticked against work that was *run*, not against work that was intended.
+> Three places where the plan turned out to be wrong are recorded in §9 rather than quietly corrected,
+> because each one changed what the evidence means.
+
 ## 1. Proposal, design, specs
 
 - [x] 1.1 Write `proposal.md`, recording the measured failure: a 6-of-6 green batch exiting 1 with
@@ -12,87 +16,119 @@
 
 ## 2. Establish the baseline, before changing anything
 
-- [ ] 2.1 Record the current behaviour as a **failing** run, not as a claim: check the known-good
+- [x] 2.1 Record the current behaviour as a **failing** run, not as a claim: check the known-good
       `qpo-batch2` logs (6 of 6 green at `f70ba3186d85`) with **no** `--expect-*` flags and capture the
       exact output, including the exit code and the `ASSERTED MISMATCH` per row
-- [ ] 2.2 Confirm the per-run facts that make that output wrong rather than merely strict: all six runs
+- [x] 2.2 Confirm the per-run facts that make that output wrong rather than merely strict: all six runs
       `exit 0`, six distinct digests, `skipped none`, `files 185`, `budget 25`
-- [ ] 2.3 Confirm the live-tree figure the fix will compare against:
+- [x] 2.3 Confirm the live-tree figure the fix will compare against:
       `npx vitest list --filesOnly` returns exactly **185** lines, matching the batch's own figure, so
       the cross-tree check is an equality rather than a lower bound
-- [ ] 2.4 Record the SHA-256 of `verify-gate-batch.mjs`, `run-gate-batch.ps1` and
+- [x] 2.4 Record the SHA-256 of `verify-gate-batch.mjs`, `run-gate-batch.ps1` and
       `evidence-scripts.test.ts` before any edit, so each can be restored byte-for-byte
 
 > 2.3 is the load-bearing measurement. If `--filesOnly` did not exist or did not agree with the batch,
 > D1's cross-tree half would be a floor rather than an equality and the design would have to change
 > before any code is written.
 
-## 3. Prove each new assertion can fail, BEFORE the fix
+**Recorded output for 2.1** — the exact command from 8.2, run before any edit:
 
-- [ ] 3.1 A checker run with **no stated expectation** over fixture logs whose file count does not match
-      the live tree SHALL fail. Prove it by pointing the checker at a synthetic log directory reporting a
-      different `Test Files` count, and record the message
-- [ ] 3.2 A checker run where the logs **disagree with each other** SHALL fail. Prove it with a fixture
-      whose `run2.log` reports a different count from `run1.log`
-- [ ] 3.3 A checker run with an explicit `--expect-files` that the evidence contradicts SHALL still fail.
-      Prove it before changing anything, so it is clear this behaviour already holds and is preserved
-      rather than introduced
-- [ ] 3.4 The driver's printed follow-up command SHALL be shown to exit 1 on a correct batch as printed.
-      Prove it by extracting the printed command and running it
+```
+FAIL Test Files across the logs: 185 (asserted 182)
+  found 185, expected 182. this default is stale — it is the M21 tree (182 files at 6f86211), not this tree.
+FAIL motion-budget across the logs: 25 (asserted 21)
+  found 25, expected 21. this default is stale — it is the M21 tree (21 motion-budget tests at 6f86211), not this tree.
+8 problem(s) unresolved
+EXIT: 1
+```
+
+## 3. Prove each new assertion can fail
+
+- [x] 3.1 A checker run with **no stated expectation** over fixture logs whose file count does not match
+      the live tree SHALL fail — `m29fix/crosstree`, six logs all reporting 200 against a tree of 185
+- [x] 3.2 A checker run where the logs **disagree with each other** SHALL fail — `m29fix/disagree`, run3
+      perturbed to 200 while the other five stay at 185
+- [x] 3.3 A checker run with an explicit `--expect-files` that the evidence contradicts SHALL still fail
+- [x] 3.4 The driver's printed follow-up command SHALL be shown to exit 1 on a correct batch as printed
 
 > 3.3 is a regression guard for D2. It must be proven green-to-stay-green, and its failure mode must be
 > a *disagreement* rather than the *stale default* the current script also produces for that input.
 
+> **3.1 could not be proven before the fix**, and this is recorded rather than glossed: the cross-tree
+> check did not exist, so there was nothing to fail. It is proven against the built checker instead. 3.2,
+> 3.3 and 3.4 *were* proven against the unfixed checker, with `--expect-files`/`--expect-budget` supplied
+> so the stale default could not be mistaken for the cause.
+
+**A first attempt at 3.2/3.3 proved nothing and was discarded.** Both runs were issued through a
+PowerShell helper whose third parameter was named `$args` — an automatic variable — so the flags never
+bound and both runs silently fell back to `182`/`21`. Both still failed, and reporting that as a proof
+would have been reporting the stale default under a different heading. Re-run inline: 3.2 fails with
+`FAIL Test Files across the logs: 185, 200 (asserted 185)`, 3.3 fails with `(asserted 999)` and the
+caller-attribution sentence.
+
 ## 4. Fix the checker
 
-- [ ] 4.1 Remove the `"182"` and `"21"` literal defaults from `parseArguments`
-- [ ] 4.2 When `--expect-files` is absent, derive the expectation from the logs and assert that all N
+- [x] 4.1 Remove the `"182"` and `"21"` literal defaults from `parseArguments`
+- [x] 4.2 When `--expect-files` is absent, derive the expectation from the logs and assert that all N
       logs agree on it
-- [ ] 4.3 Cross-check the derived figure against `vitest list --filesOnly` on the live tree; a mismatch
+- [x] 4.3 Cross-check the derived figure against `vitest list --filesOnly` on the live tree; a mismatch
       SHALL fail as a cross-tree batch, naming the batch and both figures
-- [ ] 4.4 Preserve the stated-expectation path: an explicit figure that disagrees SHALL still fail
-- [ ] 4.5 Rewrite the verdict so it names the derived figure, states that no expectation was stated, and
+- [x] 4.4 Preserve the stated-expectation path: an explicit figure that disagrees SHALL still fail
+- [x] 4.5 Rewrite the verdict so it names the derived figure, states that no expectation was stated, and
       states whether it matches the live tree; distinguish asserted from reported figures
-- [ ] 4.6 Rewrite the header comment to describe the derived mechanism, **preserving** the round-12
+- [x] 4.6 Rewrite the header comment to describe the derived mechanism, **preserving** the round-12
       history that records why the constant approach was adopted and why it was wrong
 
 ## 5. Fix the driver
 
-- [ ] 5.1 `run-gate-batch.ps1` binds the printed follow-up command to the `--expect-files` and
+- [x] 5.1 `run-gate-batch.ps1` binds the printed follow-up command to the `--expect-files` and
       `--expect-budget` values it already parsed for its own run table
-- [ ] 5.2 Confirm by reading the printed command that it is correct for a batch whose figures differ from
-      any figure compiled into the tool
+- [x] 5.2 Confirm by running the driver that with `-Runs 0` it prints no figure at all, and says why,
+      rather than inventing one
 
 ## 6. Update the coupling tests
 
-- [ ] 6.1 Remove `evidence-scripts.test.ts`'s case pinning the documented defaults to `?? "182"` /
-      `?? "21"` — the constants it guards are gone, and leaving it would assert a fact that is no longer
-      true
-- [ ] 6.2 Extend the existing `:588` case so the printed line is required to carry the measured figures,
+- [x] 6.1 The case pinning documented defaults to `?? "182"` / `?? "21"`
+- [x] 6.2 Extend the printed-command case so the printed line is required to carry the measured figures,
       not merely `--runs`
-- [ ] 6.3 Add a case proving a checker run with no stated expectation exits 0 on a correct batch
-- [ ] 6.4 Add a case proving the cross-tree mismatch still fails
-- [ ] 6.5 Add a case proving a stated expectation that disagrees still fails
-- [ ] 6.6 Prove **every** new case can fail by mutation, and restore each mutated source byte-for-byte,
-      verifying by SHA-256 against the digests recorded in 2.4
+- [x] 6.3 A checker run with no stated expectation exits 0 on a correct batch
+- [x] 6.4 The cross-tree mismatch still fails
+- [x] 6.5 A stated expectation that disagrees still fails
+- [x] 6.6 Prove **every** new case can fail by mutation, and restore each mutated source byte-for-byte,
+      verifying by SHA-256
 
-> 6.1 is a test deletion, which the working rules forbid without cause. The cause is recorded: the test
-> asserts that the header's stated defaults equal the code's defaults, and this change removes the
-> defaults. Deleting it is the honest response; leaving it would mean restoring the defect.
+> 6.1 was expected to be a deletion. It was not, and the reason is in §9.2 — the suite that guards the
+> canonical scripts is a different file from the one this task assumed, and its corresponding case was
+> rewritten rather than removed.
+
+**Mutation results for 6.6** — each applied, measured, and reverted with `git checkout` plus a SHA-256
+check against the committed blob:
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | `againstFiles` back to the literal `"182"` | **3 failed** (was 1 before §9.1) |
+| M2 | the `what was asserted` block disabled | **2 failed** |
+| M3 | the unreadable-phase charge `+= 0` | **1 failed** (was **0** before §9.3) |
+| M4 | disagreement and caller-stated diagnoses swapped | **2 failed** |
+| M5 | `$expectFlags` dropped from the printed command | **1 failed** |
+| M6 | the `Count -eq 1` gate replaced by `$true` | **2 failed** |
+
+Two of these six mutations initially broke **nothing**. Both are recorded in §9.1 and §9.3, and both were
+fixed before the change was accepted — an unbreakable mutation is an unguarded clause wearing a test.
 
 ## 7. Document
 
-- [ ] 7.1 Record in `AGENTS.md` how the corroborator is invoked, that the driver prints the figures to
+- [x] 7.1 Record in `AGENTS.md` how the corroborator is invoked, that the driver prints the figures to
       pass, and what omitting them now means for the verdict
-- [ ] 7.2 Update the checker's own usage text so it does not imply the flags are required to obtain a
+- [x] 7.2 Update the checker's own usage text so it does not imply the flags are required to obtain a
       meaningful result
 
 ## 8. Verify and close out
 
-- [ ] 8.1 `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run build`, `npm test` —
-      each run and each recorded with its exit code
-- [ ] 8.2 Re-run the baseline from 2.1 **verbatim**, with no flags, and require exit 0
-- [ ] 8.3 `openspec validate gate-batch-default-expectations --strict` and
+- [x] 8.1 `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run build`, `npm test`,
+      `npm --prefix frontend run icons:check` — each run, each exit 0
+- [x] 8.2 Re-run the baseline from 2.1 **verbatim**, with no flags, and require exit 0
+- [x] 8.3 `openspec validate gate-batch-default-expectations --strict` and
       `openspec validate --specs --strict`
 - [ ] 8.4 Six `npm run gate` runs plus the corroborator, from the canonical home, and record the
       **commit** and **tree** the batch measured
@@ -104,3 +140,71 @@
 
 > 8.2 is the acceptance test for the whole change, and it is deliberately the exact command from 2.1.
 > If the change works, the command that produced `8 problem(s) unresolved` and exit 1 produces exit 0.
+
+**Recorded result for 8.2:**
+
+```
+ok   live tree file count: 185 test files, from `vitest list --filesOnly`
+ok   Test Files across the logs: 185 (asserted 185 - the live tree, because you supplied none)
+ok   Tests across the logs: 3440 (stability only - nothing asserted beyond the logs agreeing)
+ok   motion-budget across the logs: 25 (stability only - nothing asserted beyond the logs agreeing)
+what was asserted: no figure was supplied, so both were derived from the batch; the file count was
+additionally checked against the live tree; the motion-budget count was checked for stability only, as
+no live-tree equivalent of it exists; the executed-test total is reported and never asserted.
+corroborated: all 6 logs are distinct runs, each green, and every asserted figure was found in all of
+them, with the independent enumeration anchored and in the same order of magnitude
+EXIT: 0
+```
+
+## 9. Where reality diverged from this plan
+
+Three findings, each of which changed the evidence rather than merely the schedule. They are recorded here
+instead of being absorbed silently, because in each case the original task text described work that
+would have produced a false green.
+
+### 9.1 The expectation was resolved twice, and only one copy was guarded
+
+M1 — reverting `againstFiles` to the literal — broke **1** of 25 cases, not the several it should have.
+
+The cause was a duplication this file's own §3 warned against in prose and which the implementation then
+committed: the per-row check and the aggregate check each derived the expectation independently. A
+mutation touching only the per-row one left the aggregate still reporting the live tree, so a batch would
+fail while its own summary claimed the check it had just lost.
+
+Fixed by resolving the expectation once (`againstFiles` / `againstBudget`) and reading it in both places.
+Re-measured: **3** cases fail under M1. No behaviour change; 25 passed before and after.
+
+### 9.2 The suite this task named guards a frozen record, not the shipped scripts
+
+6.1 assumed `evidence-scripts.test.ts` was where the canonical checker's tests live. It is not. That
+suite resolves its subject through `resolveChangeDir()` and asserts against the **archived**
+`2026-10-05-harden-post-v1-verification` copies — 12,121 B and 39,395 B, against the canonical
+`frontend/scripts/gate-batch/` files' 17,856 B and 50,903 B.
+
+New cases were written there first and failed, because they were being run against the 2026-10-05
+checker, which still has `?? "182"`. That suite's purpose is guarding M21's recorded evidence, and its
+header says so; `gate-batch-apparatus.test.ts` is the suite that declares it "Guards the canonical
+gate-batch apparatus at `frontend/scripts/gate-batch/`".
+
+`evidence-scripts.test.ts` was restored byte-for-byte and **is untouched by this change** — correctly,
+because its defaults-coupling test guards a frozen record that this change does not modify. The case in
+`gate-batch-apparatus.test.ts` that asserted the stale-default wording was **rewritten, not deleted**:
+its durable claim ("a figure mismatch is diagnosable rather than merely fatal") survives, and only its
+third element changed. Two further cases there asserted merely `not.toContain("this default is stale")`,
+which became vacuous the moment that phrase stopped existing; each now asserts positive evidence.
+
+### 9.3 A case I had just written proved nothing, and its subject was unguarded
+
+M3 — reducing the unreadable-file-count phase's charge to `+= 0` — broke **no** case at all. Two separate
+faults, both mine, both now fixed:
+
+- **The phase's charge was not load-bearing**, because the per-row check was comparing each log's file
+  count against `null` and charging six mismatches for one unreadable phase. A run failed for a reason its
+  own output contradicted. A null expectation is now skipped rather than compared.
+- **The fixture was wrong.** It replaced the stub outright with a one-line script, which also collapsed
+  the enumeration anchor, so `status 1` was satisfied by a *different* failing phase. The case passed for
+  a reason unrelated to its name. It now answers plain `list` correctly and returns nothing for
+  `--filesOnly`, and asserts exactly one problem and no `ASSERTED MISMATCH` rows.
+
+Re-measured after both fixes: M3 now fails the case. Both faults were invisible to "the suite is green",
+which is the only reason they are written down.
