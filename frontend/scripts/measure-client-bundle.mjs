@@ -112,35 +112,64 @@ export const M23_CLIENT_BUDGET = Object.freeze({
 });
 
 /**
- * The recorded ceiling, re-measured after the first-run Quick Picks onboarding change.
+ * The recorded ceiling, re-measured after adding the `ps:check` gate step.
  *
- * Same toolchain and method as all four records above: 2026-10-09, Windows, Node 24.21.0,
+ * Same toolchain and method as all five records above: 2026-10-11, Windows, Node 24.21.0,
  * `next build` (Next.js 16.3.6, Turbopack), clean `.next`. Reproduce with
  * `node scripts/measure-client-bundle.mjs`.
  *
- * **This change made the client bundle larger, and the record follows it up.** The largest
- * single chunk grew by 803 bytes gzipped (96,667 → 97,470) and `/`'s first load by 194 bytes
- * (231,133 → 231,327). The emitted chunk count did not move (25 → 25) and the total fell by
- * 25 bytes (388,571 → 388,546).
+ * **This change cost the client bundle 20 bytes gzipped, and the record follows it up.**
+ * The largest single chunk grew from 97,470 to 97,490 and the total from 388,546 to 388,566.
+ * `/`'s first load did not move (231,327) and neither did the chunk count (25).
  *
- * **Where the 803 bytes are, and why this is not a dependency.** The growth is first-party
- * code only: `ArtistOnboarding` (`src/features/onboarding/ArtistOnboarding.tsx`), the
- * `onboardingGate` flag module, the `quickPickPicksStore`, and the picks path through the
- * repository and backup planner. No package was added to the client at all, which the
- * manifest assertion (`an animation library in the manifest fails the budget`) continues to
- * check independently. The total falling while the largest chunk grew is the shape of code
- * being *moved* rather than added — `LanguageOnboarding` and its language multi-select left
- * the client graph, and a first-run artist picker is smaller than the catalog picker it
- * replaces.
+ * **Where the 20 bytes are, and why this is neither application code nor a dependency.**
+ * Next.js inlines the **entire `frontend/package.json`** into the client bundle, so this
+ * change's one added line —
+ *
+ *     "ps:check": "node scripts/powershell-parse-check.mjs"
+ *
+ * — reached the client as 53 raw / 20 gzipped bytes. That was measured rather than assumed:
+ * deleting exactly that substring from the emitted chunk reproduces the previous chunk
+ * **byte for byte** (413,846 bytes, identical content), so nothing else in this change
+ * reaches the client at all. No package was added to the client, which the manifest
+ * assertion (`an animation library in the manifest fails the budget`) continues to check
+ * independently.
+ *
+ * **It is build tooling, and it is the gate's own coverage step.** The string describes a
+ * command that runs in Node against PowerShell source; the browser never evaluates it. The
+ * alternative — moving `ps:check` out of `package.json` to keep the ceiling untouched — would
+ * mean the coverage step is no longer a script the gate, CI and `AGENTS.md` can all name,
+ * which is the defect the change exists to close. Paying 20 bytes to make a gate step real
+ * is the right direction of trade.
  *
  * **The largest-chunk rule is the strict one** — it carries no `toleranceBytes`, unlike the
  * total and the per-route figures — so a re-record was required rather than absorbed by
- * slack. The delta is asserted in `tests/motion-budget.test.ts` ("states what first-run
- * onboarding cost, in bytes") exactly as M20's and M22's were, so the number cannot be
- * quietly raised again without the delta moving with it.
+ * slack. The delta is asserted in `tests/motion-budget.test.ts` ("states what the
+ * `ps:check` step cost, in bytes") exactly as M20's, M22's, M23's and the onboarding
+ * change's were, so the number cannot be quietly raised again without the delta moving with it.
  *
  * These are bytes, not "kB", so the assertion cannot move when someone rounds.
  */
+/**
+ * The first-run Quick Picks record, preserved rather than overwritten.
+ *
+ * Measured 2026-10-09, Windows, Node 24.21.0, `next build` (Next.js 16.3.6, Turbopack):
+ * 25 emitted chunks, 388,546 bytes gzipped in total, largest single chunk 97,470,
+ * `/` first load 231,327 across 13 chunks.
+ *
+ * Kept for the same reason as every record above it: M30 re-recorded the ceiling, and a ceiling
+ * that silently replaced its predecessor would erase the only evidence the number ever moved five
+ * times. A reviewer asking "what did the gate-coverage change cost?" gets both records and the
+ * delta, rather than one number and a commit message.
+ */
+export const M29_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 388546,
+  largestChunkGzippedBytes: 97470,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 231327,
+  homeFirstLoadChunkCount: 13,
+});
+
 export const CLIENT_BUDGET = Object.freeze({
   /** What the ceiling is a ceiling *of*. */
   subject: "gzipped bytes of every emitted client chunk under .next/static/chunks",
@@ -152,9 +181,9 @@ export const CLIENT_BUDGET = Object.freeze({
   method:
     "every .js file under .next/static/chunks, gzipped at level 9; per-route, the <script src> set of the route's emitted .next/server/app HTML",
   /** When and after what this figure was measured, so a drift has something to be compared to. */
-  recordedAt: "2026-10-09, after the first-run Quick Picks onboarding change",
-  totalGzippedBytes: 388546,
-  largestChunkGzippedBytes: 97470,
+  recordedAt: "2026-10-11, after adding the `ps:check` gate step",
+  totalGzippedBytes: 388566,
+  largestChunkGzippedBytes: 97490,
   chunkCount: 25,
   homeFirstLoadGzippedBytes: 231327,
   homeFirstLoadChunkCount: 13,

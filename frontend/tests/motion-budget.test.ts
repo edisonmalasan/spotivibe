@@ -7,6 +7,7 @@ import {
   M20_CLIENT_BUDGET,
   M22_CLIENT_BUDGET,
   M23_CLIENT_BUDGET,
+  M29_CLIENT_BUDGET,
   PRE_M19_CLIENT_BUDGET,
   measureClientBundle,
   measureRouteFirstLoad,
@@ -143,7 +144,13 @@ describe("the recorded ceiling is a measurement, not an estimate (task 5.1)", ()
     // directions — M22 added one and M23 removed one, landing back on 25. So the
     // comparison here is total bytes only, and the chunk history is asserted per-record
     // below rather than as a chain this test would have to keep re-deriving.
-    expect(CLIENT_BUDGET.recordedAt).toContain("onboarding");
+    // The head ceiling names the change that produced it, so a re-record is never
+    // unexplained. It has been re-recorded twice since this was written — the onboarding
+    // change and then `ps:check` — so the assertion is that the field names *a* change
+    // rather than one particular string that each new milestone would have to remember
+    // to update. Which change it currently names is asserted by the record's own delta
+    // test above, against the record it replaced.
+    expect(CLIENT_BUDGET.recordedAt).toMatch(/after /);
     expect(CLIENT_BUDGET.totalGzippedBytes).toBeGreaterThanOrEqual(
       M20_CLIENT_BUDGET.totalGzippedBytes,
     );
@@ -242,30 +249,60 @@ describe("the emitted client bundle is held to the ceiling (task 5.2)", () => {
     expect(measured!.totalGzippedBytes).toBeLessThanOrEqual(CEILING);
   });
 
-  it("states what first-run onboarding cost, in bytes", () => {
+  it("states what the `ps:check` step cost, in bytes", () => {
     // The largest-chunk rule carries no tolerance, so this change re-recorded the
-    // ceiling upward and the move is stated here the same way M20's and M22's were:
-    // as a measured delta against the record it replaced. Asserting it is what stops
-    // the ceiling being raised again later without anyone noticing.
+    // ceiling upward and the move is stated here the same way M20's, M22's, M23's and
+    // the onboarding change's were: as a measured delta against the record it replaced.
+    // Asserting it is what stops the ceiling being raised again later without anyone
+    // noticing.
     const delta =
-      CLIENT_BUDGET.largestChunkGzippedBytes - M23_CLIENT_BUDGET.largestChunkGzippedBytes;
-    expect(delta, "the largest chunk's measured cost in gzipped bytes").toBe(803);
+      CLIENT_BUDGET.largestChunkGzippedBytes - M29_CLIENT_BUDGET.largestChunkGzippedBytes;
+    expect(delta, "the largest chunk's measured cost in gzipped bytes").toBe(20);
 
-    // The count did not move, so this is code inside the existing graph rather than a
-    // new chunk arriving — which is the shape a dependency takes, and the rule that
-    // would catch it.
-    expect(CLIENT_BUDGET.chunkCount - M23_CLIENT_BUDGET.chunkCount).toBe(0);
-    expect(CLIENT_BUDGET.homeFirstLoadChunkCount - M23_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
+    // Next.js inlines the whole of `frontend/package.json` into the client bundle, so the
+    // added script entry is the entire cost. Pinned rather than described: if a future
+    // change reaches the client by the same route, the number moves and this fails.
+    expect(
+      CLIENT_BUDGET.totalGzippedBytes - M29_CLIENT_BUDGET.totalGzippedBytes,
+      "the total moved by the same amount as the largest chunk",
+    ).toBe(20);
+
+    // The count did not move, and neither did any route's first load, so this is a string
+    // inside the existing graph rather than a new chunk arriving — which is the shape a
+    // dependency takes, and the rule that would catch it.
+    expect(CLIENT_BUDGET.chunkCount - M29_CLIENT_BUDGET.chunkCount).toBe(0);
+    expect(CLIENT_BUDGET.homeFirstLoadChunkCount - M29_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
       0,
     );
+    expect(CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(
+      M29_CLIENT_BUDGET.homeFirstLoadGzippedBytes,
+    );
 
-    // 803 bytes is under a fifth of the pre-existing tolerance, and nowhere near the
+    // 20 bytes is under a fiftieth of the pre-existing tolerance, and nowhere near the
     // library the budget exists to keep out.
     expect(delta).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
     expect(
       SPIKE_COST_BYTES / delta,
       "an animation library remains far out of reach",
     ).toBeGreaterThan(10);
+  });
+
+  it("keeps M23's own record readable, so its cost is not redefined by later ceilings", () => {
+    // M23's *largest chunk* did not move against M22 — M23 removed a chunk and shrank
+    // another, and it is the total that fell. Its total delta is therefore −25, and it has
+    // to be read from M23's preserved record rather than from the live ceiling, which has
+    // since been re-recorded twice and would fold both later changes' bytes into M23's.
+    expect(M23_CLIENT_BUDGET.largestChunkGzippedBytes).toBe(
+      M22_CLIENT_BUDGET.largestChunkGzippedBytes,
+    );
+    expect(M23_CLIENT_BUDGET.totalGzippedBytes - M22_CLIENT_BUDGET.totalGzippedBytes).toBe(-1001);
+    expect(M23_CLIENT_BUDGET.chunkCount).toBe(M22_CLIENT_BUDGET.chunkCount - 1);
+
+    // The onboarding change, not M23, is what moved the largest chunk by 803. Asserting it
+    // here against the record it replaced is what keeps the two costs from being swapped.
+    expect(
+      M29_CLIENT_BUDGET.largestChunkGzippedBytes - M23_CLIENT_BUDGET.largestChunkGzippedBytes,
+    ).toBe(803);
   });
 
   it.skipIf(measured === null)("keeps the largest single chunk under the recorded figure", () => {
@@ -538,8 +575,10 @@ describe("the evidence file carries the decision and what would reverse it (task
     // ceiling has been re-recorded since, so measuring M23 from `CLIENT_BUDGET`
     // would fold this change's bytes into M23's published figure.
     const m23 = M23_CLIENT_BUDGET.totalGzippedBytes - M22_CLIENT_BUDGET.totalGzippedBytes;
-    // This change's own *total* delta, which is a slight reduction.
-    const onboarding = CLIENT_BUDGET.totalGzippedBytes - M23_CLIENT_BUDGET.totalGzippedBytes;
+    // The onboarding change's own *total* delta, which is a slight reduction. Measured
+    // against the record it actually replaced, which after this change is M29's rather
+    // than the live ceiling — the same misattribution the comment above describes.
+    const onboarding = M29_CLIENT_BUDGET.totalGzippedBytes - M23_CLIENT_BUDGET.totalGzippedBytes;
 
     expect(evidence, "M20's cost is published").toContain(`+${m20.toLocaleString("en-US")} B`);
     expect(evidence, "M22's cost is published").toContain(`+${m22.toLocaleString("en-US")} B`);
@@ -549,7 +588,7 @@ describe("the evidence file carries the decision and what would reverse it (task
     expect(evidence, "M23's saving is published with its sign").toContain(
       `−${Math.abs(m23).toLocaleString("en-US")} B`,
     );
-    // Same for this one. Its *total* fell by 23 bytes because the deleted language
+    // Same for this one. Its *total* fell by 25 bytes because the deleted language
     // picker was larger than the artist picker replacing it — but its largest chunk
     // grew by 803, which is the figure that actually forced the re-record and is
     // published separately so neither number hides the other.
@@ -557,15 +596,24 @@ describe("the evidence file carries the decision and what would reverse it (task
       `−${Math.abs(onboarding).toLocaleString("en-US")} B`,
     );
     expect(evidence, "onboarding's largest-chunk growth is published").toContain(
-      `+${(CLIENT_BUDGET.largestChunkGzippedBytes - M23_CLIENT_BUDGET.largestChunkGzippedBytes).toLocaleString("en-US")} B`,
+      `+${(M29_CLIENT_BUDGET.largestChunkGzippedBytes - M23_CLIENT_BUDGET.largestChunkGzippedBytes).toLocaleString("en-US")} B`,
     );
 
-    // All five records, so the history is readable rather than overwritten.
+    // This change's own delta, published like every other re-recording's, so the evidence
+    // cannot stay silent about a ceiling it raised.
+    const psCheck =
+      CLIENT_BUDGET.largestChunkGzippedBytes - M29_CLIENT_BUDGET.largestChunkGzippedBytes;
+    expect(evidence, "the ps:check step's cost is published").toContain(
+      `+${psCheck.toLocaleString("en-US")} B`,
+    );
+
+    // All six records, so the history is readable rather than overwritten.
     for (const record of [
       PRE_M19_CLIENT_BUDGET,
       M20_CLIENT_BUDGET,
       M22_CLIENT_BUDGET,
       M23_CLIENT_BUDGET,
+      M29_CLIENT_BUDGET,
       CLIENT_BUDGET,
     ]) {
       expect(evidence).toContain(record.totalGzippedBytes.toLocaleString("en-US"));
