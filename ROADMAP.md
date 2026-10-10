@@ -145,6 +145,44 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M26** | Synchronise the Settings test on the condition it asserts | `DONE` — PR #117 `546bb31`, archived `2026-10-08-fix-settings-hydration-wait`; batch 32 **6 of 6** at the merge | M25 |
 | **M27** | Make the artist Quick Picks rail the first thing Home presents | `MERGED, ARCHIVED` — PR #119, merge `d7bf41a`, archived `2026-10-10-quick-picks-first-rail`; batch 6 of 6, corroborator exit 0 | M23, M26 |
 | **M28** | First-run artist Quick Picks picker, replacing the language dialog | `MERGED, ARCHIVED` — PR #120, merge `8d9c80d`, archived `2026-10-10-quick-picks-onboarding`; batch 6 of 6, **but see the two qualifications below** | M27, M23 |
+| **M29** | Stop the gate-batch corroborator failing correct evidence | `MERGED, ARCHIVED` — PR #124, merge `555b020`, sync #125 `906b930`, archived `2026-10-10-gate-batch-default-expectations`; batch 6 of 6 at `a9b5e3c`, corroborator exit 0 **both** with the printed flags and with none | M21, M27, M28 |
+
+> **M29 exists because a check that cannot pass was being bypassed, and nobody wrote that down.**
+>
+> `verify-gate-batch.mjs` asserted `--expect-files 182` and `--expect-budget 21` — the **M21** tree.
+> Every milestone since added test files, so the default was stale by construction, and the checker named
+> the cause in its own failure message while still exiting 1. `run-gate-batch.ps1` printed a follow-up
+> command **omitting both flags**, so following the apparatus's own printed instruction failed a perfect
+> batch. Measured against `qpo-batch2` — 6 of 6 green at merged commit `f70ba3186d85` — that command gave
+> `8 problem(s) unresolved` and exit 1.
+>
+> **Four sessions each rediscovered the required override**, and no documented source recorded it: M22, M24,
+> `quick-picks-first-rail` (183/24), `quick-picks-onboarding` (185/25). The knowledge lived only in a prior
+> session's summary. That is the defect — not a usage quirk — and M29 removed the constants rather than
+> bumping them, because bumping is the treadmill the change exists to end.
+>
+> **The replacement is exact, not approximate.** With no figure stated, the expectation is derived from the
+> batch and the file count is checked against the live tree via `vitest list --filesOnly`, which returns one
+> line per *file*. That was verified before the design was written: exactly 185, matching the batch. Plain
+> `vitest list` returns one line per *template* (3,118 today) and is a lower bound by construction, because
+> `.each(` expands only at run time — which is why the plain-`list` anchor could not have been reused here.
+>
+> **Two limits are stated rather than papered over.** Equality on a file count is weaker than equality on a
+> commit, so this asserts tree-*shape* agreement, not commit agreement. And there is no live-tree equivalent
+> for the motion-budget count, so with nothing stated that figure is asserted for *stability only* — the
+> verdict says so on every green run rather than implying a tree check that did not happen.
+>
+> **Mutation testing found three defects in the change itself**, two of them in code and cases written
+> minutes earlier. The expectation was resolved twice, independently, by the per-row and aggregate checks;
+> and a "cannot be read" case was passing because its fixture collapsed a *different* phase. Both are
+> recorded in `openspec/changes/archive/2026-10-10-gate-batch-default-expectations/tasks.md` §9. An
+> unbreakable mutation is an unguarded clause wearing a test, so this is reported rather than smoothed over.
+>
+> **One task is deliberately left unticked.** `tasks.md` 8.5 asks the batch tree to equal the merge tree,
+> which **no** change can satisfy when it records its own batch evidence in-repo: ticking 8.4–8.8 in the
+> change's own `tasks.md` moves the tree after the measurement. The single-file diff is recorded instead,
+> together with why it cannot affect a run — `tasks.md` is Markdown read by no gate step. The batch record
+> itself lives in PR #124's body, not in the repository.
 
 > **M27 was merged for a long time before it was archived, and the gap was not cosmetic.**
 >
