@@ -53,10 +53,29 @@
 
 ## 5. Batch evidence
 
-- [ ] 5.1 Six `npm run gate` runs plus the corroborator from the canonical home
-- [ ] 5.2 Corroborator exit 0, six distinct digests, one commit, 0 skipped
-- [ ] 5.3 Batch commit's **tree** equals the merge commit's tree
-- [ ] 5.4 Record commit, tree and `merge-base` in the **PR body**, not in this file
+- [x] 5.1 Six `npm run gate` runs plus the corroborator from the canonical home
+- [x] 5.2 Corroborator exit 0, six distinct digests, one commit, 0 skipped
+- [x] 5.3 Batch commit's **tree** equals the merge commit's tree
+- [x] 5.4 Record commit, tree and `merge-base` in the **PR body**, not in this file
+
+> **5.1–5.3 were done; 5.4 was not.** All six runs happened and every figure checked out, but the
+> batch was run *after* PR #119's body was written and the result was never posted back — the body
+> still reads "A batch run … is the remaining evidence step". Tasks 5.1–5.3 were therefore ticked
+> late, against artifacts rather than against the original claim, on 2026-10-10:
+>
+> | Claim | How it was actually checked |
+> |---|---|
+> | 5.1 six runs | `%LOCALAPPDATA%\Temp\opencode\qpf-batch`, six log files present |
+> | 5.2 corroborator | re-run on those logs, **exit 0**, 6 distinct digests of 6, 1 distinct commit `0b903259b1c4`, 0 skipped |
+> | 5.3 trees equal | merge `d7bf41a` and branch head `0b903259b1c4` both carry tree `f0f1c33a1ffc8bacebe19e6498fe11a2d3a7ce7e` |
+> | 5.4 PR body | **was genuinely absent** — no commit, tree, or `merge-base` token anywhere in the merged body. Recorded in the close-out PR. |
+>
+> The corroborator was re-run with `--expect-files 183 --expect-budget 24`, this tree's own figures.
+> It reads the counts out of the *logs*, so it still corroborates that historical batch even though
+> `main` has since grown to 185 files.
+>
+> **The prior session's summary asserted 5.4 was done. It was not** — reading the merged PR body
+> rather than trusting the summary is what caught it.
 
 ## 6. Statements
 
@@ -71,6 +90,15 @@
 
 ## 7. Close out
 
-- [ ] 7.1 `openspec validate --specs --strict`
-- [ ] 7.2 Commit, push, PR, merge with a merge commit, delete the branch
-- [ ] 7.3 Archive, and record the outcome in `ROADMAP.md`
+- [x] 7.1 `openspec validate --specs --strict`
+- [x] 7.2 Commit, push, PR, merge with a merge commit, delete the branch
+- [x] 7.3 Archive, and record the outcome in `ROADMAP.md`
+
+> **7.1–7.3 are being completed by the close-out PR, after this change's own PR merged.** The change
+> sat merged-but-unarchived for a while: PR #119 landed as `d7bf41a`, and nothing then synced its two
+> `home-mixes` requirements into `openspec/specs/` or moved the directory to `archive/`. Both
+> requirements were therefore live only inside the change folder, which is exactly the state a reader
+> of the main specs would not find them in.
+>
+> The close-out syncs both requirements, archives the change, records the batch evidence in PR #119's
+> body, and adds the ROADMAP row this change never got.

@@ -143,9 +143,49 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M24** | Repair the gate-batch criterion apparatus — make the `DONE` criterion runnable | `DONE` — PR #113, merge `2fc2b16`, archived `2026-10-08-repair-gate-batch-apparatus` | M21, M23 |
 | **M25** | Close the cross-test-file scan race in the contrast guard | **MERGED, NOT `DONE`** — PR #115 `3e3cfe6`, archived `2026-10-08-fix-contrast-guard-scan-race`; criterion **5 of 6**, unmet | M24 |
 | **M26** | Synchronise the Settings test on the condition it asserts | `DONE` — PR #117 `546bb31`, archived `2026-10-08-fix-settings-hydration-wait`; batch 32 **6 of 6** at the merge | M25 |
-| **M27** | First-run artist Quick Picks picker, replacing the language dialog | `MERGED, ARCHIVED` — PR #120, merge `8d9c80d`, archived `2026-10-10-quick-picks-onboarding`; batch 6 of 6, **but see the two qualifications below** | M23, M26 |
+| **M27** | Make the artist Quick Picks rail the first thing Home presents | `MERGED, ARCHIVED` — PR #119, merge `d7bf41a`, archived `2026-10-10-quick-picks-first-rail`; batch 6 of 6, corroborator exit 0 | M23, M26 |
+| **M28** | First-run artist Quick Picks picker, replacing the language dialog | `MERGED, ARCHIVED` — PR #120, merge `8d9c80d`, archived `2026-10-10-quick-picks-onboarding`; batch 6 of 6, **but see the two qualifications below** | M27, M23 |
 
-> **M27 is merged and archived, but two of its evidence claims are weaker than the batch number
+> **M27 was merged for a long time before it was archived, and the gap was not cosmetic.**
+>
+> PR #119 landed as `d7bf41a` with a green 6-of-6 batch, but three things never happened: its two
+> `home-mixes` requirements were never synced into `openspec/specs/`, the directory was never moved to
+> `archive/`, and `ROADMAP.md` got no row. So the approved behaviour — that the artist rail is the
+> *first* content Home presents, and that a containment bound the current arrangement satisfies cannot
+> guard that arrangement — lived only inside the change folder, and a reader of the main specs would
+> not have found it.
+>
+> **One evidence task was also recorded as done and was not.** Task 5.4 requires the batch's commit,
+> tree and merge-base in the **PR body**. Reading the merged body showed no such record: the batch had
+> been run *after* the body was written and the result was never posted back, so the body still said
+> "A batch run … is the remaining evidence step". The prior session's summary reported 5.4 as done. It
+> was not, and reading the artifact rather than trusting the summary is what caught it.
+>
+> **Re-verified from artifacts on 2026-10-10**, not from the original claim — the six logs are in
+> `%LOCALAPPDATA%\Temp\opencode\qpf-batch`, the corroborator was re-run against them (**exit 0**, six
+> distinct digests of six, one commit, 0 skipped), and the merge tree `f0f1c33` is byte-identical to
+> the tree the batch measured. `--expect-files 183 --expect-budget 24` was this tree's own figures.
+> PR #119's body now carries the record.
+>
+> **What M27 was:** a position change, not a content change. `quickPicks.ts` has a zero-line diff.
+> `MixCards` was deliberately **not** removed — deleting a separately specified capability to satisfy
+> an ordering request would be a scope change dressed as a layout fix.
+>
+> **The defect itself was a bad test, twice over.** `routes.test.tsx` asserted
+> `circularIndex < CIRCULAR_WINDOW` — "inside the first four rendered sections" — which passes at index
+> 3 just as it passes at index 0, so it could not detect the arrangement it existed to prevent. It now
+> requires the rail to be first, via `compareDocumentPosition` rather than `indexOf` so the DOM answers
+> directly. Both new assertions were required to go red against the *old* order before the fix landed.
+>
+> **A gap the tightening exposed:** the route test's fixture is a fresh device and `MixCards` is gated
+> on `profile.hasSignal`, so it never rendered the mix-card row at all — the row in question was absent
+> from the document being measured. That case is asserted separately in `home-view.test.tsx` against a
+> seeded fixture.
+>
+> **No browser verification was possible** for M27 either. The evidence is rendered **document order**
+> asserted against the real DOM, not a screenshot.
+
+> **M28 is merged and archived, but two of its evidence claims are weaker than the batch number
 > alone suggests, and the row does not say `DONE` for that reason.**
 >
 > **What shipped.** First run now asks which artists the listener likes. `LanguageOnboarding` is
