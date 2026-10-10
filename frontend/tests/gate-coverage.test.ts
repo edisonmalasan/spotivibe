@@ -511,9 +511,33 @@ describe("the limitation is stated as a checked claim rather than as prose", () 
   const agents = readFileSync(join(REPO, "AGENTS.md"), "utf8");
 
   it("documents ps:check among the verified commands", () => {
-    expect(agents).toMatch(/npm run ps:check\s+#/);
+    // **Two lists, asserted separately.** `AGENTS.md` documents the step twice — once in the root
+    // proxy block and once in the frontend quality-gates block — and a single regex for
+    // `npm run ps:check  #` matches whichever survives. Mutation T7 deleted the root-proxy line and
+    // the suite stayed green, which is a false green of exactly the kind this file removes, so the
+    // two claims are asserted as two claims.
+    expect(
+      agents,
+      "the root proxy block must document ps:check alongside the other root commands",
+    ).toMatch(/npm run ps:check\s+# npm --prefix frontend run ps:check/);
+    expect(
+      agents,
+      "the frontend quality-gates block must document ps:check alongside the other verified commands",
+    ).toMatch(/npm run ps:check\s+# node scripts\/powershell-parse-check\.mjs/);
+  });
+
+  it("lists ps:check in the gate's own order, between format:check and typecheck", () => {
     expect(agents, "the gate's own order must list the step it runs").toMatch(
-      /npm run gate[^\n]*ps:check[^\n]*build -> test/,
+      /npm run gate[^\n]*format:check[^\n]*ps:check[^\n]*typecheck[^\n]*build -> test/,
+    );
+  });
+
+  it("lists ps:check among the CI steps", () => {
+    expect(
+      agents,
+      "the CI step list must name ps:check or the step is undocumented as shipping",
+    ).toMatch(
+      /runs the install, `lint`, `format:check`, `ps:check`, `typecheck`, `build`, and `test`/,
     );
   });
 
