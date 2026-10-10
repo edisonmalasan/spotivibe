@@ -44,6 +44,7 @@ const REQUIRED_ROOT_SCRIPTS = [
   "lint",
   "format",
   "format:check",
+  "ps:check",
   "typecheck",
   "test",
 ] as const;
@@ -222,14 +223,19 @@ describe("the root gate builds before it tests, and says why", () => {
     ).toBeLessThan(script.indexOf(" frontend test"));
   });
 
-  it("runs lint, formatting and types before either", () => {
+  it("runs lint, formatting, PowerShell parsing and types before either", () => {
     // The cheap checks first is a separate property from build-before-test: a type error found
     // after a two-minute build is a two-minute wait spent to learn something available in seconds.
+    //
+    // `ps:check` is in this group for the same reason. It parses one tracked file, so it is
+    // cheaper than the build by several orders of magnitude, and it is here because a check that is
+    // not in the gate is a check nobody runs — which is the defect `icons:check` still has.
     const script = gate();
     const build = script.indexOf("run build");
     for (const [name, needle] of [
       ["lint", "run lint"],
       ["format:check", "run format:check"],
+      ["ps:check", "run ps:check"],
       ["typecheck", "run typecheck"],
     ] as const) {
       const at = script.indexOf(needle);

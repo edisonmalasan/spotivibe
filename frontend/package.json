@@ -12,6 +12,7 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "ps:check": "node scripts/powershell-parse-check.mjs",
     "typecheck": "next typegen && tsc --noEmit",
     "icons:check": "node scripts/generate-icons.mjs --check",
     "test": "vitest run"

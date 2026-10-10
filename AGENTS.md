@@ -205,9 +205,10 @@ npm run start        # npm --prefix frontend run start
 npm run lint         # npm --prefix frontend run lint
 npm run format       # npm --prefix frontend run format
 npm run format:check # npm --prefix frontend run format:check
+npm run ps:check     # npm --prefix frontend run ps:check
 npm run typecheck    # npm --prefix frontend run typecheck
 npm test             # npm --prefix frontend test
-npm run gate         # lint -> format:check -> typecheck -> build -> test
+npm run gate         # lint -> format:check -> ps:check -> typecheck -> build -> test
 ```
 
 `tests/root-commands.test.ts` holds the root manifest to these properties: private, no
@@ -239,6 +240,7 @@ proxies:
 npm run setup        # clean install from frontend/package-lock.json (was `cd frontend && npm ci`)
 npm run lint         # eslint (flat config, eslint-config-next)
 npm run format:check # prettier --check .
+npm run ps:check     # node scripts/powershell-parse-check.mjs
 npm run typecheck    # next typegen && tsc --noEmit
 npm test             # vitest run
 npm run build        # next build
@@ -246,11 +248,31 @@ npm run icons:check  # node scripts/generate-icons.mjs --check
 npm run dev          # next dev (dev server; verified serving HTTP 200)
 ```
 
+`ps:check` is a **static-parse** check, not a formatting one, and it exists because of a measured gap.
+`scripts/gate-batch/run-gate-batch.ps1` — the script that drives the gate batch — was read by no gate
+step: ESLint returned **exit 0** for it carrying `File ignored because no matching configuration was
+supplied`, and `prettier --check .` never asked about it at all, because Prettier has no parser for
+`.ps1`. `ps:check` parses every tracked `.ps1` with PowerShell's own `[Parser]::ParseFile`, which ships
+with every PowerShell and so adds no dependency and no install step to CI. It asserts **syntax only** —
+it is a floor, not a substitute for the behavioural cases in `frontend/tests/gate-batch-apparatus.test.ts`,
+and it says so on every run rather than leaving the reader to assume more.
+
+**It reports rather than passes when no interpreter is found.** With neither `pwsh` nor `powershell` on
+`PATH` the step prints `ps:check NOT RUN` with the reason and exits 0. That is not a silent pass:
+`frontend/tests/gate-coverage.test.ts` records `.ps1` as covered *by this step*, so deleting the step
+fails the coverage guard instead of leaving the file unchecked. The guard is what converts M29's
+documented gap into a checked one — a limitation stated in prose is a limitation nobody re-reads.
+
 `icons:check` is a **build-input** check, not a formatting one: it verifies the checked-in
 `public/icons/*.png` match what `scripts/generate-icons.mjs` would produce, so a change to the icon
 script cannot ship without the regenerated files. It is item 7 of the release gate. It was absent
 from this list until M21, which is the same defect the whole milestone is about: a command that
 exists, runs, and gates releases, documented nowhere.
+
+**`icons:check` is documented and verified but is in neither `npm run gate` nor CI**, unlike `ps:check`
+which M30 put in both. It therefore has the exact weakness this change exists to close, and closing it
+would mean adding it to both — recorded here rather than absorbed, because it is outside M30's approved
+scope and touching it would widen the change silently.
 
 **Order matters, and one of the orderings is load-bearing.** In CI the production build runs
 **before** `npm test`. `tests/motion-budget.test.ts` has two halves: its manifest and import rules
@@ -264,7 +286,7 @@ The cost of that ordering is real and is not hidden: a red pull request now spen
 CI on a build whose result nobody reads, because the build runs before a failing test can stop the
 job.
 
-Exit codes: `npm run setup` (install), `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run icons:check` ("icons match the generator") each exited `0`; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `.github/workflows/ci.yml` runs the install, `lint`, `format:check`, `typecheck`, `build`, and `test` steps in `frontend/` on push/PR to `main`, on Node 24. The build precedes the tests deliberately; see above for why, and for what it costs.
+Exit codes: `npm run setup` (install), `npm run lint`, `npm run format:check`, `npm run ps:check`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run icons:check` ("icons match the generator") each exited `0`; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `.github/workflows/ci.yml` runs the install, `lint`, `format:check`, `ps:check`, `typecheck`, `build`, and `test` steps in `frontend/` on push/PR to `main`, on Node 24. The build precedes the tests deliberately; see above for why, and for what it costs.
 
 These commands establish `that dependencies install from the lockfile, ESLint reports no errors, formatting is consistent, strict TypeScript compiles, the current unit tests pass, a production Next.js build succeeds, and the dev server starts and serves the app`.
 
@@ -341,10 +363,18 @@ That default was stale by construction and cost four sessions a manual override,
 source recorded the required flags. A figure stored in the script is a snapshot of whatever tree it was
 written on; read it at check time instead. `gate-batch-apparatus.test.ts` asserts this negatively.
 
-**These scripts have no static gate.** `tsconfig.json` includes only `.ts`/`.tsx`/`.mts`, and neither
-ESLint nor Prettier handles `.ps1`, so a `.ps1` edit is covered only by the behavioural cases in
-`gate-batch-apparatus.test.ts`, and those **skip with a stated reason** where no PowerShell interpreter is
-present. A skip is reported as a skip, never as a pass.
+**The `.ps1` driver now has a static gate.** This paragraph previously read *"These scripts have no static
+gate"*, and that was correct — but `verification-integrity` requires a stated coverage limitation to be a
+**checked** fact rather than a comment that can go stale, and a paragraph in a documentation file is the
+comment. M29 wrote it; M30 discharged it.
+
+`run-gate-batch.ps1` is now parsed by `npm run ps:check`, which is in `npm run gate` and in CI, and
+`tests/gate-coverage.test.ts` asserts that it is covered *by that step* — so deleting the step fails the
+guard rather than quietly leaving the file unread. What is still true, and is now checked rather than
+asserted: `tsconfig.json` includes only `.ts`/`.tsx`/`.mts`, and neither ESLint nor Prettier handles `.ps1`
+— ESLint returns exit 0 for it carrying `no matching configuration`, which is the false green the guard
+exists to catch. Behaviour remains covered by the cases in `gate-batch-apparatus.test.ts`, which **skip
+with a stated reason** where no interpreter is present. A skip is reported as a skip, never as a pass.
 
 These commands establish `that the logs form a batch of N distinct green runs of one commit, and that the
 figures in them agree with each other and with the expectation in force`.

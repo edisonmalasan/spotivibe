@@ -32,6 +32,18 @@ jobs:
         run: npm run lint
       - name: Format check
         run: npm run format:check
+      # `run-gate-batch.ps1` is the script that drives the gate batch, and until this step existed no
+      # gate read it: ESLint returned exit 0 for it carrying "File ignored because no matching
+      # configuration was supplied", and `prettier --check .` never asked, because Prettier has no parser
+      # for `.ps1`. This parses it with PowerShell's own AST parser - no new dependency.
+      #
+      # **It reports rather than passes when no interpreter is found.** GitHub's `ubuntu-latest` images
+      # ship `pwsh`, so this is expected to actually run here; if a future image drops it, the step
+      # prints `ps:check NOT RUN` with the reason. That is a stated gap to resolve, not a pass -
+      # `tests/gate-coverage.test.ts` records `.ps1` as covered BY THIS STEP, so deleting the step fails
+      # the coverage guard instead of leaving the file silently unchecked.
+      - name: PowerShell parse check
+        run: npm run ps:check
       - name: Typecheck
         run: npm run typecheck
       # The build runs **before** the tests, which is the opposite of the order this workflow

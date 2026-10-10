@@ -253,6 +253,7 @@ const GATES = [
   "npm ci",
   "npm run lint",
   "npm run format:check",
+  "npm run ps:check",
   "npm run typecheck",
   "npm run build",
   "npm test",
@@ -951,6 +952,7 @@ describe("the CI workflow's steps", () => {
       "Install dependencies",
       "Lint",
       "Format check",
+      "PowerShell parse check",
       "Typecheck",
       "Production build",
       "Unit tests",
@@ -989,8 +991,13 @@ describe("the CI workflow's steps", () => {
   it("runs the static checks before the build, so a bad commit fails on the cheap gate first", () => {
     // The ordering the build move must not have disturbed. Linting after a production build would
     // spend minutes of CI to report a stray semicolon.
+    //
+    // `ps:check` joins the static group for the same reason, and its addition is the one case where
+    // the group's membership changed rather than its order: it parses a single tracked file, so it is
+    // cheaper than the build by several orders of magnitude and belongs before it.
     expect(indexOfStep("npm run lint")).toBeLessThan(indexOfStep("npm run build"));
     expect(indexOfStep("npm run format:check")).toBeLessThan(indexOfStep("npm run build"));
+    expect(indexOfStep("npm run ps:check")).toBeLessThan(indexOfStep("npm run build"));
     expect(indexOfStep("npm run typecheck")).toBeLessThan(indexOfStep("npm run build"));
   });
 

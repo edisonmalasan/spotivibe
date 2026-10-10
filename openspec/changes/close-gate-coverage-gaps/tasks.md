@@ -124,11 +124,69 @@ too.
 - [ ] 2.3 Prove the no-interpreter path reports rather than passes: run with no PowerShell reachable.
       Verify: prints a stated "not run" reason and exits 0 — never a silent pass, per *A run that is
       skipped is never reported as a pass*.
-- [ ] 2.4 Wire `ps:check` into `frontend/package.json`, the root proxy, and `.github/workflows/ci.yml`.
+- [x] 2.4 Wire `ps:check` into `frontend/package.json`, the root proxy, and `.github/workflows/ci.yml`.
       Verify: `tests/root-commands.test.ts` extended to require the proxy and passes;
       `tests/ci-workflow.test.ts` passes.
-- [ ] 2.5 Document `ps:check` in `AGENTS.md` alongside the other verified commands, including that it
+- [x] 2.5 Document `ps:check` in `AGENTS.md` alongside the other verified commands, including that it
       reports rather than passes when no interpreter is present. Verify: `npm run format:check` exit 0.
+
+### Recorded output for 2.1 - 2.3
+
+```
+$ node scripts/powershell-parse-check.mjs            # on the real tree
+ok   frontend/scripts/gate-batch/run-gate-batch.ps1
+
+ok   1 PowerShell script(s) parsed clean, via `pwsh`
+     This asserts syntax only. It does not assert the script's behaviour.
+EXIT: 0
+
+$ node frontend/scripts/powershell-parse-check.mjs    # temp repo, one broken .ps1
+FAIL broken.ps1:1:17  MissingEndCurlyBrace: Missing closing '}' in statement block or type definition.
+ok   frontend/well-formed.ps1
+
+1 PowerShell script(s) failed to parse.
+EXIT: 1
+
+$ node scripts/powershell-parse-check.mjs            # PATH with no PowerShell
+ps:check NOT RUN - no PowerShell interpreter found on PATH (tried `pwsh` and `powershell`).
+  This step did not examine any file. Its absence is reported, not passed over:
+  `tests/gate-coverage.test.ts` records .ps1 as covered BY THIS STEP, so deleting the step
+  fails the coverage guard rather than leaving the file silently unchecked.
+EXIT: 0
+```
+
+**A fourth behaviour, found by accident and worth keeping.** The first fixture run produced
+`could not list tracked files: ... fatal: not a git repository` and exit 1 — the check fails loudly when
+its enumeration cannot run, rather than concluding "no scripts, nothing to do". That is the correct
+direction: a gate reporting a clean tree because it could not see the tree is the exact defect this
+change exists to remove. No test asserted it; it is noted so it is not "simplified" away later.
+
+The fixture was wrong first, not the script: it placed the check at `<tmp>/scripts/`, and the script
+resolves the repository two levels up, so it looked in the temp parent and found no `.git`. Fixed by
+mirroring the real layout (`<tmp>/frontend/scripts/`), which is what `gate-batch-apparatus.test.ts`'s
+`makeFakeRepoRoot` already does.
+
+### Recorded output for 2.4
+
+`ps:check` added to `frontend/package.json`, to the root proxy, to `npm run gate` (after `format:check`,
+before `typecheck`), and as a CI step between *Format check* and *Typecheck*.
+
+`tests/ci-workflow.test.ts` pinned the exact step list and carried the instruction for this case
+verbatim: *"A gate added without being added here would not be ordered against anything, which is the
+failure this file exists to prevent."* Its `GATES` array, its step-name list, and its "static checks
+before the build" assertion were all extended. `tests/root-commands.test.ts` gained `ps:check` in
+`REQUIRED_ROOT_SCRIPTS` — which puts it under the four existing proxy assertions for free — and in the
+cheap-checks-before-build loop.
+
+```
+$ npm run ps:check                                    # from the repository root
+ok   1 PowerShell script(s) parsed clean, via `pwsh`
+ROOT ps:check EXIT: 0
+
+$ npx vitest run tests/root-commands.test.ts tests/ci-workflow.test.ts
+ Test Files  2 passed (2)
+      Tests  41 passed (41)
+```
 
 ## 3. The coverage guard
 
