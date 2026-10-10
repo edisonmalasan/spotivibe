@@ -276,6 +276,27 @@ async function classify(
  */
 const COVERAGE_TIMEOUT_MS = 60_000;
 
+/** One extension's first-and-last probe, which stands in for every file of that extension. */
+interface ExtensionSample {
+  ext: string;
+  first: string;
+  last: string;
+  firstVerdict: boolean;
+  lastVerdict: boolean;
+}
+
+/**
+ * Pure, so the sampling rule can be witnessed on a heterogeneous extension before it is trusted
+ * with the real tree. On a uniform tree the uniformity assertion is *satisfied*, which means
+ * disabling it changes nothing — an unbreakable mutation, and an unguarded clause wearing a test.
+ * Only a synthetic disagreement makes the comparison prove itself.
+ */
+function findNonUniformExtensions(samples: ExtensionSample[]): string[] {
+  return samples
+    .filter((s) => s.firstVerdict !== s.lastVerdict)
+    .map((s) => `${s.ext}: ${s.first} vs ${s.last}`);
+}
+
 describe("every tracked file in the gate's reach is covered by a gate step", () => {
   const trackedInGate = gitLsFiles(["--", GATE_CWD]);
 
@@ -369,24 +390,28 @@ describe("ESLint's coverage is uniform per extension, because the guard samples 
   it(
     "reaches the same verdict for the first and last file of every extension",
     async () => {
+      const sampled: ExtensionSample[] = [];
       const byExtension = new Map<string, string[]>();
       for (const file of trackedInGate) {
         const ext = extensionOf(file);
         if (!byExtension.has(ext)) byExtension.set(ext, []);
         byExtension.get(ext)?.push(file);
       }
-
-      const nonUniform: string[] = [];
       for (const [ext, files] of [...byExtension.entries()].sort()) {
         if (files.length < 2) continue;
         const sorted = [...files].sort();
-        const first = !(await eslint.isPathIgnored(sorted[0].slice(GATE_CWD.length)));
-        const last = !(await eslint.isPathIgnored(
-          sorted[sorted.length - 1].slice(GATE_CWD.length),
-        ));
-        if (first !== last) nonUniform.push(`${ext}: ${sorted[0]} vs ${sorted[sorted.length - 1]}`);
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        sampled.push({
+          ext,
+          first,
+          last,
+          firstVerdict: !(await eslint.isPathIgnored(first.slice(GATE_CWD.length))),
+          lastVerdict: !(await eslint.isPathIgnored(last.slice(GATE_CWD.length))),
+        });
       }
 
+      const nonUniform = findNonUniformExtensions(sampled);
       expect(
         nonUniform,
         nonUniform.length > 0
@@ -550,5 +575,22 @@ describe("this guard is proven able to fail", () => {
       "this assertion documents the API's default disagreeing with the CLI; if prettier changes it, " +
         "the ignorePath argument still has to be asserted",
     ).toBe(false);
+  });
+
+  it("detects an extension whose two probes disagree", () => {
+    // The uniformity assertion is satisfied on the real tree, so without this it could not fail.
+    const heterogeneous = findNonUniformExtensions([
+      { ext: ".ts", first: "a.ts", last: "z.ts", firstVerdict: true, lastVerdict: true },
+      { ext: ".md", first: "a.md", last: "docs/z.md", firstVerdict: true, lastVerdict: false },
+    ]);
+    expect(heterogeneous).toEqual([".md: a.md vs docs/z.md"]);
+  });
+
+  it("reports a uniform extension as uniform, so the detector is not trivially non-empty", () => {
+    expect(
+      findNonUniformExtensions([
+        { ext: ".ts", first: "a.ts", last: "z.ts", firstVerdict: true, lastVerdict: true },
+      ]),
+    ).toEqual([]);
   });
 });
