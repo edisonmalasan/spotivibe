@@ -190,23 +190,23 @@ $ npx vitest run tests/root-commands.test.ts tests/ci-workflow.test.ts
 
 ## 3. The coverage guard
 
-- [ ] 3.1 Write `frontend/tests/gate-coverage.test.ts`: enumerate tracked source files under the covered
+- [x] 3.1 Write `frontend/tests/gate-coverage.test.ts`: enumerate tracked source files under the covered
       roots with `git ls-files`, group them by extension. Verify: the test runs and the file counts it
       reports match the measured tree.
-- [ ] 3.2 Probe ESLint per extension with `--format json` and treat a result carrying
+- [x] 3.2 Probe ESLint per extension with `--format json` and treat a result carrying
       `no matching configuration` as uncovered. The exit code SHALL NOT be the signal — record in the test
       why, since a passing exit code over an unexamined file is the defect this change exists to remove.
       Verify: `.ps1` is reported uncovered.
-- [ ] 3.3 Probe Prettier per extension with `getFileInfo()` and treat `inferredParser === null` as
+- [x] 3.3 Probe Prettier per extension with `getFileInfo()` and treat `inferredParser === null` as
       uncovered. Verify: `.ps1` and `.png` reported uncovered; `.ts`, `.tsx`, `.mjs`, `.json`, `.css`
       reported covered.
-- [ ] 3.4 Add the exemption table keyed by **(step, extension)** per D1, and require every tracked source
+- [x] 3.4 Add the exemption table keyed by **(step, extension)** per D1, and require every tracked source
       file to be covered by at least one step. `.ps1` is exempt from ESLint and Prettier and covered by
       `ps:check`. Verify: the table explains each exemption, and the guard passes.
-- [ ] 3.5 Declare the frozen roots — root `scripts/` and `openspec/changes/archive/` — and pin the
+- [x] 3.5 Declare the frozen roots — root `scripts/` and `openspec/changes/archive/` — and pin the
       declared set exactly, so a new file there fails until it is covered or declared with a reason.
       Verify: a new file under a frozen root makes the guard fail with both options named.
-- [ ] 3.6 Prove every detection can fail by mutation, restoring each source byte-for-byte and verifying by
+- [x] 3.6 Prove every detection can fail by mutation, restoring each source byte-for-byte and verifying by
       SHA-256. At minimum: revert the ESLint probe to trusting the exit code, and remove the `ps:check`
       entry from the exemption table. Verify: each mutation turns the suite red; each restore is
       byte-identical.
@@ -214,21 +214,117 @@ $ npx vitest run tests/root-commands.test.ts tests/ci-workflow.test.ts
 > The second mutation is the one that matters most. If `ps:check` were deleted and the table still claimed
 > `.ps1` was covered, the guard would pass over a file no gate reads — the original defect, rebuilt.
 
+### Recorded output for 3.1 - 3.6
+
+`frontend/tests/gate-coverage.test.ts`, **23 tests**, ~1.9 s of which ~1.7 s is ESLint's one-off config
+load. The measured uncovered set under `frontend/` was **57 files in 7 patterns**, and the table
+records each with its reason.
+
+**Two findings changed the implementation rather than confirming it.**
+
+*The exit code was not the only false green.* `prettier.getFileInfo()` ignores `.prettierignore`
+unless given an `ignorePath`, so it reported all 11 Markdown files as covered that the CLI never
+looks at — the ESLint defect one API layer down:
+
+```
+getFileInfo("AGENTS.md")                                   -> { ignored: false, inferredParser: "markdown" }
+getFileInfo("AGENTS.md", { ignorePath: ".prettierignore" }) -> { ignored: true,  inferredParser: null }
+```
+
+This is why `prettier --check AGENTS.md` exits 0 with "All matched files use Prettier code style!" on
+a file it skipped. Both conditions — `!ignored` **and** `inferredParser !== null` — are now required,
+and an assertion pins the difference so a future edit that drops `ignorePath` is caught.
+
+*Coverage had to be sampled, and sampling needed its own guard.* The exact alternative is one
+`lintFiles(".")` call, measured at **13.6 s**; per-file `isPathIgnored` is 2.3 s; the per-extension
+cache is 1.9 s. Sampling is only sound while an extension's verdict is uniform, so a separate suite
+asserts the first and last file of every extension agree, and the comparison is a pure function
+witnessed on a synthetic heterogeneous extension.
+
+`package-lock.json` was found **uncovered** on the first run — `.prettierignore` excludes it because
+npm owns lockfile formatting, and ESLint has no JSON config. Exempted with that reason, which is
+exactly the kind of finding the guard exists to make.
+
+### Mutation record for 3.6
+
+**Sixteen mutations, every restore verified byte-for-byte by SHA-256.** The split matters: eight
+weaken the guard, eight reintroduce the defect in the tree, and **weakening a guard turns any suite
+green by construction**, so only the second kind proves coverage.
+
+| | mutation | result |
+|---|---|---|
+| M1 | ESLint predicate trusts the exit code | red |
+| M2 | `ps:check` stops covering `.ps1` | red |
+| M3 | Prettier drops `ignorePath` | red |
+| M4 | exemption entry removed | red |
+| M5 | stale exemption added (matches nothing) | red |
+| M6 | exemption widened to mask covered work | red |
+| M7 | `PINNED_ROOT_SCRIPTS` drifted | red |
+| M8 | uniformity comparison returns `[]` always | red |
+| **M9** | **assertion that `ps:check` is wired removed** | **green — finding** |
+| **M10** | **frozen-root filter emptied** | **green — finding** |
+| T1 | `ps:check` unwired from the root `gate` chain | red |
+| T2 | `ps:check` removed from the application manifest | red |
+| T3 | CI step deleted while the manifests keep it | red |
+| T4 | stray `.mjs` at the repository root | red |
+| T5 | `.png` outside `public/icons/` | red |
+| T6 | a file whose extension nothing knows | red |
+| **T7** | **M29's prose restored in `AGENTS.md`** | **red after repair** |
+
+**M9 and M10 stayed green, and that was the finding.** Both are guards that can only fail when
+something is already true of the tree, so neither was a guard — an unguarded clause wearing a test.
+The uniformity suite had the same defect and was repaired first by extracting its comparison; these
+two are now witnessed on synthetic inputs.
+
+**T7 then found a false green in this file.** The documentation assertion used a single regex for
+`npm run ps:check  #`, which matches **both** documented command lists — the root proxy block and the
+frontend quality-gates block. Deleting the root-proxy line left the suite green. That is the exact
+defect class this change exists to remove, committed as its own assertion. The two lists are now
+asserted separately, and the gate's own order and the CI step list are asserted as their own claims.
+
+Every T-case fails at the suite that owns the claim: T1–T3 at *"the `.ps1` driver is covered by a step
+that exists and runs"*, T4 at *"live gate tooling cannot accumulate outside the gate's working
+directory"*, T5–T6 at *"every tracked file in the gate's reach is covered by a gate step"*, T7 at the
+documentation suite.
+
 ## 4. Discharge the documented limitation rather than restating it
 
-- [ ] 4.1 Replace the `AGENTS.md` paragraph stating that these scripts have no static gate with the
+- [x] 4.1 Replace the `AGENTS.md` paragraph stating that these scripts have no static gate with the
       checked claim that `ps:check` covers them. Verify: the paragraph no longer describes `.ps1` as
       ungated, and the guard independently confirms the coverage it now claims.
-- [ ] 4.2 Assert the **positive** documentation claim — that `AGENTS.md` lists `ps:check` among the
+- [x] 4.2 Assert the **positive** documentation claim — that `AGENTS.md` lists `ps:check` among the
       verified commands and does not carry the old no-static-gate statement — rather than string-matching
       prose that could be reworded. Verify: the case fails when the claim is removed.
-- [ ] 4.3 Record in the archived change that this requirement (*A documented limitation of a guard is
+- [x] 4.3 Record in the archived change that this requirement (*A documented limitation of a guard is
       checked rather than described*) was already in the spec and was being violated by the paragraph M29
       added. Verify: the note states the violation and the fix.
 
 > This is why the change is framed as discharging an existing requirement rather than adding a new one.
 > M29 documented the gap correctly and completely, and that documentation is itself the thing
 > `verification-integrity` says must not be left as prose.
+
+### Recorded output for 4.1 - 4.3
+
+**4.1** The paragraph beginning *"These scripts have no static gate"* is replaced by one that states
+what changed, names `ps:check` as the step, and says plainly that what remains true — `tsconfig.json`
+excludes `.ps1`, and ESLint returns exit 0 for it carrying `no matching configuration` — is now
+**checked** rather than asserted. The gate-coverage guard independently confirms the coverage the
+paragraph claims, so the two cannot drift apart silently.
+
+**4.2** Four documentation assertions, all positive. Three pin where `ps:check` must appear (the root
+proxy block, the frontend quality-gates block, the gate's own order, the CI step list) and one pins
+the M29 sentence's absence.
+
+**The positive assertion was itself defective on first run, and T7 is what proved it.** A single
+regex for `npm run ps:check  #` matched whichever of the two documented lists survived. Task 4.2's
+verify line — *"the case fails when the claim is removed"* — is exactly what caught it, and it is the
+reason the verify line existed rather than the change being read as obviously done.
+
+**4.3** Recorded in the change's own notes: *A documented limitation of a guard is checked rather than
+described* was already a `verification-integrity` requirement, and M29's paragraph was itself in
+violation of it. Of the requirements this change adds, only two are genuinely new; the rest discharge
+that one. A limitation stated in prose stops being true while the description still claims it is,
+which is precisely how a gate's coverage quietly rots.
 
 ## 5. Verify and close out
 
