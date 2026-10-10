@@ -50,26 +50,39 @@
 // as a finding about the tree:
 //   - the executed-test total. It is cross-checked against a second mechanism instead — see phase 2.
 //
-// The `--expect-*` flags parameterise the two figures this script asserts. They default to 182 and 21,
-// and **both defaults are asserted**, not merely reported: a batch taken on a different tree fails until
-// its caller says what it expects. That is the opposite of what this comment claimed until round 12.
+// The `--expect-*` flags parameterise the two figures this script asserts. **They have no defaults.**
 //
-// **Round 12's CRITICAL 4b, corrected in place.** The sentence here used to read that the flags are
-// "optional on purpose... the honest move is for the caller to say what it expects, not for this script to
-// guess and then report its own guess back as a finding" — while the code did precisely that: `?? "182"`,
-// then `found.files === options.files`. A stated philosophy contradicted by the code two lines below it is
-// worse than no philosophy, because a reader deciding whether to trust this script will reason from it.
+// **Why there are none, and why this paragraph is longer than the code it replaced.** This script used to
+// fall back to `182` and `21`, describe their provenance, and then fail when the tree moved past them. The
+// two numbers were the M21 tree's file and motion-budget counts, so the default was stale *by
+// construction*: correct on the day it was written, wrong again at the next milestone. `21` had been
+// failing on arrival since M22. The script could name the cause of its own failure and still exited 1, and
+// `run-gate-batch.ps1` printed a follow-up command omitting both flags, so following the apparatus's own
+// instructions failed a perfect batch — measured against `qpo-batch2`, six of six green at the merged
+// commit: `8 problem(s) unresolved`, exit 1. Four separate sessions rediscovered the required override,
+// and no documented source recorded it.
 //
-// What is actually true, and is now what is written: a *default* is a guess this script makes once, on the
-// caller's behalf, and it is a guess it then asserts. That is defensible — a batch on an unexpected tree
-// should be reported rather than quietly accepted — but it is only defensible while the default and the
-// documentation agree, which is why `evidence-scripts.test.ts` now reads both out of this file and
-// compares them. Commit ed6f9f6 raised the default to 182 and left this sentence saying 181, and nothing
-// in the repository noticed for one full round.
+// **Round 12's CRITICAL 4b, kept because it is the reason not to reintroduce a constant.** The sentence
+// here used to read that the flags were "optional on purpose... the honest move is for the caller to say
+// what it expects, not for this script to guess and then report its own guess back as a finding" — while
+// the code did precisely that: `?? "182"`, then `found.files === options.files`. A stated philosophy
+// contradicted by the code two lines below it is worse than no philosophy, because a reader deciding
+// whether to trust this script will reason from it. Round 12 fixed the sentence and kept the constant; the
+// sentence was right and the code was wrong, and only one of the two got repaired.
 //
-// The executed-test total is the one figure genuinely left unasserted, because it is the one that moves
-// whenever the suite gains a test, and a hard-coded expectation for it would report itself as a finding
-// about the tree on every ordinary change.
+// A figure stored in this file is a snapshot of some earlier tree. Reading it at check time, from either
+// the logs or the live tree, is what makes it incapable of going stale.
+//
+// So, now:
+//
+//   - **Caller states a figure** — it is the expectation, and a disagreement is a real failure.
+//   - **Caller states none** — the figure is derived from the batch, and the file count is additionally
+//     checked against the live tree via `vitest list --filesOnly`, which returns one line per *file* and
+//     so is an exact equality rather than the lower bound plain `vitest list` gives.
+//   - **The executed-test total is unasserted**, because it moves whenever the suite gains a test and has
+//     no exact live-tree equivalent.
+//
+// A closing line names which of these applied, so a green exit cannot be read as covering more than it did.
 //
 // ## The five defects this checker's own history contains, kept because each was a real false report
 //
@@ -116,15 +129,17 @@ function parseArguments(argv) {
   if (positional.length !== 1) {
     process.stderr.write(
       "usage: node verify-gate-batch.mjs <log-directory> " +
-        "[--expect-files N] [--expect-budget N] [--runs N] [--frontend <path>]\n",
+        "[--expect-files N] [--expect-budget N] [--runs N] [--frontend <path>]\n" +
+        "       --expect-* are optional. Omit them and the figures are derived from the batch, with\n" +
+        "       the file count additionally checked against the live tree.\n",
     );
     process.exit(2);
   }
   return {
     dir: resolve(positional[0]),
     frontend: resolve(flags.get("frontend") ?? "frontend"),
-    files: flags.get("expect-files") ?? "182",
-    budget: flags.get("expect-budget") ?? "21",
+    files: flags.get("expect-files") ?? null,
+    budget: flags.get("expect-budget") ?? null,
     runs: Number(flags.get("runs") ?? "6"),
     // Whether each expected figure was **stated by the caller** or fell back to the built-in default.
     // The distinction decides what a mismatch means: a caller-stated figure that does not match is a
@@ -184,6 +199,51 @@ if (unexamined.length > 0) {
       `${presentLogs.length} to examine them, or --runs ${expectedLogs.length} to assert this batch.\n`,
   );
   problems += 1;
+}
+
+// **The live tree's own test-file count, read once, here — before the per-log loop — because it is the
+// default expectation.** When the caller states no `--expect-files`, this is what each log's file count is
+// compared against, so the comparison has to exist before the loop rather than being retrofitted after.
+//
+// **It is an exact equality, not a lower bound**, and that was measured before this was written:
+// `vitest list --filesOnly` prints one line per *file* (185 on this tree, matching the batches), whereas
+// plain `vitest list` prints one line per *template* (3,112) and is a lower bound by construction because
+// `.each(` call sites expand only at run time. The full rationale, and the reason the hard-coded `182`/`21`
+// this replaced is not coming back, is in the header and in the block below that consumes this figure.
+const filesOnly = spawnSync(
+  process.execPath,
+  ["node_modules/vitest/vitest.mjs", "list", "--filesOnly"],
+  { cwd: options.frontend, encoding: "utf8", env: process.env },
+);
+const liveTreeFiles = (() => {
+  const out = ((filesOnly.stdout ?? "") + (filesOnly.stderr ?? "")).replace(ANSI, "");
+  const n = out
+    .split(/\r?\n/)
+    .filter((line) => /^\S+\.(test|spec)\.[cm]?[jt]sx?$/.test(line.trim())).length;
+  return filesOnly.status === 0 && n > 0 ? String(n) : null;
+})();
+
+// What each log is held against, resolved once. A caller-stated figure always wins; otherwise the live tree
+// supplies the file count. `budget` has no live-tree equivalent, so with nothing stated it is not held
+// against any external figure - only against the other logs, in the aggregate block below.
+const expectedFiles = options.supplied.files ? options.files : liveTreeFiles;
+const expectedBudget = options.supplied.budget ? options.budget : null;
+
+if (liveTreeFiles === null) {
+  // A phase that cannot run is the absence of the check, not a pass — the same reasoning that repaired the
+  // plain-`vitest list` phase further down, applied here. It is only fatal when it would have been the
+  // expectation: a caller who stated `--expect-files` has supplied the figure this would have provided.
+  process.stdout.write(
+    `FAIL live tree file count: \`vitest list --filesOnly\` produced no file list (exit ${filesOnly.status}).\n` +
+      "      This is the expectation used whenever the caller supplies no --expect-files, so a phase\n" +
+      "      that cannot run is the absence of the check rather than a pass. Check that --frontend\n" +
+      "      points at the frontend directory and that dependencies are installed.\n",
+  );
+  if (!options.supplied.files) problems += 1;
+} else {
+  process.stdout.write(
+    `ok   live tree file count: ${liveTreeFiles} test files, from \`vitest list --filesOnly\`\n`,
+  );
 }
 
 for (let run = 1; run <= options.runs; run += 1) {
@@ -265,8 +325,8 @@ for (let run = 1; run <= options.runs; run += 1) {
   const failingSummary = /Tests\s+[^\n]*\d+ failed/.exec(text)?.[0] ?? null;
 
   const assertedHold =
-    found.files === options.files &&
-    found.budget === options.budget &&
+    found.files === expectedFiles &&
+    (expectedBudget === null || found.budget === expectedBudget) &&
     found.skipped === null &&
     exitCode === "0" &&
     commit !== null &&
@@ -438,45 +498,99 @@ if (rows.length > 0) {
 // Every asserted total must be identical across the logs. Asserted without naming a value for `tests`: the
 // claim is "N runs of one unchanged tree", and disagreement between the logs is a finding whatever the
 // number happens to be.
-// **Where each asserted figure's built-in default came from.** Named here because a stale default and a
-// regression produce the *same* failure line, and telling them apart must not require re-deriving the
-// whole measurement. `21` was the M21 tree's motion-budget count; the tree this ships runs 24, so the
-// default has been failing on arrival since M22 and every reader since has had to guess which of the
-// two it was. Asserting a default is correct — the expected figure must be independent of the batch
-// being checked, or the corroboration is the driver agreeing with itself — so the default stays and
-// only its provenance becomes visible.
-const DEFAULT_PROVENANCE = {
-  files: "the M21 tree (182 files at 6f86211)",
-  budget: "the M21 tree (21 motion-budget tests at 6f86211)",
-};
+// **The built-in defaults are gone, and the reason is worth keeping in full.** This block used to compare
+// the logs against the literals `182` and `21`, describe exactly where they came from, and then still
+// fail when the tree moved on. That combination is the defect this change exists to remove:
+//
+//   - `182` was the M21 tree's file count. Every milestone since has added test files, so the default was
+//     stale *by construction* — correct on the day it was written, wrong again at the next milestone.
+//   - `21` was the M21 tree's motion-budget count, and it had been failing on arrival since M22.
+//   - The checker could name the cause of its own failure and still incremented `problems` and exited 1.
+//   - `run-gate-batch.ps1` printed a follow-up command that omitted both flags, so following the
+//     apparatus's own instructions failed a perfect batch. Measured against `qpo-batch2`, six of six
+//     green at the merged commit: `8 problem(s) unresolved`, exit 1.
+//
+// **What replaced them is not a bigger constant.** When the caller states a figure, that figure is the
+// expectation and a disagreement is a real failure — unchanged. When the caller states none, the
+// expectation is *derived* from the batch and checked against the **live tree**, which cannot fall behind
+// because it is read at check time. Two properties survive, and both are asserted:
+//
+//   1. all N logs agree on the figure, and
+//   2. for the file count, the live tree holds exactly that many test files.
+//
+// **The cross-check is an equality, not a floor**, and that was measured before this design was written:
+// `npx vitest list --filesOnly` returns one line per *file* (185 on this tree, matching the batches),
+// whereas plain `vitest list` returns one line per *template* (3,112) and is explicitly a lower bound by
+// construction because `.each(` call sites expand only at run time. So the mechanism is exact, needs no
+// new dependency, and needs no hand-rolled globbing against the vitest config.
+//
+// **There is no live-tree equivalent for the motion-budget count**, and inventing one would mean
+// enumerating templates and guessing at `.each(` expansion — i.e. reintroducing a lower bound where this
+// block is supposed to be exact. So for `budget`, an unstated figure is asserted for *stability only*, and
+// the output says so rather than implying a tree check that did not happen.
+//
+// **The accepted limitation, stated rather than papered over:** equality on a file count is weaker than
+// equality on a commit. A batch from a different commit with the same number of test files would pass.
+// Pinning the commit would require the checker to know a commit the caller has not told it; the logs do
+// record their commit and the commit-agreement block above already refuses a batch spanning two. This
+// block therefore asserts tree-*shape* agreement, not commit agreement.
+//
+// `liveTreeFiles` and the two `expected*` figures were computed above the per-log loop, so that the
+// per-row check and this aggregate check read the same expectation. Deriving them twice would leave two
+// places to disagree, and a disagreement between them would present as a batch that fails for no stated
+// reason.
 
-for (const [label, key] of [
-  ["Test Files", "files"],
-  ["Tests", "tests"],
-  ["motion-budget", "budget"],
+// What each figure was actually checked against, so the verdict can report it rather than imply it.
+const assertedAgainst = {};
+
+for (const [label, key, crossChecked] of [
+  ["Test Files", "files", true],
+  ["Tests", "tests", false],
+  ["motion-budget", "budget", false],
 ]) {
   const distinct = [...new Set(rows.map((row) => row[key]))];
   const stable = distinct.length === 1 && distinct[0] !== null;
-  const expected = key === "files" ? options.files : key === "budget" ? options.budget : null;
-  const supplied = expected !== null && options.supplied[key] === true;
-  const matchesExpectation = expected === null || distinct[0] === expected;
-  const ok = stable && matchesExpectation;
+  const derived = stable ? distinct[0] : null;
+
+  const stated = options.supplied[key] === true ? options[key] : null;
+  const against =
+    stated !== null ? stated : crossChecked && derived !== null ? liveTreeFiles : null;
+  assertedAgainst[key] = stated !== null ? "stated" : against !== null ? "liveTree" : "stability";
+
+  const ok = stable && (against === null || distinct[0] === against);
+  const source =
+    stated !== null
+      ? "the figure you supplied with --expect-*"
+      : "the live tree, because you supplied none";
+
   process.stdout.write(
     `${ok ? "ok   " : "FAIL "}${label} across the logs: ${distinct.join(", ")}` +
-      `${expected === null ? " (stability only)" : ` (asserted ${expected})`}\n`,
+      `${against === null ? " (stability only - nothing asserted beyond the logs agreeing)" : ` (asserted ${against} - ${source})`}\n`,
   );
+
   if (!ok) {
     problems += 1;
-    // Three things, and all three are load-bearing: what was found, what was expected, and whether the
-    // expectation is a stale constant or one the caller stated. Dropping any of them returns this to
-    // the undiagnosable failure it was repaired from.
-    const provenance = supplied
-      ? "you supplied this figure with --expect-*, so this is a real disagreement to investigate"
-      : `this default is stale — it is ${DEFAULT_PROVENANCE[key]}, not this tree. ` +
-        `Re-run with --expect-${key === "files" ? "files" : "budget"} ${distinct[0]} to assert this batch's own figure.`;
-    process.stdout.write(
-      `      found ${distinct.join(", ")}, expected ${expected}. ${provenance}\n`,
-    );
+    // Three distinct causes, and each gets its own sentence because telling them apart must not require
+    // re-deriving the whole measurement — the failure this block was originally repaired from.
+    if (!stable) {
+      process.stdout.write(
+        `      found ${distinct.join(", ")}. The logs disagree with each other, so there is no single\n` +
+          "        figure to check. Agreement between runs is the first claim; re-run the batch rather\n" +
+          "        than reading the majority as if it covered all of them.\n",
+      );
+    } else if (stated !== null) {
+      process.stdout.write(
+        `      found ${derived}, expected ${stated}. You supplied this figure with --expect-*, so this is\n` +
+          "        a real disagreement to investigate, not a stale constant.\n",
+      );
+    } else {
+      process.stdout.write(
+        `      found ${derived}, expected ${against}. No figure was supplied with --expect-*, so this was\n` +
+          "        checked against the live tree: the batch reports a different number of test files\n" +
+          "        than the tree holds, which means it was taken on a different tree. Re-run the batch on\n" +
+          "        this tree, or pass --expect-files if the batch is deliberately from another one.\n",
+      );
+    }
   }
 }
 
@@ -677,6 +791,28 @@ if (list.status !== 0 || listedIds === 0) {
       "      time, so enumeration is a lower bound by construction. What is asserted is that the two\n" +
       "      mechanisms are the same order of magnitude and that the bound holds — two claims, each of\n" +
       "      which W2 and W4 defeated individually.\n",
+  );
+}
+
+// **A green exit has to say what it covered.** A batch is a sample, and a sample's value is bounded by
+// what was actually held constant. Without this line, "exit 0" is read as covering everything the tool
+// can check, when a run with no stated figure has asserted the logs' agreement and the file count's
+// agreement with the live tree — and has *not* asserted either figure against a figure the caller chose.
+if (problems === 0) {
+  const statedCount = ["files", "budget"].filter((key) => assertedAgainst[key] === "stated").length;
+  const liveChecked = assertedAgainst.files === "liveTree";
+  const budgetChecked = assertedAgainst.budget === "liveTree";
+  const summary =
+    statedCount === 2
+      ? "both the file count and the motion-budget count were supplied by you"
+      : statedCount === 1
+        ? "one of the two figures was supplied by you"
+        : "no figure was supplied, so both were derived from the batch";
+  process.stdout.write(
+    `\nwhat was asserted: ${summary}; ` +
+      `the file count was ${liveChecked ? "additionally checked against the live tree" : "NOT checked against the live tree"}; ` +
+      `the motion-budget count was ${budgetChecked ? "checked against the live tree" : "checked for stability only, as no live-tree equivalent of it exists"}; ` +
+      "the executed-test total is reported and never asserted.\n",
   );
 }
 

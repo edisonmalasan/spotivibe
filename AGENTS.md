@@ -293,6 +293,66 @@ Examples of things that may deserve separate entries:
 - static analysis
 - package integrity checks
 - deployment validation
+
+---
+
+### Verified project tool: the gate-batch corroborator
+
+`frontend/scripts/gate-batch/` holds two scripts that `npm run gate` does not cover, and that this file
+documented nowhere until M29:
+
+- `run-gate-batch.ps1` runs `npm run gate` N times, writes `run1.log`…`runN.log`, and prints a run table.
+- `verify-gate-batch.mjs` reads those logs and asserts the batch really is N consecutive green runs of one
+  unchanged tree — distinct logs, markers present, 0 NUL bytes, 0 U+FFFD, one commit, agreed figures.
+
+Verified 2026-10-10 (Windows local). The checker runs **once per batch**, after the driver has produced
+the logs — never once per gate run.
+
+**Run the command the driver prints, verbatim.** It now carries `--expect-files <N> --expect-budget <N>`
+bound to the figures the driver had just measured, so it cannot drift from the batch it describes:
+
+```bash
+powershell -File run-gate-batch.ps1 -LogDir <directory> -Runs 6
+# ... then the command the driver prints as its last line ...
+```
+
+Omitting `--expect-*` is **no longer wrong**, but it is weaker, and a green verdict says so. With no figure
+stated, the checker derives the expectation from the batch and additionally checks the file count against
+the live tree via `vitest list --filesOnly`. That cross-check is an **equality, not a lower bound**:
+`--filesOnly` prints one line per *file*, whereas plain `vitest list` prints one line per *template* and is
+a lower bound by construction, because `.each(` call sites expand only at run time.
+
+**There is no live-tree equivalent for the motion-budget count**, so with nothing stated it is asserted for
+*stability only* — the logs agreeing with each other — and the verdict reports that honestly.
+
+Reading a green verdict:
+
+- `what was asserted: …` names which of those paths ran. Read it; do not assume it covered everything.
+- The executed-test total is **reported and never asserted**, because it moves whenever the suite gains a
+  test and has no exact live-tree equivalent.
+
+**The accepted limitation:** equality on a file count is weaker than equality on a commit, so a batch from
+a different commit with the same number of test files would pass. The logs record their commit and the
+commit-agreement check refuses a batch spanning two, so this asserts tree-*shape* agreement, not commit
+agreement.
+
+**Do not reintroduce a literal default.** The checker used to fall back to `182` / `21` — the M21 tree.
+That default was stale by construction and cost four sessions a manual override, because no documented
+source recorded the required flags. A figure stored in the script is a snapshot of whatever tree it was
+written on; read it at check time instead. `gate-batch-apparatus.test.ts` asserts this negatively.
+
+**These scripts have no static gate.** `tsconfig.json` includes only `.ts`/`.tsx`/`.mts`, and neither
+ESLint nor Prettier handles `.ps1`, so a `.ps1` edit is covered only by the behavioural cases in
+`gate-batch-apparatus.test.ts`, and those **skip with a stated reason** where no PowerShell interpreter is
+present. A skip is reported as a skip, never as a pass.
+
+These commands establish `that the logs form a batch of N distinct green runs of one commit, and that the
+figures in them agree with each other and with the expectation in force`.
+
+They do **not** establish `that npm run gate itself passes` (the batch is evidence of that, not a
+substitute for reading it), `that the batch measured the merge commit` (compare trees yourself —
+`run-gate-batch.ps1` labels HEAD but runs in the **working tree**, so commit first), or `that a skipped
+PowerShell case passed`.
 -->
 
 ---

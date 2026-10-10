@@ -397,6 +397,65 @@ describe("the driver's printed interface names an invocation that runs", () => {
       expect(run).toContain("--runs 0");
     },
   );
+
+  it.skipIf(skipNoInterpreter)(
+    "prints no figure at all when it has none to print, rather than an invented one",
+    { timeout: SPAWN_TIMEOUT_MS },
+    () => {
+      // `-Runs 0` produces no run lines, so there is no figure to bind. The requirement this came from is
+      // that the printed command must succeed on the evidence it describes — and a command carrying a
+      // figure the driver never measured would fail that, while printing nothing is honest and the checker
+      // still derives what it needs. This is the zero case of the rule, and it is the one that would go
+      // untested if only the happy path were covered.
+      const run = runDriver(DRIVER, ["-LogDir", join(tempDir(), "logs"), "-Runs", "0"]);
+
+      expect(run.status).toBe(0);
+      const printed = run.stdout
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .find((l) => l.startsWith("node ") && l.includes("verify-gate-batch.mjs"));
+      expect(printed, "the driver printed no completion command").toBeDefined();
+      expect(printed).not.toContain("--expect-files");
+      expect(printed).not.toContain("--expect-budget");
+      // And it says why, so the absence reads as a decision rather than as an oversight.
+      expect(run.stdout).toContain("does not agree on a single file count");
+    },
+  );
+
+  it("binds the printed figures to the ones it printed in its own summary", () => {
+    // Static, because the positive half needs a six-run batch and this is the cheap guard against the
+    // binding being deleted. It is a data-flow claim, not a positional one: the flags must be built from
+    // the same two collections the summary is built from, or the command and the table above it drift
+    // apart — which is precisely what happened when the summary printed them and the command did not.
+    const source = read(DRIVER);
+
+    expect(
+      source,
+      "the driver no longer collects a file count for its summary, so it cannot print one either",
+    ).toMatch(/\$fileCounts\s*=/);
+    expect(
+      source,
+      "the driver no longer collects a motion-budget count for its summary, so it cannot print one either",
+    ).toMatch(/\$budgetCounts\s*=/);
+
+    const printed = source
+      .split(/\r?\n/)
+      .find((l) => l.includes("verify-gate-batch.mjs") && l.includes("--frontend"));
+    expect(printed, "the driver no longer prints a checker command").toBeDefined();
+    expect(
+      printed,
+      "the printed command omits the figures the driver just measured, so following it fails a correct batch",
+    ).toMatch(/--runs \$Runs\$expectFlags/);
+
+    // Gated on the batch agreeing with itself, so a self-disagreeing batch prints no figure rather than
+    // asserting one of two competing numbers — which would make the checker report the wrong problem.
+    expect(
+      source,
+      "the printed figures are not gated on the batch agreeing on a single value",
+    ).toMatch(
+      /\$fileCounts\.Count -eq 1 -and \$budgetCounts\.Count -eq 1[\s\S]{0,300}--expect-files \$\(\$fileCounts\[0\]\) --expect-budget \$\(\$budgetCounts\[0\]\)/,
+    );
+  });
 });
 
 /**
@@ -441,16 +500,30 @@ function writeBatch(
  * A stub standing in for `frontend/`, so the corroborator's independent-enumeration phase runs in
  * milliseconds instead of spawning a real `vitest list` against the whole suite for every fixture.
  *
- * It prints exactly `tests` template ids, which satisfies the phase's anchor: `listedIds <= logTotal`
+ * It prints exactly `ids` template ids, which satisfies the phase's anchor: `listedIds <= logTotal`
  * and a ratio of 1.0 over the 0.8 floor. The stub is a *fixture*, not a mock of the subject — the
  * phase under test is the checker's comparison, and the numbers it compares are these.
+ *
+ * **It also answers `--filesOnly`**, printing `files` file-shaped lines instead of template ids. That
+ * is not incidental: the checker calls `vitest list --filesOnly` to learn the live tree's test-file
+ * count, and uses it as the expectation whenever the caller states no `--expect-files`. A stub that
+ * ignored the flag would print lines matching no file shape, so that phase would report "produced no
+ * file list" and every fixture here would fail for a reason unrelated to what each case tests.
  */
-function writeFrontendStub(root: string, ids: number): string {
+function writeFrontendStub(root: string, ids: number, files = ids): string {
   const frontend = join(root, "frontend");
   mkdirSync(join(frontend, "node_modules", "vitest"), { recursive: true });
   writeFileSync(
     join(frontend, "node_modules", "vitest", "vitest.mjs"),
-    `for (let i = 0; i < ${ids}; i += 1) process.stdout.write(\`tests/x.test.ts > suite > case \${i}\\n\`);\n`,
+    [
+      "const filesOnly = process.argv.includes('--filesOnly');",
+      `const n = filesOnly ? ${files} : ${ids};`,
+      "for (let i = 0; i < n; i += 1) {",
+      "  if (filesOnly) process.stdout.write(`tests/x${i}.test.ts\\n`);",
+      "  else process.stdout.write(`tests/x.test.ts > suite > case ${i}\\n`);",
+      "}",
+      "",
+    ].join("\n"),
     "utf8",
   );
   return frontend;
@@ -466,54 +539,150 @@ function runChecker(logDir: string, frontend: string, args: string[] = []): Driv
 }
 
 describe("a figure mismatch is diagnosable rather than merely fatal", () => {
-  it("names the figure found, the figure expected, and that the default is stale", () => {
+  it("names the figure found, the figure expected, and that the tree is the source of it", () => {
     const root = tempDir();
     const logs = join(root, "logs");
     writeBatch(logs, { files: 2, budget: 3 });
-    const frontend = writeFrontendStub(root, 10);
+    // The tree holds 7 files; the logs claim 2. No flag is stated, so the live tree is the expectation.
+    const frontend = writeFrontendStub(root, 10, 7);
 
-    // No --expect-* flags, so the built-in defaults (182 / 21) apply and the fixture's 2 / 3 disagree.
     const run = runChecker(logs, frontend);
 
     expect(run.status).toBe(1);
     // The three elements the repair added, each required. A message carrying only the first two is
     // the original undiagnosable failure.
     expect(run.stdout).toContain("found 2");
-    expect(run.stdout).toContain("expected 182");
-    expect(run.stdout).toContain("this default is stale");
+    expect(run.stdout).toContain("expected 7");
+    expect(run.stdout).toContain("checked against the live tree");
+    // And the consequence a reader needs: this is not a corrupt batch, it is a batch from another tree.
+    expect(run.stdout).toContain("taken on a different tree");
   });
 
-  it("distinguishes a stale default from a figure the caller stated", () => {
+  it("distinguishes a caller-stated disagreement from a batch taken on another tree", () => {
     const root = tempDir();
     const logs = join(root, "logs");
     writeBatch(logs, { files: 2, budget: 3 });
-    const frontend = writeFrontendStub(root, 10);
+    const frontend = writeFrontendStub(root, 10, 7);
 
     // The caller states a figure that does not match. That is a disagreement to investigate, not a
-    // stale constant, and the diagnostic must not tell the reader to re-run with a different figure.
+    // batch from elsewhere, and the diagnostic must not tell the reader to go looking for a different tree.
     //
     // **Both** flags are supplied deliberately. Supplying only `--expect-files` leaves `--expect-budget`
-    // on its default, so the budget line correctly reports a stale constant and the assertion below
-    // would fail for a reason that is the checker's correct behaviour rather than a defect. Supplying
-    // both leaves exactly one mismatch, and it is the caller-stated one under test.
+    // derived, and the assertion below would then be checking two things at once. Supplying both leaves
+    // exactly one figure under test, and it is the caller-stated one.
     const run = runChecker(logs, frontend, ["--expect-files", "999", "--expect-budget", "3"]);
 
     expect(run.status).toBe(1);
-    expect(run.stdout).toContain("you supplied this figure");
-    expect(run.stdout).not.toContain("this default is stale");
+    // Case-folded: the sentence starts the line, so its capitalisation is a presentation detail rather
+    // than the claim, and pinning it would make this test break on a reword it would still satisfy.
+    expect(run.stdout.toLowerCase()).toContain("you supplied this figure");
+    expect(run.stdout).not.toContain("taken on a different tree");
   });
 
-  it("asserts a caller-stated figure and corroborates, rather than falling back to the default", () => {
+  it("asserts a caller-stated figure and corroborates, rather than checking the tree", () => {
     const root = tempDir();
     const logs = join(root, "logs");
     writeBatch(logs, { files: 2, budget: 3 });
-    const frontend = writeFrontendStub(root, 10);
+    // The tree holds 7, and the caller states 2. The stated figure is the expectation, so this passes.
+    const frontend = writeFrontendStub(root, 10, 7);
 
     const run = runChecker(logs, frontend, ["--expect-files", "2", "--expect-budget", "3"]);
 
     expect(run.stdout).toContain("corroborated");
     expect(run.status).toBe(0);
-    expect(run.stdout).not.toContain("this default is stale");
+    // And the verdict must not claim a tree check it did not perform. A checker that printed
+    // "checked against the live tree" here would be reporting a phase it skipped.
+    expect(run.stdout).toContain("NOT checked against the live tree");
+  });
+
+  it("states what it asserted, so a green exit is not read as covering more than it did", () => {
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, { files: 2, budget: 3 });
+    const frontend = writeFrontendStub(root, 10, 2);
+
+    const run = runChecker(logs, frontend);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("what was asserted");
+    expect(run.stdout).toContain("no figure was supplied");
+    expect(run.stdout).toContain("checked against the live tree");
+    expect(run.stdout).toContain("reported and never asserted");
+  });
+
+  it("refuses a batch whose logs agree on a file count the live tree does not hold", () => {
+    // The property the removed hard-coded default was standing in for. Internally consistent evidence,
+    // taken on a different tree: every run green, every figure agreeing, and still not this batch.
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, { files: 9, budget: 3 });
+    const frontend = writeFrontendStub(root, 10, 7);
+
+    const run = runChecker(logs, frontend);
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).not.toContain("corroborated");
+    expect(run.stdout).toContain("asserted 7 - the live tree, because you supplied none");
+  });
+
+  it("reports logs that disagree with each other as disagreement, not as a tree mismatch", () => {
+    // A majority of five is not a figure for the sixth. Which of the two causes it is determines both
+    // the remedy and whether the tree check ran at all, so the two sentences must not be interchangeable.
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, { files: 7, budget: 3 });
+    writeFileSync(
+      join(logs, "run3.log"),
+      read(join(logs, "run3.log")).replace("Test Files  7 passed (7)", "Test Files  9 passed (9)"),
+      "utf8",
+    );
+    const frontend = writeFrontendStub(root, 10, 7);
+
+    const run = runChecker(logs, frontend);
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("7, 9");
+    expect(run.stdout).toContain("disagree with each other");
+    expect(run.stdout).not.toContain("taken on a different tree");
+  });
+
+  it("refuses rather than corroborates when the live tree's file count cannot be read", () => {
+    // A phase that cannot run is the absence of the check, not a pass. A stub that answers plain `list`
+    // but not `--filesOnly` leaves the default expectation unavailable, and accepting the batch would
+    // print `corroborated` under a comparison that never executed.
+    const root = tempDir();
+    const logs = join(root, "logs");
+    writeBatch(logs, { files: 2, budget: 3 });
+    const frontend = writeFrontendStub(root, 10, 2);
+    writeFileSync(
+      join(frontend, "node_modules", "vitest", "vitest.mjs"),
+      "process.stdout.write('tests/x.test.ts > suite > case 0\\n');\n",
+      "utf8",
+    );
+
+    const run = runChecker(logs, frontend);
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("FAIL live tree file count");
+    expect(run.stdout).not.toContain("corroborated");
+  });
+
+  it("stores no literal default figure, which is the thing that used to go stale", () => {
+    // The negative of the regression. A figure compiled into the checker is a snapshot of whatever tree
+    // it was written on, and every later milestone invalidates it — which is how a perfect batch came to
+    // exit 1 four separate times.
+    const source = read(CHECKER);
+
+    for (const flag of ["expect-files", "expect-budget"]) {
+      expect(
+        source,
+        `the checker falls back to a literal for --${flag}, which is a snapshot of an earlier tree`,
+      ).not.toMatch(new RegExp(`flags\\.get\\("${flag}"\\)\\s*\\?\\?\\s*["'\\d]`));
+    }
+
+    // And the mechanism that replaced them must be present, or the absence of a default is just the
+    // absence of an expectation — which would corroborate anything.
+    expect(source).toContain("--filesOnly");
   });
 
   it("still refuses a batch whose logs are not byte-distinct", () => {
@@ -531,7 +700,7 @@ describe("a figure mismatch is diagnosable rather than merely fatal", () => {
       "",
     ].join("\n");
     for (let run = 1; run <= 6; run += 1) writeFileSync(join(logs, `run${run}.log`), body, "utf8");
-    const frontend = writeFrontendStub(root, 10);
+    const frontend = writeFrontendStub(root, 10, 2);
 
     const result = runChecker(logs, frontend, ["--expect-files", "2", "--expect-budget", "3"]);
 
@@ -547,7 +716,7 @@ describe("a figure mismatch is diagnosable rather than merely fatal", () => {
       budget: 3,
       commits: ["aaa111", "bbb222", "aaa111", "bbb222", "aaa111", "bbb222"],
     });
-    const frontend = writeFrontendStub(root, 10);
+    const frontend = writeFrontendStub(root, 10, 2);
 
     const result = runChecker(logs, frontend, ["--expect-files", "2", "--expect-budget", "3"]);
 
