@@ -648,15 +648,27 @@ describe("a figure mismatch is diagnosable rather than merely fatal", () => {
 
   it("refuses rather than corroborates when the live tree's file count cannot be read", () => {
     // A phase that cannot run is the absence of the check, not a pass. A stub that answers plain `list`
-    // but not `--filesOnly` leaves the default expectation unavailable, and accepting the batch would
-    // print `corroborated` under a comparison that never executed.
+    // but returns nothing for `--filesOnly` leaves the default expectation unavailable, and accepting the
+    // batch would print `corroborated` under a comparison that never executed.
+    //
+    // **The stub still answers plain `list` correctly, on purpose.** An earlier version replaced it
+    // outright with a one-line script, which also collapsed the enumeration anchor, so `status 1` was
+    // satisfied by a *different* failing phase and the case proved nothing about the phase it names. A
+    // negative case whose fixture fails for an unrelated reason is worse than no case: it reports the
+    // phase under test as guarded while nothing guards it.
     const root = tempDir();
     const logs = join(root, "logs");
     writeBatch(logs, { files: 2, budget: 3 });
     const frontend = writeFrontendStub(root, 10, 2);
     writeFileSync(
       join(frontend, "node_modules", "vitest", "vitest.mjs"),
-      "process.stdout.write('tests/x.test.ts > suite > case 0\\n');\n",
+      [
+        "// Answers `list` with ten template ids, so the enumeration anchor holds.",
+        "// Answers `--filesOnly` with nothing at all, which is the phase under test.",
+        "if (process.argv.includes('--filesOnly')) process.exit(0);",
+        "for (let i = 0; i < 10; i += 1) process.stdout.write(`tests/x.test.ts > suite > case ${i}\\n`);",
+        "",
+      ].join("\n"),
       "utf8",
     );
 
@@ -665,6 +677,10 @@ describe("a figure mismatch is diagnosable rather than merely fatal", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("FAIL live tree file count");
     expect(run.stdout).not.toContain("corroborated");
+    // Exactly one problem, and it is the named phase. Six `ASSERTED MISMATCH` rows would mean the
+    // per-row check was comparing each log against a missing expectation and charging for each one.
+    expect(run.stdout.match(/(\d+) problem\(s\) unresolved/)?.[1]).toBe("1");
+    expect(run.stdout).not.toContain("ASSERTED MISMATCH");
   });
 
   it("stores no literal default figure, which is the thing that used to go stale", () => {

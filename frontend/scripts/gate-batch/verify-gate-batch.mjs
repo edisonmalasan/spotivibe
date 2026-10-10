@@ -329,8 +329,14 @@ for (let run = 1; run <= options.runs; run += 1) {
   // resolved, because which one the gate meant is not decidable from the file.
   const failingSummary = /Tests\s+[^\n]*\d+ failed/.exec(text)?.[0] ?? null;
 
+  // **A null expectation is skipped, not compared.** When the file count could not be read and the caller
+  // stated none, there is nothing to compare each log's figure against. Comparing against `null` anyway
+  // made every run report `ASSERTED MISMATCH`, which attributes the failure to six separate logs when the
+  // cause is one unreadable phase — and it charged six problems instead of one, so the phase's own
+  // `problems += 1` looked redundant enough to be deletable. It was not; the redundancy was in *this*
+  // comparison. Mutation testing found it: reverting the phase's charge to `+= 0` broke nothing.
   const assertedHold =
-    found.files === againstFiles &&
+    (againstFiles === null || found.files === againstFiles) &&
     (againstBudget === null || found.budget === againstBudget) &&
     found.skipped === null &&
     exitCode === "0" &&
