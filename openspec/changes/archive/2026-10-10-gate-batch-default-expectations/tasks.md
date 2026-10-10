@@ -132,9 +132,9 @@ fixed before the change was accepted — an unbreakable mutation is an unguarded
       `openspec validate --specs --strict`
 - [x] 8.4 Six `npm run gate` runs plus the corroborator, from the canonical home
 - [ ] 8.5 The batch tree equals the merge tree — **NOT SATISFIED, and unsatisfiable as written.** See below.
-- [ ] 8.6 Record commit, tree and `merge-base` in the **PR body**, not in this file
-- [ ] 8.7 Commit, push, PR, merge with a merge commit, delete the branch
-- [ ] 8.8 Sync the delta into `openspec/specs/`, archive, and record the outcome in `ROADMAP.md`
+- [x] 8.6 Record commit, tree and `merge-base` in the **PR body**, not in this file
+- [x] 8.7 Commit, push, PR, merge with a merge commit, delete the branch
+- [x] 8.8 Sync the delta into `openspec/specs/`, archive, and record the outcome in `ROADMAP.md`
 
 **Recorded result for 8.4** — batch `m29-batch`, six runs, all `exit 0`, `skipped none`:
 
