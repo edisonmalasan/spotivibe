@@ -341,6 +341,29 @@ which is precisely how a gate's coverage quietly rots.
 **186 files / 3471 tests**, against 185 / 3446 on `main` — the guard's 23 tests plus the 2 added to
 `motion-budget.test.ts`.
 
+**`icons:check` was ticked before it was run, and running it contradicted the command as written.**
+The task's own command line is `npm run icons:check`, which fails:
+
+```
+npm error Did you mean this?
+npm error   npm run ps:check
+```
+
+**The root manifest has no `icons:check` proxy at all.** It passes only via the application path,
+`npm --prefix frontend run icons:check` (exit 0, "icons match the generator"). So the recorded command
+in `AGENTS.md` — `npm run icons:check`, listed under "Root-level commands" as a verified command —
+does not work from the root.
+
+This is **pre-existing and recorded, not absorbed**: adding a proxy is a different change, and it is
+the same family of gap as the one already recorded above (documented, verified, but absent from
+`npm run gate` and CI). Two things about it are worth being precise about, though. First, the guard
+this change adds did **not** catch it, and could not have: `icons:check` is a *documented command*, and
+the guard's reach is `frontend/` plus declared frozen roots, so a missing root proxy is not an
+uncovered tracked file. Second, the tick was wrong in the direction that matters — it asserted a
+check had passed that had never been executed, which is the exact failure mode
+`verification-integrity` forbids. The correction is recorded here rather than quietly re-running and
+leaving the tick as it was.
+
 **The guard's cost, measured three runs each way rather than from a single sample:**
 
 ```
@@ -386,11 +409,51 @@ Paying 20 bytes for a real gate step is the right direction of trade: the altern
 `ps:check` out of `package.json`, which means the coverage step is not a script the root proxy, CI
 and `AGENTS.md` can all name by the same name. The browser never evaluates the string. It is also
 the smallest possible instance of this cost — **any** script added to `frontend/package.json` pays it.
-- [ ] 5.4 Six `npm run gate` runs plus the corroborator, run as the driver prints it, recording the commit
+- [x] 5.4 Six `npm run gate` runs plus the corroborator, run as the driver prints it, recording the commit
       and tree the batch measured.
 - [ ] 5.5 Record commit, tree and merge-base in the **PR body**, not in this file.
 - [ ] 5.6 Commit, push, PR, merge with a merge commit, delete the branch.
 - [ ] 5.7 Sync the delta into `openspec/specs/`, archive, and record the outcome in `ROADMAP.md`.
+
+### Recorded output for 5.4
+
+The batch was run **after committing**, because `run-gate-batch.ps1` labels `HEAD` but executes in the
+working tree — a batch run against uncommitted work measures a tree that does not exist anywhere.
+
+```
+commit under test: ee3ff4662fcf
+run 1  exit 0  122s   run 2  exit 0  89s   run 3  exit 0  89s
+run 4  exit 0   91s   run 5  exit 0  90s   run 6  exit 0  89s
+every run: 186 files, 3471 tests, motion-budget 26, skipped none
+```
+
+Corroborator run with the driver's printed command verbatim, including `--expect-files 186` and
+`--expect-budget 26`, and it exited `0`:
+
+```
+ok  live tree file count: 186 test files, from `vitest list --filesOnly`
+ok  log digests across the logs: 6 distinct of 6
+ok  commits named across the logs: ee3ff4662fcf (1 distinct of 6)
+ok  Test Files across the logs: 186 (asserted 186)
+ok  motion-budget across the logs: 26 (asserted 26)
+ok  independent enumeration: `vitest list` enumerates 3142 templates against 3471 executed = 0.905, floor 0.8
+corroborated: all 6 logs are distinct runs, each green
+```
+
+**Run 1 is 122 s and runs 2–6 are 89–91 s.** The first run pays for a cold Turbopack build; the rest
+reuse it. This is recorded because a reader comparing the six figures would otherwise have to work out
+why one is a third slower, and the alternative explanation — that the first run was doing something
+extra — is the one worth ruling out in advance.
+
+**What the corroborator did and did not assert**, in its own words, because the distinction is the
+point of it: the file count and the motion-budget count were supplied by the driver and asserted; the
+**motion-budget count was checked for stability only**, because no live-tree equivalent of it exists;
+the executed-test total (3471) is **reported and never asserted**, because it moves whenever the suite
+gains a test and has no exact live-tree equivalent.
+
+**The batch measured `ee3ff46`.** The only change to the tree after that commit is this file and the
+PR body — documentation under `openspec/`, which no gate step reads as input. The batch's claim is
+about `ee3ff46` and is not extended to the merge commit.
 
 > **Known limitation, recorded not resolved:** no browser is attached in this environment, so nothing here
 > is visually verified. This change touches no application source, which bounds the claim rather than
