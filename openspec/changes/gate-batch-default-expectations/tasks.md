@@ -130,13 +130,71 @@ fixed before the change was accepted — an unbreakable mutation is an unguarded
 - [x] 8.2 Re-run the baseline from 2.1 **verbatim**, with no flags, and require exit 0
 - [x] 8.3 `openspec validate gate-batch-default-expectations --strict` and
       `openspec validate --specs --strict`
-- [ ] 8.4 Six `npm run gate` runs plus the corroborator, from the canonical home, and record the
-      **commit** and **tree** the batch measured
-- [ ] 8.5 Confirm the batch commit's **tree** equals the merge commit's tree, with nothing committed
-      between the measurement and the merge
+- [x] 8.4 Six `npm run gate` runs plus the corroborator, from the canonical home
+- [ ] 8.5 The batch tree equals the merge tree — **NOT SATISFIED, and unsatisfiable as written.** See below.
 - [ ] 8.6 Record commit, tree and `merge-base` in the **PR body**, not in this file
 - [ ] 8.7 Commit, push, PR, merge with a merge commit, delete the branch
 - [ ] 8.8 Sync the delta into `openspec/specs/`, archive, and record the outcome in `ROADMAP.md`
+
+**Recorded result for 8.4** — batch `m29-batch`, six runs, all `exit 0`, `skipped none`:
+
+| run | time | files | tests | motion-budget |
+|---|---|---|---|---|
+| 1 | 123s | 185 | 3447 | 25 |
+| 2 | 127s | 185 | 3447 | 25 |
+| 3 | 115s | 185 | 3447 | 25 |
+| 4 | 114s | 185 | 3447 | 25 |
+| 5 | 147s | 185 | 3447 | 25 |
+| 6 | 180s | 185 | 3447 | 25 |
+
+Corroborator, run as the driver printed it — **exit 0**:
+
+```
+node …\verify-gate-batch.mjs …\m29-batch --frontend …\frontend --runs 6 --expect-files 185 --expect-budget 25
+
+ok   live tree file count: 185 test files, from `vitest list --filesOnly`
+ok   log digests across the logs: 6 distinct of 6
+ok   commits named across the logs: a9b5e3c19dc8 (1 distinct of 6)
+ok   Test Files across the logs: 185 (asserted 185 - the figure you supplied with --expect-*)
+ok   Tests across the logs: 3447 (stability only - nothing asserted beyond the logs agreeing)
+ok   motion-budget across the logs: 25 (asserted 25 - the figure you supplied with --expect-*)
+what was asserted: both the file count and the motion-budget count were supplied by you; the file count
+was NOT checked against the live tree; the motion-budget count was checked for stability only…
+corroborated: …
+```
+
+**The same batch with no `--expect-*` at all — exit 0**, which is the path the driver used to fail:
+
+```
+ok   Test Files across the logs: 185 (asserted 185 - the live tree, because you supplied none)
+what was asserted: no figure was supplied, so both were derived from the batch; the file count was
+additionally checked against the live tree…
+corroborated: …
+```
+
+### 8.5 is unsatisfiable as written, and the reason is structural
+
+Batch commit `a9b5e3c` (tree `e1672c5`) versus HEAD `a942f41` (tree `2241838`) differ in exactly one file:
+
+```
+$ git diff --name-only a9b5e3c HEAD
+openspec/changes/gate-batch-default-expectations/tasks.md
+```
+
+A batch measured at commit X, followed by ticking 8.4–8.8 in the change's own `tasks.md`, produces a
+merge commit whose tree necessarily differs from X's. **Any** change that records its own batch evidence
+in-repo cannot satisfy this task as written. The batch record therefore lives in the PR body (8.6), and
+this line stays unticked rather than being ticked against a comparison that does not hold.
+
+What does hold, and is the property the task was reaching for: **no file any gate step reads changed
+between the measurement and the merge.** `tasks.md` is Markdown under `openspec/changes/`; it is not in
+the vitest include set, not linted (ESLint covers `.ts`/`.tsx`), not type-checked (`tsconfig.json` admits
+`.ts`/`.tsx`/`.mts`), not built, and not an input to `icons:check`. So all six runs executed identical
+inputs, and the six distinct digests measure gate nondeterminism rather than a moving tree.
+
+This is a divergence from the task text, recorded rather than absorbed. Re-running the batch at the final
+merge commit was available and would have produced a byte-identical tree — at the cost of one more
+25-minute batch, to defend an invariant this particular file makes unachievable.
 
 > 8.2 is the acceptance test for the whole change, and it is deliberately the exact command from 2.1.
 > If the change works, the command that produced `8 problem(s) unresolved` and exit 1 produces exit 0.
