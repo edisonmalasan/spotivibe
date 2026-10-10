@@ -237,6 +237,41 @@ bytes are the net of that against the new onboarding surface.
 `states what first-run onboarding cost, in bytes` pins the +803 so the ceiling cannot be raised again
 without the delta moving with it.
 
+### 2e. The `ps:check` gate step re-recorded the ceiling a fifth time, for 20 bytes of build tooling
+
+| Measurement | After onboarding | After `ps:check` | Delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 388,546 B | 388,566 B | **+20 B** |
+| Largest single chunk, gzipped | 97,470 B | 97,490 B | **+20 B** |
+| Emitted chunks | 25 | 25 | **0** |
+| `/` first load, gzipped | 231,327 B (13 chunks) | 231,327 B (13 chunks) | **0 B** |
+
+**The 20 bytes are `frontend/package.json`, not application code.** Next.js inlines the entire
+application manifest into the client bundle. This change added one line to it —
+
+```json
+"ps:check": "node scripts/powershell-parse-check.mjs"
+```
+
+— which reached the client as **53 raw / 20 gzipped bytes**. That was measured rather than assumed:
+deleting exactly that substring from the emitted chunk reproduces the previous chunk **byte for
+byte** (413,846 bytes, identical content), so nothing else in this change reaches the client. The
+chunk's content hash changed (`3oq21-7m3zq-f.js` → `3ezrpmtu11_zh.js`) while its route first loads
+and chunk count stayed identical.
+
+**Why pay 20 bytes rather than keep the ceiling untouched.** `ps:check` is the step that makes the
+gate read `run-gate-batch.ps1` at all — before it, no gate examined that file and ESLint reported
+exit 0 over it. The alternative was to keep the script out of `package.json`, which would mean the
+coverage step is not a script the root proxy, CI and `AGENTS.md` can all name by the same name.
+Trading 20 bytes of a string the browser never evaluates for a real gate step is the right direction.
+It is also the smallest possible instance of this cost: **any** script added to
+`frontend/package.json` pays it.
+
+**No dependency was added to the client**, which the manifest assertion
+(`an animation library in the manifest fails the budget`) checks independently of these figures, and
+**the motion allowance did not move at all** — no component changed. `states what the ps:check step
+cost, in bytes` pins the +20 so the ceiling cannot be raised again without the delta moving with it.
+
 **The motion allowance did not widen.** `MOTION_ALLOWED` is a closed list and
 `features/onboarding/ArtistOnboarding.tsx` is not on it, so the dialog declares no motion class of its
 own — exactly as `LanguageOnboarding` did not. The artist tiles it renders are `ArtistCard`, which is
