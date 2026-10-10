@@ -9,12 +9,18 @@ Measured on this tree (2026-10-10, Node 24.21.0, Prettier 3.9.9):
 
 | Probe | Signal available |
 |---|---|
-| `eslint <file> --format json` | the ignored file **is** in the JSON, with `errorCount: 0`, `warningCount: 1`, and `messages[0].message = "File ignored because no matching configuration was supplied."` |
-| `prettier.getFileInfo(file)` (API, not CLI) | `{ ignored: false, inferredParser: null }` for `.ps1` and `.png`; `inferredParser: "typescript"` for `.ts` |
+| `eslint.isPathIgnored(file)` | `false` for `.ts`/`.tsx`/`.js`, `true` for `.ps1`/`.css` — **agrees exactly** with the next row |
+| `eslint.lintFiles([file])` | the ignored file **is** in the result, with `errorCount: 0` and `messages[0].message = "File ignored because no matching configuration was supplied."` |
+| `prettier.getFileInfo(file)` (API, not CLI) | `{ ignored, inferredParser }`; both `ignored === true` (e.g. `*.md`) and `inferredParser === null` (e.g. `.ps1`, `.png`) mean **uncovered** |
 | `powershell -Command [Parser]::ParseFile` | 0 errors on the live driver; 2 errors on a broken file, each with `ErrorId`, message and extent |
 
-Source-scope extensions under `frontend/src`, `frontend/tests`, `frontend/scripts` and root `scripts`:
-`.ts` 275, `.tsx` 152, `.gitkeep` 24, `.json` 17, `.mjs` 11, `.css` 3, `.ps1` 1, `.md` 1, `.svg` 1.
+Across the whole repository 19 extensions are present and 11 are covered by some gate step. Scoped to the
+gate's working directory (`frontend/`): `.ts` 275, `.tsx` 152, `.gitkeep` 24, `.json` 17, `.mjs` 11,
+`.css` 3, `.ps1` 1, `.md` 1, `.svg` 1, plus three dotfiles (`.example`, `.gitignore`, `.prettierignore`).
+
+**Only `.ts`, `.tsx`, `.js`, `.mjs` and `.mts` are ESLint-covered at all** — CSS, JSON and Markdown are
+covered by Prettier alone. That is not a defect, but it is the fact that makes an exemption table
+necessary rather than decorative.
 
 ## Goals / Non-Goals
 
@@ -54,17 +60,49 @@ config to infer coverage re-implements each tool's matcher and inherits the same
 
 The guard therefore probes representative files:
 
-- ESLint: run with `--format json`, and treat a result carrying `no matching configuration` as
-  **uncovered**. The exit code is explicitly *not* the signal — it is 0 for a file ESLint never opened,
-  which is the bug.
-- Prettier: call `getFileInfo()` and treat `inferredParser === null` as **uncovered**. The CLI's exit 2
-  is not machine-readable and is never used.
+- ESLint: `isPathIgnored(file)`, cross-checked against `lintFiles([file])` carrying
+  `no matching configuration`. Measured, the two agree exactly — both true for `.ps1` and `.css`, both
+  false for `.ts`, `.tsx` and `.js`. The exit code is explicitly *not* a signal — it is 0 for a file
+  ESLint never opened, which is the bug.
+- Prettier: `getFileInfo()`, treating `ignored === true` **or** `inferredParser === null` as
+  **uncovered**. Both matter: `.prettierignore` deliberately excludes `*.md` and `tests/fixtures/`, and a
+  file the formatter declines is not a file it checked. The CLI's exit 2 is not machine-readable.
 
 - *Alternative:* parse `eslint.config.mjs` globs and `.prettierignore`. Rejected — re-implements two
   matchers, and a mismatch between the re-implementation and the tool is indistinguishable from real
   coverage.
 - *Alternative:* trust exit codes. Rejected — that is precisely the false green this change exists to
   remove.
+
+**Amendment, made during implementation.** D2 originally read "ask the tool", and measuring it exposed
+that this asks the wrong question. ESLint's API will happily accept `../scripts/sync-m19.prove.mjs`
+when handed that path — `isPathIgnored` returns false — yet **no gate step ever passes it**, because
+`lint` is a bare `eslint` and `format:check` is `prettier --check .`, both scoped by working directory to
+`frontend/`. A file can therefore be fully acceptable to every tool and examined by none of them.
+
+So coverage is resolved as: **a gate step covers a file when that step's own invocation would examine it**,
+with the step's working directory and arguments part of the question. For `lint` and `format:check` that
+means resolving the file relative to `frontend/` and asking the tool there; a file outside `frontend/` is
+uncovered by both by construction, not by configuration. This is what the spec's phrase *"covered by a
+gate step"* requires, and D2's original wording would have let the root provers read as covered.
+
+### D7 — The guard's scope is the gate's working directory, plus declared frozen roots
+
+`lint`, `format:check` and `typecheck` all run with `frontend/` as their working directory, so the gate
+has no reach outside it. The guard therefore enumerates tracked files under `frontend/`, and treats
+everything else as out of remit unless a frozen root is declared for it (D5).
+
+Measured across the whole repository, 19 distinct extensions are present and 11 are covered by some step.
+Scoped to `frontend/`, the uncovered set is `.gitkeep` (24), `.md` (1), `.svg` (1), `.example` (1),
+`.gitignore` (1) and `.prettierignore` (1) — each of which needs a recorded reason, and each of which is a
+real, stated decision rather than an oversight.
+
+- *Alternative:* enumerate the whole repository. Rejected — it would require exemptions for 246 Markdown
+  files and 30 YAML files that the gate has never claimed to check, which dilutes the guard with
+  exemptions until adding a real gap is indistinguishable from the noise.
+- *Consequence worth stating:* `.github/workflows/ci.yml` and root dotfiles fall outside the guard. The CI
+  workflow is not ungated in practice — `tests/ci-workflow.test.ts` parses and asserts it — but it is
+  outside the guard's remit, and that is recorded rather than implied.
 
 ### D3 — The coverage guard is a test, not a new npm script
 

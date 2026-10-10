@@ -5,23 +5,23 @@
 
 ## 1. Establish the baseline before changing anything
 
-- [ ] 1.1 Record the measured gap, per surface, as **commands and their actual output** rather than as a
+- [x] 1.1 Record the measured gap, per surface, as **commands and their actual output** rather than as a
       claim: `npx eslint frontend/scripts/gate-batch/run-gate-batch.ps1` (expect exit 0 carrying
       `no matching configuration`), `npx prettier --check` on the same file (expect exit 2,
       `No parser could be inferred`), and `prettier --check .` (expect exit 0, having never asked).
       Verify: the outputs are pasted into this file unchanged.
-- [ ] 1.2 Confirm the same for every other source file in `frontend/scripts/`, so the exemption table is
+- [x] 1.2 Confirm the same for every other source file in `frontend/scripts/`, so the exemption table is
       built from measurement rather than from the assumption that one file is the only exception.
       Verify: a per-file table of ESLint-covered / Prettier-covered, with `.ps1` the only row reading
       uncovered.
-- [ ] 1.3 Establish that the root `scripts/*.mjs` reach no gate: confirm no ESLint or Prettier config
+- [x] 1.3 Establish that the root `scripts/*.mjs` reach no gate: confirm no ESLint or Prettier config
       exists at the repository root and that the root `lint`/`format:check` proxy into `frontend/`.
       Verify: recorded, plus each root script's header showing it is a one-off prover that copies the
       tree to a temp directory.
-- [ ] 1.4 Prove the replacement is feasible before designing around it: PowerShell's AST parser reports
+- [x] 1.4 Prove the replacement is feasible before designing around it: PowerShell's AST parser reports
       **0** errors on the live driver and **≥ 2** on a deliberately broken copy written outside the tree.
       Verify: both outputs recorded.
-- [ ] 1.5 Prove both detection APIs are machine-readable: `eslint --format json` carries the ignored file
+- [x] 1.5 Prove both detection APIs are machine-readable: `eslint --format json` carries the ignored file
       in its results with `errorCount: 0` and the `no matching configuration` message; and
       `prettier.getFileInfo()` returns `inferredParser: null` for `.ps1` and `.png`, and a parser name for
       `.ts`. Verify: both payloads recorded.
@@ -29,6 +29,89 @@
 > 1.5 is load-bearing. The whole guard rests on reading a signal from each tool. If ESLint stopped
 > reporting ignored files in JSON, or Prettier had no such API, D2 would be unimplementable as written and
 > the design would have to change before any code exists — the same reason 2.3 in M29 was measured first.
+
+### Recorded output for 1.1
+
+```
+npx eslint scripts/gate-batch/run-gate-batch.ps1
+  exit=0
+  0:0  warning  File ignored because no matching configuration was supplied
+  ! 1 problem (0 errors, 1 warning)
+
+npx prettier --check scripts/gate-batch/run-gate-batch.ps1
+  exit=2
+  [error] No parser could be inferred for file "...run-gate-batch.ps1"
+
+npx prettier --check .            (what `format:check` runs)
+  All matched files use Prettier code style!
+  exit=0
+```
+
+### 1.2's prediction was WRONG, and running it is what found the real shape of the gap
+
+The task predicted "`.ps1` is the only row reading uncovered". It is not. That prediction came from a
+spot-check of `frontend/scripts/` alone; the gap is considerably wider.
+
+| ext | count | ESLint | Prettier | `tsc` |
+|---|---|---|---|---|
+| `.ts` `.tsx` `.mts` `.js` `.mjs` | 466 | **covered** | covered | `.ts`/`.tsx` only |
+| `.css` `.json` | 45 | **not covered** | covered | no |
+| `.ps1` | 1 | **not covered** | **not covered** | no |
+| `.md` | 1 | **not covered** | **not covered** (`.prettierignore` excludes `*.md`) | no |
+| `.svg` | 1 | **not covered** | **not covered** | no |
+| `.gitkeep` | 24 | **not covered** | **not covered** | no |
+
+**Only `.ts`, `.tsx`, `.js`, `.mjs` and `.mts` are ESLint-covered at all.** CSS, JSON and Markdown are
+reached by Prettier alone. So this is not "one file with no gate" — it is a genuine exemption table, and
+the design needed one all along.
+
+### 1.2 also falsified D2's central assumption
+
+Measuring the probes showed `isPathIgnored` returning `false` for `../scripts/sync-m19.prove.mjs` —
+ESLint will happily accept it. But `lint` is a bare `eslint` and `format:check` is `prettier --check .`,
+**both scoped by working directory to `frontend/`**, so no gate step ever passes that file. A file can be
+fully acceptable to every tool and examined by none of them.
+
+D2 therefore asked the wrong question, and the root provers would have read as covered. Corrected by the
+amendment in `design.md` §D2 and the new §D7: coverage means *the step's own invocation would examine this
+file*, with its working directory and arguments part of the question. Confirmed with the user before
+proceeding.
+
+### Recorded output for 1.3
+
+`frontend/package.json`: `lint` = `eslint`, `format:check` = `prettier --check .`, `typecheck` =
+`next typegen && tsc --noEmit`. Root `package.json` proxies all three into `frontend/` and declares no
+config of its own; there is no `eslint.config.*`, `.eslintrc*` or `.prettierrc*` at the repository root.
+Each root prover's header states it copies the tree into a temp directory and never writes to the
+repository.
+
+### Recorded output for 1.4
+
+```
+[Parser]::ParseFile(frontend\scripts\gate-batch\run-gate-batch.ps1)  -> errors: 0
+[Parser]::ParseFile(<broken copy in TEMP>)                          -> errors: 2
+    TerminatorExpectedAtEndOfString: The string is missing the terminator: '.
+    MissingEndCurlyBrace: Missing closing '}' in statement block or type definition.
+```
+
+### Recorded output for 1.5
+
+```
+prettier.getFileInfo("scripts/gate-batch/run-gate-batch.ps1") -> { ignored: false, inferredParser: null }
+prettier.getFileInfo("next.config.ts")                        -> { ignored: false, inferredParser: "typescript" }
+prettier.getFileInfo("public/icons/icon-192.png")             -> { ignored: false, inferredParser: null }
+
+eslint.isPathIgnored("next.config.ts")                       -> false
+eslint.isPathIgnored("scripts/gate-batch/run-gate-batch.ps1") -> true
+eslint.lintFiles([...ps1]) -> messages[0].message = "File ignored because no matching configuration
+                                            was supplied."   errorCount = 0
+```
+
+The two ESLint signals **agree exactly**, which is why the guard uses both: `isPathIgnored` as the query
+and the message as the cross-check, so a change in either is visible rather than silently inverting the
+result. `inferredParser === null` alone is not sufficient — `.prettierignore` excludes `*.md` and
+`tests/fixtures/`, and a file the formatter declines is not a file it checked, so `ignored` is asserted
+too.
 
 ## 2. The PowerShell parse gate
 
