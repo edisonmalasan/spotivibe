@@ -458,6 +458,26 @@ about `ee3ff46` and is not extended to the merge commit.
 > **Known limitation, recorded not resolved:** no browser is attached in this environment, so nothing here
 > is visually verified. This change touches no application source, which bounds the claim rather than
 > satisfying it — recorded as UNVERIFIED in the PR body.
+>
+> **The `pwsh` question this change could not answer has been answered by CI.** Whether
+> `ubuntu-latest` ships `pwsh` was unverifiable locally, and the step was written to report-and-skip if
+> it does not. The first run for this branch (run `38086964278`, all 8 steps green in 3m14s) shows it
+> did **not** take that path:
+>
+> ```
+> ok   frontend/scripts/gate-batch/run-gate-batch.ps1
+> ok   1 PowerShell script(s) parsed clean, via `pwsh`
+>      This asserts syntax only. It does not assert the script's behaviour.
+> ```
+>
+> **A green step is what the `NOT RUN` path also produces**, so the job passing would not have been
+> evidence — reading the step's own output is. The file that no gate step read is now read by a real
+> step on Linux.
+>
+> CI also ran the guard itself, `tests/gate-coverage.test.ts (23 tests) 2437ms`, and the suite at 3471
+> passed with jsdom created 186 times — identical to the local figures. **That 2437 ms is the isolated
+> figure, where the same file measured ~30 s in the full suite on Windows**, which independently
+> confirms the contention explanation given for 5.3 instead of leaving it resting on reasoning.
 
 ### A process failure worth recording, because the gate would not have caught it
 
