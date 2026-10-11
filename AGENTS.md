@@ -206,9 +206,10 @@ npm run lint         # npm --prefix frontend run lint
 npm run format       # npm --prefix frontend run format
 npm run format:check # npm --prefix frontend run format:check
 npm run ps:check     # npm --prefix frontend run ps:check
+npm run scripts:check # npm --prefix frontend run scripts:check
 npm run typecheck    # npm --prefix frontend run typecheck
 npm test             # npm --prefix frontend test
-npm run gate         # lint -> format:check -> ps:check -> typecheck -> build -> test
+npm run gate         # lint -> format:check -> ps:check -> scripts:check -> typecheck -> build -> test
 ```
 
 `tests/root-commands.test.ts` holds the root manifest to these properties: private, no
@@ -241,6 +242,7 @@ npm run setup        # clean install from frontend/package-lock.json (was `cd fr
 npm run lint         # eslint (flat config, eslint-config-next)
 npm run format:check # prettier --check .
 npm run ps:check     # node scripts/powershell-parse-check.mjs
+npm run scripts:check # node scripts/root-scripts-check.mjs
 npm run typecheck    # next typegen && tsc --noEmit
 npm test             # vitest run
 npm run build        # next build
@@ -262,6 +264,30 @@ and it says so on every run rather than leaving the reader to assume more.
 `frontend/tests/gate-coverage.test.ts` records `.ps1` as covered *by this step*, so deleting the step
 fails the coverage guard instead of leaving the file unchecked. The guard is what converts M29's
 documented gap into a checked one — a limitation stated in prose is a limitation nobody re-reads.
+
+`scripts:check` covers the **repository-root** `scripts/` directory, which no other step reaches: it
+is outside `frontend/`, so `frontend`'s own `lint`, `format:check` and `typecheck` never see it, and
+the root manifest declares no dependencies from which a toolchain could be resolved. The step does two
+things — it checks those files against **`frontend/.prettierrc.json` explicitly**, then **runs** the
+three sync provers they carry and reports each tally.
+
+**Naming the config is load-bearing, not tidiness.** Prettier resolves configuration per file and the
+repository root has none, so an unqualified `prettier --check scripts/` silently measures
+`printWidth: 80` and reports **6 of 6** files failing; with the config named it is **2 of 6**. Both
+counts are recorded in the archived change's `tasks.md` §1.3, so the corrected figure cannot be
+mistaken for the first.
+
+**It runs the provers rather than checking they exist**, because the provers were *failing* — at
+3/15, 5/11 and 3/8 — for four milestones while an accurate recorded reason exempted the directory. A
+step that only asserted the files were present would have been green over all of that. It is placed
+before `typecheck`: measured at **~20 s locally and 2.7 s in CI** against a gate of minutes.
+
+**What it still does not do**, recorded here because the file is the place a reader will look:
+root `scripts/` is **not linted** (no ESLint-resolvable toolchain at the root, and none may be added
+without a second lockfile at a manifest that deliberately declares no dependencies), and **no `.mjs`
+anywhere is typechecked** (`tsconfig.json` includes `**/*.mts`, not `**/*.mjs`). Both are asserted by
+`frontend/tests/gate-coverage.test.ts` rather than described here, so deleting the coverage would fail
+a test instead of silently invalidating a sentence.
 
 `icons:check` is a **build-input** check, not a formatting one: it verifies the checked-in
 `public/icons/*.png` match what `scripts/generate-icons.mjs` would produce, so a change to the icon
@@ -286,7 +312,7 @@ The cost of that ordering is real and is not hidden: a red pull request now spen
 CI on a build whose result nobody reads, because the build runs before a failing test can stop the
 job.
 
-Exit codes: `npm run setup` (install), `npm run lint`, `npm run format:check`, `npm run ps:check`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run icons:check` ("icons match the generator") each exited `0`; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `.github/workflows/ci.yml` runs the install, `lint`, `format:check`, `ps:check`, `typecheck`, `build`, and `test` steps in `frontend/` on push/PR to `main`, on Node 24. The build precedes the tests deliberately; see above for why, and for what it costs.
+Exit codes: `npm run setup` (install), `npm run lint`, `npm run format:check`, `npm run ps:check`, `npm run scripts:check`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run icons:check` ("icons match the generator") each exited `0`; `npm run dev` started successfully and served HTTP 200 before being stopped manually. `.github/workflows/ci.yml` runs the install, `lint`, `format:check`, `ps:check`, `scripts:check`, `typecheck`, `build`, and `test` steps in `frontend/` on push/PR to `main`, on Node 24. The build precedes the tests deliberately; see above for why, and for what it costs.
 
 These commands establish `that dependencies install from the lockfile, ESLint reports no errors, formatting is consistent, strict TypeScript compiles, the current unit tests pass, a production Next.js build succeeds, and the dev server starts and serves the app`.
 

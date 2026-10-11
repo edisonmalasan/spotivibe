@@ -145,10 +145,20 @@
       `sync-m19.prove.mjs (8/8 …)`.
 - [x] 7.2 `openspec validate cover-root-scripts --strict`.
       **Exit 0** — `Change 'cover-root-scripts' is valid`.
-- [ ] 7.3 OpenSpec strict validation of the main specs after sync.
-      **Not applicable at Apply.** Belongs to the Sync stage.
-- [ ] 7.4 Confirm CI green on the PR.
-      **Not yet.** Recorded in the Apply PR body when it runs.
+- [x] 7.3 OpenSpec strict validation of the main specs after sync.
+      **Run at Sync, ticked at Archive — late, not contemporaneously.** `openspec validate --specs
+      --strict` → **exit 0, 27 passed / 0 failed (27 items)**, on both the Apply PR's tree and the
+      Sync PR's.
+- [x] 7.4 Confirm CI green on the PR.
+      **Run at Apply and Sync, ticked at Archive — late.** Both runs green, and not merely green:
+      - **Apply** — run `38124662216`, `quality-gates` **pass 3m21s**. The log was read to confirm the
+        new step *executed* rather than merely being pinned in `ci-workflow.test.ts`: it reported all
+        three provers at **15/15, 11/11, 8/8**.
+      - **Sync** — run `38125578967`, `quality-gates` **pass 2m36s**.
+
+      A tick after the fact is only bookkeeping. Had the evidence been missing, the correct move was
+      to re-run the commands, not to tick them — the inverse of M30's recorded error, where
+      `icons:check` was ticked before its command had ever run.
 - [x] 7.5 Record out-of-scope findings rather than absorbing them.
       **Done** — see §9.
 
