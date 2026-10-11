@@ -21,20 +21,45 @@
       Verify: both the qualified and unqualified counts are recorded, with the difference explained, so
       the corrected measurement cannot be mistaken for the first one.
 
-## 2. Restore the provers' positive controls (D1)
+## 2. Restore the provers' positive controls (D1, revised during Apply)
 
-- [ ] 2.1 Repoint each of the three provers' fixture constant from `openspec/changes/<name>/…` to
-      `openspec/changes/archive/<dated-name>/…`.
-      Verify: each prover exits 0 with every case passing, and the archived change directories are
-      untouched (`git status` shows no modification under `openspec/changes/archive/`).
-- [ ] 2.2 Confirm the refusal guards still refuse. The bug was that the positive control failed, not
-      that the guards misbehaved; fixing evidence of success must not weaken evidence of refusal.
-      Verify: all refusal cases still pass, and the guard-test cases in `frontend/tests/` are re-run
-      unmodified and still pass.
-- [ ] 2.3 Assert the fixture paths resolve, so a future archive or removal fails loudly instead of
-      letting a prover skip.
-      Verify: a mutation deleting a referenced archive directory makes the assertion fail; the directory
-      is restored and its SHA-256 matches the pre-mutation value.
+> **Divergence, recorded rather than smoothed over.** Task 2.1 was written as a path repoint only. Doing
+> it cleared every ENOENT — `3/15 → 12/15`, `5/11 → 9/11`, `3/8 → 6/8` — and left 7 failures, 6 of them
+> control cases. The cause is not location: each delta was merged into `openspec/specs/` during its own
+> milestone's Sync stage, so replaying it is a re-merge the guard is right to refuse. D1 was revised;
+> see `design.md` D1 for the reasoning and the rejected alternatives.
+
+- [ ] 2.1 Repoint each of the three provers' fixture paths from `openspec/changes/<name>/…` to
+      `openspec/changes/archive/<dated-name>/…`, and set each guard's default `CHANGE_NAME` to match.
+      Verify: every ENOENT is gone; the archived change directories are untouched (`git status` shows no
+      modification under `openspec/changes/archive/`); and no active change path remains in `scripts/`.
+- [ ] 2.2 Parameterise `sync-m17-home.mjs` with `SPOTIVIBE_CHANGE`, `SPOTIVIBE_ADDED` and
+      `SPOTIVIBE_MODIFIED`, defaulting to today's values, so it can be driven against a synthetic
+      fixture the way `sync-m18-interactions.mjs` already can. This mirrors the M18 guard's own header
+      ("rather than adding a third near-identical copy of the same refusal logic").
+      Verify: every existing invocation behaves identically — prove it by running the M17 prover with no
+      change to its case list and confirming the refusal count is unchanged from 12.
+- [ ] 2.3 Give each prover's **control cases** a self-contained fixture: the prover builds both a delta
+      and a minimal record in a throwaway sandbox, where capabilities the delta creates are absent from
+      the record and the capability it extends holds a requirement the delta does not name.
+      Verify: all three provers exit 0; the two control cases in each report a real merge and a verified
+      write.
+- [ ] 2.4 Confirm the refusal cases still run against **real** data — the real record, the real
+      archived delta. Only the controls become synthetic, because only the controls claim nothing about
+      any specific milestone.
+      Verify: the refusal count per prover is unchanged from 2.1 (12 / 9 / 6), and the real delta paths
+      are still present in each prover's source.
+- [ ] 2.5 Fix the one stale expectation: M17 expects `"drops 1 existing scenario"` and now gets
+      `drops 2`, because the record's "Home discovery feed" requirement has grown since M17.
+      Verify: the expectation is derived from the record at run time rather than hardcoded, so it cannot
+      go stale again the same way.
+- [ ] 2.6 Prove the control is not vacuous — that it fails when it should. Make the synthetic record
+      already contain the delta's requirement name and confirm the control fails with the duplicate-name
+      refusal.
+      Verify: recorded, and the mutation reverted.
+- [ ] 2.7 Confirm the guards still refuse. Fixing evidence of success must not weaken evidence of
+      refusal.
+      Verify: all refusal cases pass, and the guard-test cases in `frontend/tests/` are re-run unmodified.
 
 ## 3. Format root `scripts/` (D3)
 

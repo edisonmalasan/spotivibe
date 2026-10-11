@@ -40,7 +40,10 @@ const CHECK_ONLY = process.argv.includes("--check");
  * block against a capability that already exists — so it reuses this guard rather than adding a third
  * near-identical copy of the same refusal logic.
  */
-const CHANGE_NAME = process.env.SPOTIVIBE_CHANGE ?? "m18-interactions";
+// The default names M18's own delta, which has since been archived: an archived change keeps the
+  // `changes/` prefix and gains a date. It was archived on 2026-10-02. Naming the active path here made
+  // every default invocation point at a directory that no longer exists.
+  const CHANGE_NAME = process.env.SPOTIVIBE_CHANGE ?? "archive/2026-10-02-m18-interactions";
 const CHANGE = join(ROOT, "openspec", "changes", CHANGE_NAME, "specs");
 const NEW_CAPABILITIES = (process.env.SPOTIVIBE_NEW ?? "keyboard-shortcuts,sharing").split(",");
 const EXTENDED_CAPABILITIES = (process.env.SPOTIVIBE_EXTENDED ?? "search").split(",");

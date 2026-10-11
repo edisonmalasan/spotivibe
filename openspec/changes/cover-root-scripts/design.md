@@ -54,20 +54,66 @@ for that reason and was corrected before being recorded.
 
 ## Decisions
 
-### D1 — Repoint the prover fixtures at archive paths
+### D1 — Repoint the archive paths, and give the control cases self-contained fixtures
 
-**Chosen.** Change each prover's fixture constant from `openspec/changes/<name>/…` to
-`openspec/changes/archive/<dated-name>/…`.
+> **Revised during Apply.** This decision was originally "repoint the fixture paths only", with
+> self-contained fixtures explicitly rejected. That reasoning was sound about *location* and wrong about
+> *staleness*, and implementing it proved it. The revision and the evidence are below rather than
+> smoothed over.
 
-**Alternative rejected — synthesise self-contained fixtures** (each prover builds its own delta in the
-temp copy). Strictly more robust, because it removes the dependency on archive layout entirely. It is
-also a rewrite of all three provers, and it changes what they claim: today each proves the guard
-against *a real milestone's real delta*, which is a stronger claim than a fixture invented by the
-prover. The archive path is stable — archived changes are never moved again — so the coupling this
-fixes is to a location that does not move.
+**Part 1 — repoint the paths.** Change each fixture path from `openspec/changes/<name>/…` to
+`openspec/changes/archive/<dated-name>/…`, and set each guard's default `CHANGE_NAME` accordingly.
 
-**Alternative rejected — re-archive or resurrect the changes.** Prohibited: `openspec/changes/archive/`
-is never edited, and un-archiving would rewrite M30's history.
+**Part 2 — the control cases get synthetic fixtures.** Part 1 alone is not sufficient, and the original
+design was wrong to think it was. Measured after Part 1: the ENOENT class is fully gone
+(`3/15 → 12/15`, `5/11 → 9/11`, `3/8 → 6/8`), and every remaining failure except one is a **control**
+case, failing with:
+
+```
+REFUSING: the performance delta adds requirement(s) whose names
+already exist in the record: "A motion budget holds the client bundle"
+```
+
+That is the guard being **correct**. Each milestone's delta was merged into `openspec/specs/` during
+that milestone's own Sync stage, so replaying the archived delta against today's record is a re-merge
+the guard is right to refuse. The control asserts the opposite — it exists to prove the guard is not
+*vacuously* refusing, and it can only pass in a state where a merge is genuinely pending. No such
+state exists in the repository any more, and it cannot be reconstructed from the record alone.
+
+So each prover builds its **own** delta *and* its **own** minimal record in a throwaway sandbox:
+capabilities the delta creates are absent from the record, and the capability it extends exists with a
+requirement the delta does not name. That state is pending by construction, depends on nothing outside
+the prover, and cannot rot the way the replayed delta did.
+
+**What is deliberately kept on real data.** The **refusal** cases still run against the real record and
+the real archived delta. That is where the strong claim lives — "this guard refuses *this* actual
+milestone's actual defect" — and all of them pass today. Only the controls, which claim nothing about
+any specific milestone, become synthetic. D1's original concern was that synthetic fixtures weaken the
+claim; scoping synthesis to the controls leaves the strong claim intact.
+
+**Consequence — the M17 guard is parameterised.** `sync-m18-interactions.mjs` already takes
+`SPOTIVIBE_CHANGE` / `SPOTIVIBE_NEW` / `SPOTIVIBE_EXTENDED`, with its own milestone as the default.
+`sync-m17-home.mjs` hardcodes all three, so it cannot be pointed at a synthetic fixture without that
+support. The parameters are added with today's values as defaults, so no existing invocation changes.
+This follows the direction the codebase already took once, in the M18 guard's own header: *"it reuses
+this guard rather than adding a third near-identical copy of the same refusal logic."*
+
+**Alternative rejected — reconstruct the pre-merge record.** Delete from the sandbox exactly the
+requirements the delta contributed, so the real delta becomes replayable. Rejected: for M17 the delta
+*modified* requirement bodies rather than adding them, so "exactly what it contributed" is not
+recoverable from the record. The reduction would be circular — it assumes the answer it is trying to
+verify — and would be wrong the first time a capability changed shape for an unrelated reason.
+
+**Alternative rejected — drop the controls.** A prover with only refusal cases cannot distinguish a
+guard that refuses for the right reason from one that refuses for every reason. That is precisely what
+a control is for, and removing it would trade a visible failure for an invisible one.
+
+**Alternative rejected — re-archive or resurrect the changes.** Prohibited:
+`openspec/changes/archive/` is never edited, and un-archiving would rewrite M30's history.
+
+**Still rejected — re-archive M17–M19 under stable names.** Archived names are date-stamped by
+construction, so this cannot be done without editing the archive, and it would still not fix a control
+whose delta has already been absorbed.
 
 ### D2 — One `scripts:check` step that runs all three provers, not a step per prover
 
