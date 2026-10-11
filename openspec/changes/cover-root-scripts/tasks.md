@@ -189,3 +189,58 @@ Each is real, measured, and outside this change's approved scope.
    family M25 was chartered for and left with criterion 5 of 6 unmet. Not investigated further here.
 
 4. **Task 5.4 is unticked.** Recorded above rather than quietly ticked.
+
+## 10. Sync stage — two divergences, one absorbed and one recorded
+
+Recorded here because `tasks.md` is archived with the change, and a divergence that lives only in a
+merged commit message is a divergence nobody re-reads.
+
+### Absorbed: the sync guard could not express "no added capabilities"
+
+M31's delta is **MODIFIED-only** — it revises two requirements that already exist and creates nothing.
+`sync-m18-interactions.mjs` refuses MODIFIED blocks, so `sync-m17-home.mjs` was the only applicable
+guard, and the `SPOTIVIBE_ADDED` parameter this change added in §2.2 **could not express the answer**.
+`SPOTIVIBE_ADDED=""` parsed to a capability named by the empty string, and the guard failed with
+`REFUSING: the delta is missing the "home-mixes" capability`.
+
+That is not a caller error, it is an incomplete parameterisation, so it is fixed here. Two spellings of
+"none" are accepted, because the first one is unusable in this repository's own shell:
+
+- **verified, not assumed:** PowerShell's `$env:VAR = ""` **removes** the variable rather than setting
+  it empty, so `process.env.SPOTIVIBE_ADDED` arrives as `undefined` and the `??` fallback wins — and
+  the fallback silently means *M17's own arrangement*. A value that looks unset and resolves to a
+  specific different change is precisely the quiet default this guard exists to refuse.
+- therefore `none` (case- and whitespace-insensitive) is accepted, alongside the empty string.
+
+**Proven not to make the guard blind.** A parameter that accepts "none" could otherwise let a caller
+opt out of noticing work, so all three arms were run:
+
+| call | expected | measured |
+|---|---|---|
+| `MODIFIED=release-validation` only | refuse | exit **1**, `unexpected capability "verification-integrity"` |
+| `ADDED=none`, `MODIFIED=none` | refuse both | exit **1**, both capabilities named |
+| `MODIFIED=" a , b "` | apply, tolerate spacing | exit **0**, both verified |
+
+`sync-m17-home.mjs` is now covered by `scripts:check`, so this edit was gated by the step this change
+built: it **failed on my own edit** and named the file, and passed after formatting. That is the step
+working, not a nuisance.
+
+### Recorded, not absorbed: the sync drops the trailing newline of a spec it modifies
+
+Both written specs came back without their terminal newline. Root-caused rather than patched:
+
+`requirementBlock()` sets `end = lines.length` when a requirement is **last in its file**. The final
+element of `"a\nb\n".split("\n")` is the empty string *after* the terminator, so the block swallows it,
+and the write splices incoming lines in its place without it. The comment above the write path claims
+*"Every other line of the file is left byte-identical"* — dropping a file's terminator contradicts
+that, one byte at a time.
+
+M31 hit it only because **both** modified requirements are last in their files.
+
+**Not fixed here, deliberately.** The one-byte output was corrected on both files, but the guard was
+left alone: this is the Sync stage, the defect is in Apply's territory, and the Apply PR's gate evidence
+covers a specific tree that changing it would invalidate. It is a one-line fix in `requirementBlock()`
+— stop one line short of `lines.length` when that last element is `""` — and it belongs to whatever
+change next touches this guard.
+
+**Not claimed:** no other sync guard was checked for the same defect.

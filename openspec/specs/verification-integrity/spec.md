@@ -422,6 +422,12 @@ still claims it does.
 A limitation that cannot be asserted — because no tool for it exists — SHALL instead be discharged by
 adding a check that reaches the subject, so that the limitation stops being true.
 
+Asserting the existence and wording of a limitation is not by itself discharge. Where a recorded
+limitation's subject is itself executable, the limitation SHALL be discharged by executing it, so that
+recording the state of a check never becomes a substitute for the state of the thing the check
+describes. A limitation that survives on the authority of its own record is the same defect this
+requirement exists to prevent, one level up.
+
 #### Scenario: A limitation is recorded in documentation
 
 - **WHEN** the project records that a file type is not reached by any gate step
@@ -433,3 +439,9 @@ adding a check that reaches the subject, so that the limitation stops being true
 - **WHEN** a change adds the check that the recorded limitation said was unavailable
 - **THEN** the recorded limitation is removed in the same change, because a limitation claim that no
   longer describes the tree is worse than no claim
+
+#### Scenario: A recorded exemption is asserted rather than executed
+
+- **WHEN** a recorded limitation's subject is itself a program that can be run
+- **THEN** running it is what discharges the limitation, and asserting that the record is present and
+  correctly worded does not, because a well-formed record of broken evidence is still broken evidence

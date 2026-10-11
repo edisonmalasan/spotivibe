@@ -56,8 +56,32 @@ const CHANGE = join(ROOT, "openspec", "changes", CHANGE_NAME, "specs");
 const RECORD = join(ROOT, "openspec", "specs");
 
 /** What this sync is for. Anything else in the delta directory is a stray and must be refused. */
-const ADDED_CAPABILITIES = (process.env.SPOTIVIBE_ADDED ?? "home-mixes").split(",");
-const MODIFIED_CAPABILITIES = (process.env.SPOTIVIBE_MODIFIED ?? "discovery,mixes").split(",");
+
+/**
+ * Resolve one capability list, so a caller can say "none of this kind".
+ *
+ * Without it a MODIFIED-only change cannot be expressed at all: M31's delta revises two requirements
+ * that already exist and creates nothing, and `SPOTIVIBE_ADDED=""` would otherwise be read as a
+ * capability named by the empty string. A parameter that cannot express "none" is an incomplete
+ * parameterisation, not a caller error.
+ *
+ * `none` is a second spelling for the same answer, and it exists because of the shell rather than the
+ * logic. PowerShell's `$env:VAR = ""` **removes** the variable instead of setting it empty, so
+ * `process.env.SPOTIVIBE_ADDED` arrives as `undefined` and the `??` fallback wins - verified, not
+ * assumed. A value that looks unset and silently means "M17's own arrangement" is precisely the quiet
+ * default this guard exists to refuse, so the way to say "none" has to be one a shell can express.
+ */
+function capabilities(value, fallback) {
+  const raw = value ?? fallback;
+  if (raw.trim() === "" || raw.trim().toLowerCase() === "none") return [];
+  return raw
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+const ADDED_CAPABILITIES = capabilities(process.env.SPOTIVIBE_ADDED, "home-mixes");
+const MODIFIED_CAPABILITIES = capabilities(process.env.SPOTIVIBE_MODIFIED, "discovery,mixes");
 
 /** Requirement and scenario names, in document order, with each scenario's body text. */
 function names(markdown) {
