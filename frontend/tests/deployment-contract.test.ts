@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { prepareWorkflow, stepWith, workflowScalar } from "./helpers/yaml";
+import { readTreeStrict } from "./helpers/sourceTree";
 import { validateEnv } from "@/server/env";
 
 /**
@@ -38,14 +39,17 @@ function manifest(): { engines?: { node?: string }; scripts?: Record<string, str
   return JSON.parse(readFileSync(join(FRONTEND, "package.json"), "utf8"));
 }
 
-function sourceFiles(directory: string): string[] {
-  const found: string[] = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const full = join(directory, entry.name);
-    if (entry.isDirectory()) found.push(...sourceFiles(full));
-    else if ([".ts", ".tsx"].includes(extname(entry.name))) found.push(full);
-  }
-  return found;
+/**
+ * Every `.ts`/`.tsx` under `directory`, each with its contents.
+ *
+ * `readTreeStrict`, and the caller reads from the pair rather than re-opening the path. The old walker
+ * returned names and this test read them afterwards, so the window between listing and reading spanned
+ * the whole walk — and `motion-scope.test.ts` deletes its probe inside that window while this file
+ * walks `src/server`'s siblings. `readTreeStrict` narrows the window to microseconds and reports
+ * rather than throws a bare `ENOENT` if a file is still lost.
+ */
+function sourceFiles(directory: string): Array<{ file: string; source: string }> {
+  return readTreeStrict(directory, { extensions: [".ts", ".tsx"] });
 }
 
 describe("the application is one deployable unit (M15 task 4.1)", () => {
@@ -146,10 +150,9 @@ describe("a deployment needs no configuration (M15 task 4.1)", () => {
 
     const serverFiles = sourceFiles(join(SRC, "server"));
     expect(serverFiles.length, "the walker must reach the server tree").toBeGreaterThan(10);
-    const undeclared = serverFiles.flatMap((file) => {
-      const raw = readFileSync(file, "utf8");
+    const undeclared = serverFiles.flatMap(({ file, source }) => {
       const name = file.replace(/\\/g, "/");
-      return [...raw.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)]
+      return [...source.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)]
         .map((match) => match[1])
         .filter((variable) => !declared.has(variable))
         .map((variable) => `${name}: ${variable}`);

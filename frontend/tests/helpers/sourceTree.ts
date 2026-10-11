@@ -141,6 +141,17 @@ export function readTreeStrict(
   return files;
 }
 
+/**
+ * Every file, whatever its extension.
+ *
+ * `walk` matches on `name.endsWith(extension)`, and every string ends with `""`, so this single-entry
+ * list disables the filter without a second code path. Exported as a named constant rather than written
+ * inline at each call site because `[extensions]` is opaque: a reader who wants "all files" and does not
+ * know the trick would reach for a directory listing instead, which is the thing this helper exists to
+ * replace.
+ */
+export const ALL_FILES: ReadonlyArray<string> = [""];
+
 /** Absolute paths of the matching files under `directory`, depth first. */
 export function walk(directory: string, extensions: ReadonlyArray<string>): string[] {
   if (!existsSync(directory)) return [];

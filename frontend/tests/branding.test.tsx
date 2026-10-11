@@ -1,23 +1,15 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Logo } from "@/components/layout/Logo";
+import { ALL_FILES, readTreeStrict } from "./helpers/sourceTree";
 
 // Keep the literal in a variable — Vite rewrites new URL("<literal>", import.meta.url).
 const srcRel = "../src";
 const srcDir = fileURLToPath(new URL(srcRel, import.meta.url));
 const frontendRoot = dirname(srcDir);
-
-function walk(dir: string): string[] {
-  // public/ may not exist yet (PWA assets arrive in M13).
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    return entry.isDirectory() ? walk(full) : [full];
-  });
-}
 
 /** Canonical DESIGN.md token names (and their derived utility classes). */
 const allowed = [/spotify-green/gi, /spotifymixui/gi];
@@ -35,14 +27,23 @@ describe("Spotivibe branding", () => {
   });
 
   it("ships no third-party music-service branding in source or public assets", () => {
-    const files = [...walk(join(srcDir)), ...walk(join(frontendRoot, "public"))];
-    const offenders: string[] = [];
+    // `readTreeStrict`, not `readdirSync` + `readFileSync`. This suite walked `src` and `public` and then
+    // read every file it had listed; `motion-scope.test.ts` writes and deletes a probe inside
+    // `src/features/sharing` at the same time, and a file vanishing between the listing and the read threw
+    // `ENOENT` here — a branding failure with nothing to do with branding. It was observed live in M31.
+    //
+    // `ALL_FILES` because this guard is about *any* third-party name, not about TypeScript: the old walker
+    // had no extension filter and narrowing it would quietly stop scanning, say, `public/*.svg`.
+    const files = [
+      ...readTreeStrict(srcDir, { extensions: ALL_FILES }),
+      ...readTreeStrict(join(frontendRoot, "public"), { extensions: ALL_FILES }),
+    ];
 
-    for (const file of files) {
-      const raw = readFileSync(file, "utf8");
-      const stripped = allowed.reduce((text, pattern) => text.replace(pattern, ""), raw);
-      if (/spotify/i.test(stripped)) offenders.push(file);
-    }
+    const offenders = files
+      .filter(({ source }) =>
+        /spotify/i.test(allowed.reduce((text, pattern) => text.replace(pattern, ""), source)),
+      )
+      .map(({ file }) => file);
 
     expect(offenders).toEqual([]);
   });

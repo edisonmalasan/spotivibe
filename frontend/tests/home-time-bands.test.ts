@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -25,6 +25,7 @@ import { useLibraryStore } from "@/stores/libraryStore";
 import { useMixStore } from "@/stores/mixStore";
 import { usePreferencesStore } from "@/stores/preferencesStore";
 import { makeTrack } from "./helpers/music-fixtures";
+import { readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * M17 tasks 1.1–1.4 (spec: `home-mixes` — "The local clock selects a time-of-day
@@ -45,14 +46,16 @@ import { makeTrack } from "./helpers/music-fixtures";
 const srcRel = "../src";
 const srcDir = fileURLToPath(new URL(srcRel, import.meta.url));
 
-/** Every module under `features/home`, read as source. */
+/**
+ * Every module under `features/home`, read as source.
+ *
+ * Listing and reading are now one operation. They were two, with every file opened in a later pass,
+ * and `motion-scope.test.ts` deletes a probe module inside that window while this suite counts
+ * wall-clock reads — an intermittent `ENOENT` in a time-band test. `readTreeStrict` reports the file by
+ * name rather than failing with a bare path, and the absolute paths callers slice are unchanged.
+ */
 function homeModules(): Array<{ file: string; source: string }> {
-  const root = join(srcDir, "features", "home");
-  return readdirSync(root, { withFileTypes: true, recursive: true }).flatMap((entry) => {
-    if (!entry.isFile() || !/\.tsx?$/.test(entry.name)) return [];
-    const full = join(entry.parentPath, entry.name);
-    return [{ file: full, source: readFileSync(full, "utf8") }];
-  });
+  return readTreeStrict(join(srcDir, "features", "home"), { extensions: [".ts", ".tsx"] });
 }
 
 /** Comments removed, so prose cannot satisfy or fail a source rule. */

@@ -2,7 +2,6 @@ import "fake-indexeddb/auto";
 import { act, configure, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getLocalData, type RepositorySet } from "@/data/localData";
@@ -20,6 +19,7 @@ import { resetPlayerStore } from "@/stores/playerStore";
 import { resetQueueStore } from "@/stores/queueStore";
 import { resetSearchStore } from "@/stores/searchStore";
 import { makeTrack } from "./helpers/music-fixtures";
+import { readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * What each shareable surface shares (M18 tasks 5.3-5.5; spec `sharing` — "A
@@ -267,17 +267,19 @@ describe("every share action carries an accessible name (task 5.5)", () => {
 });
 
 describe("the playlist route is built in one place", () => {
-  /** Every `.ts`/`.tsx` file under `src`. */
+  /**
+   * Every `.ts`/`.tsx` file under `src`.
+   *
+   * The recursive listing and the read that followed it were two operations, and `motion-scope.test.ts`
+   * deletes its probe from `src/features/sharing/` inside that gap — so a share-links suite could fail
+   * with `ENOENT` on a file it was never about. `readTreeStrict` reads inside the walk and names a lost
+   * file rather than swallowing it. The path stays `src`-relative with forward slashes, as before.
+   */
   function sourceFiles(): Array<{ file: string; source: string }> {
-    return readdirSync(srcDir, { withFileTypes: true, recursive: true }).flatMap((entry) => {
-      if (!entry.isFile() || !/\.tsx?$/.test(entry.name)) return [];
-      return [
-        {
-          file: relative(srcDir, join(entry.parentPath, entry.name)).replace(/\\/g, "/"),
-          source: readFileSync(join(entry.parentPath, entry.name), "utf8"),
-        },
-      ];
-    });
+    return readTreeStrict(srcDir, { extensions: [".ts", ".tsx"] }).map(({ file, source }) => ({
+      file: relative(srcDir, file).replace(/\\/g, "/"),
+      source,
+    }));
   }
 
   /** Comments removed: prose may mention the route; only code may build one. */

@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ReactNode } from "react";
@@ -11,6 +11,7 @@ import { MixCards, MIX_CARDS_TITLE } from "@/features/home/mixes/MixCards";
 import { MAX_MIX_CARD_SEEDS } from "@/features/home/mixes/namedMixes";
 import { generateMix } from "@/features/mixes/generateMix";
 import { makeTrack } from "./helpers/music-fixtures";
+import { readTreeStrict } from "./helpers/sourceTree";
 import { resetHistoryStore } from "@/stores/historyStore";
 import { resetLibraryStore } from "@/stores/libraryStore";
 import { resetMixStore, useMixStore } from "@/stores/mixStore";
@@ -65,15 +66,17 @@ const CLOCK = (): number => NOW;
 const srcRel = "..";
 const frontendDir = fileURLToPath(new URL(srcRel, import.meta.url));
 
-/** Every module that sits beside the mix cards, read as source. */
+/**
+ * Every module that sits beside the mix cards, read as source.
+ *
+ * The old version listed the directory and read each name it got back, so a module deleted in
+ * between failed a mix-card rule with an `ENOENT`. `readTreeStrict` reads inside the walk and names a
+ * file that still goes missing, rather than dropping it and checking fewer modules than it claims.
+ * `.ts`/`.tsx` only — this is about the modules beside the cards.
+ */
 function homeMixModules(): Array<{ file: string; source: string }> {
   const dir = join(frontendDir, "src", "features", "home", "mixes");
-  return readdirSync(dir)
-    .filter((name) => /\.tsx?$/.test(name))
-    .map((name) => {
-      const file = join(dir, name);
-      return { file, source: readFileSync(file, "utf8") };
-    });
+  return readTreeStrict(dir, { extensions: [".ts", ".tsx"] });
 }
 
 /**

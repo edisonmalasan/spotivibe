@@ -1,7 +1,8 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, extname, join, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * M14 task 4.3: the design tokens' own contrast, computed rather than eyeballed.
@@ -116,38 +117,6 @@ function asHex(background: string): string {
   return background.startsWith("#") ? background : (tokens().get(background) ?? "#000000");
 }
 
-/**
- * Read a source file, or report it as absent.
- *
- * **This tolerance exists because of a real, captured failure, not as defensive coding.**
- * `tests/motion-scope.test.ts` writes `src/features/sharing/ProbeM19Motion.tsx` into the source
- * tree and removes it in a `finally`. This guard walks that same directory. Batch 26, run while
- * proving M24's criterion, failed 1 of 6 with:
- *
- *     Error: ENOENT: no such file or directory, open '…\src\features\sharing\ProbeM19Motion.tsx'
- *
- * Roughly 1 in 6 full-suite runs. Running only the two files together, 8 trials reproduce it 0
- * times — the writer's file exists for microseconds, so the race needs full-suite load to align.
- * That is why it survived so long: invisible in isolation, present roughly one run in six.
- *
- * `ENOENT` here can only mean the file was deleted between the walk listing it and this read. A
- * file genuinely absent from the product is not returned by the walk in the first place, so it
- * never reaches this function. The guard's subject is the product's source files; a file that has
- * ceased to exist is not one of them, and asserting a contrast ratio against it is not a stricter
- * check but an impossible one.
- *
- * **Any other error is not tolerated.** A permission failure or an I/O error is a real problem
- * and is allowed to propagate — otherwise "tolerant" would quietly become "silent".
- */
-function readIfPresent(file: string): string | null {
-  try {
-    return readFileSync(file, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
 /** One component file and the source read from it. */
 interface ComponentSource {
   /** Absolute path, for reporting where an offence was found. */
@@ -163,26 +132,40 @@ interface ComponentSource {
  * version collected paths in one pass and read them in a later one, so the gap between "listed" and
  * "read" spanned the rest of the directory walk *and* the caller's whole reading loop — tens of
  * milliseconds under full-suite load, against a file that lives for microseconds. That gap was the
- * defect. Reading inside the walk narrows it to the microseconds between `readdirSync` returning
- * one entry and opening that one file, and {@link readIfPresent} handles what remains.
+ * defect. `readTreeStrict` narrows it to the microseconds between listing one entry and opening that
+ * one file, and closes it for the remainder by reporting every file it could not read.
  *
  * Returning the pair rather than the path is what makes that possible: the caller cannot
  * re-introduce a second, later read.
+ *
+ * ## What replaced `readIfPresent`, and why it is a behaviour change
+ *
+ * This walk once ended each file with a local `readIfPresent` that caught `ENOENT` and returned `null`,
+ * and the caller dropped what came back null. **That was here because of a real, captured failure, not
+ * as defensive coding.** `tests/motion-scope.test.ts` writes `src/features/sharing/ProbeM19Motion.tsx`
+ * into the source tree and removes it in a `finally`; this guard walks that same directory. Batch 26,
+ * run while proving M24's criterion, failed 1 of 6 with:
+ *
+ *     Error: ENOENT: no such file or directory, open '…\src\features\sharing\ProbeM19Motion.tsx'
+ *
+ * Roughly 1 in 6 full-suite runs. Running only the two files together, 8 trials reproduce it 0 times —
+ * the writer's file exists for microseconds, so the race needs full-suite load to align. That is why it
+ * survived so long: invisible in isolation, present roughly one run in six.
+ *
+ * Catching and returning `null` satisfied half the obligation and failed the half that matters: **a
+ * reader that skips a vanished file without recording it is indistinguishable from one that never listed
+ * the file**, so a run that lost a component checked fewer components than it believed it had and stayed
+ * green. `readTreeStrict` replaces it rather than supplementing it, and it *throws* on a vanished file
+ * instead of returning `null` — the contract changed from "absent means `null`" to "absent means this
+ * suite fails, naming the file". Any read failure that is not `ENOENT` still propagates from the helper
+ * untouched, which is the half `readIfPresent` already had right.
+ *
+ * The companion assertion in `describe("the reader's tolerance cannot become silence")` below was
+ * rewritten against `readTreeStrict` for the same reason: it used to prove the old helper could do both
+ * halves, and it now proves the replacement can.
  */
 function componentFiles(dir: string): ComponentSource[] {
-  const found: ComponentSource[] = [];
-  const walk = (current: string): void => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const full = join(current, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if ([".tsx"].includes(extname(entry.name))) {
-        const source = readIfPresent(full);
-        if (source !== null) found.push({ file: full, source });
-      }
-    }
-  };
-  walk(dir);
-  return found;
+  return readTreeStrict(dir, { extensions: [".tsx"] });
 }
 
 describe("the reader's tolerance cannot become silence", () => {
@@ -199,21 +182,46 @@ describe("the reader's tolerance cannot become silence", () => {
    * is green — the worst outcome available, and one the contrast rules below could not detect.
    */
   it("reports a path that is absent, and still returns the contents of a path that is present", () => {
-    // A path that is genuinely not there. `join` on a name that does not exist, under a directory
-    // that does, so the absence is the file's rather than the directory's.
-    const missing = join(SRC, "features", "sharing", "ProbeM19Motion.tsx");
+    const sharing = join(SRC, "features", "sharing");
+    const present = join(sharing, "ShareButton.tsx");
+    // The probe, by name. It must not be on disk outside the test that writes it — this suite walks
+    // the directory the probe lands in, and a probe left behind would make every count below a lie.
+    const missing = join(sharing, "ProbeM19Motion.tsx");
     expect(existsSync(missing), "the probe must not exist outside the test that writes it").toBe(
       false,
     );
-    expect(readIfPresent(missing), "a path that does not exist must be reported absent").toBeNull();
 
-    // A path that is there — and it is a real component, not a fixture, so the assertion is about
-    // the production tree rather than about a file this test arranged.
-    const present = join(SRC, "features", "sharing", "ShareButton.tsx");
+    // **The absent arm, and the behaviour is inverted from the helper this replaced.**
+    // `readIfPresent` returned `null`: it recorded nothing, so a component lost mid-walk left this suite
+    // checking fewer components than it believed it had and it stayed green. `readTreeStrict` throws and
+    // names the file instead.
+    //
+    // `ShareButton` is the file made to vanish, because the race is only observable for a file the walk
+    // *listed*: the probe above is absent, so no walk would ever return it, and pointing a reader at a
+    // path that is simply not there tests nothing about a listing. The real race needs the whole suite
+    // under load, so it is provoked through the reader seam instead — deterministic, and it fails on
+    // every run rather than roughly one in six.
+    expect(
+      () =>
+        readTreeStrict(sharing, {
+          extensions: [".tsx"],
+          read: (path) => {
+            if (path === present) throw Object.assign(new Error("gone"), { code: "ENOENT" });
+            return readFileSync(path, "utf8");
+          },
+        }),
+      "a file that vanishes between being listed and read must be reported by name, not skipped",
+    ).toThrow(/ShareButton\.tsx/);
+
+    // The present arm, on the real production tree: the directory is walked and `ShareButton` is found
+    // with its contents. A reader that returned nothing, or that reported everything as absent, fails
+    // here rather than passing quietly.
     expect(existsSync(present), "this test reads a real component, so it must exist").toBe(true);
-    const source = readIfPresent(present);
-    expect(source, "a path that exists must yield its contents, not null").not.toBeNull();
-    expect(source, "the contents must be the file's, not empty").toContain("ShareButton");
+    const found = readTreeStrict(sharing, { extensions: [".tsx"] }).find(
+      ({ file }) => file === present,
+    );
+    expect(found?.file, "a path that exists must be read, not reported missing").toBe(present);
+    expect(found?.source, "the contents must be the file's, not empty").toContain("ShareButton");
 
     // And the walk still reaches the tree, using the pair form, so a reader that returned nothing
     // would fail here rather than passing quietly.

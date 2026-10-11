@@ -148,7 +148,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M29** | Stop the gate-batch corroborator failing correct evidence | `MERGED, ARCHIVED` - PR #124, merge `555b020`, sync #125 `906b930`, archived `2026-10-10-gate-batch-default-expectations`; batch 6 of 6 at `a9b5e3c`, corroborator exit 0 **both** with the printed flags and with none | M21, M27, M28 |
 | **M30** | Make the gate's own coverage a checked fact rather than a documented gap | `MERGED, ARCHIVED` - PR #128, merge `0159f9e`, sync #129 `8de5849`, archived `2026-10-11-close-gate-coverage-gaps`; batch 6 of 6 at `ee3ff46`, corroborator exit 0; CI all 8 steps green | M29, M21 |
 | **M31** | Bring repository-root `scripts/` inside the quality gate | `MERGED, ARCHIVED` - PR #132, merge `4dc2850`, sync #133 `a75019e`, archived `2026-10-11-cover-root-scripts`; CI green on both runs; **no gate batch run** | M30, M21 |
-| **M32** | Make every reader of the application source tree race-tolerant | `PROPOSED` - `race-tolerant-tree-readers`, proposal branch `docs/tree-walk-race-tolerance-proposal` | M31, M25, M21 |
+| **M32** | Make every reader of the application source tree race-tolerant | `IMPLEMENTING` - `race-tolerant-tree-readers`, branch `feat/tree-reader-race-tolerance` | M31, M25, M21 |
 
 > **M31 exists because an exemption with an accurate reason is still an exemption, and accuracy is not currency.**
 >

@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readTreeStrict } from "./sourceTree";
 
 /**
  * Reading the source tree for the M19 motion checks (spec `motion`; tasks 1.2, 2.2,
@@ -42,20 +43,17 @@ export interface SourceFile {
 
 /** Every source and stylesheet under `src`, discovered rather than listed. */
 export function sourceFiles(): SourceFile[] {
-  const found: SourceFile[] = [];
-  const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const full = join(directory, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (/\.(tsx?|css)$/.test(entry.name)) {
-        found.push({
-          path: relative(SRC_ROOT, full).split(sep).join("/"),
-          source: readFileSync(full, "utf8"),
-        });
-      }
-    }
-  };
-  walk(SRC_ROOT);
+  // One read per file, inside the walk. The old walker listed first and read afterwards, and
+  // `motion-scope.test.ts` deletes `src/features/sharing/ProbeM19Motion.tsx` from this very tree while
+  // the motion guards are reading it — a failure in a motion suite about a file no motion rule names.
+  // `readTreeStrict` reports a vanished file by name instead of dropping it, so the sorted set below
+  // cannot quietly be one file short.
+  const found = readTreeStrict(SRC_ROOT, {
+    extensions: [".ts", ".tsx", ".css"],
+  }).map(({ file, source }) => ({
+    path: relative(SRC_ROOT, file).split(sep).join("/"),
+    source,
+  }));
   return found.sort((left, right) => left.path.localeCompare(right.path));
 }
 
