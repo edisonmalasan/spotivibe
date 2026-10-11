@@ -76,7 +76,8 @@ if (!existsSync(addedPath)) throw new Error(`missing delta: ${addedPath}`);
 const added = readFileSync(addedPath, "utf8");
 const addedNames = names(added);
 
-if (addedNames.requirements.length === 0) problems.push("the delta's lyrics spec has no requirements");
+if (addedNames.requirements.length === 0)
+  problems.push("the delta's lyrics spec has no requirements");
 if (addedNames.scenarios.length === 0) problems.push("the delta's lyrics spec has no scenarios");
 if (/^## ADDED Requirements/m.test(added) === false) {
   problems.push("the delta's lyrics spec is not marked `## ADDED Requirements`");
@@ -84,7 +85,9 @@ if (/^## ADDED Requirements/m.test(added) === false) {
 
 const lyricsPath = join(ROOT, "openspec", "specs", "lyrics", "spec.md");
 if (existsSync(lyricsPath) && !CHECK_ONLY) {
-  problems.push("openspec/specs/lyrics/spec.md already exists — refusing to overwrite a capability");
+  problems.push(
+    "openspec/specs/lyrics/spec.md already exists — refusing to overwrite a capability",
+  );
 }
 
 report.push(
@@ -209,10 +212,14 @@ for (const scenario of addedNames.scenarios) {
   }
 }
 if (!/^# lyrics Specification$/m.test(readFileSync(lyricsPath, "utf8"))) {
-  afterProblems.push("lyrics: the written spec does not carry the record's own `# lyrics Specification` title");
+  afterProblems.push(
+    "lyrics: the written spec does not carry the record's own `# lyrics Specification` title",
+  );
 }
 if (/^## ADDED Requirements/m.test(readFileSync(lyricsPath, "utf8"))) {
-  afterProblems.push("lyrics: the written spec still carries the delta's `## ADDED Requirements` heading");
+  afterProblems.push(
+    "lyrics: the written spec still carries the delta's `## ADDED Requirements` heading",
+  );
 }
 if (afterProblems.length > 0) {
   console.log("");

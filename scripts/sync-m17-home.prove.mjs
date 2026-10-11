@@ -104,19 +104,17 @@ function controlSandbox() {
 
   writeFileSync(
     join(deltaDir, CONTROL_ADDED, "spec.md"),
-    ["# control-added Delta", "", "## ADDED Requirements", "", CONTROL_ADDED_REQUIREMENT].join("\n"),
+    ["# control-added Delta", "", "## ADDED Requirements", "", CONTROL_ADDED_REQUIREMENT].join(
+      "\n",
+    ),
     "utf8",
   );
 
   writeFileSync(
     join(deltaDir, CONTROL_MODIFIED, "spec.md"),
-    [
-      "# control-extended Delta",
-      "",
-      "## MODIFIED Requirements",
-      "",
-      CONTROL_REQUIREMENT,
-    ].join("\n"),
+    ["# control-extended Delta", "", "## MODIFIED Requirements", "", CONTROL_REQUIREMENT].join(
+      "\n",
+    ),
     "utf8",
   );
 
@@ -323,8 +321,7 @@ for (const testCase of CASES) {
     testCase.mutate(dir);
     // `expect` may be a function so a count that depends on the live record is derived rather than
     // hardcoded. See the "dropped scenario" case for why a fixed number went stale.
-    const expected =
-      typeof testCase.expect === "function" ? testCase.expect(dir) : testCase.expect;
+    const expected = typeof testCase.expect === "function" ? testCase.expect(dir) : testCase.expect;
     const result = run(dir);
     const refused = result.code !== 0 && result.out.includes(expected);
     if (refused) {

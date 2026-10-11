@@ -19,10 +19,10 @@ import { fileURLToPath } from "node:url";
 const SYNC = resolve(dirname(fileURLToPath(import.meta.url)), "sync-m18-interactions.mjs");
 const SYNC_ENV = {
   // The change is named by its path under `openspec/changes/`, and an archived change keeps that
-// prefix plus a date. M19 was archived on 2026-10-03, so the delta this prover exercises now lives
-// under `archive/`. It moved then; before that, every case here failed on ENOENT because the
-// prover still pointed at the active path.
-SPOTIVIBE_CHANGE: "archive/2026-10-03-m19-motion",
+  // prefix plus a date. M19 was archived on 2026-10-03, so the delta this prover exercises now lives
+  // under `archive/`. It moved then; before that, every case here failed on ENOENT because the
+  // prover still pointed at the active path.
+  SPOTIVIBE_CHANGE: "archive/2026-10-03-m19-motion",
   SPOTIVIBE_NEW: "motion",
   SPOTIVIBE_EXTENDED: "performance",
 };

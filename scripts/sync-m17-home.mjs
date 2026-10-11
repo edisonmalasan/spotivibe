@@ -50,9 +50,9 @@ const ROOT = process.env.SPOTIVIBE_REPO ?? process.cwd();
 
 const CHECK_ONLY = process.argv.includes("--check");
 // M17's own delta, archived on 2026-10-02. An archived change keeps the `changes/` prefix and gains a
-  // date, so naming the active path left this pointing at a directory that no longer exists.
-  const CHANGE_NAME = process.env.SPOTIVIBE_CHANGE ?? "archive/2026-10-02-m17-home-discovery";
-  const CHANGE = join(ROOT, "openspec", "changes", CHANGE_NAME, "specs");
+// date, so naming the active path left this pointing at a directory that no longer exists.
+const CHANGE_NAME = process.env.SPOTIVIBE_CHANGE ?? "archive/2026-10-02-m17-home-discovery";
+const CHANGE = join(ROOT, "openspec", "changes", CHANGE_NAME, "specs");
 const RECORD = join(ROOT, "openspec", "specs");
 
 /** What this sync is for. Anything else in the delta directory is a stray and must be refused. */
@@ -292,7 +292,9 @@ for (const capability of MODIFIED_CAPABILITIES) {
       .split(/(?<=\.)\s+/)
       .map((sentence) => sentence.trim())
       .filter((sentence) => sentence.length > 40);
-    const lost = proseSentences.filter((sentence) => !requirementProse(incomingBlock.text).includes(sentence));
+    const lost = proseSentences.filter(
+      (sentence) => !requirementProse(incomingBlock.text).includes(sentence),
+    );
     if (lost.length > 0) {
       problems.push(
         `the delta LOSES ${lost.length} sentence(s) of the requirement prose for "${requirement}": ` +
