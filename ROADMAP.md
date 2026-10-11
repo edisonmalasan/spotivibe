@@ -148,7 +148,73 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M29** | Stop the gate-batch corroborator failing correct evidence | `MERGED, ARCHIVED` - PR #124, merge `555b020`, sync #125 `906b930`, archived `2026-10-10-gate-batch-default-expectations`; batch 6 of 6 at `a9b5e3c`, corroborator exit 0 **both** with the printed flags and with none | M21, M27, M28 |
 | **M30** | Make the gate's own coverage a checked fact rather than a documented gap | `MERGED, ARCHIVED` - PR #128, merge `0159f9e`, sync #129 `8de5849`, archived `2026-10-11-close-gate-coverage-gaps`; batch 6 of 6 at `ee3ff46`, corroborator exit 0; CI all 8 steps green | M29, M21 |
 | **M31** | Bring repository-root `scripts/` inside the quality gate | `MERGED, ARCHIVED` - PR #132, merge `4dc2850`, sync #133 `a75019e`, archived `2026-10-11-cover-root-scripts`; CI green on both runs; **no gate batch run** | M30, M21 |
-| **M32** | Make every reader of the application source tree race-tolerant | `IMPLEMENTING` - `race-tolerant-tree-readers`, branch `feat/tree-reader-race-tolerance` | M31, M25, M21 |
+| **M32** | Make every reader of the application source tree race-tolerant | `MERGED, ARCHIVED` - PR #137, merge `3ceed84`, sync #138 `b2e06f8`, archived `2026-10-11-race-tolerant-tree-readers`; gate exit 0, 187 files / 3491 tests; **8 full-suite runs, 2 red** | M31, M25, M21 |
+
+> **M32 exists because the word "every" was in a scenario for four milestones and nothing could fail
+> on it.**
+>
+> The `verification-integrity` scenario has said that *every* reader of the source tree tolerates a file
+> that vanished between being listed and being read, and its caller asserts none was reported, since
+> M25. M25 discharged it for **exactly one of fourteen readers** — the one it was shown — and thirteen
+> more kept listing the same tree and reading each listed file unguarded, with nothing failing in the
+> meantime. A scenario only one implementation out of fifteen can fail is a comment. So this milestone
+> did not add a rule; it made the existing one **checkable**, and converted 15 sites across 13 files.
+
+> **The measurement took five passes and the first four were wrong**, which is the number that matters
+> more than the answer. Real figures: **23 `readdirSync` sites in 20 files**, of which **18 sites in 17
+> files were actually exposed** to the probe collision; **exactly one writer file, two calls** —
+> `motion-scope.test.ts:105` `writeFileSync` and `:121` `rmSync`, hitting
+> `src/features/sharing/ProbeM19Motion.tsx` — confirmed by scanning **199 mutating calls repo-wide**.
+> One earlier pass named `architecture.test.ts:3647` a writer; it was disproved, because that write goes
+> under `mkdtempSync`. **No converted file lost a test**: 186 files / 3479 tests before, 187 / 3491 after.
+
+> **The design's first answer was wrong, and building it is what showed that.** D1 specified a
+> tolerant reader beside `readTree`, on the reasoning that callers would have to opt in. The shipped
+> helper is the inverse: `readTreeStrict(directory, options)` collects every raced path and throws
+> naming **all** of them, so the call *is* the assertion. All 14 converted files use it; none use
+> `readTree`. Its four failure arms are each proven **CAUGHT** against a required green baseline —
+> a non-`ENOENT` swallowed, the throw removed, only the first raced path named, and the reporter
+> deleted.
+
+> **The guard does not do what the requirement says, and the spec now says so.** D2 originally
+> enumerated readers by shape. Deciding whether a read *depends on* a listing was attempted **five
+> times and failed five times** — the last attempt missed `branding.test.tsx`, the one reader that
+> failed live in M31. The shipped guard therefore **forbids the primitives** instead: a test file may
+> not call `readdirSync` at all, and a file importing the untolerated `walk` may not `readFileSync`
+> inside a loop. Both read the AST, never raw text. That is a **decidable proxy**: *stricter* than the
+> requirement in one direction (a file that lists and reads nothing still fails, hence the stated
+> exemptions) and **weaker** in another (a walker imported from a *new* module is not traced). Both
+> directions are recorded in the synced spec's M32 Apply note rather than left for a reader of the code
+> to discover. Both mutations of the guard itself are proven **CAUGHT**.
+
+> **The gate is now about 1 run in 4 red, and that is the change working.** Across **8 full-suite
+> runs, 2 were red** with `readTreeStrict: 1 file(s) vanished between being listed and being read`.
+> M25 made readers tolerate; D1 makes them throw. A run that loses a file now **fails**, which is the
+> point — it previously read fewer files than it believed and reported success. **§6.1's exit 0 is one
+> run, not a rate**, and `tasks.md` says exactly that.
+>
+> **The collision itself is not removed, and this milestone did not remove it.** The probe must stay at
+> a source path the guard walks, or the guard proves nothing; vitest workers share a filesystem and do
+> not coordinate; and the file is gone for the duration of the writer's `it` block, so a retry would
+> not save it. Serialising the writer and relocating the probe were both **rejected by M25** and are
+> forbidden by the current delta. **Removing the collision is an open spec decision**, carried into the
+> Archive and Sync PR bodies, and it is the next eligible objective.
+
+> **Four defects in this milestone's own work were found and fixed**, three of them by the tools built
+> to check it: an `architecture.test.ts` change taking the suite from **2 s to 312 s** (a recursive read
+> into `node_modules`) and reverted; a BOM check that had been narrowed while converting away its
+> escape-hatch read, closed with U+FFFD checks; a vacuous `expect(lines.length).toBe(lines.length)`
+> removed; and the guard re-parsing the tree **7× per run**, now cached. `encoding-integrity.test.ts`'s
+> `IGNORED` prune→filter conversion was checked for equivalence rather than assumed — **791 files both
+> ways, zero added or dropped** — because the BOM "equivalence" argument in this same milestone was
+> made, accepted, and was wrong.
+
+> **Carried forward from M31, unchanged and not absorbed here:** `icons:check` is documented and
+> verified but is in neither `npm run gate` nor CI, and has no root proxy; `sync-m18-interactions.mjs`
+> is unused by M30's Sync; the gate does not assert its own working tree; M21 CRITICAL 1 & 2 are
+> unclosable without the forbidden archived gate; **M25's criterion 5 of 6 stays permanently unmet**;
+> `scripts/sync-m17-home.mjs` drops a spec's trailing newline; **no gate batch was run for M31 or
+> M32**. **UNVERIFIED:** no browser was attached at any point in this milestone.
 
 > **M31 exists because an exemption with an accurate reason is still an exemption, and accuracy is not currency.**
 >
