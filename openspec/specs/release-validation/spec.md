@@ -250,6 +250,12 @@ inference from a green exit code.
 A file type that a gate step covers by parsing SHALL be checked for validity by that step, rather than
 being assumed well-formed because nothing has read it since it was written.
 
+Recorded frozen evidence SHALL NOT be an exemption on the strength of its stated reason alone. The
+subject of a recorded exemption SHALL be demonstrated still to run by a check that executes it, and an
+exemption whose subject no longer runs SHALL fail rather than persist on a record that remains
+accurate in its wording while being false in its effect. A stated reason establishes why a gap was
+recorded at the time it was recorded, and cannot establish that the gap persists.
+
 #### Scenario: A source type no step parses
 
 - **WHEN** the application home contains a tracked file type that no gate step parses
@@ -273,3 +279,9 @@ being assumed well-formed because nothing has read it since it was written.
 - **WHEN** a directory contains one-off evidence tooling that no gate step processes
 - **THEN** it is recorded as frozen evidence with its reason, so that new live code added beside it is
   distinguishable from the recorded artifacts rather than inheriting their exemption
+
+#### Scenario: Recorded frozen evidence no longer runs
+
+- **WHEN** the subject of a recorded exemption is executed and does not succeed
+- **THEN** the exemption fails, because an exemption justified by artifacts that no longer work is a
+  coverage gap carrying a citation rather than a recorded decision
