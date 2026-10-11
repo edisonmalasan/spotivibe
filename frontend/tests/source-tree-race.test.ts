@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { isMissing, readTree } from "./helpers/sourceTree";
+import { isMissing, readTree, readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * Listing a tree and reading it, when the tree changes in between.
@@ -190,5 +190,100 @@ describe("readTree", () => {
     const files = readTree(root, { onRace: (file) => raced.push(file) });
     expect(files).toHaveLength(2);
     expect(raced).toEqual([]);
+  });
+});
+
+/**
+ * ## The three arms of the asserting wrapper
+ *
+ * Every case below is driven through `readTreeStrict`'s injected `read` rather than through a real
+ * filesystem race, for the reason in this file's header: a race that only sometimes happens is a test that
+ * usually passes without proving anything.
+ *
+ * The arms are `readTree`'s own two branches plus the reporting the wrapper adds, so all three execute on
+ * every run rather than being left to the one run in a hundred that happens to collide.
+ */
+describe("readTreeStrict", () => {
+  it("returns the tree unchanged when nothing vanished", () => {
+    // The ordinary path, asserted: a healthy tree must not throw, or every converted reader would be
+    // broken by construction and the failure would look like a product bug.
+    const root = tree();
+    expect(readTreeStrict(root).map((entry) => entry.file.split(/[\\/]/).pop())).toEqual([
+      "a.ts",
+      "b.tsx",
+    ]);
+  });
+
+  it("fails when a file vanished, and names it", () => {
+    // The obligation this wrapper exists to discharge. `readTree` would return one file silently here,
+    // and a reader built on it would report success while checking less than it set out to.
+    const root = tree();
+    const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
+
+    expect(() =>
+      readTreeStrict(root, {
+        read: (file) => {
+          if (file.endsWith("a.ts")) throw vanished;
+          return `contents of ${file}`;
+        },
+      }),
+    ).toThrow(/a\.ts/);
+  });
+
+  it("names every vanished file, not just the first", () => {
+    // The partial-report case: `motion-scope.test.ts` removes its probe in a `finally`, and a reader that
+    // learned of only the first loss would conclude a single file was involved when a directory went.
+    const root = tree();
+    const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
+
+    let thrown: Error | undefined;
+    try {
+      readTreeStrict(root, {
+        read: () => {
+          throw vanished;
+        },
+      });
+    } catch (error) {
+      thrown = error as Error;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown!.message).toMatch(/a\.ts/);
+    expect(thrown!.message).toMatch(/b\.tsx/);
+    expect(thrown!.message).toMatch(/2 file\(s\)/);
+  });
+
+  it("propagates a read failure that is not a vanished file, and does not report it as a race", () => {
+    // The arm that keeps `isMissing` narrow. If this were reported as a race, a suite would tolerate an
+    // unreadable tree and pass while having checked none of it - strictly worse than failing.
+    const root = tree();
+    const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
+
+    expect(() =>
+      readTreeStrict(root, {
+        read: () => {
+          throw denied;
+        },
+      }),
+    ).toThrow(denied);
+  });
+
+  it("does not turn a caller-supplied onRace into a second, unreported channel", () => {
+    // `readTreeStrict` overrides `onRace` so the raced paths cannot be diverted somewhere the wrapper does
+    // not see. If a caller's callback were honoured as well, a caller could pass one that does nothing and
+    // the throw would still fire - so the test asserts the override rather than the convenience.
+    const root = tree();
+    const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
+    const callerSaw: string[] = [];
+
+    expect(() =>
+      readTreeStrict(root, {
+        read: () => {
+          throw vanished;
+        },
+        onRace: (file) => callerSaw.push(file),
+      }),
+    ).toThrow(/vanished between being listed and being read/);
+    expect(callerSaw).toEqual([]);
   });
 });
