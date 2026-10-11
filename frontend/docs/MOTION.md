@@ -278,6 +278,48 @@ own — exactly as `LanguageOnboarding` did not. The artist tiles it renders are
 already an allowed surface and already carries `motion-reveal` and `motion-feedback`. Selection is
 announced by `aria-pressed` and by the ring rather than by an animation.
 
+### 2f. The `scripts:check` gate step re-recorded the ceiling a sixth time, for 17 bytes of build tooling
+
+| Measurement | After `ps:check` | After `scripts:check` | Delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 388,566 B | 388,583 B | **+17 B** |
+| Largest single chunk, gzipped | 97,490 B | 97,507 B | **+17 B** |
+| Emitted chunks | 25 | 25 | **0** |
+| `/` first load, gzipped | 231,327 B (13 chunks) | 231,327 B (13 chunks) | **0 B** |
+
+**The 17 bytes are `frontend/package.json` again, not application code.** M31 added one line to it —
+
+```json
+"scripts:check": "node scripts/root-scripts-check.mjs"
+```
+
+— and section 2e's mechanism is unchanged: Next.js inlines the whole application manifest into the
+client bundle, so a script entry the browser never evaluates still costs bytes. Measured in the
+emitted largest chunk (`2sd_oxv3i43s3.js`, 413,953 raw bytes): the added substring occurs **exactly
+once**, is 54 raw bytes, and removing it takes the chunk from 97,507 to 97,494 gzipped.
+
+That is +13 of the +17, not +17, and the gap is worth stating rather than rounding away: gzip is not
+additive, so deleting a string re-aligns the deflate stream for everything after it. The previous
+chunk is **not** reproduced byte for byte by this deletion — 413,899 raw bytes remain against the
+previous build's 413,846. What is established is that the manifest line is where the cost comes from,
+which is the same conclusion 2e reached and the reason this cost is expected rather than surprising.
+
+**Why pay 17 bytes.** `scripts:check` is the step that reads the repository-root `scripts/` directory —
+three provers that were failing at 3/15, 5/11 and 3/8 and had been for four milestones, because
+nothing outside the gate's `frontend/` working directory could reach them. Trading 17 bytes of a
+string the browser never evaluates for a step that executes them is the same trade 2e made.
+
+**Confirmed to be the manifest and not this step's content.** Adding a meaningless
+`"zzz:dummy": "node -e 0"` entry to the same manifest moved the figure by the same ~16 bytes
+(97,506), and leaving the manifest untouched reproduced 97,490 or lower. So the figure tracks the
+manifest, not what the script does — which is 2e's "any script added to `frontend/package.json` pays
+it", now measured again rather than assumed.
+
+**No dependency was added to the client**, and **the motion allowance did not move at all** — no
+component changed. `states what the scripts:check step cost, in bytes` pins the +17 against
+`M30_CLIENT_BUDGET`, a record preserved for the same reason `M29_CLIENT_BUDGET` is: so M30's published
++20 is not restated as +37 by a later milestone's ceiling.
+
 ## 3. No motion without a reduced-motion path
 
 The floor already existed before this milestone: `src/app/globals.css` sets `animation-duration`,

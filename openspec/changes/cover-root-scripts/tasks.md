@@ -5,21 +5,32 @@
 
 ## 1. Establish the baseline before changing anything
 
-- [ ] 1.1 Re-measure the three provers from a clean tree, capturing each one's full case tally and the
-      name of the failing case: `node scripts/sync-m17-home.prove.mjs`,
-      `scripts/sync-m18-interactions.prove.mjs`, `scripts/sync-m19.prove.mjs`. Expect `3/15`, `5/11`,
-      `3/8` with the positive control failing in each.
-      Verify: the three tallies are pasted into this file unchanged, and the repo is still clean
-      afterwards (`git status --porcelain` empty) — the provers must write only to temp.
-- [ ] 1.2 Confirm the uniform cause rather than assuming it: for each prover, read the fixture path it
-      resolves and show that the change directory it names is absent while
-      `openspec/changes/archive/<dated-name>/…` is present.
-      Verify: one line per prover naming the exact fixture path and the archive path that replaces it.
-- [ ] 1.3 Re-measure Prettier over root `scripts/` **with the repository's own config**, not defaults.
-      Prettier resolves config per file and the root has none, so an unqualified run silently measures
-      `printWidth: 80`. Expect 2 of 6 failing — `sync-m16-lyrics.mjs`, `sync-m17-home.mjs`.
-      Verify: both the qualified and unqualified counts are recorded, with the difference explained, so
-      the corrected measurement cannot be mistaken for the first one.
+- [x] 1.1 Re-measure the three provers from a clean tree, capturing each one's full case tally and the
+      name of the failing case.
+      **Measured:** `sync-m17-home.prove.mjs` → **3/15**, `sync-m18-interactions.prove.mjs` → **5/11**,
+      `sync-m19.prove.mjs` → **3/8**. Every failure carried the same harness error,
+      `ENOENT ... openspec\changes\mXX-...\specs\<cap>\spec.md`. `git status --porcelain` was empty
+      after all three — they write only to temp.
+- [x] 1.2 Confirm the uniform cause rather than assuming it.
+      **Measured**, one line per prover:
+
+      | prover | fixture it read | active dir | archive dir that replaces it |
+      |---|---|---|---|
+      | m17 | `openspec/changes/m17-home-discovery/specs/{discovery,mixes,home-mixes}/spec.md` | absent | `archive/2026-10-02-m17-home-discovery/` |
+      | m18 | `openspec/changes/m18-interactions/specs/{search,keyboard-shortcuts,sharing}/spec.md` | absent | `archive/2026-10-02-m18-interactions/` |
+      | m19 | `openspec/changes/m19-motion/specs/{motion,performance}/spec.md` | absent | `archive/2026-10-03-m19-motion/` |
+
+      All eight archive fixture files confirmed present.
+- [x] 1.3 Re-measure Prettier over root `scripts/` **with the repository's own config**, not defaults.
+      **Measured both ways**, and this is the whole point of the task:
+
+      | run | config | failing |
+      |---|---|---|
+      | A, unqualified | none at the root → `printWidth: 80` | **6 of 6** |
+      | B, qualified | `--config frontend/.prettierrc.json` → `printWidth: 100` | **2 of 6** — `sync-m16-lyrics.mjs`, `sync-m17-home.mjs` |
+
+      The first, unqualified number is the one that was wrong before this change was written. It is
+      recorded here so it cannot be mistaken for the corrected one.
 
 ## 2. Restore the provers' positive controls (D1, revised during Apply)
 
@@ -29,111 +40,152 @@
 > milestone's Sync stage, so replaying it is a re-merge the guard is right to refuse. D1 was revised;
 > see `design.md` D1 for the reasoning and the rejected alternatives.
 
-- [ ] 2.1 Repoint each of the three provers' fixture paths from `openspec/changes/<name>/…` to
-      `openspec/changes/archive/<dated-name>/…`, and set each guard's default `CHANGE_NAME` to match.
-      Verify: every ENOENT is gone; the archived change directories are untouched (`git status` shows no
-      modification under `openspec/changes/archive/`); and no active change path remains in `scripts/`.
-- [ ] 2.2 Parameterise `sync-m17-home.mjs` with `SPOTIVIBE_CHANGE`, `SPOTIVIBE_ADDED` and
-      `SPOTIVIBE_MODIFIED`, defaulting to today's values, so it can be driven against a synthetic
-      fixture the way `sync-m18-interactions.mjs` already can. This mirrors the M18 guard's own header
-      ("rather than adding a third near-identical copy of the same refusal logic").
-      Verify: every existing invocation behaves identically — prove it by running the M17 prover with no
-      change to its case list and confirming the refusal count is unchanged from 12.
-- [ ] 2.3 Give each prover's **control cases** a self-contained fixture: the prover builds both a delta
-      and a minimal record in a throwaway sandbox, where capabilities the delta creates are absent from
-      the record and the capability it extends holds a requirement the delta does not name.
-      Verify: all three provers exit 0; the two control cases in each report a real merge and a verified
-      write.
-- [ ] 2.4 Confirm the refusal cases still run against **real** data — the real record, the real
-      archived delta. Only the controls become synthetic, because only the controls claim nothing about
-      any specific milestone.
-      Verify: the refusal count per prover is unchanged from 2.1 (12 / 9 / 6), and the real delta paths
-      are still present in each prover's source.
-- [ ] 2.5 Fix the one stale expectation: M17 expects `"drops 1 existing scenario"` and now gets
-      `drops 2`, because the record's "Home discovery feed" requirement has grown since M17.
-      Verify: the expectation is derived from the record at run time rather than hardcoded, so it cannot
-      go stale again the same way.
-- [ ] 2.6 Prove the control is not vacuous — that it fails when it should. Make the synthetic record
-      already contain the delta's requirement name and confirm the control fails with the duplicate-name
-      refusal.
-      Verify: recorded, and the mutation reverted.
-- [ ] 2.7 Confirm the guards still refuse. Fixing evidence of success must not weaken evidence of
-      refusal.
-      Verify: all refusal cases pass, and the guard-test cases in `frontend/tests/` are re-run unmodified.
+- [x] 2.1 Repoint each of the three provers' fixture paths, and set each guard's default `CHANGE_NAME`.
+      **Done.** 14 path references across 5 files. Every ENOENT gone. `git status --porcelain -- openspec/changes/archive`
+      empty throughout — the archive was never written to. No active change path remains in `scripts/`.
+- [x] 2.2 Parameterise `sync-m17-home.mjs` with `SPOTIVIBE_CHANGE`, `SPOTIVIBE_ADDED` and
+      `SPOTIVIBE_MODIFIED`, defaulting to today's values.
+      **Done and proven backward-compatible.** With the parameters added and no other change, the M17
+      prover held at exactly **12 passing refusals**, and `node scripts/sync-m17-home.mjs --check` with
+      no environment still **refused with exit 1** rather than silently succeeding.
+- [x] 2.3 Give each prover's **control cases** a self-contained fixture.
+      **Done.** All three provers exit 0 — **15/15, 11/11, 8/8** — and in each, both control cases
+      report a real merge and a verified write.
+- [x] 2.4 Confirm the refusal cases still run against **real** data.
+      **Confirmed.** Refusal counts after the control change are unchanged from 2.1: **12 / 9 / 6**. The
+      real archive paths remain in each prover's source, and it is the controls alone that are synthetic.
+- [x] 2.5 Fix the stale expectation in the M17 "dropped scenario" case.
+      **Done.** `expect` may now be a function, and the count is derived from the record at run time
+      (`record scenarios - delta scenarios + 1`) instead of the hardcoded `drops 1`. It cannot go stale
+      the same way again.
+- [x] 2.6 Prove the control is not vacuous — that it fails when it should.
+      **Proven, twice.** Colliding the control fixture's record and delta requirement names drops
+      `sync-m19.prove.mjs` to **6/8** and `sync-m18-interactions.prove.mjs` to **9/11**, each with
+      `REFUSING: the control-extended delta adds requirement(s) whose names already exist in the record`.
+      Both mutations reverted; SHA-256 and a repo-wide grep for the probe marker confirm clean.
+- [x] 2.7 Confirm the guards still refuse.
+      **Confirmed.** Every refusal case passes in all three provers, and `tests/root-commands.test.ts` +
+      `tests/ci-workflow.test.ts` + `tests/gate-coverage.test.ts` were re-run and pass.
 
 ## 3. Format root `scripts/` (D3)
 
-- [ ] 3.1 Run Prettier over root `scripts/` with `--config frontend/.prettierrc.json` and record the
-      per-file result.
-      Verify: exactly the two files measured in 1.3 are named.
-- [ ] 3.2 Reformat those two files only, and no others.
-      Verify: `git diff --stat` names two files; the other four are byte-identical to `main` (SHA-256
-      compared).
-- [ ] 3.3 Re-run the provers after reformatting, since two of the six edited files are scripts the
-      syncs use.
-      Verify: all three still exit 0.
+- [x] 3.1 Run Prettier over root `scripts/` with the repo config and record the per-file result.
+      **Done.** At the moment of measurement 5 of 6 needed changes, not 2.
+- [x] 3.2 Reformat those files.
+      **Divergence:** the task said "those two files only, and no others". Re-measuring after the §2
+      commits showed **5** failing — `sync-m16-lyrics.mjs` and `sync-m17-home.mjs` were already
+      drifting, and three more drifted from code this change itself added. All five were formatted;
+      `sync-m18-interactions.prove.mjs` already matched and was left byte-identical. The diff is
+      line-wrapping only — inspected for `sync-m16-lyrics.mjs`, a file this change never otherwise
+      touched, and confirmed to be wrapping with no semantic change.
+- [x] 3.3 Re-run the provers after reformatting.
+      **Done.** All three still exit 0: **15/15, 11/11, 8/8**.
 
 ## 4. Add the gate step (D2)
 
-- [ ] 4.1 Write `frontend/scripts/root-scripts-check.mjs` to invoke all three provers in sequence and
-      exit non-zero if any does, reporting each prover's result individually.
-      Verify: a deliberate failing prover makes the step exit non-zero *and* the other two still report;
-      the mutation is reverted.
-- [ ] 4.2 Measure the step's wall-clock before wiring it in.
-      Verify: recorded, with a statement of whether it is a sane share of the gate — reported, not
-      hidden if it is not.
-- [ ] 4.3 Wire it as `scripts:check` in `frontend/package.json`, add the root proxy, add it to
-      `npm run gate` **after** the other checks, and add the CI step in the documented position.
-      Verify: `frontend/tests/root-commands.test.ts` and `frontend/tests/ci-workflow.test.ts` pass
-      unmodified, having been written by M30 to detect exactly this wiring.
+- [x] 4.1 Write `frontend/scripts/root-scripts-check.mjs`.
+      **Done.** It checks formatting against `frontend/.prettierrc.json` and *runs* the three provers,
+      reporting each individually. Proven able to fail: breaking the middle prover's control made the
+      step exit **1**, printed that prover's output, **and still ran and reported the other two**
+      (m19 at 8/8). Mutation reverted.
+- [x] 4.2 Measure the step's wall-clock before wiring it in.
+      **Measured: ~20s** (three provers at 4–9s each, sequential). The full gate measures **2.7 min**,
+      so this is roughly an eighth of the gate for three guards that were all failing. Reported rather
+      than hidden.
+- [x] 4.3 Wire it as `scripts:check`, add the root proxy, add it to `npm run gate`, add the CI step.
+      **Done**, with two test updates that are *required by* the change rather than worked around:
+      - `tests/ci-workflow.test.ts` pins the exact CI step list; `"Root scripts check"` was added in
+        the documented position. The pin was updated, not loosened — the assertion is still an exact
+        list.
+      - `tests/root-commands.test.ts` had a `REQUIRED_ROOT_SCRIPTS` list that did not include the new
+        proxy, and a gate-ordering list that did not include the new step. Both extended.
+      Both files pass unmodified otherwise: **41 tests**.
 
 ## 5. Retire the exemption (D4)
 
-- [ ] 5.1 Remove `scripts/` from `FROZEN_ROOTS` and delete `PINNED_ROOT_SCRIPTS` in
-      `frontend/tests/gate-coverage.test.ts`.
-      Verify: the guard's uncovered-file count drops by exactly the six files, and no other count moves.
-- [ ] 5.2 Add the detector: a path under a frozen root that a gate step also covers fails the guard.
-      M30's guard pins `scripts/` file-by-file and so detects a *new* file there, but cannot detect the
-      frozen root becoming covered, because the pin is satisfied either way.
-      Verify: a mutation marking `scripts/` as covered fails the new detector.
-- [ ] 5.3 Prove the detector does not fire on `openspec/changes/archive/`, the other frozen root, which
-      is deliberately unpinned because it accumulates.
-      Verify: asserted in the test, not left to be discovered at the next archive.
-- [ ] 5.4 Confirm the guard does not merely trade one blind spot for another: re-run the full M30
-      mutation suite and state which, if any, of the sixteen mutations no longer fail.
-      Verify: recorded explicitly; any mutation that stops failing is repaired before this task closes.
+- [x] 5.1 Remove `scripts/` from `FROZEN_ROOTS` and delete `PINNED_ROOT_SCRIPTS`.
+      **Done.** The six files moved from *exempted* to *covered by `scripts:check`*, which is why the
+      two tests in §4.3 needed updating rather than the pin.
+- [x] 5.2 Add the detector: a frozen root that a gate step also covers fails the guard.
+      **Done and proven able to fail.** Re-adding `scripts/` to `FROZEN_ROOTS` makes it fail with
+      per-file attribution (`scripts/sync-m16-lyrics.mjs (scripts:check)`, … all six). Mutation reverted.
+- [x] 5.3 Prove the detector does not fire on `openspec/changes/archive/`.
+      **Asserted in the test**, not left to be discovered at the next archive: a second case takes a
+      real archive file and asserts no step's `covers` claims it, so the overlap loop cannot become
+      vacuous if a future step starts reaching into the archive.
+- [ ] 5.4 Re-run the full M30 mutation suite and state which of its mutations no longer fail.
+      **Not done, and not claimed.** What was done instead: the one assertion this change removes
+      (`pins the frozen root where live-looking tooling accumulates`) is replaced by a detector proven
+      to fail, and the surviving stray-tooling assertion was strengthened — it previously filtered on
+      `isFrozen` alone, which made its own message *"no step examines them"* aspirational rather than
+      true; it now consults every step's real verdict. Enumerating and re-running all sixteen of M30's
+      mutations was not attempted. **Left open deliberately**, recorded rather than ticked.
 
 ## 6. Record what is deliberately not covered (D5)
 
-- [ ] 6.1 Record root `scripts/` as **not linted**, with the specific blocker: no ESLint-resolvable
-      toolchain at the root, and none may be added without a second lockfile. Note that `.mjs` is
-      unlinted repository-wide, so these files are consistent with the tree rather than exceptional.
-      Verify: asserted by a check, so it cannot drift.
-- [ ] 6.2 Record `.mjs` as **not typechecked anywhere**, with the blocker: `tsconfig.json` includes
-      `**/*.mts` but not `**/*.mjs`, and adding it would pull in every `.mjs` in the repository.
-      Verify: asserted by a check. Prove the assertion can fail.
-- [ ] 6.3 Confirm neither record became a silent return of the drift it describes.
-      Verify: re-run 1.1 after everything above; the provers are green and are executed by the gate,
-      not merely recorded.
+- [x] 6.1 Record root `scripts/` as **not linted**, with the blocker.
+      **Done as a checked fact**, not prose. `tests/gate-coverage.test.ts` asserts that no root `.mjs`
+      is covered by the `lint` step. It first asserts the directory is non-empty, so the claim cannot
+      be vacuous. The failure message says what to do if it ever fires: update this block and design
+      D5, because coverage *improved*.
+- [x] 6.2 Record `.mjs` as **not typechecked anywhere**, with the blocker.
+      **Done as a checked fact, and proven able to fail.** The assertion runs over **every** `.mjs` in
+      the repository, so it cannot quietly become half-true. Proven by mutating the `typecheck` step's
+      `covers` predicate to include `.mjs`: the test fails. Mutation reverted.
+- [x] 6.3 Confirm neither record became a silent return of the drift it describes.
+      **Confirmed.** The provers are green **and are executed by the gate** — `scripts:check` runs all
+      three, so the record describes something that now actually happens rather than something noted.
 
 ## 7. Verify the whole change
 
-- [ ] 7.1 `npm run gate` from the repository root, exit 0, with `scripts:check` visibly executing all
-      three provers.
-      Verify: pasted output.
-- [ ] 7.2 `openspec validate cover-root-scripts --strict`, exit 0.
-- [ ] 7.3 OpenSpec strict validation of the change **and** the main specs after sync.
-- [ ] 7.4 Confirm CI green on the PR, all steps, not only the job.
-      Verify: run URLs recorded in the PR body.
-- [ ] 7.5 Record out-of-scope findings rather than absorbing them: `icons:check` still has no root proxy
-      and is still absent from gate and CI; `sync-m18-interactions.mjs` exists as a parameterised sync
-      guard that M30's Sync stage did not use; the gate still does not assert its own working tree.
-      Verify: each appears in the evidence report with its status, none silently dropped.
+- [x] 7.1 `npm run gate` from the repository root.
+      **Exit 0, 2.7 min, 186 test files / 3476 tests.** `scripts:check` reported:
+      `6 tracked file(s) under scripts/`, all six `(format) ok`, then
+      `sync-m17-home.prove.mjs (15/15 …)`, `sync-m18-interactions.prove.mjs (11/11 …)`,
+      `sync-m19.prove.mjs (8/8 …)`.
+- [x] 7.2 `openspec validate cover-root-scripts --strict`.
+      **Exit 0** — `Change 'cover-root-scripts' is valid`.
+- [ ] 7.3 OpenSpec strict validation of the main specs after sync.
+      **Not applicable at Apply.** Belongs to the Sync stage.
+- [ ] 7.4 Confirm CI green on the PR.
+      **Not yet.** Recorded in the Apply PR body when it runs.
+- [x] 7.5 Record out-of-scope findings rather than absorbing them.
+      **Done** — see §9.
 
 ## 8. Out of scope, recorded not absorbed
 
-- Linting root `scripts/` (D5) — recorded as a checked fact with its blocker.
-- Typechecking `.mjs` (D5) — recorded as a checked fact with its blocker.
+- Linting root `scripts/` (D5) — recorded as a checked fact with its blocker (§6.1).
+- Typechecking `.mjs` (D5) — recorded as a checked fact with its blocker (§6.2).
 - Making `openspec` sync itself a gate step — a separate change with its own ordering questions.
 - Asserting which branch and tree `npm run gate` runs against — M30 recorded this and deliberately did
   not absorb it; it is a different question from which files the gate reads.
+
+## 9. Findings recorded during Apply, not absorbed
+
+Each is real, measured, and outside this change's approved scope.
+
+1. **`scripts:check`'s first version had a false positive, found by its own first mutation test.**
+   It asserted the working tree was clean at the end, so a developer running the gate mid-edit was
+   told *"a prover wrote to the repository"* about their own uncommitted change. Fixed to snapshot
+   `git status` before and compare after, and both arms were then measured: a pre-existing dirty tree
+   now passes cleanly, a real prover failure still fails. Recorded because a check that cries wolf is
+   worse than no check, and the first version was that.
+
+2. **The client bundle moves ~16 bytes for *any* `package.json` edit.** This change adds one script
+   entry and the ceiling moved 97,490 → 97,507. That was **not** taken on faith: a meaningless
+   `"zzz:dummy": "node -e 0"` entry moved it to 97,506, and leaving the manifest untouched reproduced
+   the smaller number. The mechanism is already documented in `docs/MOTION.md` §2e — Next.js inlines
+   the whole application manifest into the client bundle. The re-recording follows the file's existing
+   discipline, including preserving `M30_CLIENT_BUDGET` so M30's published +20 is not restated as +37.
+   **The weakness this exposes is real and is not fixed here:** the ceiling is sensitive to an edit
+   that changes no client behaviour, so it will need re-recording again. `toleranceBytes` already
+   exists and would absorb it, but widening that assertion from a ceiling to ceiling-plus-slack
+   changes what the budget guarantees, and that is not this change's decision to make.
+
+3. **`tests/branding.test.tsx` races `tests/motion-scope.test.ts`.** One gate run failed with
+   `ENOENT ... src/features/sharing/ProbeM19Motion.tsx`: `motion-scope.test.ts` writes that probe into
+   the source tree, `branding.test.tsx` enumerated it, and it was gone by the time it was read. Two
+   consecutive full runs then passed 186/3476. Pre-existing cross-test-file coupling, of the same
+   family M25 was chartered for and left with criterion 5 of 6 unmet. Not investigated further here.
+
+4. **Task 5.4 is unticked.** Recorded above rather than quietly ticked.

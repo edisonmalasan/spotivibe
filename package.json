@@ -15,8 +15,9 @@
     "format": "npm --prefix frontend run format",
     "format:check": "npm --prefix frontend run format:check",
     "ps:check": "npm --prefix frontend run ps:check",
+    "scripts:check": "npm --prefix frontend run scripts:check",
     "typecheck": "npm --prefix frontend run typecheck",
     "test": "npm --prefix frontend test",
-    "gate": "npm --prefix frontend run lint && npm --prefix frontend run format:check && npm --prefix frontend run ps:check && npm --prefix frontend run typecheck && npm --prefix frontend run build && npm --prefix frontend test"
+    "gate": "npm --prefix frontend run lint && npm --prefix frontend run format:check && npm --prefix frontend run ps:check && npm --prefix frontend run scripts:check && npm --prefix frontend run typecheck && npm --prefix frontend run build && npm --prefix frontend test"
   }
 }
