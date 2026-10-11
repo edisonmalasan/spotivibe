@@ -672,8 +672,42 @@ describe("the limitation is stated as a checked claim rather than as prose", () 
       agents,
       "the CI step list must name ps:check or the step is undocumented as shipping",
     ).toMatch(
-      /runs the install, `lint`, `format:check`, `ps:check`, `typecheck`, `build`, and `test`/,
+      /runs the install, `lint`, `format:check`, `ps:check`, `scripts:check`, `typecheck`, `build`, and `test`/,
     );
+  });
+
+  it("documents scripts:check in both lists, not one", () => {
+    // The same two-list trap as `ps:check`, inherited rather than re-invented: `AGENTS.md` names the
+    // step once in the root proxy block and once in the frontend quality-gates block, and a single
+    // `npm run scripts:check\s+#` regex matches whichever survives.
+    expect(
+      agents,
+      "the root proxy block must document scripts:check alongside the other root commands",
+    ).toMatch(/npm run scripts:check\s+# npm --prefix frontend run scripts:check/);
+    expect(
+      agents,
+      "the frontend quality-gates block must document scripts:check alongside the other verified commands",
+    ).toMatch(/npm run scripts:check\s+# node scripts\/root-scripts-check\.mjs/);
+  });
+
+  it("names scripts:check in the gate's own order", () => {
+    // The `ps:check` order assertion above would still pass with this step absent, because
+    // `ps:check` and `typecheck` remain adjacent in the regex's terms. Asserted separately rather
+    // than folded in, so that assertion keeps meaning what it says.
+    expect(
+      agents,
+      "the gate's own order must name scripts:check, or the step is undocumented as shipping",
+    ).toMatch(
+      /npm run gate[^\n]*format:check[^\n]*ps:check[^\n]*scripts:check[^\n]*typecheck[^\n]*build -> test/,
+    );
+  });
+
+  it("states what scripts:check still does not do", () => {
+    // A step whose paragraph describes only what it does leaves the reader to assume the rest of the
+    // directory is covered. The two exclusions are the ones `tests/gate-coverage.test.ts` asserts,
+    // so the prose cannot drift away from them without this failing.
+    expect(agents).toMatch(/root `scripts\/` is \*\*not linted\*\*/);
+    expect(agents).toMatch(/\*\*no `\.mjs`[\s\S]{0,40}anywhere is typechecked\*\*/);
   });
 
   it("no longer claims the driver has no static gate", () => {

@@ -147,7 +147,61 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M28** | First-run artist Quick Picks picker, replacing the language dialog | `MERGED, ARCHIVED` — PR #120, merge `8d9c80d`, archived `2026-10-10-quick-picks-onboarding`; batch 6 of 6, **but see the two qualifications below** | M27, M23 |
 | **M29** | Stop the gate-batch corroborator failing correct evidence | `MERGED, ARCHIVED` - PR #124, merge `555b020`, sync #125 `906b930`, archived `2026-10-10-gate-batch-default-expectations`; batch 6 of 6 at `a9b5e3c`, corroborator exit 0 **both** with the printed flags and with none | M21, M27, M28 |
 | **M30** | Make the gate's own coverage a checked fact rather than a documented gap | `MERGED, ARCHIVED` - PR #128, merge `0159f9e`, sync #129 `8de5849`, archived `2026-10-11-close-gate-coverage-gaps`; batch 6 of 6 at `ee3ff46`, corroborator exit 0; CI all 8 steps green | M29, M21 |
-  | **M31** | Bring repository-root `scripts/` inside the quality gate | `PROPOSED` - `cover-root-scripts`, proposal branch `docs/root-scripts-coverage-proposal` | M30, M21 |
+  | **M31** | Bring repository-root `scripts/` inside the quality gate | `MERGED, ARCHIVED` - PR #132, merge `4dc2850`, sync #133 `a75019e`, archived `2026-10-11-cover-root-scripts`; CI green on both runs; **no gate batch run** | M30, M21 |
+
+> **M31 exists because an exemption with an accurate reason is still an exemption, and accuracy is not currency.**
+>
+> `scripts/` was a **frozen root** — a tracked directory no gate step reads. Its recorded reason was
+> *accurate*: nothing in any manifest or test referenced those six files. And three provers inside it
+> were failing at **3/15, 5/11 and 3/8** the entire time. A stated reason establishes why a gap was
+> recorded when it was recorded. It cannot establish that the gap still exists. The directory is now
+> inside the gate, and the exemption is **retired**, not left in place beside a working check.
+>
+> **The retirement needed a detector M30 did not have.** M30's guard pinned the frozen directory
+> file-by-file, so it caught a *new* file appearing there but not the root *becoming covered* — the pin
+> is satisfied either way. An unguarded clause wearing a test, which is M30's own phrase for this
+> failure. A frozen root that a step also covers now fails the guard, proven by re-adding the overlap
+> and getting all six files named.
+>
+> **The design's own reasoning was wrong, and doing the work is what showed it.** D1 rejected
+> self-contained control fixtures on the grounds that *"the archive path is stable."* That is true about
+> **location** and false about **staleness**: each milestone's delta was merged into `openspec/specs/`
+> during its own Sync stage, so replaying it is a re-merge the guard is *right* to refuse. Repointing
+> the paths cleared every `ENOENT` (`3/15 → 12/15`, `5/11 → 9/11`, `3/8 → 6/8`) and left 7 failures, 6
+> of them controls. **The guard was being correct.** Controls exist to prove a guard isn't refusing
+> everything, so they can only pass where a merge is genuinely pending — and no such state exists in
+> this repository or can be reconstructed from the record. Each prover now builds its own pending delta
+> in a sandbox; **the refusal cases stay on real data**, because that is where the strong claim lives.
+> Final: **15/15, 11/11, 8/8**.
+>
+> **The Prettier measurement was wrong in a direction that flattered nobody.** An unqualified run over
+> root `scripts/` finds **no config** — the root has none — and silently measures `printWidth: 80`,
+> reporting **6 of 6** files failing. With `frontend/.prettierrc.json` named explicitly it is **2 of 6**.
+> Both numbers are recorded so the corrected one cannot be mistaken for the first.
+>
+> **The client ceiling moved 17 bytes and it is not this change's cost.** A meaningless
+> `"zzz:dummy": "node -e 0"` entry moved it to 97,506; an untouched manifest reproduced the smaller
+> figure. Sixth re-recording. **+13 of +17**, the rest being deflate re-alignment, and unlike M30 the
+> prior chunk is **not** reproduced byte-for-byte by deleting the added substring — stated rather than
+> claimed. `M30_CLIENT_BUDGET` is preserved so M30's published **+20** is not restated as +37.
+>
+> **Three corrections and one defect are recorded rather than smoothed over.** `scripts:check`'s first
+> version fired on a developer's own uncommitted change, telling them *"a prover wrote to the
+> repository"* — a check that cries wolf is worse than no check, and its own first mutation test found
+> it. During Sync, `sync-m17-home.mjs` dropped the terminal newline of any spec whose last requirement
+> it modified, because `requirementBlock()` sets `end = lines.length` and swallows the empty string
+> after the terminator; **root-caused and deliberately left unfixed**, since fixing Apply's code from
+> the Sync stage would invalidate the Apply PR's gate evidence. And **task 5.4 is unticked** — M30's
+> full sixteen-mutation suite was not re-run and is not claimed.
+>
+> **One pre-existing flake surfaced and did not reproduce.** A gate run failed with `ENOENT ...
+> ProbeM19Motion.tsx`: `motion-scope.test.ts` writes that probe into the source tree, `branding.test.tsx`
+> enumerated it, and it was gone before being read. Three further full runs passed 186/3476. The same
+> cross-test-file coupling M25 was chartered for and left with criterion 5 of 6 unmet.
+>
+> **`scripts:check` costs ~20 s locally and 2.7 s in CI** — the same three provers, and the gap is
+> process startup and temp-tree copies, not the provers. **No gate batch was run for M31**, so this
+> milestone has **no** repeated-runs evidence, unlike every row above it that states one.
 
 > **M29 exists because a check that cannot pass was being bypassed, and nobody wrote that down.**
 >
