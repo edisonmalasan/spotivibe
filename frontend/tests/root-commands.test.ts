@@ -45,6 +45,7 @@ const REQUIRED_ROOT_SCRIPTS = [
   "format",
   "format:check",
   "ps:check",
+  "scripts:check",
   "typecheck",
   "test",
 ] as const;
@@ -236,6 +237,9 @@ describe("the root gate builds before it tests, and says why", () => {
       ["lint", "run lint"],
       ["format:check", "run format:check"],
       ["ps:check", "run ps:check"],
+      // ~20s against a build measured in minutes, and it guards three provers that were all
+      // failing unnoticed for four milestones. That is the definition of worth running first.
+      ["scripts:check", "run scripts:check"],
       ["typecheck", "run typecheck"],
     ] as const) {
       const at = script.indexOf(needle);

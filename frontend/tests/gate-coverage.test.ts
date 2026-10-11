@@ -127,6 +127,8 @@ async function prettierCovers(repoRelative: string): Promise<boolean> {
   return !info.ignored && info.inferredParser !== null;
 }
 
+const ROOT_SCRIPTS = "scripts/";
+
 const STEPS: Step[] = [
   {
     name: "lint",
@@ -153,6 +155,15 @@ const STEPS: Step[] = [
     covers: async (f) => extensionOf(f) === ".ps1" && !isFrozen(f),
   },
   {
+    name: "scripts:check",
+    command: "node scripts/root-scripts-check.mjs",
+    // Every tracked `.mjs` under the repository-root `scripts/` directory, which is what the script
+    // itself enumerates with `git ls-files`. This is outside `GATE_CWD`, so `lint` and `format:check`
+    // cannot reach it by construction — being outside the gate's working directory is the entire
+    // reason the directory went unchecked for four milestones.
+    covers: async (f) => f.startsWith(ROOT_SCRIPTS) && extensionOf(f) === ".mjs",
+  },
+  {
     name: "icons:check",
     command: "node scripts/generate-icons.mjs --check",
     // Checked against the generator's output, so it asserts the icons rather than their bytes.
@@ -166,9 +177,15 @@ const STEPS: Step[] = [
  *
  * `pin` is the difference between a declaration and a live assertion. The archive is not pinned:
  * every archived change adds files to it, so pinning it would make each archive step a test edit,
- * which is cost without benefit. The repository-root `scripts/` directory IS pinned, because that is
- * the one place where live-looking tooling accumulates — which is exactly why blanket-exempting a
- * directory is how new code hides in it.
+ * which is cost without benefit.
+ *
+ * The repository-root `scripts/` directory WAS listed here, pinned, until M31 removed it — and the
+ * reason it carried is worth keeping as a warning. It said the directory held "nothing in any
+ * manifest or test references", which was true, and true in the same way a silent exemption is true.
+ * Three provers in it were failing at `3/15`, `5/11` and `3/8` and had been for four milestones. A
+ * stated reason establishes why a gap was recorded when it was recorded; it cannot establish that
+ * the gap still exists. `scripts:check` now reaches the directory, so it is covered rather than
+ * frozen, and a frozen root that a step also covers fails the guard below.
  */
 const FROZEN_ROOTS: { prefix: string; reason: string; pin: boolean }[] = [
   {
@@ -177,21 +194,6 @@ const FROZEN_ROOTS: { prefix: string; reason: string; pin: boolean }[] = [
       "archived change evidence, held for byte-exact provenance; added to by every archive step, so not file-pinned",
     pin: false,
   },
-  {
-    prefix: "scripts/",
-    reason:
-      "one-off M16-M19 milestone provers whose headers state they copy the tree into a temp directory and never write to the repository; nothing in any manifest or test references them",
-    pin: true,
-  },
-];
-
-const PINNED_ROOT_SCRIPTS = [
-  "scripts/sync-m16-lyrics.mjs",
-  "scripts/sync-m17-home.mjs",
-  "scripts/sync-m17-home.prove.mjs",
-  "scripts/sync-m18-interactions.mjs",
-  "scripts/sync-m18-interactions.prove.mjs",
-  "scripts/sync-m19.prove.mjs",
 ];
 
 function isFrozen(repoRelative: string): boolean {
@@ -430,32 +432,165 @@ describe("ESLint's coverage is uniform per extension, because the guard samples 
 describe("live gate tooling cannot accumulate outside the gate's working directory", () => {
   const TOOLING_EXTENSIONS = [".ts", ".tsx", ".mts", ".mjs", ".js", ".ps1"];
 
-  it("finds every tooling file outside frontend/ under a declared frozen root", () => {
-    const stray = gitLsFiles([])
+  it("finds every tooling file outside frontend/ that no step examines", async () => {
+    // Until M31 this filtered on `isFrozen` alone, which made the message — "no step examines them"
+    // — aspirational rather than true: being outside `GATE_CWD` was being read as being unread. A
+    // step can now reach outside the gate's working directory, so this asks the steps instead.
+    const candidates = gitLsFiles([])
       .filter((f) => !f.startsWith(GATE_CWD))
       .filter((f) => TOOLING_EXTENSIONS.includes(extensionOf(f)))
       .filter((f) => !isFrozen(f));
+
+    const stray: string[] = [];
+    for (const file of candidates) {
+      let covered = false;
+      for (const step of STEPS) {
+        if (await step.covers(file)) {
+          covered = true;
+          break;
+        }
+      }
+      if (!covered) stray.push(file);
+    }
 
     expect(
       stray,
       stray.length > 0
         ? [
-            "these files look like gate tooling but sit outside the gate's working directory, so no",
-            "step examines them. Move them under frontend/, or declare the directory as a frozen",
-            "root in FROZEN_ROOTS with its reason.",
+            "these files look like gate tooling but no step examines them. Move them under frontend/,",
+            "declare the directory as a frozen root in FROZEN_ROOTS with its reason, or give a step a",
+            "`covers` predicate that reaches them.",
             ...stray.map((f) => `  ${f}`),
           ].join("\n")
         : "",
     ).toEqual([]);
   });
 
-  it("pins the frozen root where live-looking tooling accumulates", () => {
-    const actual = gitLsFiles(["--", "scripts/"]).sort();
+  it("does not accept a frozen root that a gate step also covers", async () => {
+    // M31. The blind spot this file had: a frozen root is pinned file-by-file, so a NEW file there
+    // was detected — but the frozen root *becoming covered* was not. The pin is satisfied either
+    // way. That is how `scripts/` sat frozen with an accurate reason while three provers in it
+    // failed at 3/15, 5/11 and 3/8.
+    //
+    // A frozen root is a declaration that nothing reads a directory. When a step does read it, the
+    // declaration is not a record of a gap any more — it is a record that overlaps the truth, and
+    // M30's own rule against an exemption masking covered work applies to it directly.
+    const overlapping: string[] = [];
+    for (const root of FROZEN_ROOTS) {
+      const under = gitLsFiles(["--", root.prefix]).filter((f) => f.startsWith(root.prefix));
+      const covered = [];
+      for (const file of under) {
+        for (const step of STEPS) {
+          if (await step.covers(file)) covered.push(`${file} (${step.name})`);
+        }
+      }
+      if (covered.length > 0) overlapping.push(`${root.prefix}: ${covered.join(", ")}`);
+    }
+
     expect(
-      actual,
-      "the repository-root scripts/ directory is declared frozen and pinned, so a new file there is " +
-        "a deliberate decision. Cover it, move it, or remove the pin with a reason.",
-    ).toEqual([...PINNED_ROOT_SCRIPTS].sort());
+      overlapping,
+      overlapping.length > 0
+        ? [
+            "these roots are declared frozen, which asserts that no step reads them - but a step does.",
+            "Remove the root from FROZEN_ROOTS so the coverage it describes is stated once, in the",
+            "step table, rather than twice and in conflict:",
+            ...overlapping.map((line) => `  ${line}`),
+          ].join("\n")
+        : "",
+    ).toEqual([]);
+  });
+
+  it("is proven able to fail: the overlap check reads a real step's verdict, not a constant", async () => {
+    // A detector comparing two constants derived from the same declaration cannot fail. This asserts
+    // the thing the loop above depends on, directly: that a real step really is consulted about a
+    // real file under a real frozen root, and currently answers "no".
+    //
+    // It also pins task 5.3 — the detector must NOT fire on `openspec/changes/archive/`, the frozen
+    // root that legitimately accumulates and is deliberately unpinned.
+    const archiveFile = gitLsFiles(["--", "openspec/changes/archive/"]).find((f) =>
+      f.startsWith("openspec/changes/archive/"),
+    );
+    expect(
+      archiveFile,
+      "the archive must hold at least one file for this assertion to mean anything",
+    ).toBeTypeOf("string");
+
+    const verdicts = await Promise.all(
+      STEPS.map(async (step) => ({ step: step.name, covers: await step.covers(archiveFile!) })),
+    );
+    const covering = verdicts.filter((entry) => entry.covers).map((entry) => entry.step);
+    expect(
+      covering,
+      "a step now reaches into the archive, which is frozen evidence; either narrow that step or " +
+        "stop declaring the archive frozen",
+    ).toEqual([]);
+  });
+});
+
+describe("the coverage root scripts/ does not have, recorded rather than assumed", () => {
+  // M31 deliberately does not lint these files or type-check them. Both are assertions here rather
+  // than prose in a design document, because prose is the thing this repository has already been
+  // bitten by: M30's own frozen-root reason was accurate in its wording while the evidence behind it
+  // had stopped working.
+  //
+  // **These tests fail if coverage improves.** That is intended, and the fix is to update this
+  // block rather than to weaken it: reaching either of these files is a real change to what the gate
+  // covers, and it should be argued for in a change of its own rather than happen silently.
+
+  const ROOT_MJS = gitLsFiles(["--", ROOT_SCRIPTS]).filter((f) => extensionOf(f) === ".mjs");
+  const byName = (name: string) => STEPS.find((step) => step.name === name)!;
+
+  it("has files to make the claim about", () => {
+    expect(
+      ROOT_MJS.length,
+      "the root scripts/ directory is empty, so every claim below would be vacuous",
+    ).toBeGreaterThan(0);
+  });
+
+  it("is not linted, and states the blocker", async () => {
+    const verdicts = await Promise.all(
+      ROOT_MJS.map(async (file) => ({ file, covers: await byName("lint").covers(file) })),
+    );
+    const covered = verdicts.filter((entry) => entry.covers).map((entry) => entry.file);
+    expect(
+      covered,
+      covered.length > 0
+        ? [
+            "root scripts/ is now linted, which was not possible while there was no ESLint-resolvable",
+            "toolchain at the repository root. Update this block and the design's D5 rather than",
+            "leaving it claiming a limitation that no longer holds:",
+            ...covered.map((f) => `  ${f}`),
+          ].join("\n")
+        : "",
+    ).toEqual([]);
+  });
+
+  it("has no .mjs typechecked anywhere in the repository, and states the blocker", async () => {
+    // `tsconfig.json` includes `**/*.ts` and `**/*.tsx` relative to `frontend/`, and `**/*.mts`. It
+    // does not include `**/*.mjs`, so no `.mjs` is type-checked — including this repository's own
+    // `frontend/scripts/*.mjs`, which are as untyped as the root ones. Asserted across the whole
+    // repository so the claim cannot quietly become half-true.
+    const allMjs = gitLsFiles([]).filter((f) => extensionOf(f) === ".mjs");
+    expect(
+      allMjs.length,
+      "there must be .mjs files for this claim to be about anything",
+    ).toBeGreaterThan(0);
+
+    const verdicts = await Promise.all(
+      allMjs.map(async (file) => ({ file, covers: await byName("typecheck").covers(file) })),
+    );
+    const covered = verdicts.filter((entry) => entry.covers).map((entry) => entry.file);
+    expect(
+      covered,
+      covered.length > 0
+        ? [
+            "a .mjs file is now type-checked. Adding `**/*.mjs` to tsconfig.json reaches every .mjs in",
+            "the repository at once, which is a repository-wide decision; record it here rather than",
+            "letting the claim go stale:",
+            ...covered.map((f) => `  ${f}`),
+          ].join("\n")
+        : "",
+    ).toEqual([]);
   });
 });
 

@@ -11,16 +11,30 @@
 // repository is never written to.
 
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SYNC = resolve(dirname(fileURLToPath(import.meta.url)), "sync-m18-interactions.mjs");
 const SYNC_ENV = {
-  SPOTIVIBE_CHANGE: "m19-motion",
+  // The change is named by its path under `openspec/changes/`, and an archived change keeps that
+  // prefix plus a date. M19 was archived on 2026-10-03, so the delta this prover exercises now lives
+  // under `archive/`. It moved then; before that, every case here failed on ENOENT because the
+  // prover still pointed at the active path.
+  SPOTIVIBE_CHANGE: "archive/2026-10-03-m19-motion",
   SPOTIVIBE_NEW: "motion",
   SPOTIVIBE_EXTENDED: "performance",
+};
+// The control's fixture, named so nothing it writes can collide with a real capability. See
+// `controlSandbox()` for why it cannot reuse M19's own delta.
+const CONTROL_CHANGE = "control-fixture";
+const CONTROL_NEW = "control-added";
+const CONTROL_EXTENDED = "control-extended";
+const CONTROL_ENV = {
+  SPOTIVIBE_CHANGE: CONTROL_CHANGE,
+  SPOTIVIBE_NEW: CONTROL_NEW,
+  SPOTIVIBE_EXTENDED: CONTROL_EXTENDED,
 };
 const REPO = process.cwd();
 
@@ -30,18 +44,22 @@ function sandbox() {
   return dir;
 }
 
-function run(dir, ...args) {
+function runWith(dir, env, ...args) {
   try {
     const stdout = execFileSync(process.execPath, [SYNC, ...args], {
       cwd: REPO,
       encoding: "utf8",
-      env: { ...process.env, ...SYNC_ENV, SPOTIVIBE_REPO: dir },
+      env: { ...process.env, ...env, SPOTIVIBE_REPO: dir },
       stdio: "pipe",
     });
     return { code: 0, out: stdout };
   } catch (error) {
     return { code: error.status ?? 1, out: `${error.stdout ?? ""}${error.stderr ?? ""}` };
   }
+}
+
+function run(dir, ...args) {
+  return runWith(dir, SYNC_ENV, ...args);
 }
 
 function edit(dir, relative, from, to) {
@@ -61,8 +79,8 @@ function mkdirp(file) {
   ]);
 }
 
-const DELTA_MOTION = "openspec/changes/m19-motion/specs/motion/spec.md";
-const DELTA_PERF = "openspec/changes/m19-motion/specs/performance/spec.md";
+const DELTA_MOTION = "openspec/changes/archive/2026-10-03-m19-motion/specs/motion/spec.md";
+const DELTA_PERF = "openspec/changes/archive/2026-10-03-m19-motion/specs/performance/spec.md";
 const RECORD_PERF = "openspec/specs/performance/spec.md";
 
 const CASES = [
@@ -113,7 +131,7 @@ const CASES = [
     name: "an unexpected capability in the delta is refused, not passed over",
     expect: "unexpected capability",
     mutate: (dir) => {
-      const spec = join(dir, "openspec/changes/m19-motion/specs/stray/spec.md");
+      const spec = join(dir, "openspec/changes/archive/2026-10-03-m19-motion/specs/stray/spec.md");
       mkdirp(spec);
       writeFileSync(spec, "## ADDED Requirements\n### Requirement: X\n#### Scenario: Y\n");
     },
@@ -151,8 +169,91 @@ for (const testCase of CASES) {
   }
 }
 
-const control = sandbox();
-const check = run(control, "--check");
+// The control's job is to prove the guard is not refusing *everything*. It cannot use `sandbox()`.
+// M19's delta was merged into the record during its own Sync stage, so replaying it is a re-merge
+// the guard rightly refuses — the control passed only while the record was still pre-M19, and no
+// such state exists in this repository now. This builds one: its own delta and its own minimal
+// record, in a directory containing nothing else. `control-added` is absent from the record because
+// the delta creates it; `control-extended` holds one requirement the delta does not name, and adds a
+// second. That is pending by construction, so the control cannot rot the way the replayed delta did.
+function controlSandbox() {
+  const dir = mkdtempSync(join(tmpdir(), "spotivibe-m19-control-"));
+  const deltaDir = join(dir, "openspec", "changes", CONTROL_CHANGE, "specs");
+  const recordDir = join(dir, "openspec", "specs", CONTROL_EXTENDED);
+
+  // The guard builds these directories itself when it writes, but the fixture must exist before the
+  // guard is ever invoked, so they are created here.
+  mkdirSync(join(deltaDir, CONTROL_NEW), { recursive: true });
+  mkdirSync(join(deltaDir, CONTROL_EXTENDED), { recursive: true });
+  mkdirSync(recordDir, { recursive: true });
+
+  writeFileSync(
+    join(deltaDir, CONTROL_NEW, "spec.md"),
+    [
+      "# control-added Delta",
+      "",
+      "## ADDED Requirements",
+      "",
+      "### Requirement: A control requirement the record does not have",
+      "",
+      "The record does not state this requirement, so the merge adds it rather than duplicating it.",
+      "",
+      "#### Scenario: The control delta merges cleanly",
+      "- **WHEN** the control guard merges the control delta",
+      "- **THEN** the requirement is added and the existing capability is left intact",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  writeFileSync(
+    join(deltaDir, CONTROL_EXTENDED, "spec.md"),
+    [
+      "# control-extended Delta",
+      "",
+      "## ADDED Requirements",
+      "",
+      "### Requirement: A control requirement appended to an existing capability",
+      "",
+      "This requirement is not in the record, so appending it duplicates nothing.",
+      "",
+      "#### Scenario: The appended requirement lands",
+      "- **WHEN** the control guard merges the control delta",
+      "- **THEN** the requirement is appended and the pre-existing requirement is untouched",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  writeFileSync(
+    join(recordDir, "spec.md"),
+    [
+      `# ${CONTROL_EXTENDED} Specification`,
+      "",
+      "## Purpose",
+      "",
+      "A capability the control delta extends. It exists so an ADDED block has a record to extend,",
+      "and it deliberately does not name either requirement the delta adds.",
+      "",
+      "## Requirements",
+      "",
+      "### Requirement: A pre-existing requirement the delta does not name",
+      "",
+      "This requirement is in the record before the merge and must survive it unchanged.",
+      "",
+      "#### Scenario: The pre-existing requirement survives",
+      "- **WHEN** the control guard merges the control delta",
+      "- **THEN** this requirement is still present with its body unchanged",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  return dir;
+}
+
+const control = controlSandbox();
+const check = runWith(control, CONTROL_ENV, "--check");
 if (check.code === 0) {
   console.log("  PASS  control: --check on an unmutated copy reports and writes nothing");
 } else {
@@ -166,7 +267,7 @@ if (check.code === 0) {
   }
 }
 
-const write = run(control);
+const write = runWith(control, CONTROL_ENV);
 if (write.code === 0 && write.out.includes("written and re-verified from disk")) {
   console.log("  PASS  control: a real merge on a copy reports a verified write");
 } else {

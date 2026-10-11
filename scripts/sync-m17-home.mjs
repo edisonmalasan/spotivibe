@@ -31,6 +31,13 @@
 // Usage, from the repository root:  node scripts/sync-m17-home.mjs [--check]
 //   --check  report what would change and write nothing
 //
+// `SPOTIVIBE_CHANGE`, `SPOTIVIBE_ADDED` and `SPOTIVIBE_MODIFIED` name the change and its capability
+// arrangement, defaulting to M17's own. They exist for the same reason they do in
+// `sync-m18-interactions.mjs`: so this guard can be driven against a self-contained fixture. Its own
+// delta has been merged into the record, so replaying it proves nothing — the guard refuses, correctly,
+// because the requirements are already there. A control case needs a state where a merge is genuinely
+// pending, and only a synthetic fixture supplies one that never goes stale.
+//
 // `SPOTIVIBE_REPO` overrides the repository root, following the convention the release-gate harness
 // established, so the refusal paths can be exercised against a mutated *copy* rather than against the
 // real delta. A guard that has only ever been seen to pass is a claim, not a guard.
@@ -42,12 +49,15 @@ import { dirname, join } from "node:path";
 const ROOT = process.env.SPOTIVIBE_REPO ?? process.cwd();
 
 const CHECK_ONLY = process.argv.includes("--check");
-const CHANGE = join(ROOT, "openspec", "changes", "m17-home-discovery", "specs");
+// M17's own delta, archived on 2026-10-02. An archived change keeps the `changes/` prefix and gains a
+// date, so naming the active path left this pointing at a directory that no longer exists.
+const CHANGE_NAME = process.env.SPOTIVIBE_CHANGE ?? "archive/2026-10-02-m17-home-discovery";
+const CHANGE = join(ROOT, "openspec", "changes", CHANGE_NAME, "specs");
 const RECORD = join(ROOT, "openspec", "specs");
 
 /** What this sync is for. Anything else in the delta directory is a stray and must be refused. */
-const ADDED_CAPABILITIES = ["home-mixes"];
-const MODIFIED_CAPABILITIES = ["discovery", "mixes"];
+const ADDED_CAPABILITIES = (process.env.SPOTIVIBE_ADDED ?? "home-mixes").split(",");
+const MODIFIED_CAPABILITIES = (process.env.SPOTIVIBE_MODIFIED ?? "discovery,mixes").split(",");
 
 /** Requirement and scenario names, in document order, with each scenario's body text. */
 function names(markdown) {
@@ -282,7 +292,9 @@ for (const capability of MODIFIED_CAPABILITIES) {
       .split(/(?<=\.)\s+/)
       .map((sentence) => sentence.trim())
       .filter((sentence) => sentence.length > 40);
-    const lost = proseSentences.filter((sentence) => !requirementProse(incomingBlock.text).includes(sentence));
+    const lost = proseSentences.filter(
+      (sentence) => !requirementProse(incomingBlock.text).includes(sentence),
+    );
     if (lost.length > 0) {
       problems.push(
         `the delta LOSES ${lost.length} sentence(s) of the requirement prose for "${requirement}": ` +

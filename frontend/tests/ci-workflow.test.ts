@@ -953,6 +953,11 @@ describe("the CI workflow's steps", () => {
       "Lint",
       "Format check",
       "PowerShell parse check",
+      // Reaches the repository-root `scripts/` directory, which is outside the `frontend/`
+      // working directory every other step runs in. It is placed with the other static checks
+      // because that is what it is: it parses and formats. Running three provers takes longer than
+      // it looks, so it is worth naming here rather than discovering in the log.
+      "Root scripts check",
       "Typecheck",
       "Production build",
       "Unit tests",

@@ -8,6 +8,7 @@ import {
   M22_CLIENT_BUDGET,
   M23_CLIENT_BUDGET,
   M29_CLIENT_BUDGET,
+  M30_CLIENT_BUDGET,
   PRE_M19_CLIENT_BUDGET,
   measureClientBundle,
   measureRouteFirstLoad,
@@ -255,31 +256,65 @@ describe("the emitted client bundle is held to the ceiling (task 5.2)", () => {
     // the onboarding change's were: as a measured delta against the record it replaced.
     // Asserting it is what stops the ceiling being raised again later without anyone
     // noticing.
+    //
+    // Measured against `M30_CLIENT_BUDGET`, not `M29_CLIENT_BUDGET`. M31 added a second script entry
+    // and moved the figure again; scoring this against M29 would restate M30's published 20 as 37.
     const delta =
-      CLIENT_BUDGET.largestChunkGzippedBytes - M29_CLIENT_BUDGET.largestChunkGzippedBytes;
+      M30_CLIENT_BUDGET.largestChunkGzippedBytes - M29_CLIENT_BUDGET.largestChunkGzippedBytes;
     expect(delta, "the largest chunk's measured cost in gzipped bytes").toBe(20);
 
     // Next.js inlines the whole of `frontend/package.json` into the client bundle, so the
     // added script entry is the entire cost. Pinned rather than described: if a future
     // change reaches the client by the same route, the number moves and this fails.
     expect(
-      CLIENT_BUDGET.totalGzippedBytes - M29_CLIENT_BUDGET.totalGzippedBytes,
+      M30_CLIENT_BUDGET.totalGzippedBytes - M29_CLIENT_BUDGET.totalGzippedBytes,
       "the total moved by the same amount as the largest chunk",
     ).toBe(20);
 
     // The count did not move, and neither did any route's first load, so this is a string
     // inside the existing graph rather than a new chunk arriving — which is the shape a
     // dependency takes, and the rule that would catch it.
-    expect(CLIENT_BUDGET.chunkCount - M29_CLIENT_BUDGET.chunkCount).toBe(0);
-    expect(CLIENT_BUDGET.homeFirstLoadChunkCount - M29_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
-      0,
-    );
-    expect(CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(
+    expect(M30_CLIENT_BUDGET.chunkCount - M29_CLIENT_BUDGET.chunkCount).toBe(0);
+    expect(
+      M30_CLIENT_BUDGET.homeFirstLoadChunkCount - M29_CLIENT_BUDGET.homeFirstLoadChunkCount,
+    ).toBe(0);
+    expect(M30_CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(
       M29_CLIENT_BUDGET.homeFirstLoadGzippedBytes,
     );
 
     // 20 bytes is under a fiftieth of the pre-existing tolerance, and nowhere near the
     // library the budget exists to keep out.
+    expect(delta).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
+    expect(
+      SPIKE_COST_BYTES / delta,
+      "an animation library remains far out of reach",
+    ).toBeGreaterThan(10);
+  });
+
+  it("states what the `scripts:check` step cost, in bytes", () => {
+    // M31 added the step that reaches the repository-root `scripts/` directory, and re-recorded the
+    // ceiling by 17 bytes. Same shape as `ps:check`'s cost: `frontend/package.json` is inlined into
+    // the client bundle, so the added script entry is the entire cost and no client code was added.
+    //
+    // Measured directly rather than inferred: adding a meaningless `"zzz:dummy": "node -e 0"` entry
+    // to the same manifest moved the figure by the same ~16 bytes, and leaving the manifest
+    // untouched reproduced the smaller number. So this cost is the manifest, not the step.
+    const delta =
+      CLIENT_BUDGET.largestChunkGzippedBytes - M30_CLIENT_BUDGET.largestChunkGzippedBytes;
+    expect(delta, "the largest chunk's measured cost in gzipped bytes").toBe(17);
+    expect(
+      CLIENT_BUDGET.totalGzippedBytes - M30_CLIENT_BUDGET.totalGzippedBytes,
+      "the total moved by the same amount as the largest chunk",
+    ).toBe(17);
+
+    // Still a string inside the existing graph, not a new chunk — which is the shape a dependency
+    // takes, and the rule that would catch it.
+    expect(CLIENT_BUDGET.chunkCount - M30_CLIENT_BUDGET.chunkCount).toBe(0);
+    expect(CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(
+      M30_CLIENT_BUDGET.homeFirstLoadGzippedBytes,
+    );
+    expect(CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(M30_CLIENT_BUDGET.homeFirstLoadChunkCount);
+
     expect(delta).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
     expect(
       SPIKE_COST_BYTES / delta,
@@ -602,18 +637,28 @@ describe("the evidence file carries the decision and what would reverse it (task
     // This change's own delta, published like every other re-recording's, so the evidence
     // cannot stay silent about a ceiling it raised.
     const psCheck =
-      CLIENT_BUDGET.largestChunkGzippedBytes - M29_CLIENT_BUDGET.largestChunkGzippedBytes;
+      M30_CLIENT_BUDGET.largestChunkGzippedBytes - M29_CLIENT_BUDGET.largestChunkGzippedBytes;
     expect(evidence, "the ps:check step's cost is published").toContain(
       `+${psCheck.toLocaleString("en-US")} B`,
     );
 
-    // All six records, so the history is readable rather than overwritten.
+    // M31's, published the same way: the `scripts:check` step that reaches the repository-root
+    // `scripts/` directory cost 17 bytes, and for the same reason — `frontend/package.json` is
+    // inlined into the client bundle.
+    const scriptsCheck =
+      CLIENT_BUDGET.largestChunkGzippedBytes - M30_CLIENT_BUDGET.largestChunkGzippedBytes;
+    expect(evidence, "the scripts:check step's cost is published").toContain(
+      `+${scriptsCheck.toLocaleString("en-US")} B`,
+    );
+
+    // All seven records, so the history is readable rather than overwritten.
     for (const record of [
       PRE_M19_CLIENT_BUDGET,
       M20_CLIENT_BUDGET,
       M22_CLIENT_BUDGET,
       M23_CLIENT_BUDGET,
       M29_CLIENT_BUDGET,
+      M30_CLIENT_BUDGET,
       CLIENT_BUDGET,
     ]) {
       expect(evidence).toContain(record.totalGzippedBytes.toLocaleString("en-US"));

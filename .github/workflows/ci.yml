@@ -44,6 +44,17 @@ jobs:
       # the coverage guard instead of leaving the file silently unchecked.
       - name: PowerShell parse check
         run: npm run ps:check
+      # The repository-root `scripts/` directory is reached by no other step: it is outside the
+      # `frontend/` working directory every step above runs in, so ESLint and Prettier never see it.
+      # It holds three provers that guard the OpenSpec sync path, and all three were failing
+      # (3/15, 5/11, 3/8) for four milestones without anything noticing - M30's coverage guard had
+      # recorded the directory as frozen evidence, citing the fact that nothing referenced it.
+      #
+      # This step checks their formatting against the repository's own Prettier config and then
+      # RUNS them. `tests/gate-coverage.test.ts` records root `scripts/` as covered by this step, so
+      # deleting the step fails the coverage guard rather than leaving the directory unchecked.
+      - name: Root scripts check
+        run: npm run scripts:check
       - name: Typecheck
         run: npm run typecheck
       # The build runs **before** the tests, which is the opposite of the order this workflow

@@ -13,7 +13,7 @@
 // Run with Node 24. ESM only: `require` is a lint error in this repository's `.mjs` scripts.
 
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -28,18 +28,114 @@ function sandbox() {
 }
 
 /** Run the sync against a sandbox and return { code, out }. */
-function run(dir, ...args) {
+function runWith(dir, env, ...args) {
   try {
     const stdout = execFileSync(process.execPath, [SYNC, ...args], {
       cwd: REPO,
       encoding: "utf8",
-      env: { ...process.env, SPOTIVIBE_REPO: dir },
+      env: { ...process.env, ...env, SPOTIVIBE_REPO: dir },
       stdio: "pipe",
     });
     return { code: 0, out: stdout };
   } catch (error) {
     return { code: error.status ?? 1, out: `${error.stdout ?? ""}${error.stderr ?? ""}` };
   }
+}
+
+function run(dir, ...args) {
+  return runWith(dir, {}, ...args);
+}
+
+// The control's fixture, named so nothing it writes can collide with a real capability. See
+// `controlSandbox()` for why it cannot reuse M17's own delta.
+const CONTROL_CHANGE = "control-fixture";
+const CONTROL_ADDED = "control-added";
+const CONTROL_MODIFIED = "control-extended";
+const CONTROL_ENV = {
+  SPOTIVIBE_CHANGE: CONTROL_CHANGE,
+  SPOTIVIBE_ADDED: CONTROL_ADDED,
+  SPOTIVIBE_MODIFIED: CONTROL_MODIFIED,
+};
+
+// The control's job is to prove the guard is not refusing *everything*. It cannot use `sandbox()`.
+// M17's delta was merged into the record during its own Sync stage, so replaying it is a re-merge the
+// guard rightly refuses — the control passed only while the record was still pre-M17, and no such state
+// exists in this repository now.
+//
+// The requirement block below is written ONCE and emitted twice — into the record and into the
+// delta's MODIFIED block. That is the whole trick, and it is deliberate rather than incidental: the
+// guard refuses a MODIFIED block that drops a scenario, rewrites a scenario body, merges scenarios
+// together, or loses a sentence of prose. Carrying the block across verbatim is the only shape that
+// satisfies all four at once, and it is exactly what a legitimate MODIFIED merge looks like — the
+// delta carrying the record's own text forward rather than re-arguing it.
+const CONTROL_REQUIREMENT = [
+  "### Requirement: A requirement the control delta carries over verbatim",
+  "",
+  "The record states this sentence, and the delta carries it across unchanged.",
+  "",
+  "#### Scenario: The pre-existing scenario survives the merge",
+  "- **WHEN** the control guard merges the control delta",
+  "- **THEN** this scenario is still present with its body unchanged",
+  "",
+].join("\n");
+
+// This capability is absent from the record on purpose: the delta creates it, which is the ADDED half.
+const CONTROL_ADDED_REQUIREMENT = [
+  "### Requirement: A control requirement the record does not have",
+  "",
+  "The record does not state this requirement, so the merge adds it rather than duplicating it.",
+  "",
+  "#### Scenario: The control delta merges cleanly",
+  "- **WHEN** the control guard merges the control delta",
+  "- **THEN** the requirement is added and the existing capability is left intact",
+  "",
+].join("\n");
+
+function controlSandbox() {
+  const dir = mkdtempSync(join(tmpdir(), "spotivibe-m17-control-"));
+  const deltaDir = join(dir, "openspec", "changes", CONTROL_CHANGE, "specs");
+  const recordDir = join(dir, "openspec", "specs", CONTROL_MODIFIED);
+
+  // The guard builds these directories itself when it writes, but the fixture must exist before the
+  // guard is ever invoked, so they are created here.
+  mkdirSync(join(deltaDir, CONTROL_ADDED), { recursive: true });
+  mkdirSync(join(deltaDir, CONTROL_MODIFIED), { recursive: true });
+  mkdirSync(recordDir, { recursive: true });
+
+  writeFileSync(
+    join(deltaDir, CONTROL_ADDED, "spec.md"),
+    ["# control-added Delta", "", "## ADDED Requirements", "", CONTROL_ADDED_REQUIREMENT].join(
+      "\n",
+    ),
+    "utf8",
+  );
+
+  writeFileSync(
+    join(deltaDir, CONTROL_MODIFIED, "spec.md"),
+    ["# control-extended Delta", "", "## MODIFIED Requirements", "", CONTROL_REQUIREMENT].join(
+      "\n",
+    ),
+    "utf8",
+  );
+
+  writeFileSync(
+    join(recordDir, "spec.md"),
+    [
+      `# ${CONTROL_MODIFIED} Specification`,
+      "",
+      "## Purpose",
+      "",
+      "A capability the control delta modifies. It holds one requirement, and the delta carries that",
+      "requirement across verbatim so no scenario is dropped, rewritten, merged, or reworded.",
+      "",
+      "## Requirements",
+      "",
+      CONTROL_REQUIREMENT,
+    ].join("\n"),
+    "utf8",
+  );
+
+  return dir;
 }
 
 /** Edit one file inside a sandbox by replacing `from` with `to`. Throws if the anchor is absent. */
@@ -61,9 +157,11 @@ function editRegex(dir, relative, pattern, replacement) {
   writeFileSync(path, before.replace(pattern, replacement), "utf8");
 }
 
-const CHANGE_DISCOVERY = "openspec/changes/m17-home-discovery/specs/discovery/spec.md";
-const CHANGE_MIXES = "openspec/changes/m17-home-discovery/specs/mixes/spec.md";
-const CHANGE_MIXES_CAP = "openspec/changes/m17-home-discovery/specs/home-mixes/spec.md";
+const CHANGE_DISCOVERY =
+  "openspec/changes/archive/2026-10-02-m17-home-discovery/specs/discovery/spec.md";
+const CHANGE_MIXES = "openspec/changes/archive/2026-10-02-m17-home-discovery/specs/mixes/spec.md";
+const CHANGE_MIXES_CAP =
+  "openspec/changes/archive/2026-10-02-m17-home-discovery/specs/home-mixes/spec.md";
 const RECORD_DISCOVERY = "openspec/specs/discovery/spec.md";
 const RECORD_MIXES = "openspec/specs/mixes/spec.md";
 
@@ -95,7 +193,21 @@ const CASES = [
   },
   {
     name: "a dropped scenario in a MODIFIED delta is refused",
-    expect: "drops 1 existing scenario",
+    // Derived, not hardcoded. This used to read "drops 1 existing scenario", which was true when the
+    // record carried 14 scenarios and M17's delta carried 13. The record has grown since M17, so the
+    // delta is now missing more than one scenario, the guard correctly reported 2, and the case failed
+    // on a *correct* refusal. A fixed count here was the same rot this change exists to stop: an
+    // expectation that describes a moment rather than a rule. The mutation below drops exactly one
+    // scenario, so the total the guard should report is (record - delta) + 1.
+    expect: (dir) => {
+      const scenariosIn = (text) => {
+        const block = text.split("### Requirement: Home discovery feed")[1] ?? "";
+        return [...block.split(/^### /m)[0].matchAll(/^#### Scenario:/gm)].length;
+      };
+      const record = readFileSync(join(dir, "openspec/specs/discovery/spec.md"), "utf8");
+      const delta = readFileSync(join(dir, CHANGE_DISCOVERY), "utf8");
+      return `drops ${scenariosIn(record) - scenariosIn(delta) + 1} existing scenario`;
+    },
     mutate: (dir) =>
       edit(
         dir,
@@ -126,7 +238,7 @@ const CASES = [
     mutate: (dir) => {
       execFileSync("node", [
         "-e",
-        `require("fs").mkdirSync(${JSON.stringify(join(dir, "openspec/changes/m17-home-discovery/specs/stray"))}, { recursive: true }); require("fs").writeFileSync(${JSON.stringify(join(dir, "openspec/changes/m17-home-discovery/specs/stray/spec.md"))}, "## ADDED Requirements\\n### Requirement: X\\n#### Scenario: Y\\n");`,
+        `require("fs").mkdirSync(${JSON.stringify(join(dir, "openspec/changes/archive/2026-10-02-m17-home-discovery/specs/stray"))}, { recursive: true }); require("fs").writeFileSync(${JSON.stringify(join(dir, "openspec/changes/archive/2026-10-02-m17-home-discovery/specs/stray/spec.md"))}, "## ADDED Requirements\\n### Requirement: X\\n#### Scenario: Y\\n");`,
       ]);
     },
   },
@@ -143,7 +255,7 @@ const CASES = [
     name: "a missing delta capability is refused",
     expect: "is missing the",
     mutate: (dir) =>
-      rmSync(join(dir, "openspec/changes/m17-home-discovery/specs/mixes"), {
+      rmSync(join(dir, "openspec/changes/archive/2026-10-02-m17-home-discovery/specs/mixes"), {
         force: true,
         recursive: true,
       }),
@@ -207,8 +319,11 @@ for (const testCase of CASES) {
   const dir = sandbox();
   try {
     testCase.mutate(dir);
+    // `expect` may be a function so a count that depends on the live record is derived rather than
+    // hardcoded. See the "dropped scenario" case for why a fixed number went stale.
+    const expected = typeof testCase.expect === "function" ? testCase.expect(dir) : testCase.expect;
     const result = run(dir);
-    const refused = result.code !== 0 && result.out.includes(testCase.expect);
+    const refused = result.code !== 0 && result.out.includes(expected);
     if (refused) {
       console.log(`  PASS  ${testCase.name}`);
       continue;
@@ -217,7 +332,7 @@ for (const testCase of CASES) {
     const detail =
       result.code === 0
         ? "the sync exited 0 — it wrote over the mutation"
-        : `no message matching ${JSON.stringify(testCase.expect)}`;
+        : `no message matching ${JSON.stringify(expected)}`;
     console.log(`  FAIL  ${testCase.name}  (${detail})`);
     for (const line of result.out
       .split("\n")
@@ -235,8 +350,8 @@ for (const testCase of CASES) {
 
 /* ── the control: an unmutated copy must still sync cleanly ──────────────────────────── */
 
-const controlDir = sandbox();
-const check = run(controlDir, "--check");
+const controlDir = controlSandbox();
+const check = runWith(controlDir, CONTROL_ENV, "--check");
 if (check.code === 0) {
   console.log("  PASS  control: --check on an unmutated copy reports and writes nothing");
 } else {
@@ -251,7 +366,7 @@ if (check.code === 0) {
 }
 
 // The write path itself, on the copy: this is the one case where the script is allowed to succeed.
-const write = run(controlDir);
+const write = runWith(controlDir, CONTROL_ENV);
 if (write.code === 0 && write.out.includes("written and re-verified from disk")) {
   console.log("  PASS  control: a real merge on a copy reports a verified write");
 } else {

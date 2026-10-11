@@ -170,6 +170,22 @@ export const M29_CLIENT_BUDGET = Object.freeze({
   homeFirstLoadChunkCount: 13,
 });
 
+/**
+ * M30's record, preserved for the same reason `M29_CLIENT_BUDGET` is.
+ *
+ * M30 added `ps:check` and re-recorded the ceiling by 20 bytes. M31 added `scripts:check` and moved it
+ * by 17 more. Both are real deltas against the record each replaced, and collapsing them into one
+ * `CLIENT_BUDGET - M29_CLIENT_BUDGET` figure would restate M30's published 20 as 37 — the exact defect
+ * the M22/M23 pair of records exists to prevent. Each cost stays measured against what it replaced.
+ */
+export const M30_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 388566,
+  largestChunkGzippedBytes: 97490,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 231327,
+  homeFirstLoadChunkCount: 13,
+});
+
 export const CLIENT_BUDGET = Object.freeze({
   /** What the ceiling is a ceiling *of*. */
   subject: "gzipped bytes of every emitted client chunk under .next/static/chunks",
@@ -180,10 +196,25 @@ export const CLIENT_BUDGET = Object.freeze({
   /** How the figure was taken, so a reader can reproduce it rather than trust it. */
   method:
     "every .js file under .next/static/chunks, gzipped at level 9; per-route, the <script src> set of the route's emitted .next/server/app HTML",
-  /** When and after what this figure was measured, so a drift has something to be compared to. */
-  recordedAt: "2026-10-11, after adding the `ps:check` gate step",
-  totalGzippedBytes: 388566,
-  largestChunkGzippedBytes: 97490,
+  /**
+   * When and after what this figure was measured, so a drift has something to be compared to.
+   *
+   * Re-recorded for `scripts:check`, the step that reaches the repository-root `scripts/` directory.
+   * **The +17 is not the cost of that step.** No client code was added; the step is a Node script the
+   * browser never loads. Measured: adding a meaningless dummy entry (`"zzz:dummy": "node -e 0"`) to
+   * this same manifest moved the figure by the same ~16 bytes, and leaving the manifest untouched
+   * reproduced the smaller number. So the emitted chunks shift with *any* edit to `package.json`,
+   * which is what M30's own commit "re-record the client ceiling for the 20 bytes `ps:check` costs"
+   * recorded an earlier instance of.
+   *
+   * That makes this ceiling sensitive to an edit that changes no client behaviour, which is a real
+   * weakness in it. It is recorded here rather than absorbed: `toleranceBytes` below already exists
+   * and would absorb it, but widening this assertion from a ceiling to ceiling-plus-slack changes
+   * what the budget guarantees, which is not this change's decision to make.
+   */
+  recordedAt: "2026-10-11, after adding the `scripts:check` gate step",
+  totalGzippedBytes: 388583,
+  largestChunkGzippedBytes: 97507,
   chunkCount: 25,
   homeFirstLoadGzippedBytes: 231327,
   homeFirstLoadChunkCount: 13,
