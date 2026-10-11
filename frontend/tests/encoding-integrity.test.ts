@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readTreeStrict, walk } from "./helpers/sourceTree";
 
 /**
  * The repository's text files must be UTF-8 without a BOM, and must contain no mojibake and no
@@ -50,7 +51,17 @@ const REPO_ROOTS = ["openspec", ".github"];
  */
 const TOP_LEVEL_DIRS = [FRONTEND, REPO];
 
+/**
+ * The same set {@link TEXT_EXTENSIONS} lists, kept as one written statement of *what the scan covers*.
+ *
+ * The two are asserted to agree, so the suffix list `readTreeStrict` needs cannot drift from the rule
+ * the coverage was reviewed against — which is precisely how the `.git`/`.github` hole below survived:
+ * a filter that quietly stopped matching.
+ */
 const EXTENSIONS = /\.(?:ts|tsx|mjs|js|json|md|css|yml|yaml)$/;
+
+/** {@link EXTENSIONS} in the suffix form `readTreeStrict` matches on. */
+const TEXT_EXTENSIONS = [".ts", ".tsx", ".mjs", ".js", ".json", ".md", ".css", ".yml", ".yaml"];
 
 /**
  * Directories that are build output or dependency trees, never source.
@@ -116,30 +127,63 @@ const CP1252_CONTINUATION =
  */
 const MOJIBAKE = new RegExp(`[\\u00C2-\\u00F4][${CP1252_CONTINUATION}]`, "u");
 
-function textFiles(root: string): string[] {
-  const found: string[] = [];
-  const walk = (dir: string): void => {
-    for (const name of readdirSync(dir)) {
-      const full = join(dir, name);
-      if (statSync(full).isDirectory()) {
-        if (!IGNORED.test(full)) walk(full);
-      } else if (EXTENSIONS.test(name)) {
-        found.push(full);
-      }
-    }
-  };
-  walk(root);
-  return found;
+/**
+ * Every scannable text file under `root`, read inside the walk, minus the ignored directories.
+ *
+ * ## Why `readTreeStrict`
+ *
+ * This scan listed a tree and every assertion below re-opened what it had listed, in a later loop and
+ * under full-suite load. `src` is one of the roots and `src/features/sharing/` is where
+ * `motion-scope.test.ts` writes and deletes `ProbeM19Motion.tsx` — a `.tsx`, so it is matched by this
+ * scan's own extension rule, and a listing that caught it just before the `finally` failed here with an
+ * `ENOENT` naming a file an encoding rule has nothing to say about. Reading inside the walk closes that
+ * window, and `readTreeStrict` names any file that is still lost rather than throwing a bare path.
+ *
+ * ## Why `IGNORED` is a filter here and no longer a prune during the walk
+ *
+ * `readTreeStrict` recurses into everything below the directory it is given, so a directory it must not
+ * descend into has to be excluded from its result rather than from its descent. Testing `dirname(file)`
+ * rather than `file` keeps that exclusion exact: the old walker tested each *directory* on the way down,
+ * so a file is out of scope precisely when the directory containing it is ignored. Nothing that was
+ * scanned before is dropped, and nothing new is added.
+ */
+function scannedTree(root: string): Array<{ file: string; source: string }> {
+  return readTreeStrict(root, { extensions: TEXT_EXTENSIONS }).filter(
+    ({ file }) => !IGNORED.test(dirname(file)),
+  );
 }
 
-/** Text files sitting directly in a directory, without descending. */
-function topLevelTextFiles(dir: string): string[] {
-  return readdirSync(dir)
-    .filter((name) => {
-      const full = join(dir, name);
-      return !statSync(full).isDirectory() && EXTENSIONS.test(name);
-    })
-    .map((name) => join(dir, name));
+/** Every scannable text file under `root`, recursively. */
+function textFiles(root: string): Array<{ file: string; source: string }> {
+  return scannedTree(root);
+}
+
+/**
+ * Text files sitting directly in a directory, without descending.
+ *
+ * Top level only is load-bearing — see {@link TOP_LEVEL_DIRS} — and `readTreeStrict` cannot express it:
+ * it has no depth argument, and calling it on `frontend/` or the repository root reads *everything*
+ * below them, `node_modules` and `.git` included. Measured, that is 9 minutes rather than a quarter of
+ * a second, because the read is what costs and this scan cannot be allowed to read the dependency tree.
+ *
+ * So the two halves are separated deliberately:
+ *
+ * 1. `walk` **lists** candidates — no read, so nothing to race — and the ones whose parent is `dir`
+ *    are this directory's own files.
+ * 2. Those files are then read by **name**. `walk` matches on `name.endsWith(extension)`, so a list of
+ *    the names themselves selects exactly the wanted files and reads nothing else. A file deeper in the
+ *    tree whose name ends with one of them is read too and dropped by the `dirname` filter, which costs
+ *    one file read and keeps the selection rule a single `endsWith` rather than a second copy of it.
+ *
+ * Listing the candidates and then reading them traverses the tree twice. That is ~600 ms per directory
+ * on this repository and is paid in listing rather than in reading, which is the trade this makes.
+ */
+function topLevelTextFiles(dir: string): Array<{ file: string; source: string }> {
+  const names = walk(dir, TEXT_EXTENSIONS)
+    .filter((file) => dirname(file) === dir)
+    .map((file) => file.slice(dir.length + 1));
+  if (names.length === 0) return [];
+  return readTreeStrict(dir, { extensions: names }).filter(({ file }) => dirname(file) === dir);
 }
 
 const FILES = [
@@ -148,12 +192,15 @@ const FILES = [
   ...TOP_LEVEL_DIRS.flatMap(topLevelTextFiles),
 ].flat();
 
+/** {@link FILES} by path, for the assertions that are about *which* files were scanned. */
+const FILE_PATHS = FILES.map(({ file }) => file);
+
 describe("every text file is clean UTF-8", () => {
   it("found the source tree, or the walk is broken and every assertion below is vacuous", () => {
     // A test that walks a directory and finds nothing passes forever. Pin the scan itself.
     expect(FILES.length, "the encoding scan must actually see files").toBeGreaterThan(300);
-    expect(FILES.some((file) => file.includes(`${join("src", "app")}`))).toBe(true);
-    expect(FILES.some((file) => file.endsWith("release-exclusions.test.ts"))).toBe(true);
+    expect(FILE_PATHS.some((file) => file.includes(`${join("src", "app")}`))).toBe(true);
+    expect(FILE_PATHS.some((file) => file.endsWith("release-exclusions.test.ts"))).toBe(true);
 
     // Each newly covered area is pinned by name, not merely by count. A count is satisfied by any
     // large set of files, so it cannot tell "the top-level configs are covered" from "the configs
@@ -168,34 +215,62 @@ describe("every text file is clean UTF-8", () => {
       join(FRONTEND, "eslint.config.mjs"),
       join(FRONTEND, "next.config.ts"),
     ]) {
-      expect(FILES, `${relative(REPO, required)} must be inside the encoding scan`).toContain(
+      expect(FILE_PATHS, `${relative(REPO, required)} must be inside the encoding scan`).toContain(
         required,
       );
     }
     expect(
-      FILES.some((file) => file.includes(`${join(".github", "workflows")}`)),
+      FILE_PATHS.some((file) => file.includes(`${join(".github", "workflows")}`)),
       "the CI workflow is text a PowerShell accident would damage, and it is the one file whose " +
         "damage would silently stop the gates running",
     ).toBe(true);
 
     // And the scan must not have started double-counting, which would make the count assertion
     // above pass for the wrong reason.
-    expect(new Set(FILES).size, "the encoding scan must not list a file twice").toBe(FILES.length);
+    expect(new Set(FILE_PATHS).size, "the encoding scan must not list a file twice").toBe(
+      FILES.length,
+    );
+
+    // The walk matches on a suffix list and the rule this file was reviewed against is a regex. They
+    // are two spellings of one filter, so they are asserted to be one filter: a suffix added to one and
+    // not the other would either widen the scan or narrow it silently, which is the same defect as the
+    // `.git`/`.github` hole above.
+    for (const extension of TEXT_EXTENSIONS) {
+      expect(EXTENSIONS.test(`file${extension}`), `${extension} must be in the scan`).toBe(true);
+    }
+    expect(
+      TEXT_EXTENSIONS.length,
+      "every branch of EXTENSIONS must appear in the suffix list",
+    ).toBe(9);
   });
 
   it("no file carries a UTF-8 BOM", () => {
+    // The scan reads **text** now rather than bytes, because the tree comes from `readTreeStrict`. A BOM is
+    // EF BB BF, and those three bytes decode — read as UTF-8 — to exactly U+FEFF and to nothing else, so
+    // the first character *is* the BOM.
+    //
+    // **This is not a pure translation of the previous check, and the previous one was broader.** It read
+    // `buf[0] === 0xef && buf[1] === 0xbb` — a two-byte **prefix** test that also fired on a file
+    // beginning `EF BB` *without* the `BF`. That is not a BOM; it is a truncated three-byte sequence, which
+    // a UTF-8 decoder replaces with U+FFFD. Checking only for U+FEFF would have quietly stopped catching
+    // it, so U+FFFD is checked alongside. It is not redundant with `MOJIBAKE` either: that pattern is
+    // `[\u00C2-\u00F4][…]`, and U+FFFD is not in that range.
     const offenders = FILES.filter(
-      (file) => readFileSync(file)[0] === 0xef && readFileSync(file)[1] === 0xbb,
-    ).map((file) => relative(REPO, file));
-    expect(offenders, "strip the BOM — it makes every diff of that file show as changed").toEqual(
-      [],
-    );
+      ({ source }) =>
+        source.charCodeAt(0) === 0xfeff ||
+        source.charCodeAt(0) === 0xfffd ||
+        source.charCodeAt(1) === 0xfffd,
+    ).map(({ file }) => relative(REPO, file));
+    expect(
+      offenders,
+      "strip the BOM — it makes every diff of that file show as changed — and repair any file that " +
+        "begins with an incomplete UTF-8 sequence, which decodes to U+FFFD",
+    ).toEqual([]);
   });
 
   it("no file contains mojibake", () => {
     const offenders: string[] = [];
-    for (const file of FILES) {
-      const text = readFileSync(file, "utf8");
+    for (const { file, source: text } of FILES) {
       if (!MOJIBAKE.test(text)) continue;
       text.split("\n").forEach((line, index) => {
         if (MOJIBAKE.test(line)) {
@@ -213,8 +288,7 @@ describe("every text file is clean UTF-8", () => {
     // Tab, newline and carriage return are the only C0 characters a text file may contain. A NUL in
     // particular makes a source file read as binary to review tools and diffs.
     const offenders: string[] = [];
-    for (const file of FILES) {
-      const text = readFileSync(file, "utf8");
+    for (const { file, source: text } of FILES) {
       text.split("\n").forEach((line, index) => {
         for (const character of line) {
           const code = character.codePointAt(0) ?? 0;
@@ -283,6 +357,13 @@ describe("every text file is clean UTF-8", () => {
     // Without this, the three assertions above could all be satisfied by a tree with no non-ASCII at
     // all — which would make them vacuous in the other direction. `selectFormat.ts` documents the
     // bitrate arithmetic with en dashes and multiplication signs, and `container.ts` cites §-numbers.
+    //
+    // Read by name with `readFileSync`, not out of a listing. An earlier version of this file routed it
+    // through `readTreeStrict(...).find(...)` solely to satisfy a broader version of the second rule in
+    // `source-tree-readers.test.ts` — "imports `walk` and calls `readFileSync` anywhere". That rule cost a
+    // named read a directory listing it had no business using, so it was narrowed to forbid reading *in a
+    // loop*, which is the shape of the actual defect. Reverted with it: this is a path already known, and
+    // reading one cannot race with a probe.
     const selectFormat = readFileSync(
       join(FRONTEND, "src", "server", "download", "selectFormat.ts"),
       "utf8",

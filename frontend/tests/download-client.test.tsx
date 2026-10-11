@@ -1,10 +1,10 @@
 import "fake-indexeddb/auto";
-import * as FS from "node:fs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readTreeStrict } from "./helpers/sourceTree";
 import {
   inFlightDownloadCount,
   resetDownloads,
@@ -639,22 +639,14 @@ describe("every surface a listener is already looking at offers the action", () 
       "src/app/now-playing/page.tsx",
       "src/features/search/ResultMenu.tsx",
     ];
-    const { readdirSync, statSync } = FS;
-    const found: string[] = [];
-    const walk = (dir: string): void => {
-      for (const name of readdirSync(dir)) {
-        const full = join(dir, name);
-        if (statSync(full).isDirectory()) {
-          walk(full);
-        } else if (/\.tsx$/.test(name)) {
-          const text = readFileSync(full, "utf8");
-          if (/<Download(?:OverflowRow|IconButton)\b/.test(text)) {
-            found.push(full.slice(FRONTEND.length + 1).replace(/\\/g, "/"));
-          }
-        }
-      }
-    };
-    walk(join(FRONTEND, "src"));
+    // Read inside the walk rather than listing `src` and opening each file afterwards: the probe
+    // `motion-scope.test.ts` writes and deletes lives in `src/features/sharing/`, and a component
+    // that vanished between the two halves would have failed this as a download-surface failure.
+    // `readTreeStrict` reports the lost file instead. `.tsx` only, as before — this is about
+    // components, and widening it would change what "no fifth surface" means.
+    const found = readTreeStrict(join(FRONTEND, "src"), { extensions: [".tsx"] })
+      .filter(({ source }) => /<Download(?:OverflowRow|IconButton)\b/.test(source))
+      .map(({ file }) => file.slice(FRONTEND.length + 1).replace(/\\/g, "/"));
     expect(found.sort()).toEqual([...users].sort());
   });
 });

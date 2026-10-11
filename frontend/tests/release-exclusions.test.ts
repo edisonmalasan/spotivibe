@@ -1,7 +1,8 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, extname, join, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * The permanent product exclusions, enforced (M15 task 1.1; spec `release-validation` —
@@ -63,18 +64,8 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
-function sourceFiles(dir: string): string[] {
-  const found: string[] = [];
-  const walk = (current: string): void => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const full = join(current, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if ([".ts", ".tsx", ".js", ".mjs"].includes(extname(entry.name))) found.push(full);
-    }
-  };
-  walk(dir);
-  return found;
-}
+/** What the exclusion sweep reads: TypeScript and JavaScript, client and server alike. */
+const SWEPT_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs"];
 
 /**
  * Every source file the application ships, relative to `frontend/`, comments stripped.
@@ -92,11 +83,15 @@ function sourceFiles(dir: string): string[] {
  * never exercised.
  */
 function applicationSources(): Array<{ file: string; code: string; raw: string }> {
-  const files: Array<{ file: string; root: string }> = [];
+  // Each root is listed and read in one pass through `readTreeStrict`. This used to be a walk followed
+  // by a second `map` that re-opened every listed path, and `motion-scope.test.ts` deletes its probe
+  // from `src/features/sharing/` inside exactly that gap — which arrived here as an exclusion failure
+  // with nothing to do with exclusions. The config below is outside every walk and is still read by name.
+  const files: Array<{ file: string; root: string; raw?: string }> = [];
   for (const root of [SRC, join(FRONTEND, "public"), join(FRONTEND, "scripts")]) {
     if (!existsSync(root)) continue;
-    for (const absolute of sourceFiles(root)) {
-      files.push({ file: relative(FRONTEND, absolute).replace(/\\/g, "/"), root });
+    for (const { file, source } of readTreeStrict(root, { extensions: SWEPT_EXTENSIONS })) {
+      files.push({ file: relative(FRONTEND, file).replace(/\\/g, "/"), root, raw: source });
     }
   }
   // The application config is not in a directory walk, and it is where a proxy, a
@@ -104,8 +99,8 @@ function applicationSources(): Array<{ file: string; code: string; raw: string }
   const config = join(FRONTEND, "next.config.ts");
   if (existsSync(config)) files.push({ file: "next.config.ts", root: FRONTEND });
 
-  return files.map(({ file }) => {
-    const raw = readFileSync(join(FRONTEND, file), "utf8");
+  return files.map(({ file, raw: walked }) => {
+    const raw = walked ?? readFileSync(join(FRONTEND, file), "utf8");
     return { file, code: stripComments(raw), raw };
   });
 }
@@ -3656,10 +3651,10 @@ describe("the streaming clause's facts are asserted", () => {
     // Asserted by walking the tree rather than by a recorded number, so it stays true as the
     // application changes instead of needing to be re-measured. A clause that grows a false positive
     // fails here rather than being discovered by whoever next reads an allowlist.
-    const offenders = sourceFiles(SRC)
-      .map((file) => ({
+    const offenders = readTreeStrict(SRC, { extensions: SWEPT_EXTENSIONS })
+      .map(({ file, source }) => ({
         file: relative(FRONTEND, file).split("\\").join("/"),
-        code: readFileSync(file, "utf8"),
+        code: source,
       }))
       .filter((entry) => STREAMED_BODY_AS_RESPONSE.test(entry.code))
       .map((entry) => entry.file);

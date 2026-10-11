@@ -1,7 +1,8 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, extname, join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readTreeStrict } from "./helpers/sourceTree";
 import { POLL_INTERVAL_MS } from "@/player/engine";
 import { RECENT_HISTORY_LIMIT } from "@/stores/historyStore";
 import { HISTORY_LIMIT } from "@/stores/queueStore";
@@ -20,17 +21,17 @@ const here = dirname(fileURLToPath(import.meta.url));
 const FRONTEND = join(here, "..");
 const SRC = join(FRONTEND, "src");
 
-function sourceFiles(dir: string): string[] {
-  const found: string[] = [];
-  const walk = (current: string): void => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const full = join(current, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if ([".ts", ".tsx"].includes(extname(entry.name))) found.push(full);
-    }
-  };
-  walk(dir);
-  return found;
+/**
+ * Every `.ts`/`.tsx` under `dir`, each with its contents.
+ *
+ * The walk and the read are now one operation. They were two, and the callers below read the listed
+ * paths in their own loops — a window long enough for `motion-scope.test.ts` to delete its probe out
+ * of `src/features/sharing/` between the two halves, which failed here as an unexplained `ENOENT`
+ * during M31. `readTreeStrict` closes it, and names any file that still goes missing instead of
+ * letting the loop below quietly check one fewer file than it believes it did.
+ */
+function sourceFiles(dir: string): Array<{ file: string; source: string }> {
+  return readTreeStrict(dir, { extensions: [".ts", ".tsx"] });
 }
 
 describe("nothing is transmitted about the person using the application (task 3.3)", () => {
@@ -67,8 +68,7 @@ describe("nothing is transmitted about the person using the application (task 3.
     ];
 
     const offenders: string[] = [];
-    for (const file of files) {
-      const source = readFileSync(file, "utf8");
+    for (const { file, source } of files) {
       for (const { label, pattern } of reporting) {
         if (pattern.test(source)) offenders.push(`${relative(SRC, file)}: ${label}`);
       }
@@ -81,11 +81,10 @@ describe("nothing is transmitted about the person using the application (task 3.
     // the check belongs here too, where someone reading about telemetry will find it.
     // Server-side provider origins are expected and live under `src/server`.
     const clientFiles = sourceFiles(SRC).filter(
-      (file) => !file.includes(`${join("src", "server")}`),
+      (entry) => !entry.file.includes(`${join("src", "server")}`),
     );
     const unexpected: string[] = [];
-    for (const file of clientFiles) {
-      const source = readFileSync(file, "utf8");
+    for (const { file, source } of clientFiles) {
       for (const match of source.matchAll(/https:\/\/([a-z0-9.-]+)/gi)) {
         const origin = `https://${match[1].toLowerCase()}`;
         // Three origins the browser legitimately references, and each for a different
@@ -179,8 +178,7 @@ describe("local lists stay bounded (task 3.4)", () => {
 describe("nothing repeats while the application is idle (task 3.5)", () => {
   it("has exactly one interval in the application, and it belongs to the player", () => {
     const intervals: string[] = [];
-    for (const file of sourceFiles(SRC)) {
-      const source = readFileSync(file, "utf8");
+    for (const { file, source } of sourceFiles(SRC)) {
       if (/\bsetInterval\s*\(/.test(source))
         intervals.push(relative(SRC, file).replace(/\\/g, "/"));
     }
@@ -202,8 +200,7 @@ describe("nothing repeats while the application is idle (task 3.5)", () => {
   it("does not write local data on a timer", () => {
     // The session persistence and the listening recorder are both event-driven (M4,
     // M6); a timer-driven write would be a battery and a flash concern.
-    for (const file of sourceFiles(join(SRC, "stores"))) {
-      const source = readFileSync(file, "utf8");
+    for (const { file, source } of sourceFiles(join(SRC, "stores"))) {
       expect(/\bsetInterval\s*\(/.test(source), relative(SRC, file)).toBe(false);
     }
   });

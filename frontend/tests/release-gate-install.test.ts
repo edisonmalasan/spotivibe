@@ -6,7 +6,6 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ts from "typescript";
+import { ALL_FILES, readTreeStrict } from "./helpers/sourceTree";
 
 import {
   cascadeReason,
@@ -200,18 +200,30 @@ function frontend(
 
 /**
  * A byte-level record of a directory tree, so "untouched" is a measurement rather than a hope.
+ *
+ * Listed and read in one pass through `readTreeStrict`, which reports a file that vanishes between the
+ * two rather than skipping it — a fingerprint missing an entry is a tree that was not left untouched
+ * but a measurement that cannot say so. The scratch trees here are `mkdtemp` directories rather than
+ * the application source tree, so the exposure is low; the reader is the same shape as everywhere else.
+ *
+ * `ALL_FILES` because the original walked every entry regardless of extension, and narrowing it would
+ * quietly stop fingerprinting the binaries a gate step might damage. `read` returns base64 of the raw
+ * bytes because that is what the old walker recorded — decoding as text first would corrupt exactly the
+ * files a byte-level fingerprint exists to notice.
+ *
+ * The sort moved from "names within each directory" to "the whole record", because the helper's walk is
+ * depth-first in directory order and does not sort. Both orderings are deterministic and neither
+ * assertion here compares a fingerprint against a literal, so each still means "these two trees are the
+ * same bytes at the same paths".
  */
 function fingerprint(root: string): string {
-  const entries: string[] = [];
-  const walk = (dir: string): void => {
-    for (const name of readdirSync(dir).sort()) {
-      const full = join(dir, name);
-      if (statSync(full).isDirectory()) walk(full);
-      else entries.push(`${full.slice(root.length)}:${readFileSync(full).toString("base64")}`);
-    }
-  };
-  walk(root);
-  return entries.join("\n");
+  return readTreeStrict(root, {
+    extensions: ALL_FILES,
+    read: (path) => readFileSync(path).toString("base64"),
+  })
+    .map(({ file, source }) => `${file.slice(root.length)}:${source}`)
+    .sort()
+    .join("\n");
 }
 
 /**

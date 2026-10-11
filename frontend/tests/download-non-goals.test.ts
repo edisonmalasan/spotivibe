@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * ROADMAP §21.5's non-goals, enforced (M20; design decision 10).
@@ -74,31 +75,29 @@ const ROOTS: ReadonlyArray<{ path: string; extensions: ReadonlyArray<string> }> 
  */
 function applicationSources(): ReadonlyArray<{ file: string; code: string }> {
   const found: Array<{ file: string; code: string }> = [];
-  const walk = (target: string, extensions: ReadonlyArray<string>): void => {
-    if (!existsSync(target)) return;
+  for (const root of ROOTS) {
+    const target = join(FRONTEND, root.path);
+    if (!existsSync(target)) continue;
     if (!statSync(target).isDirectory()) {
       // A root that is a single file, such as `next.config.ts`.
       found.push({
         file: relative(FRONTEND, target).split("\\").join("/"),
         code: readFileSync(target, "utf8"),
       });
-      return;
+      continue;
     }
-    for (const entry of readdirSync(target)) {
-      const absolute = join(target, entry);
-      if (statSync(absolute).isDirectory()) {
-        walk(absolute, extensions);
-        continue;
-      }
-      if (!extensions.some((extension) => entry.endsWith(extension))) continue;
-      if (entry.endsWith(".d.ts")) continue;
+    // Directory roots are listed and read in one pass. They were two, and `src` is walked here while
+    // `motion-scope.test.ts` writes and deletes a probe inside it — the listing caught the probe and
+    // the read missed it, failing a non-goal detector with an `ENOENT`. `readTreeStrict` reports the
+    // file it could not read rather than leaving the detector to pass over a shorter corpus.
+    for (const { file, source } of readTreeStrict(target, { extensions: root.extensions })) {
+      if (file.endsWith(".d.ts")) continue;
       found.push({
-        file: relative(FRONTEND, absolute).split("\\").join("/"),
-        code: readFileSync(absolute, "utf8"),
+        file: relative(FRONTEND, file).split("\\").join("/"),
+        code: source,
       });
     }
-  };
-  for (const root of ROOTS) walk(join(FRONTEND, root.path), root.extensions);
+  }
   return found;
 }
 

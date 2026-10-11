@@ -529,6 +529,14 @@ function suppressesReferrer(raw: string): boolean {
 /** Next config files next to src — where a Referrer-Policy header would live. */
 function frontendConfigFiles(): Array<{ file: string; source: string }> {
   const frontendDir = join(srcDir, "..");
+  // Left as a direct listing, and carried as a **stated exemption** in `source-tree-readers.test.ts`
+  // rather than converted. It was tried, and the attempt is the reason the exemption has a reason.
+  //
+  // `readTreeStrict` recurses. `frontend/` contains `node_modules`, so routing this through it walked and
+  // READ every `.ts`/`.js`/`.mjs` under the dependency tree: the suite went from 2s to **312s** and failed.
+  // The helper has no directory exclusion, and adding one to serve a single site would widen the shared
+  // helper for a caller that has no race to tolerate — `motion-scope.test.ts`'s probe is written inside
+  // `src/`, and this lists only `frontend/`'s own top level, so there is nothing here that can vanish.
   return readdirSync(frontendDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && /^next\.config\.(?:ts|js|mjs)$/.test(entry.name))
     .map((entry) => {

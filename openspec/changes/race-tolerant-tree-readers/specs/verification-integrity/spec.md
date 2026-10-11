@@ -68,3 +68,18 @@ this, because a count describes the readers that existed when it was written and
 > The writer side of this requirement is deliberately unchanged. The probe still lives inside the
 > application source tree, because the guard under test asserts on the application sources and a probe
 > the walkers cannot see would make it prove nothing.
+
+> **M32 Apply — the check is a decidable proxy for the sentence above, and that is a deliberate gap
+> between the requirement and its mechanism.** The requirement says the check fails when a file "reads the
+> application source tree by listing it and reading each listed file". Deciding whether a read *depends on*
+> a listing was attempted five times and failed five times — the last attempt missed `branding.test.tsx`,
+> the one reader that failed live in M31. So the check does not decide it. It requires that a test file
+> never calls `readdirSync`, and that a file importing the untolerated `walk` never reads inside a loop.
+>
+> Every reader the requirement is about trips one of those, which is why both scenarios above are
+> discharged and proven by mutation. A reader of fixed, named paths trips neither, which is why the
+> fixed-path readers §1.3 named stay exempt. The proxy is **stricter** than the requirement in one
+> direction — a file that lists a directory and reads nothing from it still fails, hence the stated
+> exemptions — and **weaker** in another: a listing obtained by importing a walker from a *new* module is
+> not traced. Both directions are recorded in `tasks.md` §4.1 and `design.md` D3 rather than left to a
+> reader of the code to discover.

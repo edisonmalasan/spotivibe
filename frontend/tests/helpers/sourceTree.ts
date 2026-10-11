@@ -97,6 +97,61 @@ export function readTree(
   return contents;
 }
 
+/**
+ * The same read, with the reporting obligation discharged by the call.
+ *
+ * ## Why this exists rather than thirteen call sites remembering to assert
+ *
+ * `verification-integrity` requires two things of every reader of the application source tree: tolerate a
+ * file that vanished, **and** report each one while the caller asserts none was reported. That second half
+ * is the half that gets forgotten — a reader that tolerates silently reads fewer files than it believes it
+ * did, and the suite still passes. `token-contrast.test.ts` is that case, and it is in the repository today.
+ *
+ * So the obligation is made **unskippable**: raced paths are collected here and, if any occurred, this
+ * throws naming every one. A caller cannot call this and forget the assertion, because the call *is* the
+ * assertion.
+ *
+ * ## Why it throws rather than merely reporting
+ *
+ * The alternative was to return the raced paths and let each caller assert. That is thirteen
+ * opportunities to write `onRace` and drop the `expect`, and the failure mode is invisible — the suite
+ * stays green and has checked fewer files than it claims.
+ *
+ * ## Why the message names every file rather than the first
+ *
+ * A partial report would let the reader conclude one file was involved when a whole probe directory went
+ * at once, which is what actually happens when `motion-scope.test.ts` cleans up in its `finally`.
+ *
+ * @throws if any listed file vanished before it could be read. A read failure that is **not** `ENOENT`
+ *   still propagates from `readTree` untouched and is never reported as a race.
+ */
+export function readTreeStrict(
+  directory: string,
+  options: Parameters<typeof readTree>[1] = {},
+): Array<{ file: string; source: string }> {
+  const raced: string[] = [];
+  const files = readTree(directory, { ...options, onRace: (path) => raced.push(path) });
+  if (raced.length > 0) {
+    throw new Error(
+      `readTreeStrict: ${raced.length} file(s) vanished between being listed and being read under ` +
+        `${directory}. A reader that skips them silently checks fewer files than it believes it does, so ` +
+        `this is a failure rather than a skip:\n  - ${raced.join("\n  - ")}`,
+    );
+  }
+  return files;
+}
+
+/**
+ * Every file, whatever its extension.
+ *
+ * `walk` matches on `name.endsWith(extension)`, and every string ends with `""`, so this single-entry
+ * list disables the filter without a second code path. Exported as a named constant rather than written
+ * inline at each call site because `[extensions]` is opaque: a reader who wants "all files" and does not
+ * know the trick would reach for a directory listing instead, which is the thing this helper exists to
+ * replace.
+ */
+export const ALL_FILES: ReadonlyArray<string> = [""];
+
 /** Absolute paths of the matching files under `directory`, depth first. */
 export function walk(directory: string, extensions: ReadonlyArray<string>): string[] {
   if (!existsSync(directory)) return [];

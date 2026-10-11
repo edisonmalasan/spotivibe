@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, extname, join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import nextConfig from "../next.config";
+import { readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * M14 tasks 1.1, 1.3: the security policy is derived from the code, not from a
@@ -52,31 +53,19 @@ const PROXY_ARTWORK_ORIGINS = ["https://invidious.f5.si", "https://yewtu.be"];
 
 /** Every `https://host` literal under a path, with the file it came from. */
 function externalOrigins(path: string): Array<{ origin: string; file: string }> {
+  // Listing and reading were separate steps, so a file removed by `motion-scope.test.ts`'s probe
+  // between them surfaced here as a policy failure — an origin the policy was never derived from.
+  // `readTreeStrict` reads inside the walk and names any file that still goes missing. A `path` that
+  // does not exist contributes nothing, as before.
   const found: Array<{ origin: string; file: string }> = [];
-  const walk = (current: string): void => {
-    let entries;
-    try {
-      entries = readdirSync(current, { withFileTypes: true });
-    } catch {
-      return; // a directory that does not exist is simply not a source of origins
+  for (const { file, source } of readTreeStrict(path, { extensions: [".ts", ".tsx"] })) {
+    for (const match of source.matchAll(/https:\/\/([a-z0-9.-]+)/gi)) {
+      found.push({
+        origin: `https://${match[1].toLowerCase()}`,
+        file: relative(SRC, file).replace(/\\/g, "/"),
+      });
     }
-    for (const entry of entries) {
-      const full = join(current, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (![".ts", ".tsx"].includes(extname(entry.name))) continue;
-      const source = readFileSync(full, "utf8");
-      for (const match of source.matchAll(/https:\/\/([a-z0-9.-]+)/gi)) {
-        found.push({
-          origin: `https://${match[1].toLowerCase()}`,
-          file: relative(SRC, full).replace(/\\/g, "/"),
-        });
-      }
-    }
-  };
-  walk(path);
+  }
   return found;
 }
 
@@ -172,10 +161,12 @@ function fixtureImageOrigins(): Set<string> {
       else walk(value);
     }
   };
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (!entry.isFile() || extname(entry.name) !== ".json") continue;
+  // Listed and read in one pass, as `externalOrigins` now is: a fixture removed between the two
+  // would otherwise throw an `ENOENT` in a suite about response headers, and skipping it would
+  // quietly shrink the corpus the policy is derived from.
+  for (const { source } of readTreeStrict(directory, { extensions: [".json"] })) {
     files += 1;
-    walk(JSON.parse(readFileSync(join(directory, entry.name), "utf8")));
+    walk(JSON.parse(source));
   }
   // A scan that silently found nothing would make every assertion below vacuous, so
   // the corpus itself is asserted: no fixtures, or no artwork in them, means the

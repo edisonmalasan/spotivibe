@@ -65,38 +65,64 @@ the strength of the guard becomes a matter of how clever the regex is. See D3.
 `racedFiles` assertion is a separately named test that a reader of the report can find. Converting it
 would churn a passing file to gain nothing, and its `readTree` cache is load-bearing for its cost.
 
-### D2 — The guard enumerates readers by shape and is explicitly shape-based
+### D2 — The guard forbids the primitives rather than inferring the listing→read dependency
 
-**Chosen.** A new test scans `frontend/tests/**` for files that both enumerate a directory and read
-each enumerated file, and requires each such file to reach its read through `readTree` or
-`readTreeStrict`. Files that read only fixed, named paths are exempt, and the guard asserts that its
-own exemption logic is not vacuous by requiring a known fixed-path reader to be classified as one.
+**Chosen, and revised during Apply.** A new test scans `frontend/tests/**` with two decidable rules:
+
+1. **`readdirSync` may not appear in a test file at all.** List a tree through `walk`/`readTree`/
+   `readTreeStrict` from `tests/helpers/sourceTree.ts`.
+2. **A file that imports `walk` may not `readFileSync` inside a loop.** `walk` returns paths *without*
+   tolerance, so this is the untolerated listing that remains reachable once rule 1 is in force.
+
+Files that read only fixed, named paths are exempt, and the guard asserts its own exemption logic is not
+vacuous — every reason must be stated, no entry may be duplicated or stale, and the guard exempts itself.
+
+**Why it was revised.** The original decision was to enumerate readers by *shape* — detect a file that
+lists a directory and reads each listed file — and to require the read to reach `readTree`. That requires
+deciding whether a read **depends on** a listing, and §1.1 established that this is not decidable by any
+of five attempts, each correct about what it could see and blind to the next thing. The last missed
+`branding.test.tsx`, the one reader that failed live. Forbidding the primitive makes a rolled-together
+walker a syntax error rather than an analysis problem.
 
 **Alternatives considered:**
 
 - **Detect by the presence of `readFileSync`.** Rejected: thirteen files read fixed paths with
   `readFileSync` and no listing, including `evidence-scripts.test.ts`. Every one would be a false
   positive, and a guard that cries wolf is the exact defect M31 recorded in its own first version.
+- **Detect by dataflow — is the read inside a loop whose iterable derives from a listing?** This was the
+  original shape. Rejected on measurement, not on taste: see §1.1's five passes. Its successor, "imports
+  `walk` and reads anywhere", was rejected too — it could not distinguish `encoding-integrity.test.ts`'s
+  named read of `selectFormat.ts` from a read-per-entry, and the only way to satisfy it was to route that
+  read through a listing, which is the punishment-for-being-correct pattern this repository keeps paying
+  for. "Reads **in a loop**" is the narrowest form that is both decidable and free of that false positive.
 - **Execute each reader against an injected vanishing file.** Stronger in principle, and it is what
-  `source-tree-race.test.ts` already does for the helper. Rejected as the *guard's* mechanism because
-  it means running thirteen suites' read paths out of context, and because the failure it would catch
-  — a reader that does not tolerate — is already caught by the static shape. It is kept for the helper
-  itself, where it is cheap and precise.
+  `source-tree-race.test.ts` already does for the helper. Rejected as the *guard's* mechanism because it
+  means running fourteen suites' read paths out of context. It is kept for the helper itself, where it is
+  cheap and precise.
 - **A recorded list of compliant files.** Rejected by the spec delta's own wording, and it is the
   failure mode M25 already made once: correct about the file it was shown, silent about the other
   thirteen.
 
 ### D3 — The guard's limits are stated, not papered over
 
-The shape-based guard detects a reader that lists a directory and reads each listed file through an
-unguarded path. It does **not** detect a reader that obtains paths some other way, or one that hides
-its read behind indirection. The spec delta therefore claims only that a check exists and fails for
-the shape it inspects — not that the class is closed.
+The guard detects a reader that lists a directory with `readdirSync`, and a reader that lists through the
+untolerated `walk` and then reads each listed entry. It does **not** detect a listing obtained by importing
+a walker from a **new** module — the checks are on the call and on the named import, not on the data — nor
+one that hides its read behind indirection. `helpers/sourceTree.ts` and `helpers/motionSource.ts` are the
+two places a listing currently enters a test, and both sit inside `helpers/`, which the guard does not
+scan. The spec delta therefore claims only that a check exists and fails for the shapes it inspects — not
+that the class is closed.
 
 This is deliberate, and it is the M21 CRITICAL 1/2 lesson applied to this design before it is written
 rather than after a verifier finds it: a syntactic instrument is worth having, and claiming it proves
 more than it proves is what produced twelve rounds of finding the previous round's defect class
 reproduced inside the previous round's repair.
+
+**The limit was reached in practice, twice, and both times the instrument caught it.** A TypeScript
+comment scanner silently stopped partway through a 3,600-line file, leaving in place the very comment it
+was added to remove; and rule 2's first form, above, flagged a correct file until it was narrowed. Neither
+was found by a verifier — both were found by the rule misfiring on real input, which is the cheapest
+possible moment to find one.
 
 ### D4 — `token-contrast.test.ts` is migrated for the reporting half only
 

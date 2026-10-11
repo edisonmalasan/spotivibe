@@ -1,7 +1,8 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, extname, join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readTreeStrict } from "./helpers/sourceTree";
 
 /**
  * M13 tasks 1.3, 4.2, 6.1: the document metadata an installed copy depends on, and
@@ -19,18 +20,13 @@ const srcDir = join(here, "..", "src");
 
 /** Every shipped source a listener can read: components, features, routes. */
 function shippedSources(): Array<{ file: string; source: string }> {
-  const files: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if ([".ts", ".tsx"].includes(extname(entry.name))) files.push(full);
-    }
-  };
-  walk(srcDir);
-  return files.map((file) => ({
+  // One operation rather than a walk followed by a second pass that read what the walk listed —
+  // that gap is where `motion-scope.test.ts`'s probe vanished and surfaced here as an offline-claims
+  // failure with nothing to do with offline claims. `readTreeStrict` reports a lost file by name.
+  return readTreeStrict(srcDir, { extensions: [".ts", ".tsx"] }).map(({ file, source }) => ({
+    // Absolute in, `src`-relative out: this suite has always named offending files from `src`.
     file: relative(srcDir, file),
-    source: readFileSync(file, "utf8"),
+    source,
   }));
 }
 
