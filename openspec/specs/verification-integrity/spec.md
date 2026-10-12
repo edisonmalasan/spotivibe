@@ -124,6 +124,19 @@ source tree by listing it and reading each listed file, without that read passin
 both tolerates a vanished file and reports it. A recorded count of migrated readers SHALL NOT satisfy
 this, because a count describes the readers that existed when it was written and not the ones that do.
 
+Tolerating a vanished file SHALL mean looking again rather than reading less. A reader that finds a
+listed file gone SHALL repeat the whole listing after a wait, rather than skip that file on first
+contact, because a file that was present a moment ago and is not now is evidence that the tree was
+being written and not that the tree cannot be read. The repetition SHALL be bounded by a stated budget,
+and exhausting the budget SHALL remain a failure that names every raced path, so the promise the
+reader makes is that it returns a complete read or fails — never that it quietly returns less.
+
+A bounded repetition is only sound if the writer's window is shorter than the budget, and that SHALL be
+asserted rather than assumed. The repository SHALL carry a check that measures how long the writing
+test's file is on disk and fails when that window no longer fits inside the budget, so the case where
+the repetition can no longer help is reported by the check instead of surfacing later as an
+intermittent failure.
+
 #### Scenario: A probe file exists while another test walks the tree
 
 - **WHEN** two test files run concurrently and one has written a temporary source file
@@ -153,6 +166,25 @@ this, because a count describes the readers that existed when it was written and
 - **WHEN** a reader skips a file that vanished instead of failing, and records nothing
 - **THEN** the check fails, because a skip that is never reported is indistinguishable from a reader
   that never listed the file at all
+
+#### Scenario: A vanished file reappears when the tree is read again
+
+- **WHEN** a reader lists the tree, finds a listed file gone, and lists again after a wait
+- **THEN** it returns the complete second listing and reports nothing, because the first listing was
+  made while the tree was being written and never described what is on disk now
+
+#### Scenario: The tree keeps changing for longer than the budget
+
+- **WHEN** a reader finds a listed file gone on every attempt within the budget
+- **THEN** it fails naming every raced path, because a bounded wait that never converges is a real
+  condition and reporting it is the whole point of the budget being finite
+
+#### Scenario: The writing test's window grows past the budget
+
+- **WHEN** the test that writes into the source tree holds its file on disk for longer than the
+  reader's budget allows
+- **THEN** the check that measures the window fails naming both figures, because a repetition that
+  cannot outlast the writer is not a slower fix but no fix at all
 
 > **M21 Apply, 2026-10-04 — this scenario was rewritten because it did not describe what was
 > implemented.** As first written it required the file to be created outside the application tree, and
@@ -192,6 +224,38 @@ this, because a count describes the readers that existed when it was written and
 > exemptions — and **weaker** in another: a listing obtained by importing a walker from a *new* module is
 > not traced. Both directions are recorded in `tasks.md` §4.1 and `design.md` D3 rather than left to a
 > reader of the code to discover.
+
+> **M33 — the third paragraph turns M32's recorded problem into the shipped remedy, and it revises one
+> sentence of M32's record rather than contradicting it.** M32 measured the consequence of making
+> readers report: across 8 full-suite runs, 2 were red with `readTreeStrict: 1 file(s) vanished between
+> being listed and being read`. That is the reporter working, and it is also a gate that is red about one
+> run in four.
+>
+> M32 closed by recording three options and taking none, and it noted that *"a retry would not save it"* —
+> the vanished file being gone for the duration of the writer's `it` block. **That sentence describes the
+> implementation M32 shipped, which throws on first contact; it is not a claim that no repetition can
+> succeed**, and this paragraph rests on that distinction rather than on the sentence being wrong. The
+> distinction is the reason the fourth paragraph exists: the claim that a repetition outlasts the writer
+> is asserted by a measurement, not by this note.
+>
+> **The remedy is the requirement's own second-listed one, an explicit lock, realised as a wait on the
+> reader side.** Relocating the probe stays rejected — a probe the walkers cannot see makes the guard
+> under test prove nothing — and no marker file, shared directory or inter-worker protocol is
+> introduced, so there is nothing to deadlock and no state to go stale between runs. Both reader
+> families are covered by the same change because M32 routed both through `tests/helpers/sourceTree.ts`.
+>
+> **What did not change:** exhausting the budget is still a failure naming every raced path, and a
+> reader still never returns a partial listing. The repetition narrows *when* a collision is reported.
+> It does not make a collision unreportable.
+>
+> **What the evidence does and does not show.** The collision did not occur once in 24 runs on the
+> pre-change tree, so the remedy's benefit could not be demonstrated as a drop in red runs — the local
+> comparison reads `1 of 24` against `0 of 24`, and the single red carried no vanished-file signature, so
+> there is evidence it was *not* this race. What is claimed instead is the deterministic property the
+> third paragraph states, proved on every run by the convergence and exhaustion arms, together with a
+> measured writer window asserted against the budget. No claim is made that the race is now impossible,
+> and the direction a file *appearing* between listing and reading is not addressed by this requirement
+> either. Both limits are in `design.md` D5 and `tasks.md` §1 and §5.
 
 ### Requirement: An intermittently failing test is diagnosed before it is fixed
 

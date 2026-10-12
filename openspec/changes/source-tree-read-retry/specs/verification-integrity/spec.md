@@ -138,3 +138,12 @@ intermittent failure.
 > **What did not change:** exhausting the budget is still a failure naming every raced path, and a
 > reader still never returns a partial listing. The repetition narrows *when* a collision is reported.
 > It does not make a collision unreportable.
+>
+> **What the evidence does and does not show.** The collision did not occur once in 24 runs on the
+> pre-change tree, so the remedy's benefit could not be demonstrated as a drop in red runs — the local
+> comparison reads `1 of 24` against `0 of 24`, and the single red carried no vanished-file signature, so
+> there is evidence it was *not* this race. What is claimed instead is the deterministic property the
+> third paragraph states, proved on every run by the convergence and exhaustion arms, together with a
+> measured writer window asserted against the budget. No claim is made that the race is now impossible,
+> and the direction a file *appearing* between listing and reading is not addressed by this requirement
+> either. Both limits are in `design.md` D5 and `tasks.md` §1 and §5.
