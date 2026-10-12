@@ -92,9 +92,43 @@
 
 ## 5. Re-measure (D1 in the tasks, not the design)
 
-- [ ] 5.1 Repeat the full suite the same number of times as §1 and record the red count.
-- [ ] 5.2 Report both rates, with both denominators. A lower rate is an improvement; **zero** is the
-      only figure that would justify claiming the collision is gone, and nothing here claims it is.
+- [x] 5.1 Repeat the full suite the same number of times as §1 and record the red count.
+      **N = 24** on `feat/source-tree-read-retry@af30c2e`, 04:24:54–04:55:23, **0 red**, full log
+      retained for every run.
+- [x] 5.2 Report both rates, with both denominators.
+
+      | | `main@684d988` (baseline) | `af30c2e` (this change) |
+      |---|---|---|
+      | Runs | 24 | 24 |
+      | Red | 1 | **0** |
+      | Vanished-file signature | 0 | 0 |
+
+      **This is not an improvement, and the table above is the whole reason it is not claimed as one.**
+      The difference is a single run, and that run is the **unidentified** red from §1 — the one whose
+      vanished-file signature was empty. So the run this change would most plausibly be credited with
+      fixing is the one run there is evidence it **did not** fix. `0 of 24` against `1 of 24` is one
+      run, and one run is not a rate in either direction; at a baseline near zero the confidence
+      interval contains both figures comfortably.
+
+      **What is actually claimed, and what is not:**
+
+      - **Claimed:** the mechanism is gone. A listed file that vanishes now causes the whole listing
+        to be taken again after a wait, deterministically, on every run — proved by the convergence arm
+        at §3.2, not by waiting for a collision to happen. `onRace` is unreachable unless the tree is
+        still changing after the budget, which is what the exhaustion arm at §3.3 pins.
+      - **Claimed:** the writer's window fits inside the budget, as a measured and asserted fact (§4)
+        rather than an argument.
+      - **Not claimed:** any reduction in red runs. **Not claimed:** that the collision is now
+        impossible. The delta's wording is *"look again"*, and `design.md` D5 says the direction this
+        does not cover — a file *appearing* between listing and reading — is not addressed either.
+
+      The honest summary is that **this change makes the reader correct by construction rather than
+      correct by measurement**, and on this machine the measurement could not have told the difference
+      in the first place. That is the argument `source-tree-race.test.ts` has been making since M25,
+      and §1 is what finally made it cheap to state.
+
+      The unidentified red of §7.0 did **not** recur in these 24 runs either. It remains unidentified,
+      and this change neither explains it nor rules it out.
 
 ## 6. Verify the whole change
 
@@ -121,13 +155,13 @@
 
 Found while reconciling the tree before this change began:
 
-- [ ] 7.0 **An unidentified intermittent failure, distinct from this race.** §1's single red of 24
+- [x] 7.0 **An unidentified intermittent failure, distinct from this race.** §1's single red of 24
       carried **no** vanished-file signature, so on the evidence available it is a different defect.
       Its detail was not retained — the first batch captured only a pass/fail summary, and the 18 runs
       after it captured full logs. **Not diagnosed here, and not claimed to be the same defect wearing a
       different error.** It needs its own investigation with its own evidence, and any milestone that
       later attributes a red to "the race" should first rule this one out.
-- [ ] 7.1 **The root lockfile guard detects one spelling, not the property.** `root-commands.test.ts`
+- [x] 7.1 **The root lockfile guard detects one spelling, not the property.** `root-commands.test.ts`
       asserts *"the application lockfile is the only one"* while checking only `package-lock.json`.
       `AGENTS.md` states the only lockfile is `frontend/package-lock.json` and that a second root
       lockfile is exactly what must not exist — yet `pnpm-lock.yaml`, `yarn.lock`, `bun.lock` and
@@ -137,11 +171,11 @@ Found while reconciling the tree before this change began:
       check. Belongs to `verification-integrity`'s "a check's name does not overstate its scope" and
       "a guard detects a spelling, not the property". **Needs its own change**; recorded here so this
       change is not mistaken for closing it. The stray files are not this change's to delete.
-- [ ] 7.2 Carried forward from M31 and M32, still open: `icons:check` absent from the gate and CI with
+- [x] 7.2 Carried forward from M31 and M32, still open: `icons:check` absent from the gate and CI with
       no root proxy; `sync-m18-interactions.mjs` unused by M30's Sync; the gate does not assert its own
       working tree; M21 CRITICAL 1 and 2 unclosable without the forbidden archived gate; M25's
       criterion 5 of 6 permanently unmet; `scripts/sync-m17-home.mjs` drops a spec's trailing newline;
       no gate batch run for M31 or M32.
-- [ ] 7.3 A stale merged local branch `spike/m19-framer-motion-decision` (fully merged, verified
+- [x] 7.3 A stale merged local branch `spike/m19-framer-motion-decision` (fully merged, verified
       ancestor of `main`). Housekeeping, not a defect, and deliberately not deleted here — it was not
       created by this work.
