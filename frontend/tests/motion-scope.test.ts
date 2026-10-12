@@ -1,8 +1,10 @@
 import { readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import { INHERITED_MOTION, MOTION_ALLOWED, MOTION_CLASS } from "@/styles/motionTokens";
 import { FRONTEND_ROOT, motionUtilities, sourceFiles } from "./helpers/motionSource";
+import { SOURCE_TREE_RETRY_BUDGET_MS } from "./helpers/sourceTree";
 
 /**
  * M19 tasks 4.1 and 4.2 — the no-motion detector, generalised and inverted. This
@@ -102,7 +104,26 @@ describe("the detector's coverage is the source tree, not a list (task 4.1)", ()
     // `export const PROBE = "motion-feedback"` is *not* read as motion by this detector,
     // because a string that reaches no class attribute cannot reach the DOM — which is a
     // stricter rule than M17's and is asserted separately below.
+    //
+    // ## Why this block also measures itself
+    //
+    // This is the only test in the repository that writes into the application source tree, and the
+    // probe's lifetime is therefore the window every other reader can collide with. Readers now wait
+    // and re-list rather than skipping a vanished file, and **that remedy only works while this window
+    // is shorter than the budget they wait for** — a claim nobody can check by reading the code, since
+    // one assertion here and a `readTree` across a dozen files are both microseconds apart and the
+    // ordering is not something either side controls.
+    //
+    // So the window is measured at the two instants that define it, immediately before the probe is
+    // written and immediately after it is removed, and asserted against the budget the readers actually
+    // use. **If the probe ever grows past the budget, this fails and says so** — rather than the reader
+    // quietly ceasing to help and the collision resurfacing as an intermittent failure somewhere else.
+    //
+    // Nothing else here changed. The probe is not moved, no lock is taken, and when it exists on disk is
+    // exactly when it existed before: the collision is fixed entirely from the reader side.
+    const probeWrittenAt = performance.now();
     writeFileSync(probe, 'export const probeClassName = "motion-feedback";\n', "utf8");
+    let probeWindowMs = 0;
     try {
       const carriersAfterDrop = readdirSync(join(FRONTEND_ROOT, "src", "features", "sharing")).map(
         String,
@@ -119,7 +140,19 @@ describe("the detector's coverage is the source tree, not a list (task 4.1)", ()
       ).toBe(false);
     } finally {
       rmSync(probe, { force: true });
+      probeWindowMs = performance.now() - probeWrittenAt;
     }
+
+    // Asserted outside the `finally` on purpose. An `expect` inside it would replace any earlier failure
+    // with its own, so a genuine detector failure would be reported as a window failure — which is the
+    // kind of misleading red this repository has been bitten by before.
+    expect(
+      probeWindowMs,
+      `the probe was on disk for ${probeWindowMs.toFixed(1)}ms, and every reader of the source tree ` +
+        `retries for ${SOURCE_TREE_RETRY_BUDGET_MS}ms before reporting a vanished file. A window longer ` +
+        `than the budget means a repetition can no longer outlast the writer, so the collision would ` +
+        `come back as an intermittent failure somewhere other than here.`,
+    ).toBeLessThan(SOURCE_TREE_RETRY_BUDGET_MS);
   });
 
   it("is not fooled by prose, by an error message, or by an identifier", () => {

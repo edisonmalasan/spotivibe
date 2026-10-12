@@ -94,9 +94,14 @@ const readTreeCache = new Map<string, Array<{ file: string; source: string }>>()
  */
 const racedFiles = new Set<string>();
 
+/**
+ * `budgetMs` is forwarded so a caller that manufactures a permanent vanished file can opt out of the
+ * repetition rather than pay for it — see the race test below. It defaults to the helper's own budget,
+ * so every ordinary call still gets the repetition without naming the number here.
+ */
 function readTree(
   dir: string,
-  options: { read?: (path: string) => string } = {},
+  options: { read?: (path: string) => string; budgetMs?: number } = {},
 ): Array<{ file: string; source: string }> {
   const cached = readTreeCache.get(dir);
   if (cached) return cached;
@@ -3658,6 +3663,12 @@ describe("the source tree was not mutated while this suite read it", () => {
       const missing = Object.assign(new Error("gone"), { code: "ENOENT" });
 
       const read = readTree(directory, {
+        // `budgetMs: 0` because this manufactures a *permanent* ENOENT rather than racing a writer, and
+        // the default repetition budget would be spent in full — a whole second of wall-clock — before
+        // reaching the exhaustion branch this test exists to reach. The behaviour under test is
+        // unchanged: with no budget the first contact is the last, so `onRace` still fires and the miss
+        // is still recorded. Only the waiting is skipped.
+        budgetMs: 0,
         read: () => {
           throw missing;
         },

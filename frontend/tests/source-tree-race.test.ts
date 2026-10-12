@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { isMissing, readTree, readTreeStrict } from "./helpers/sourceTree";
+import {
+  isMissing,
+  readTree,
+  readTreeStrict,
+  retriesWithinBudget,
+  retryBackoffMs,
+  SOURCE_TREE_RETRY_BUDGET_MS,
+} from "./helpers/sourceTree";
 
 /**
  * Listing a tree and reading it, when the tree changes in between.
@@ -13,6 +20,21 @@ import { isMissing, readTree, readTreeStrict } from "./helpers/sourceTree";
  * those two halves produced `ENOENT` — an intermittent failure in a suite that has nothing to say
  * about the architecture. Vitest isolates VM state and not the filesystem, so `isolate: true`
  * cannot prevent it.
+ *
+ * ## What changed when the reader started looking again
+ *
+ * Tolerating on first contact fixed the crash and left the gate: M32 measured the reporter firing in
+ * **2 of 8** full-suite runs, which is a gate nobody can rely on. So the reader now repeats the whole
+ * listing after a wait, and **the meaning of `onRace` changed with it**:
+ *
+ * | | before | now |
+ * |---|---|---|
+ * | `onRace` fires | the moment a listed file is found gone | only when the budget is exhausted |
+ * | a collision that resolves | reported, and the caller failed | **silent** — the listing returned is the one that was read |
+ * | raced paths reported | the files missed on that one attempt | the **union across every attempt** |
+ *
+ * Every test below that asserts on `onRace` was re-read against that table rather than kept, because a
+ * test that still passes is not evidence it still tests what it says.
  *
  * ## Why this is tested with an injected hook rather than by racing two workers
  *
@@ -51,6 +73,25 @@ function tree(): string {
   return root;
 }
 
+/**
+ * The budget used by every test that manufactures a `ENOENT` no filesystem would ever produce.
+ *
+ * **Not an optimisation — the tests would be asserting nothing.** These cases stub the reader to
+ * throw on every attempt, so with the production budget each one spends a full second asleep before
+ * it can reach its first expectation, and five of them is five seconds of a suite whose per-test
+ * timeout is already a known source of red runs. `0` says "do not repeat", which also makes each of
+ * those tests a statement about the *exhausted* path rather than about timing.
+ */
+const NO_REPETITION_MS = 0;
+
+/** A budget small enough to be instant and large enough to buy several real attempts. */
+const SHORT_BUDGET_MS = 30;
+
+/** The bare filename of an absolute path, so an assertion survives `readdirSync` ordering. */
+function nameOf(file: string): string {
+  return file.split(/[\\/]/).pop()!;
+}
+
 describe("readTree", () => {
   it("reads every matching file under the directory, at any depth", () => {
     const files = readTree(tree());
@@ -72,16 +113,24 @@ describe("readTree", () => {
     expect(readTree(join(scratchDir(), "absent"))).toEqual([]);
   });
 
-  it("skips a file that vanishes between being listed and being read", () => {
+  it("reports a file that is still gone after the budget, with a budget of zero", () => {
     // The defect, caused rather than raced. `motion-scope.test.ts` deletes its probe inside a
     // `finally`, so any worker that listed `src` first and read second could hit `ENOENT` for a file
     // that never mattered — an intermittent failure in a suite with nothing to say about it.
+    //
+    // **Re-read against the new contract rather than kept.** Before the repetition this asserted
+    // "a vanished file is skipped and reported". That is no longer what happens: with a real budget
+    // `afterList` would run again, `a.ts` would no longer be listed at all, and the second attempt
+    // would converge — so the report would never fire and this test would pass for a reason it does not
+    // name. `budgetMs: 0` pins it to the exhausted path, which is what it claims to be about, and the
+    // converging path is asserted separately below rather than assumed here.
     const root = tree();
     const raced: string[] = [];
 
     const files = readTree(root, {
       afterList: (listed) => rmSync(listed.find((file) => file.endsWith("a.ts"))!),
       onRace: (file) => raced.push(file),
+      budgetMs: NO_REPETITION_MS,
     });
 
     // The vanished file is skipped rather than thrown, the surviving one is still read, and the
@@ -95,11 +144,16 @@ describe("readTree", () => {
   it("reports every vanished file, not just the first", () => {
     // A partial report would let a caller believe a single file was involved when a whole probe
     // directory went at once, which is what actually happens when a test cleans up.
+    //
+    // `afterList` removes every file on every call, so with a real budget this would repeat until the
+    // budget ran out and the same paths would be reported repeatedly — passing a length check by
+    // repetition rather than by completeness. The budget is zeroed so the count means what it says.
     const root = tree();
     const raced: string[] = [];
     readTree(root, {
       afterList: (listed) => listed.forEach((file) => rmSync(file)),
       onRace: (file) => raced.push(file),
+      budgetMs: NO_REPETITION_MS,
     });
     expect(raced).toHaveLength(2);
   });
@@ -147,10 +201,17 @@ describe("readTree", () => {
     // Both branches of the same decision, in one place, so neither can be changed without the other
     // being visible. A narrowing that broke the tolerance would show up here as the first expectation;
     // a widening would show up as the absence of a throw.
+    //
+    // **The tolerated call gets a zero budget and the fatal one gets nothing.** That asymmetry is the
+    // test: `ENOENT` is retried, `EISDIR` is not, so under a real budget the fatal call would throw on
+    // its first attempt anyway while the tolerated call would spend the budget and then report. Both
+    // still behave as claimed, but pinning the tolerated side to the exhausted path keeps the case
+    // about the *branch*, not about how long it took to reach it.
     const root = tree();
     const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
 
     const tolerated = readTree(root, {
+      budgetMs: NO_REPETITION_MS,
       read: (file) => {
         if (file.endsWith("a.ts")) throw vanished;
         return "";
@@ -214,14 +275,19 @@ describe("readTreeStrict", () => {
     ]);
   });
 
-  it("fails when a file vanished, and names it", () => {
+  it("fails when a file is still gone after the budget, and names it", () => {
     // The obligation this wrapper exists to discharge. `readTree` would return one file silently here,
     // and a reader built on it would report success while checking less than it set out to.
+    //
+    // **Re-read rather than kept.** Under the production budget this read never converges — the stub
+    // throws for `a.ts` on every attempt — so the throw would still fire, but after a second of
+    // sleeping. `budgetMs: 0` keeps the case about the throw and names the exhausted path in its title.
     const root = tree();
     const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
 
     expect(() =>
       readTreeStrict(root, {
+        budgetMs: NO_REPETITION_MS,
         read: (file) => {
           if (file.endsWith("a.ts")) throw vanished;
           return `contents of ${file}`;
@@ -233,12 +299,17 @@ describe("readTreeStrict", () => {
   it("names every vanished file, not just the first", () => {
     // The partial-report case: `motion-scope.test.ts` removes its probe in a `finally`, and a reader that
     // learned of only the first loss would conclude a single file was involved when a directory went.
+    //
+    // The budget is zeroed for the reason above, and the count assertion is what makes it a *partial
+    // report* test rather than a substring test: every path is named, and exactly as many are named as
+    // there were files.
     const root = tree();
     const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
 
     let thrown: Error | undefined;
     try {
       readTreeStrict(root, {
+        budgetMs: NO_REPETITION_MS,
         read: () => {
           throw vanished;
         },
@@ -272,12 +343,20 @@ describe("readTreeStrict", () => {
     // `readTreeStrict` overrides `onRace` so the raced paths cannot be diverted somewhere the wrapper does
     // not see. If a caller's callback were honoured as well, a caller could pass one that does nothing and
     // the throw would still fire - so the test asserts the override rather than the convenience.
+    //
+    // **Re-read rather than kept, because this one would have gone quietly green.** The read throws for
+    // every file, so under the production budget the wrapper's own `onRace` would fire once per path
+    // *after* exhaustion - and the caller's callback would still see nothing, because the override happens
+    // when the options are assembled rather than when a race is noticed. It passes for a reason close to
+    // its stated one, which is exactly the sort of near-miss a kept test hides. Zeroing the budget pins it
+    // to a single attempt, where the override is the only thing that can explain the result.
     const root = tree();
     const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
     const callerSaw: string[] = [];
 
     expect(() =>
       readTreeStrict(root, {
+        budgetMs: NO_REPETITION_MS,
         read: () => {
           throw vanished;
         },
@@ -285,5 +364,189 @@ describe("readTreeStrict", () => {
       }),
     ).toThrow(/vanished between being listed and being read/);
     expect(callerSaw).toEqual([]);
+  });
+});
+
+/**
+ * ## The two arms of the repetition
+ *
+ * The repetition is the whole point of the change, and it has exactly two outcomes. Both are driven
+ * through the seams this file already had — `afterList` decides *what the tree looks like* on each
+ * attempt, `read` decides *whether a listed file can be read* — so both execute on every run rather than
+ * waiting for two workers to collide, which is the condition the header above exists to avoid depending on.
+ *
+ * The convergence arm is the one that fixes the gate. The exhaustion arm is the one that keeps the
+ * helper honest, and it is asserted with the same care as the first: a retry that cannot be shown to
+ * fail is a retry nobody knows is doing anything.
+ */
+describe("the repetition", () => {
+  it("returns the complete second listing and reports nothing when the file is gone only once", () => {
+    // The convergence arm. `a.ts` is removed after the first listing and never comes back, so the
+    // second listing genuinely differs from the first — and the returned contents are asserted to *be*
+    // that second listing, file for file. Comparing against the first would let a cache satisfy the test.
+    const root = tree();
+    const raced: string[] = [];
+    const listings: Array<ReadonlyArray<string>> = [];
+
+    const files = readTree(root, {
+      afterList: (listed) => {
+        listings.push(listed);
+        if (listings.length === 1) rmSync(listed.find((file) => file.endsWith("a.ts"))!);
+      },
+      onRace: (file) => raced.push(file),
+      budgetMs: SHORT_BUDGET_MS,
+    });
+
+    // It looked again rather than reporting, so the listing really was taken twice...
+    expect(listings, "the whole listing is repeated, not just the failed read").toHaveLength(2);
+    expect(listings[0]!.map(nameOf)).toEqual(["a.ts", "b.tsx"]);
+    expect(listings[1]!.map(nameOf)).toEqual(["b.tsx"]);
+
+    // ...the complete second listing is what came back, contents included...
+    expect(files.map((entry) => entry.file)).toEqual([...listings[1]!]);
+    expect(files.map((entry) => entry.source)).toEqual(["export const b = 2;\n"]);
+
+    // ...and a collision that resolved cost the caller nothing to know about. This is the assertion
+    // that changed meaning with the contract: before, a race here was reported.
+    expect(raced).toEqual([]);
+  });
+
+  it("retries exactly as many times as the budget pays for, then reports every path that vanished", () => {
+    // The exhaustion arm. The read never succeeds, so the loop must stop — and it must stop after the
+    // number of attempts its budget bought, not after one, and not after forever.
+    const root = tree();
+    const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
+    const raced: string[] = [];
+    let attempts = 0;
+
+    const files = readTree(root, {
+      afterList: () => {
+        attempts += 1;
+      },
+      onRace: (file) => raced.push(file),
+      budgetMs: SHORT_BUDGET_MS,
+      read: () => {
+        throw vanished;
+      },
+    });
+
+    const expectedAttempts = retriesWithinBudget(SHORT_BUDGET_MS) + 1;
+    expect(expectedAttempts, "a short budget still buys several attempts").toBeGreaterThan(2);
+    expect(attempts, "one initial listing plus one per retry").toBe(expectedAttempts);
+    expect(raced.map(nameOf).sort()).toEqual(["a.ts", "b.tsx"]);
+    expect(
+      files,
+      "a read that never succeeded returns nothing rather than a partial listing",
+    ).toEqual([]);
+  });
+
+  it("throws naming every path that vanished on any attempt, not only the last", () => {
+    // The union across attempts, and the reason it is not a detail.
+    //
+    // Each attempt loses a *different* file, and the last attempt's file was perfectly readable on the
+    // first. A report narrowed to the final attempt would name `b.tsx` alone — while `a.ts`, the file a
+    // reader would most need told about, went unmentioned despite having genuinely vanished once.
+    const root = tree();
+    writeFileSync(join(root, "c.ts"), "export const c = 3;\n", "utf8");
+    const vanished = Object.assign(new Error("gone"), { code: "ENOENT" });
+    // What the tree "loses" on each attempt, in order. The files are not removed: the read seam decides,
+    // so every attempt lists the whole tree and the only thing that varies is which file cannot be read.
+    const lostPerAttempt = [["a.ts"], ["c.ts"], ["b.tsx"]];
+    let attempts = 0;
+
+    let thrown: Error | undefined;
+    try {
+      readTreeStrict(root, {
+        budgetMs: SHORT_BUDGET_MS,
+        afterList: () => {
+          attempts += 1;
+        },
+        read: (file) => {
+          if (lostPerAttempt[attempts - 1]!.includes(nameOf(file))) throw vanished;
+          return `contents of ${file}`;
+        },
+      });
+    } catch (error) {
+      thrown = error as Error;
+    }
+
+    expect(attempts, "every attempt until the budget ran out").toBe(
+      retriesWithinBudget(SHORT_BUDGET_MS) + 1,
+    );
+    expect(thrown).toBeDefined();
+    expect(thrown!.message).toMatch(/3 file\(s\)/);
+    for (const expected of ["a.ts", "c.ts", "b.tsx"]) {
+      expect(thrown!.message, `${expected} vanished on some attempt and must be named`).toContain(
+        expected,
+      );
+    }
+  });
+
+  it("never repeats a read failure that is not a vanished file", () => {
+    // The narrowing survives the repetition, and this is where it is proved rather than assumed: a
+    // retried `EACCES` would burn the whole budget re-reading a tree that fails identically every time,
+    // and — worse — an implementation that caught every error and retried it would look identical here
+    // unless the *attempt count* were asserted.
+    const root = tree();
+    const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    let attempts = 0;
+
+    expect(() =>
+      readTree(root, {
+        budgetMs: SOURCE_TREE_RETRY_BUDGET_MS,
+        afterList: () => {
+          attempts += 1;
+        },
+        read: () => {
+          throw denied;
+        },
+      }),
+    ).toThrow(denied);
+
+    expect(attempts, "a fatal read failure is not something to wait out").toBe(1);
+  });
+
+  it("never schedules more waiting than the budget pays for, and stops there", () => {
+    // The budget's own invariant, asserted over the values that matter rather than against a copied
+    // schedule. A hard-coded expected count would go stale the moment a constant changed, and would be
+    // asserting the arithmetic rather than the property.
+    for (const budget of [0, 1, 30, 250, SOURCE_TREE_RETRY_BUDGET_MS]) {
+      const retries = retriesWithinBudget(budget);
+      let scheduled = 0;
+      for (let retry = 0; retry < retries; retry += 1) scheduled += retryBackoffMs(retry);
+
+      expect(scheduled, `budget ${budget}ms must not be overspent`).toBeLessThanOrEqual(budget);
+      if (retries > 0) {
+        expect(
+          scheduled + retryBackoffMs(retries),
+          `budget ${budget}ms must be fully spent`,
+        ).toBeGreaterThan(budget);
+      }
+    }
+  });
+
+  it("caps the backoff rather than doubling without limit", () => {
+    // The cap is what stops a long budget from buying a single enormous park at the end. Without it a
+    // budget of a second would schedule a 512ms wait before the last attempt.
+    expect(retryBackoffMs(0)).toBeLessThan(retryBackoffMs(1));
+    const capped = retryBackoffMs(50);
+    expect(retryBackoffMs(49)).toBe(capped);
+    expect(retryBackoffMs(1_000)).toBe(capped);
+    // The cap's whole purpose: it must be small enough that the production budget still buys *many*
+    // attempts. A cap set near the budget would collapse the repetition to two tries and make the
+    // whole mechanism a coin toss on which side of a race the reader lands.
+    expect(
+      retriesWithinBudget(SOURCE_TREE_RETRY_BUDGET_MS),
+      "a capped wait must leave the production budget able to buy many attempts",
+    ).toBeGreaterThanOrEqual(10);
+  });
+
+  it("buys no repetition at all from a budget of zero", () => {
+    // The seam the re-read tests above depend on. If this stopped holding, every one of those tests
+    // would silently start sleeping for the production budget and the suite's timing would change for a
+    // reason nobody could see.
+    expect(retriesWithinBudget(0)).toBe(0);
+    expect(retriesWithinBudget(-1)).toBe(0);
+    expect(retriesWithinBudget(Number.NaN)).toBe(0);
   });
 });
