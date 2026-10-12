@@ -149,6 +149,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M30** | Make the gate's own coverage a checked fact rather than a documented gap | `MERGED, ARCHIVED` - PR #128, merge `0159f9e`, sync #129 `8de5849`, archived `2026-10-11-close-gate-coverage-gaps`; batch 6 of 6 at `ee3ff46`, corroborator exit 0; CI all 8 steps green | M29, M21 |
 | **M31** | Bring repository-root `scripts/` inside the quality gate | `MERGED, ARCHIVED` - PR #132, merge `4dc2850`, sync #133 `a75019e`, archived `2026-10-11-cover-root-scripts`; CI green on both runs; **no gate batch run** | M30, M21 |
 | **M32** | Make every reader of the application source tree race-tolerant | `MERGED, ARCHIVED` - PR #137, merge `3ceed84`, sync #138 `b2e06f8`, archived `2026-10-11-race-tolerant-tree-readers`; gate exit 0, 187 files / 3491 tests; **8 full-suite runs, 2 red** | M31, M25, M21 |
+| **M33** | Make a vanished source-tree file mean "look again" rather than fail now | `MERGED, ARCHIVED` - PR #141, merge `55bd6ea`, sync #142 `9f711f7`, archived `2026-10-13-source-tree-read-retry`; gate exit 0, 187 files / 3498 tests; **48 full-suite runs measured, 1 red — and that one was NOT this race** | M32, M25 |
 
 > **M32 exists because the word "every" was in a scenario for four milestones and nothing could fail
 > on it.**
@@ -215,6 +216,85 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > unclosable without the forbidden archived gate; **M25's criterion 5 of 6 stays permanently unmet**;
 > `scripts/sync-m17-home.mjs` drops a spec's trailing newline; **no gate batch was run for M31 or
 > M32**. **UNVERIFIED:** no browser was attached at any point in this milestone.
+
+> **M33 exists because M32's fix worked, and working is what made it expensive.** M32 measured the
+> consequence of making every reader report a vanished file: **2 red runs of 8**. Both facts are the
+> same fact — the reporter is correct, and correctness at that collision rate means a gate that is red
+> about one run in four. M32 closed by recording three options and taking none. M33 took option 3 using
+> the remedy the requirement **already names in its first sentence** — *"or take an explicit lock"* —
+> realised as a bounded repetition on the reader side. **No marker file, no shared state directory, no
+> inter-worker protocol**, so there is nothing to deadlock and nothing to go stale between runs.
+
+> **The measurement undercuts the milestone's own headline, and that is recorded before the good news.**
+> **48 full-suite runs were measured, not 8.** Baseline `main@684d988`: **1 red of 24**. After the change:
+> **0 red of 24**. That is a difference of **one run**, and the run in question is the **unidentified**
+> one whose vanished-file signature was **empty** — so there is evidence it was *not* this race. **This
+> milestone does not claim any reduction in red runs.** The race it targets occurred **0 times in 24
+> runs** on the pre-change tree, where M32 recorded it twice in eight; different trees, different machine
+> load, and **the difference is not explained here**. What is claimed instead is that the mechanism is
+> gone — a listed file that vanishes now causes the whole listing to be taken again after a wait,
+> deterministically, **proved on every run** by the convergence and exhaustion arms rather than by
+> waiting for a collision. That is `source-tree-race.test.ts`'s own argument since M25, and this is the
+> milestone where measuring it first made the argument cheap to state.
+
+> **The design's first placement would have left a reader on the failing path, and nothing would have said
+> so.** The repetition is inside `readTree`, **not `readTreeStrict`** — because `architecture.test.ts`
+> never calls `readTreeStrict`. It defines its own memoising `readTree` at `:97` over the same shared
+> helper, records into its own `racedFiles`, and asserts that set empty at the end of its own suite. A
+> repetition in the strict wrapper would have covered fourteen readers and left that one failing, with the
+> file list, the guard, and a green gate all silent about it.
+
+> **Two numbers in the design were wrong, and building it is what showed that.** D2 called the budget a
+> **wall-clock deadline**; it is **arithmetic** — a retry count derived from the schedule — because the
+> exhaustion test asserts an *exact* attempt count, and under a wall-clock deadline that number is
+> load-dependent, so the same test would assert something different on a busy box than an idle one. D2.1
+> counted the sites needing a budget override as **five**; re-reading the implemented suite found **six**
+> in the race suite and a **seventh in `architecture.test.ts`** worth **1223 ms against 588 ms** for one
+> line. A number in a design document is a claim about code, and the code is what checks it. The seventh
+> was found because the implementation worker **reported it rather than reaching outside its ownership**,
+> and the orchestrator then owned it.
+
+> **The sync check caught a real divergence on its first honest run, which is the whole reason it exists.**
+> Verifying the sync means proving the main spec's block **equals** the delta's, not that the old text
+> survived. It reported `DIVERGENT`: the main spec carried an evidence-limitation paragraph the delta did
+> not, because the measurement was not knowable when the delta was proposed. **That is the M21 C7 failure
+> mode in miniature** — a spec asserting something no approved delta supports. It was fixed by adding the
+> same paragraph to the delta, not by deleting the disclosure from the spec. The check was negative-
+> controlled before it was trusted: one sentence deleted, `DIVERGENT`, exit 1, restored. It also flagged
+> a **trailing blank line** as a difference on its first run — an artifact of the delta being the last
+> thing in its file, corrected rather than tolerated, because a false positive teaches the reader to
+> ignore the tool.
+
+> **Two process failures in this milestone are recorded rather than moved past.** Twice, a repository file
+> was round-tripped through **PowerShell text commands**, which this repository's constraints forbid.
+> Both were verified undamaged afterwards — no BOM, LF only, zero U+FFFD, zero NUL, diffs confirmed pure
+> addition — but the rule exists because that operation has corrupted files here before, and "it happened
+> to be fine" is not the standard the rule was written at. Separately, the **first baseline batch was six
+> runs that never executed a test**: `--reporter=basic` is not a valid reporter in vitest 5, so all six
+> died at startup in about 4 seconds each. It was caught only by noticing that a full suite takes ~100
+> seconds. The whole batch was discarded.
+
+> **Next eligible objective — recorded as a cursor, with no row created, because both items need their
+> own change and one of them needs diagnosis before it can even be specified.** (1) **An unidentified
+> intermittent failure, distinct from this race** — the single red of 48 carries no vanished-file
+> signature, its detail was not retained, and it did not recur in 24 further runs. There may be a second
+> flaky test in this repository that M32 never saw and M33 does not fix; anything that later attributes a
+> red to "the race" must first rule it out. (2) **The root lockfile guard detects one spelling, not the
+> property** — `root-commands.test.ts` asserts *"the application lockfile is the only one"* while checking
+> only `package-lock.json`, so `pnpm-lock.yaml`, `yarn.lock`, `bun.lock` and `bun.lockb` at the root would
+> each pass. **This is live:** an untracked root `pnpm-lock.yaml` and a two-entry root `node_modules/` are
+> in the working tree, left by a `pnpm` run at the repository root, and **nothing catches them**. **They
+> were deliberately not deleted — they were not created by this work.** Both belong to
+> `verification-integrity`'s "a check's name does not overstate its scope", and item (2) is the more
+> tractable of the two.
+
+> **Also carried forward from M31 and M32, still open:** `icons:check` absent from `npm run gate` and from
+> CI, with no root proxy; `sync-m18-interactions.mjs` unused by M30's Sync; the gate does not assert its
+> own working tree; M21 CRITICAL 1 & 2 unclosable without the forbidden archived gate; **M25's criterion
+> 5 of 6 permanently unmet**; `scripts/sync-m17-home.mjs` drops a spec's trailing newline; **no gate batch
+> run for M31, M32 or M33**. **`walk` can still throw an unretried `ENOENT`** if a *directory* vanishes —
+> pre-existing, untouched by M33, and recorded in `design.md` D5 so it is not later mistaken for handled.
+> **UNVERIFIED:** no browser was attached at any point in this milestone.
 
 > **M31 exists because an exemption with an accurate reason is still an exemption, and accuracy is not currency.**
 >
