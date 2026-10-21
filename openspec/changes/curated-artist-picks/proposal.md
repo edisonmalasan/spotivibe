@@ -83,7 +83,8 @@ topped up from a language-agnostic list when a selection would otherwise yield o
 639-1 (`hi`). Mapping them: `hindi→hi`, `english→en`, `punjabi→pa`, `tamil→ta`, `telugu→te`,
 `bengali→bn`, `marathi→mr`, `korean→ko`, `spanish→es`, `japanese→ja`, `urdu→ur`. **Punjabi has no
 Spotivibe language code** — the catalog has 38 entries and `pa` is not among them — so that list is
-not ported, and the 10 that are carry **34 artists**.
+not ported, and the 10 that are carry **33 artists** - Lyrix's `Anime OST` is a category rather
+than an artist, and the requirement says every Quick Pick SHALL be a resolvable artist.
 
 **3. 28 of Spotivibe's 38 languages have no Lyrix list.** A language-agnostic list is therefore
 required, or the rail would be empty for most of the catalog. Lyrix's own default (no language
@@ -105,7 +106,7 @@ what has already been collected.
 - A curated entry is asserted to resolve to a real artist route, and to carry no artwork.
 - The **same artist** is asserted to be offered once, whether the curated list and the provider
   material name it by the same name or by different identities.
-- The ported list is asserted against the **mapping** — 10 languages, 34 artists, and no language
+- The ported list is asserted against the **mapping** — 10 languages, 33 artists, and no language
   code outside Spotivibe's catalog — so a typo in a language code is a failing test rather than a
   silent no-op.
 - Each new assertion proven **CAUGHT** by mutation, with SHA-256 proving byte-for-byte restoration.

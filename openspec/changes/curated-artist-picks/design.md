@@ -44,7 +44,7 @@ a language code that does not exist is a lookup that silently never matches.
 filtered list is empty. That is a behaviour worth **not** copying, and it is the reason the
 language-agnostic floor exists (D4).
 
-**What is ported: 10 languages, 34 artists.**
+**What is ported: 10 languages, 33 artists.**
 
 ## D3 — The precedence, and why the curated source sits where it does
 
@@ -127,7 +127,7 @@ rule carries none at all** — a rule that means different things on two machine
 measures the runner rather than the recording machine.
 
 So this change is expected to need a **budget re-record**, and the re-record is expected to be
-**measured on CI's runner** rather than on a local build. The lists are ~34 names and 10 keys; the
+**measured on CI's runner** rather than on a local build. The lists are ~33 names and 10 keys; the
 measurement is whatever it is, and it is recorded in `docs/MOTION.md` with the figures.
 
 **The chunk count is the figure to watch.** A new module that is imported by the rail adds to the

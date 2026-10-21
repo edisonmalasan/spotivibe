@@ -11,6 +11,7 @@ import {
   type QuickPick,
 } from "@/features/home/quickPicks";
 import { QUICK_PICKS_DESCRIPTION, QuickPicksShelf } from "@/features/home/QuickPicksShelf";
+import { LANGUAGES } from "@/lib/languages";
 import * as localData from "@/data/localData";
 import { makeTrack } from "./helpers/music-fixtures";
 import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
@@ -210,6 +211,11 @@ describe("quickPicks: the rail is artist-only", () => {
   it("emits no release entry for a track that names an album", () => {
     // M22 derived album entries here. An album tile in an artist rail is the filler
     // the milestone forbids, so the album metadata is present and unused on purpose.
+    //
+    // M35 added the curated source, so the rail is no longer exactly one entry long.
+    // The claim is the one the milestone was about — no entry stands for the
+    // release — and it is now stated as the absence of the release rather than as
+    // the length of the rail.
     const picks = deriveQuickPicks({
       languages: ["en"],
       taste: {
@@ -217,7 +223,9 @@ describe("quickPicks: the rail is artist-only", () => {
         events: [],
       },
     });
-    expect(picks.map((p) => p.title)).toEqual(["Aurora"]);
+    expect(picks.map((p) => p.title)).not.toContain("First Light");
+    expect(picks[0]?.title).toBe("Aurora");
+    expect(picks.every((p) => p.kind === "artist")).toBe(true);
   });
 
   it("never emits an entry named after a selected language", () => {
@@ -248,6 +256,10 @@ describe("quickPicks: a full set of selected languages still permits artists (M2
     // The exact defect M22 recorded as deliberate: `MAX_SELECTED_LANGUAGES` equals
     // `MAX_QUICK_PICKS`, and M22's reservation made the maximum selection render one
     // `Search` card per language with zero artists. This is the regression clause.
+    //
+    // M35 changed *which* artists the eight cards are — the curated artists of the
+    // selected languages now lead the rail, and the provider's results follow them
+    // — but the clause is unchanged: eight **artist** cards, not eight searches.
     const providerTracks = Array.from({ length: 8 }, (_, i) => track(`p${i}`, `Artist ${i}`));
     const picks = deriveQuickPicks({
       languages: EIGHT_LANGUAGES,
@@ -258,22 +270,35 @@ describe("quickPicks: a full set of selected languages still permits artists (M2
     expect(picks).toHaveLength(8);
     expect(picks.every((pick) => pick.kind === "artist")).toBe(true);
     expect(picks.map((pick) => pick.title)).toEqual([
-      "Artist 0",
-      "Artist 1",
-      "Artist 2",
-      "Artist 3",
-      "Artist 4",
-      "Artist 5",
-      "Artist 6",
-      "Artist 7",
+      "Taylor Swift",
+      "The Weeknd",
+      "Dua Lipa",
+      "Ed Sheeran",
+      "Drake",
+      "Billie Eilish",
+      "YOASOBI",
+      "Kenshi Yonezu",
     ]);
     // The strongest form of the clause: not one card stands for a language.
     for (const code of EIGHT_LANGUAGES) {
       expect(picks.some((pick) => pick.target.toLowerCase() === code.toLowerCase())).toBe(false);
     }
+    for (const language of LANGUAGES) {
+      expect(picks.some((pick) => pick.title === language.name)).toBe(false);
+    }
   });
 
-  it("offers the same artists at one language as at eight", () => {
+  it("offers artist cards — and no search card — at one language as at eight", () => {
+    // M23's version of this test asserted that the *same* artists were offered at
+    // one language as at eight, because before M35 the selected languages only
+    // reordered the provider's candidates. M35's delta requires the opposite —
+    // "the curated popular artists offered change with the selected languages" —
+    // so that assertion was retired by the approved requirement rather than
+    // weakened here.
+    //
+    // What survives — and is still M23's clause — is that the *kind* of card does
+    // not change with the number of languages: artist cards at one, artist cards
+    // at eight, and a search card at neither.
     const providerTracks = Array.from({ length: 8 }, (_, i) => track(`p${i}`, `Artist ${i}`));
     const one = deriveQuickPicks({ languages: ["en"], taste: NO_TASTE, providerTracks });
     const eight = deriveQuickPicks({
@@ -281,7 +306,12 @@ describe("quickPicks: a full set of selected languages still permits artists (M2
       taste: NO_TASTE,
       providerTracks,
     });
-    expect(eight.map((p) => p.target)).toEqual(one.map((p) => p.target));
+    for (const picks of [one, eight]) {
+      expect(picks.length).toBeGreaterThan(0);
+      expect(picks.every((pick) => pick.kind === "artist")).toBe(true);
+    }
+    // And the curated artists themselves do change with the selection.
+    expect(one.map((pick) => pick.title)).not.toEqual(eight.map((pick) => pick.title));
   });
 
   it("uses the whole bound for artists when the device has no local material", () => {
@@ -303,20 +333,66 @@ describe("quickPicks: selected languages shape candidates, not card type", () =>
     // Only the language selection differs between these two derivations; the tracks
     // are identical. That is what makes this a test of the language link rather than
     // of the input data.
+    //
+    // M35: the curated artists of the selected language lead the rail, and the
+    // provider's candidates follow them. The language preference decides the
+    // order of those candidates, which is what this asserts.
     const japanese = deriveQuickPicks({ languages: ["ja"], taste: NO_TASTE, providerTracks });
-    expect(japanese[0]?.title).toBe("Aimer");
+    expect(japanese.map((pick) => pick.title)).toEqual([
+      "YOASOBI",
+      "Kenshi Yonezu",
+      "Aimer",
+      "Aurora",
+      "IU",
+    ]);
   });
 
   it("reorders rather than filters, so a selection can never empty the rail", () => {
     // Selecting a language nobody's tracks carry must not remove those artists: a
     // filter here would produce the empty rail that ROADMAP §21.7 already withdrew.
-    const unmatched = deriveQuickPicks({ languages: ["sw"], taste: NO_TASTE, providerTracks });
-    expect(unmatched.map((pick) => pick.title)).toEqual(["Aurora", "Aimer", "IU"]);
+    //
+    // `es` is a catalog code that none of these three tracks carry. `sw` was used
+    // before M35 and is not a catalog code at all, so it normalized away to the
+    // default language and the test was not reading the clause it claimed to.
+    const unmatched = deriveQuickPicks({ languages: ["es"], taste: NO_TASTE, providerTracks });
+    expect(unmatched.map((pick) => pick.title)).toEqual([
+      "Bad Bunny",
+      "Shakira",
+      "Rauw Alejandro",
+      "Aurora",
+      "Aimer",
+      "IU",
+    ]);
+    // And a code the catalog does not hold is dropped rather than emptying the rail.
+    const unknown = deriveQuickPicks({ languages: ["sw"], taste: NO_TASTE, providerTracks });
+    expect(unknown.length).toBeGreaterThan(0);
   });
 
   it("keeps first-appearance order within each half of the partition", () => {
-    const picks = deriveQuickPicks({ languages: ["ko", "ja"], taste: NO_TASTE, providerTracks });
-    expect(picks.map((pick) => pick.title)).toEqual(["Aimer", "IU", "Aurora"]);
+    // The preferred artist leads the provider's candidates and the rest keep the
+    // order they first appeared in.
+    //
+    // M35 changed what is visible here, not what the rule is: the curated artists
+    // of the selected language lead the rail and the provider's candidates follow.
+    // `ko` is the selection used because the curated source of `ko` and `ja`
+    // together is seven names, and seven of the rail's eight cards would leave the
+    // partition unobservable.
+    const picks = deriveQuickPicks({ languages: ["ko"], taste: NO_TASTE, providerTracks });
+    expect(picks.map((pick) => pick.title)).toEqual([
+      "BTS",
+      "BLACKPINK",
+      "NewJeans",
+      "Stray Kids",
+      "IU",
+      "Aurora",
+      "Aimer",
+    ]);
+    // The provider's candidates, read from the rail itself: the one whose tracks
+    // carry the selected language leads them, and the rest follow in the order
+    // they first appeared.
+    expect(picks.filter((pick) => pick.artworkUrl !== undefined).map((pick) => pick.title)).toEqual(
+      ["IU", "Aurora", "Aimer"],
+    );
   });
 
   it("is deterministic across repeated derivations", () => {
@@ -333,7 +409,12 @@ describe("quickPicks: selected languages shape candidates, not card type", () =>
       taste: NO_TASTE,
       providerTracks: unstamped,
     });
-    expect(picks.map((pick) => pick.title)).toEqual(["Aurora", "Beacon"]);
+    expect(picks.map((pick) => pick.title)).toEqual([
+      "YOASOBI",
+      "Kenshi Yonezu",
+      "Aurora",
+      "Beacon",
+    ]);
   });
 });
 
@@ -352,10 +433,13 @@ describe("quickPicks: first-run picks lead the rail", () => {
       picks: [storedPick("UC_picked", "Aurora Vale")],
     });
 
-    expect(picks).toHaveLength(1);
+    // The pick leads the rail, and the curated artists of the selected language
+    // complete it behind — M35 made the rail longer, not the pick optional.
     expect(picks[0]?.title).toBe("Aurora Vale");
     expect(picks[0]?.kind).toBe("artist");
     expect(picks[0]?.target).toBe("UC_picked");
+    expect(picks.filter((entry) => entry.title === "Aurora Vale")).toHaveLength(1);
+    expect(picks.length).toBeGreaterThan(1);
   });
 
   it("ranks a pick above a liked artist", () => {
@@ -407,7 +491,11 @@ describe("quickPicks: first-run picks lead the rail", () => {
       picks: [storedPick("UC_a", "Alpha"), storedPick("UC_b", "Beta")],
     });
 
-    expect(picks).toHaveLength(2);
+    // Both picks are on the rail, exactly once each, ahead of the curated
+    // artists that complete it behind them.
+    expect(picks.filter((entry) => entry.title === "Alpha")).toHaveLength(1);
+    expect(picks.filter((entry) => entry.title === "Beta")).toHaveLength(1);
+    expect(picks.slice(0, 2).map((entry) => entry.title)).toEqual(["Alpha", "Beta"]);
     for (const entry of picks) {
       expect(entry.kind).toBe("artist");
       expect(quickPickHref(entry)).not.toBeNull();
@@ -456,11 +544,19 @@ describe("quickPicks: every entry is a resolvable artist target", () => {
   });
 
   it("drops an artist whose text key is blank, so no card goes nowhere", () => {
+    // The rail is no longer empty — the curated source fills it — but the unnamed
+    // artist must not be *on* it: an entry with a blank text key would be a card
+    // that goes nowhere.
     const picks = deriveQuickPicks({
       languages: ["en"],
       taste: { likedTracks: [unnamedArtistTrack("v1")], events: [] },
     });
-    expect(picks).toEqual([]);
+    expect(picks.length).toBeGreaterThan(0);
+    expect(picks.filter((entry) => entry.title.trim() === "")).toHaveLength(0);
+    for (const entry of picks) {
+      expect(entry.target.trim()).not.toBe("");
+      expect(quickPickHref(entry)).not.toBeNull();
+    }
   });
 
   it("reports an unresolvable entry as unresolvable rather than as a broken link", () => {
@@ -482,8 +578,8 @@ describe("quickPicks: every entry is a resolvable artist target", () => {
         events: [],
       },
     });
-    expect(byName).toHaveLength(1);
-    expect(bySpelling).toHaveLength(1);
+    expect(byName.filter((entry) => entry.title === "Aurora")).toHaveLength(1);
+    expect(bySpelling.filter((entry) => entry.title === "Aurora")).toHaveLength(1);
   });
 });
 
@@ -491,13 +587,15 @@ describe("quickPicks: local evidence still outranks provider results", () => {
   it("reads provider results only when the device holds no local material", () => {
     const providerTracks = [track("p1", "Trending Someone")];
     const warm = deriveQuickPicks({ languages: ["en"], taste: material(), providerTracks });
-    expect(warm.map((pick) => pick.title)).toEqual(["Aurora", "Beacon", "Cobalt"]);
+    // The local material leads the rail, and the provider's result is not on it at
+    // all: M35's curated source sits between them and does not reopen the gate.
+    expect(warm.slice(0, 3).map((pick) => pick.title)).toEqual(["Aurora", "Beacon", "Cobalt"]);
     expect(warm.some((pick) => pick.title === "Trending Someone")).toBe(false);
   });
 
   it("reads liked tracks before plays", () => {
     const picks = derive();
-    expect(picks.map((pick) => pick.title)).toEqual(["Aurora", "Beacon", "Cobalt"]);
+    expect(picks.slice(0, 3).map((pick) => pick.title)).toEqual(["Aurora", "Beacon", "Cobalt"]);
   });
 
   it("reads no repository and no store while deriving", async () => {
@@ -553,7 +651,10 @@ describe("QuickPicksShelf: circular artist cards that navigate", () => {
   it("renders one anchor per entry, each with a resolvable href", () => {
     render(<QuickPicksShelf />);
     const cards = screen.getAllByTestId("quick-pick");
-    expect(cards).toHaveLength(2);
+    // M35: the rail is completed from the curated artists of the selected
+    // language, so it now holds the whole bound rather than only the two
+    // liked tracks.
+    expect(cards).toHaveLength(MAX_QUICK_PICKS);
     for (const card of cards) {
       expect(card.tagName).toBe("A");
       expect(card.getAttribute("href")).toMatch(/^\/artist\//);
@@ -565,7 +666,7 @@ describe("QuickPicksShelf: circular artist cards that navigate", () => {
     // The Popular Artists section was consolidated into this rail; assertions written
     // against `home-artist-card` must still find the circular artist card.
     render(<QuickPicksShelf />);
-    expect(screen.getAllByTestId("home-artist-card")).toHaveLength(2);
+    expect(screen.getAllByTestId("home-artist-card")).toHaveLength(MAX_QUICK_PICKS);
   });
 
   it("renders circular geometry and the Artist label", () => {

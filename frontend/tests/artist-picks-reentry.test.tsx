@@ -9,6 +9,7 @@ import { HomeView } from "@/features/home/HomeView";
 import {
   ARTIST_ONBOARDING_LABEL,
   ARTIST_ONBOARDING_PENDING_TIMEOUT_MS,
+  ArtistOnboarding,
 } from "@/features/onboarding/ArtistOnboarding";
 import {
   clearOnboardingSeen,
@@ -342,7 +343,11 @@ describe("the first-run surface before the rail has settled", () => {
 });
 
 describe("the settled-with-no-artists case", () => {
-  it("says so, and does not promise a choice it cannot offer", async () => {
+  it("offers the curated artists rather than saying there are none", async () => {
+    // M35: the rail is completed from the curated artists of the selected
+    // language, so it is never empty and the settled-and-empty case cannot be
+    // reached through Home at all. The surface therefore offers artists — and
+    // says nothing about there being none.
     stubDiscovery(() => ({ tracks: [] }));
     clearOnboardingSeen();
 
@@ -350,8 +355,27 @@ describe("the settled-with-no-artists case", () => {
     const dialog = await screen.findByRole("dialog", { name: ARTIST_ONBOARDING_LABEL });
 
     await waitFor(() =>
-      expect(within(dialog).getByTestId("artist-onboarding-empty")).toBeInTheDocument(),
+      expect(within(dialog).getAllByRole("button", { name: /Artist/ })).not.toHaveLength(0),
     );
+    expect(within(dialog).queryByTestId("artist-onboarding-empty")).not.toBeInTheDocument();
+    // It does not promise a choice it cannot offer either — the curated artists
+    // *are* a choice, and they are on the rail.
+    expect(within(dialog).queryByText(/pick them later/i)).not.toBeInTheDocument();
+  });
+
+  it("still says so when the surface is handed an empty rail", async () => {
+    /*
+     * The state Home can no longer reach, exercised at the surface that owns it.
+     *
+     * M35 made the rail never empty, so the settled-and-empty case is
+     * unreachable through the rail — but the surface's own handling of it is
+     * still a promise the spec makes ("once the shelf has settled and offers
+     * nothing, the surface SHALL say so"), and it is checked here rather than
+     * deleted with the route that used to reach it.
+     */
+    render(<ArtistOnboarding artists={[]} settled={true} onClose={() => {}} />);
+
+    const dialog = await screen.findByRole("dialog", { name: ARTIST_ONBOARDING_LABEL });
     expect(within(dialog).getByTestId("artist-onboarding-empty")).toHaveTextContent(
       /couldn't find any artists/i,
     );
@@ -377,12 +401,13 @@ describe("the settled-with-no-artists case", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers no way to choose artists when there is nothing to choose", async () => {
+  it("offers a way to choose artists even when the feed offered none", async () => {
     /*
-     * The candidates are the rail's entries. An empty rail means the picker
-     * would open empty, so the affordance would be offering a choice that does
-     * not exist — the very dead end it is meant to end. It is offered exactly
-     * when there is something to offer.
+     * The candidates are the rail's entries, and the rail is never empty, so
+     * there is always something to choose. The affordance used to be withheld
+     * when the rail held nothing; M35 retired that case rather than the rule,
+     * and the rule — offered exactly when there is something to offer — is now
+     * exercised by the case where the provider contributed nothing at all.
      */
     stubDiscovery(() => ({ tracks: [] }));
     markOnboardingSeen();
@@ -390,7 +415,7 @@ describe("the settled-with-no-artists case", () => {
     render(<HomeView />);
     await waitForRail();
 
-    expect(screen.queryByTestId("quick-picks-pick-action")).not.toBeInTheDocument();
+    expect(screen.getByTestId("quick-picks-pick-action")).toBeInTheDocument();
   });
 });
 

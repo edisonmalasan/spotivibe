@@ -397,12 +397,16 @@ describe("Home artist cards resolve to the artist route (M9 task 6.1, M23 rail)"
   it("links an identified artist to its artist route", async () => {
     const { links, cards } = await rail(ONE_IDENTIFIED_ARTIST);
 
-    expect(links).toHaveLength(1);
-    expect(cards).toHaveLength(1);
-    expect(links[0].tagName).toBe("A"); // a navigation card, never a play control
-    expect(links[0]).toHaveAttribute("href", `/artist/${CHANNEL_ID}`);
-    expect(links[0]).toHaveTextContent("Aurora");
-    expect(links[0]).toHaveTextContent("Artist"); // DESIGN.md circular card composition
+    // M35: the rail is completed from the curated artists of the selected
+    // language, so the trending artist is one card among several rather than the
+    // only one. The claim — that the identified artist links to its own route by
+    // its provider id — is unchanged.
+    const link = links.find((element) => element.getAttribute("href") === `/artist/${CHANNEL_ID}`);
+    expect(link).toBeDefined();
+    expect(cards).toHaveLength(links.length);
+    expect(link!.tagName).toBe("A"); // a navigation card, never a play control
+    expect(link).toHaveTextContent("Aurora");
+    expect(link).toHaveTextContent("Artist"); // DESIGN.md circular card composition
   });
 
   it("wraps the circular artist card in the artist link", async () => {
@@ -421,6 +425,10 @@ describe("Home artist cards resolve to the artist route (M9 task 6.1, M23 rail)"
     // The card therefore prefers the artist's real name for the route key, so a
     // shared link keeps its capitalization, and only falls back to the derived
     // id when that is a genuine provider id.
+    // M35: the rail is completed from the curated artists of the selected
+    // language, so the trending artist is one card among several rather than the
+    // only one. The claim — that the card's key resolves as a text key — is
+    // unchanged, and it is read from the trending artist's own link.
     const { links } = await rail([
       makeTrack({
         id: "youtube:aaa",
@@ -430,9 +438,9 @@ describe("Home artist cards resolve to the artist route (M9 task 6.1, M23 rail)"
       }),
     ]);
 
-    expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute("href", "/artist/Aurora%20Sky");
-    const key = links[0].getAttribute("href")?.replace("/artist/", "") ?? "";
+    const link = links.find((element) => element.getAttribute("href") === "/artist/Aurora%20Sky");
+    expect(link).toBeDefined();
+    const key = link!.getAttribute("href")?.replace("/artist/", "") ?? "";
     expect(decodeURIComponent(key)).toBe("Aurora Sky");
     expect(artistRequestKey(key)).toEqual({ name: "Aurora Sky" });
   });

@@ -203,6 +203,33 @@ export const M31_CLIENT_BUDGET = Object.freeze({
   homeFirstLoadChunkCount: 13,
 });
 
+/**
+ * M34's record, preserved for the same reason `M31_CLIENT_BUDGET` is.
+ *
+ * M34 made the artist Quick Picks picker re-enterable and re-recorded the ceiling by 965 bytes.
+ * M35 added the curated per-language artist lists and moved it by 658 more. Both are real deltas
+ * against the record each replaced, and collapsing them into one `CLIENT_BUDGET - M31_CLIENT_BUDGET`
+ * figure would restate M34's published 965 as 1,493 — the exact defect the M22/M23 pair of records
+ * exists to prevent. Each cost stays measured against what it replaced.
+ *
+ * **M34's move was +965 bytes in total and +31 in the largest chunk, with no new chunk anywhere.**
+ *
+ * **A larger version of M34 was measured and rejected, and the measurement is the point.** The
+ * re-entry was first built in Settings, beside the Languages section, which cost 6,987 bytes in
+ * total, added a 26th chunk, and added a 14th chunk to `/`'s first load. The tolerance is 4,096
+ * bytes and the chunk-count rules carry none, so that version could only ship by moving the
+ * ceiling by more than its whole headroom — which is not a re-record but a rewrite of what the
+ * budget guarantees. The Settings host is deferred to a change that owns the budget, and the
+ * re-entry is hosted on the rail instead. `docs/MOTION.md` §2g carries the full measurement.
+ */
+export const M34_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 389548,
+  largestChunkGzippedBytes: 97538,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 232000,
+  homeFirstLoadChunkCount: 13,
+});
+
 export const CLIENT_BUDGET = Object.freeze({
   /** What the ceiling is a ceiling *of*. */
   subject: "gzipped bytes of every emitted client chunk under .next/static/chunks",
@@ -216,40 +243,32 @@ export const CLIENT_BUDGET = Object.freeze({
   /**
    * When and after what this figure was measured, so a drift has something to be compared to.
    *
-   * Re-recorded for the **artist Quick Picks re-entry** — the first-run picker that asks with real
-   * artists instead of an empty list, and the rail's own control for revising the picks.
+   * Re-recorded for the **curated popular artists** — the per-language artist lists that
+   * complete the Quick Picks rail, so that a device with no picks, no local material and a
+   * failing provider is still offered artists.
    *
-   * **The move is +965 bytes in total and +31 in the largest chunk, with no new chunk anywhere.**
-   * The chunk count and `/`'s first-load chunk count are both unchanged, which is the shape that
-   * distinguishes first-party code from a dependency arriving — a dependency brings a chunk with it,
-   * and the rules that watch the chunk counts carry no tolerance at all.
+   * **The move is +658 bytes in total, and not one byte in the largest chunk.**
+   * The chunk count is unchanged, and `/`'s first-load chunk count is unchanged, which is the
+   * shape that distinguishes first-party code from a dependency arriving — a dependency brings
+   * a chunk with it, and the rules that watch the chunk counts carry no tolerance at all.
    *
-   * The origin is not assumed. The chunks that changed were opened and read: they contain this
-   * change's own code — the shared derivation hook, the three-state surface, the rail's control —
-   * and no library, no vendor table, and nothing that was not already a dependency.
+   * The origin is not assumed. The chunk that changed was opened and read: it contains this
+   * change's own code — the curated lists and the derivation pass that reads them — and no
+   * library, no vendor table, and nothing that was not already a dependency.
    *
-   * **The largest chunk is recorded at the figure CI measured, not at the one this machine
-   * measured, and the reason is that the rule watching it carries no tolerance.** The same build
-   * measured 97,534 B here and 97,538 B on CI's runner, and the same two machines differ by 2 B on
-   * the *pre-change* tree — so the gap is the machines, not the change. The total is recorded at the
-   * figure measured here, because the total's rule carries 4,096 B of tolerance and that is what the
-   * tolerance is for. Recording the lower of two measurements against an exact rule would be a
-   * ceiling that passes on one machine and fails on another; recording the higher makes the rule
-   * mean the same thing in both places.
-   *
-   * **A larger version of this change was measured and rejected.** Hosting the re-entry in Settings
-   * instead cost 6,987 bytes in total, added a 26th chunk, and added a 14th chunk to `/`'s first
-   * load. The tolerance below is 4,096 bytes, and the chunk-count rules carry none, so that version
-   * could only ship by moving this ceiling by more than its whole headroom. The budget's own
-   * `toleranceBytes` note says that widening what this file guarantees "is not this change's decision
-   * to make", so the Settings host is deferred to a change that owns the budget, and the re-entry is
-   * hosted on the rail instead. The 965 bytes here are what that costs.
+   * **The largest chunk is recorded at the figure CI measured, and it did not move.** The
+   * same build measured 97,534 B on this machine and 97,538 B on CI's runner, and the same two
+   * machines differ by 2 B on the *pre-change* tree — so the gap is the machines, not the
+   * change. The record carries the higher figure, because a rule with no tolerance has to mean
+   * the same thing in both places or it is not a rule. The total is recorded at the figure
+   * measured here, because the total's rule carries 4,096 B of tolerance and that is what the
+   * tolerance is for.
    */
-  recordedAt: "2026-10-22, after adding the artist Quick Picks re-entry",
-  totalGzippedBytes: 389548,
+  recordedAt: "2026-10-22, after adding the curated popular artists",
+  totalGzippedBytes: 390206,
   largestChunkGzippedBytes: 97538,
   chunkCount: 25,
-  homeFirstLoadGzippedBytes: 232000,
+  homeFirstLoadGzippedBytes: 232658,
   homeFirstLoadChunkCount: 13,
   /**
    * How far a rebuild may drift from the recorded figure.

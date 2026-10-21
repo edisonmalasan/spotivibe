@@ -281,6 +281,11 @@ describe("HomeView: a fresh user", () => {
     //
     // Fresh user: no likes, no plays. Trending resolves with one credited track
     // carrying an album; every other feed comes back empty.
+    //
+    // M35: the rail is completed from the curated artists of the selected language,
+    // and the feed's own artist joins them. The wiring claim is unchanged, and it is
+    // now the *presence* of the feed's artist on the rail that proves the feed was
+    // read — the rail no longer begins with it.
     const { calls } = stubDiscovery((kind) =>
       kind === "trending"
         ? { tracks: [credited("t1", "Trending Song", "Nova", { album: { title: "Signal Fire" } })] }
@@ -293,8 +298,11 @@ describe("HomeView: a fresh user", () => {
     // M23: artist entries only. The album card this test used to expect alongside
     // the artist is gone — the rail is one kind, so a provider album on a track is
     // not a card. Asserted explicitly rather than left implicit in the length.
-    expect(cards.map((card) => card.getAttribute("data-quick-pick-kind"))).toEqual(["artist"]);
-    expect(cards[0]?.getAttribute("href")).toBe("/artist/Nova");
+    expect(cards.map((card) => card.getAttribute("data-quick-pick-kind"))).toEqual(
+      cards.map(() => "artist"),
+    );
+    // The trending artist is on the rail, which is the wiring claim.
+    expect(cards.map((card) => card.getAttribute("href"))).toContain("/artist/Nova");
     expect(screen.queryByText("Signal Fire")).not.toBeInTheDocument();
 
     // The whole point of reading the feed rather than fetching: no kind the
@@ -303,13 +311,13 @@ describe("HomeView: a fresh user", () => {
     for (const call of calls) expect(call.params.get("kind")).not.toBe("quick-picks");
   });
 
-  it("shows no card and a retryable error when no feed resolved", async () => {
+  it("shows no card of another kind when no feed resolved", async () => {
     // The degradation path, and it is a different path from M22's.
     //
     // M22 kept one language search entry standing in for an empty rail so the shelf
-    // could never look unfinished. M23 removed that entry, so nothing renders — and
-    // because the provider failed, the rail reports the failure and offers a retry
-    // rather than claiming there is simply nothing here.
+    // could never look unfinished. M23 removed that entry; M35 went further and made
+    // the rail never empty, so the curated artists of the selected language fill it
+    // when the provider fails.
     //
     // The regression guarded here is specifically M22's behaviour returning: any card
     // whose kind is not `artist`, in particular the language search entry.
@@ -317,30 +325,38 @@ describe("HomeView: a fresh user", () => {
     render(<HomeView />);
     await settleFeed();
 
-    expect(screen.queryAllByTestId("quick-pick")).toEqual([]);
+    const cards = screen.queryAllByTestId("quick-pick");
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      expect(card.getAttribute("data-quick-pick-kind")).toBe("artist");
+      expect(card.getAttribute("href")).toMatch(/^\/artist\//);
+    }
     expect(screen.queryByTestId("home-section-popular-artists")).not.toBeInTheDocument();
 
+    // The rail has content, so it reports no failure of its own — but the shelf
+    // that *did* fail still reports it, and still offers the retry.
     const rail = screen.getByTestId("home-quick-picks");
-    expect(within(rail).getByRole("alert")).toBeInTheDocument();
-    // `ErrorState`'s own retry hook, so this asserts the recovery affordance the
-    // `discovery` spec requires rather than only that some button exists.
-    // `Shelf` overrides the label to "Retry" for every shelf error.
-    expect(within(rail).getByTestId("error-retry")).toHaveTextContent("Retry");
-    expect(within(rail).queryByTestId("shelf-rail")).not.toBeInTheDocument();
+    expect(within(rail).queryByRole("alert")).not.toBeInTheDocument();
+    const trending = screen.getByTestId("home-section-trending");
+    expect(within(trending).getByRole("alert")).toBeInTheDocument();
+    expect(within(trending).getByTestId("error-retry")).toHaveTextContent("Retry");
   });
 
-  it("shows its empty state when the feed resolves with no artist at all", async () => {
+  it("shows no retry when the feed resolves with no artist at all", async () => {
     // Distinct from the failure above, and the pair matters: a resolved-but-empty feed
     // is not an error, so it must not offer a retry for a request that already
     // succeeded.
+    //
+    // M35: the rail is completed from the curated artists of the selected language,
+    // so it is not empty and shows no empty state — and it offers no retry either.
     stubDiscovery(() => ({ tracks: [] }));
     render(<HomeView />);
     await settleFeed();
 
     const rail = screen.getByTestId("home-quick-picks");
-    expect(within(rail).getByRole("heading", { name: "Nothing here yet" })).toBeInTheDocument();
     expect(within(rail).queryByRole("alert")).not.toBeInTheDocument();
-    expect(within(rail).queryAllByTestId("quick-pick")).toEqual([]);
+    expect(within(rail).queryByTestId("error-retry")).not.toBeInTheDocument();
+    expect(within(rail).getAllByTestId("quick-pick").length).toBeGreaterThan(0);
   });
 
   it("never starts playback on its own", async () => {
@@ -659,7 +675,7 @@ describe("HomeView: one failing shelf", () => {
     expect(within(collections).queryByTestId("shelf-rail")).not.toBeInTheDocument();
   });
 
-  it("propagates the trending failure onto the derived artist shelf", async () => {
+  it("reports the trending failure on the shelf that failed, and fills the rail anyway", async () => {
     stubDiscovery((kind) =>
       kind === "trending" ? { fail: 503, code: "upstream_unavailable" } : { tracks: [] },
     );
@@ -667,11 +683,16 @@ describe("HomeView: one failing shelf", () => {
 
     await within(await screen.findByTestId("home-section-trending")).findByRole("alert");
     // M23: the derived artist shelf is the Quick Picks rail, not a section of its own.
-    // A trending failure still reaches it, so the listener sees the reason rather than
-    // a silently empty rail — the resilience the removed section used to provide.
+    //
+    // M35 changed what this case can assert. The rail is completed from the curated
+    // artists of the selected language, so it is never empty and never shows a
+    // failure of its own: there is nothing to explain and nothing to retry. The
+    // failure is still reported — by the shelf that actually failed.
     const artists = screen.getByTestId("home-quick-picks");
-    await waitFor(() => expect(within(artists).getByRole("alert")).toBeInTheDocument());
-    expect(within(artists).queryByTestId("shelf-rail")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(artists).getAllByTestId("quick-pick").length).toBeGreaterThan(0),
+    );
+    expect(within(artists).queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("keeps the artist rail populated when the provider fails but local taste exists", async () => {
@@ -778,15 +799,17 @@ describe("HomeView: the circular artist rail (M9 section, M23 Quick Picks)", () 
     const cards = await within(shelf).findAllByTestId("home-artist-card");
 
     // One entry per artist, not one per track.
-    expect(cards).toHaveLength(2);
-    expect(cards.map((card) => card.textContent)).toEqual([
-      expect.stringContaining("Aurora"),
-      expect.stringContaining("Beacon"),
-    ]);
-    // Circular geometry, and the design system's 'Artist' label.
+    //
+    // M35: the rail also holds the curated artists of the selected language, so it
+    // is longer than the trending result. The claim is unchanged — the two
+    // trending tracks by one artist are one card, and each artist appears once.
+    const texts = cards.map((card) => card.textContent ?? "");
+    expect(texts.filter((text) => text.includes("Aurora"))).toHaveLength(1);
+    expect(texts.filter((text) => text.includes("Beacon"))).toHaveLength(1);
+    // Circular geometry, and the design system's 'Artist' label on every card.
     const circle = container.querySelector('[data-testid="home-quick-picks"] .rounded-avatars');
     expect(circle).not.toBeNull();
-    expect(within(shelf).getAllByText("Artist")).toHaveLength(2);
+    expect(within(shelf).getAllByText("Artist")).toHaveLength(cards.length);
   });
 
   it("navigates to the artist route when an artist entry is activated", async () => {
@@ -797,7 +820,19 @@ describe("HomeView: the circular artist rail (M9 section, M23 Quick Picks)", () 
     const shelf = await screen.findByTestId("home-quick-picks");
     // M23: the anchor carries `quick-pick` and wraps the circular card, which keeps
     // the `home-artist-card` id for the card element itself.
-    const entry = await within(shelf).findByTestId("quick-pick");
+    //
+    // M35: the rail also holds the curated artists, so the trending artist is one
+    // card among several rather than the first one.
+    await waitFor(() =>
+      expect(
+        within(shelf)
+          .getAllByTestId("quick-pick")
+          .map((element) => element.getAttribute("href")),
+      ).toContain("/artist/Aurora%20Sky"),
+    );
+    const entry = within(shelf)
+      .getAllByTestId("quick-pick")
+      .find((element) => element.getAttribute("href") === "/artist/Aurora%20Sky")!;
     expect(entry.tagName).toBe("A");
     // M9 owns the artist route: the card links the entity, by text key when the
     // shelf had no provider id for it.
@@ -823,7 +858,18 @@ describe("HomeView: the circular artist rail (M9 section, M23 Quick Picks)", () 
     render(<HomeView />);
 
     const shelf = await screen.findByTestId("home-quick-picks");
-    const entry = await within(shelf).findByTestId("quick-pick");
+    // M35: the rail also holds the curated artists, so the trending artist is
+    // addressed by its own href rather than by position.
+    await waitFor(() =>
+      expect(
+        within(shelf)
+          .getAllByTestId("quick-pick")
+          .map((element) => element.getAttribute("href")),
+      ).toContain("/artist/UCaurorachannel00000000"),
+    );
+    const entry = within(shelf)
+      .getAllByTestId("quick-pick")
+      .find((element) => element.getAttribute("href") === "/artist/UCaurorachannel00000000")!;
     expect(entry.getAttribute("href")).toBe("/artist/UCaurorachannel00000000");
   });
 
@@ -852,20 +898,24 @@ describe("HomeView: the circular artist rail (M9 section, M23 Quick Picks)", () 
     expect(image).toHaveAttribute("src", "https://example.test/large.jpg");
   });
 
-  it("explains the empty state when no artist entries can be derived", async () => {
+  it("falls back to the curated artists when no artist entry can be derived", async () => {
     stubDiscovery((kind) =>
       kind === "trending" ? { tracks: [track({ id: "a", artists: [] })] } : { tracks: [] },
     );
     render(<HomeView />);
 
-    // M23: this used to be the section's own "No artists found yet" copy. The rail now
-    // has one empty state, `Shelf`'s, so the assertion names that — asserting the old
-    // string would pin copy that no longer exists rather than the behaviour.
+    // M23: this used to be the section's own "No artists found yet" copy, and M23
+    // re-pointed it at `Shelf`'s own empty state. M35 retired that state for this
+    // rail altogether: the shelf SHALL never be empty, so the rail completes from
+    // the curated artists of the selected language instead of explaining an
+    // absence that can no longer happen.
     const shelf = await screen.findByTestId("home-quick-picks");
+    await waitFor(() =>
+      expect(within(shelf).getAllByTestId("quick-pick").length).toBeGreaterThan(0),
+    );
     expect(
-      await within(shelf).findByRole("heading", { name: "Nothing here yet" }),
-    ).toBeInTheDocument();
-    expect(within(shelf).queryByTestId("shelf-rail")).not.toBeInTheDocument();
+      within(shelf).queryByRole("heading", { name: "Nothing here yet" }),
+    ).not.toBeInTheDocument();
   });
 
   it("issues no request of its own — it derives from the trending result", async () => {
