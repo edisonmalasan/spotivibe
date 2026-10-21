@@ -219,7 +219,7 @@ export const CLIENT_BUDGET = Object.freeze({
    * Re-recorded for the **artist Quick Picks re-entry** — the first-run picker that asks with real
    * artists instead of an empty list, and the rail's own control for revising the picks.
    *
-   * **The move is +965 bytes in total and +27 in the largest chunk, with no new chunk anywhere.**
+   * **The move is +965 bytes in total and +31 in the largest chunk, with no new chunk anywhere.**
    * The chunk count and `/`'s first-load chunk count are both unchanged, which is the shape that
    * distinguishes first-party code from a dependency arriving — a dependency brings a chunk with it,
    * and the rules that watch the chunk counts carry no tolerance at all.
@@ -227,6 +227,15 @@ export const CLIENT_BUDGET = Object.freeze({
    * The origin is not assumed. The chunks that changed were opened and read: they contain this
    * change's own code — the shared derivation hook, the three-state surface, the rail's control —
    * and no library, no vendor table, and nothing that was not already a dependency.
+   *
+   * **The largest chunk is recorded at the figure CI measured, not at the one this machine
+   * measured, and the reason is that the rule watching it carries no tolerance.** The same build
+   * measured 97,534 B here and 97,538 B on CI's runner, and the same two machines differ by 2 B on
+   * the *pre-change* tree — so the gap is the machines, not the change. The total is recorded at the
+   * figure measured here, because the total's rule carries 4,096 B of tolerance and that is what the
+   * tolerance is for. Recording the lower of two measurements against an exact rule would be a
+   * ceiling that passes on one machine and fails on another; recording the higher makes the rule
+   * mean the same thing in both places.
    *
    * **A larger version of this change was measured and rejected.** Hosting the re-entry in Settings
    * instead cost 6,987 bytes in total, added a 26th chunk, and added a 14th chunk to `/`'s first
@@ -238,7 +247,7 @@ export const CLIENT_BUDGET = Object.freeze({
    */
   recordedAt: "2026-10-22, after adding the artist Quick Picks re-entry",
   totalGzippedBytes: 389548,
-  largestChunkGzippedBytes: 97534,
+  largestChunkGzippedBytes: 97538,
   chunkCount: 25,
   homeFirstLoadGzippedBytes: 232000,
   homeFirstLoadChunkCount: 13,

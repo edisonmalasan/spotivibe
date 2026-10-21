@@ -204,7 +204,7 @@
       | Measurement | before this change | re-entry on Home | re-entry in Settings |
       |---|---:|---:|---:|
       | Client JS, total gzipped | 388,611 B | 389,548 B | 396,552 B |
-      | Largest single chunk | 97,505 B | 97,534 B | 97,879 B |
+      | Largest single chunk | 97,505 B | 97,538 B | 97,879 B |
       | Emitted chunks | 25 | 25 | **26** |
       | `/` first load | 231,355 B / 13 chunks | 232,000 B / 13 chunks | 233,188 B / **14 chunks** |
 
@@ -216,6 +216,14 @@
       guarantees *"is not this change's decision to make"*. **So it is not made.** The Settings host
       is deferred to a change that owns the budget, and the re-entry is hosted on the rail instead.
       The implementation is recoverable from this branch's history; only the *host* is deferred.
+
+      **The largest chunk in that table is CI's figure, and the difference is the machines.** The
+      same build measured 97,534 B locally and 97,538 B on CI's runner, and the same two machines
+      differ by 2 B on the pre-change tree. The rule watching the largest chunk carries **no**
+      tolerance, so the record carries the higher of the two — a rule that means different things on
+      two machines is not a rule. The *total* carries the locally measured figure, because the
+      total's rule has 4,096 B of tolerance and that is what the tolerance is for. **This was found
+      by CI failing**, which is the budget's exact rule doing what it is for.
 - [x] 8.6 The root lockfile guard gap (M33 §7.1): `root-commands.test.ts` asserts *"the application
       lockfile is the only one"* while checking only `package-lock.json`, so `pnpm-lock.yaml`,
       `yarn.lock`, `bun.lock` and `bun.lockb` at the root each pass. **Live** — an untracked root

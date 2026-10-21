@@ -325,9 +325,17 @@ component changed. `states what the scripts:check step cost, in bytes` pins the 
 | Measurement | After `scripts:check` | After the artist Quick Picks re-entry | Delta |
 |---|---:|---:|---:|
 | Client JS, total gzipped | 388,583 B | 389,548 B | **+965 B** |
-| Largest single chunk, gzipped | 97,507 B | 97,534 B | **+27 B** |
+| Largest single chunk, gzipped | 97,507 B | 97,538 B | **+31 B** |
 | Emitted chunks | 25 | 25 | **0** |
 | `/` first load, gzipped | 231,327 B (13 chunks) | 232,000 B (13 chunks) | +673 B |
+
+**The largest chunk is recorded at the figure CI measured, and that is not a fudge.** The same build
+measured 97,534 B on the machine that measured it locally and 97,538 B on CI's runner, and the same
+two machines differ by 2 B on the *pre-change* tree — so the gap is the machines, not this change.
+The rule that watches the largest chunk carries **no** `toleranceBytes`, so recording the lower of two
+measurements against it would be a ceiling that passes on one machine and fails on another. The
+record carries the higher figure, and the total carries the locally measured one because the total's
+rule has 4,096 B of tolerance and that is what the tolerance is for.
 
 **No chunk arrived.** The emitted count is unchanged, and `/`'s first load still loads 13 chunks. That
 is the part that says this is first-party code rather than a library arriving in disguise: a dependency
