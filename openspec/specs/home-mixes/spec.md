@@ -96,7 +96,25 @@ unresolvable target.
 A Quick Pick SHALL NOT be a search, a release, or any other kind of entry. The shelf SHALL NOT render
 a card for a selected language, and SHALL NOT reserve rail capacity for one. Where the device holds
 no local material, the shelf SHALL complete the rail from provider results the Home surface already
-holds in memory. Completing the rail this way SHALL introduce no new request and no new stored data of its own. **Artists the listener explicitly picked during first-run onboarding are not provider results**: where such picks exist they are a source in their own right, ranked above provider results and above derived local material, and the cold-start gate no longer applies to them.
+holds in memory, and from curated popular artists. Completing the rail this way SHALL introduce no
+new request and no new stored data of its own. **Artists the listener explicitly picked during
+first-run onboarding are not provider results**: where such picks exist they are a source in their
+own right, ranked above provider results and above derived local material, and the cold-start gate no
+longer applies to them.
+
+**The shelf SHALL offer curated popular artists, shaped by the selected languages.** A curated popular
+artist is an artist the application knows by name, rather than one it inferred from the listener's
+material or from the provider's results. Curated popular artists SHALL be ranked below local material
+and below the listener's explicit picks, and SHALL NOT displace, outrank, or reorder an entry derived
+from either. They SHALL be shaped by the selected languages, and a language that has no list of its
+own SHALL be offered artists from a list that is not language-specific. The shelf SHALL never be
+empty: where no other source offers an artist, it SHALL offer curated popular artists. A curated
+popular artist whose name matches an artist in the candidate tracks SHALL carry that artist's provider
+identity where the tracks supplied one, and that artist's name otherwise. Curated popular
+artists SHALL NOT be offered as one card per selected language, and a selection that would otherwise
+yield a single card SHALL be completed to more than one. Curated popular artists SHALL NOT be
+required in order for the rail to hold artist entries, and the shelf SHALL never fall back to a
+non-artist entry to fill itself.
 
 Provider results SHALL NOT contribute entries while any local material exists, and SHALL NOT
 displace, outrank, or reorder an entry derived from local material. Provider results SHALL NOT be
@@ -106,13 +124,17 @@ non-artist entry to fill itself.
 Where provider results are used, the selected languages SHALL shape **which artist candidates are
 offered** rather than what kind of card is offered: an artist whose tracks carry a selected language
 SHALL be preferred over an artist whose tracks carry none, and the preference SHALL NOT remove an
-otherwise valid artist in order to satisfy it. The shelf SHALL remain deterministic and SHALL NOT
-offer the same artist identity twice.
+otherwise valid artist in order to satisfy it. The same holds for curated popular artists, whose
+membership of the rail is determined by the selected languages rather than by the provider's results.
+The shelf SHALL remain deterministic and SHALL NOT offer the same artist twice.
 
-Artist entries SHALL be deduplicated by canonical artist identity. Artist artwork SHALL resolve from
-artwork already carried by the candidate tracks; the derivation SHALL issue no request of its own to
-obtain it, and an artist whose tracks carry no artwork SHALL render the application's existing artist
-placeholder rather than a broken image.
+Artist entries SHALL be deduplicated by canonical artist identity and by the artist's name, so an
+artist offered once under a provider identity and again under a name is offered once. Artist artwork
+SHALL resolve from artwork already carried by the candidate tracks; the derivation SHALL issue no
+request of its own to obtain it, and an artist whose tracks carry no artwork SHALL render the
+application's existing artist placeholder rather than a broken image. A curated popular artist whose
+name matches an artist in the candidate tracks SHALL carry that artist's artwork, because the
+artwork is already carried by the tracks the caller supplied.
 
 #### Scenario: Every Quick Pick navigates somewhere
 
@@ -127,21 +149,21 @@ placeholder rather than a broken image.
 #### Scenario: Quick Picks derive from local material
 
 - **WHEN** Quick Picks are derived
-- **THEN** they are derived from the local listening profile, liked artists and tracks, and existing
-  provider results the Home surface already holds
+- **THEN** they are derived from the local listening profile, liked artists and tracks, existing
+  provider results the Home surface already holds, and curated popular artists
 
 #### Scenario: A device with no local material is still offered artists
 
 - **WHEN** Quick Picks are derived for a device with no liked tracks and no listening events, and the
   Home surface holds resolved provider results
-- **THEN** the shelf offers artist entries derived from those results
+- **THEN** the shelf offers artist entries derived from curated popular artists or from those results
 
 #### Scenario: A full set of selected languages still permits artist Quick Picks
 
 - **WHEN** Quick Picks are derived for a device whose selected languages fill the maximum selection
   and which holds no local material
-- **THEN** the shelf offers artist entries derived from the provider results, and renders no search
-  card and no entry standing for any selected language
+- **THEN** the shelf offers artist entries derived from the provider results or from curated popular
+  artists, and renders no search card and no entry standing for any selected language
 
 #### Scenario: Quick Picks never become one card per selected language
 
@@ -159,11 +181,19 @@ placeholder rather than a broken image.
 
 - **WHEN** Quick Picks are derived for a device that holds liked tracks or listening events, and
   provider results are also available
-- **THEN** the shelf's entries are exactly those it would offer without those results
+- **THEN** no entry derived from local material is displaced, outranked, or reordered by provider
+  results, and the entries derived from it are the entries the shelf leads with
+
+#### Scenario: Local evidence is never displaced by curated popular artists
+
+- **WHEN** Quick Picks are derived for a device that holds liked tracks or listening events, and
+  curated popular artists are also available
+- **THEN** no entry derived from local material is displaced, outranked, or reordered by them, and
+  the entries derived from it are the entries the shelf leads with
 
 #### Scenario: Completing the rail reads no new request
 
-- **WHEN** Quick Picks are derived from provider results
+- **WHEN** Quick Picks are derived from provider results or from curated popular artists
 - **THEN** the derivation reads only its arguments and performs no request of its own
 
 #### Scenario: Every Quick Pick is a resolvable artist navigation target
@@ -204,6 +234,38 @@ placeholder rather than a broken image.
 - **WHEN** Home renders
 - **THEN** exactly one section of the feed uses circular artist geometry, and no two circular
   sections are adjacent
+
+#### Scenario: The rail is never empty
+
+- **WHEN** Quick Picks are derived for a device with no explicit picks, no local material, and no
+  provider results
+- **THEN** the shelf offers curated popular artists, because a rail with no artist in it is a dead
+  end rather than a first run
+
+#### Scenario: A language with no list of its own is still offered artists
+
+- **WHEN** the selected languages include a language the application holds no curated list for
+- **THEN** the shelf offers artists from a list that is not language-specific, so the rail does not
+  depend on the catalog's coverage
+
+#### Scenario: The rail is never one card per selected language
+
+- **WHEN** the selected languages would yield a single curated popular artist
+- **THEN** the shelf offers more than one, because a rail holding exactly one card per selected
+  language is the shape this requirement forbids
+
+#### Scenario: Curated popular artists are shaped by the selected languages
+
+- **WHEN** the selected languages change
+- **THEN** the curated popular artists offered change with them, because their membership of the rail
+  is determined by the selected languages rather than by the provider's results
+
+#### Scenario: Curated popular artists resolve to a real artist
+
+- **WHEN** a curated popular artist is offered
+- **THEN** its target resolves to the artist route for that artist's name, and it carries the artwork
+  of a candidate track by that artist where there is one, and the application's existing artist
+  placeholder where there is not
 
 ### Requirement: First run asks for artists, not languages
 
