@@ -13,6 +13,11 @@ import { LanguagesSettingsSection } from "@/features/preferences/LanguagesSettin
  * M13 adds the install affordance here rather than as a shell banner: installing
  * is a decision someone makes once, so it belongs in the place people already come
  * to change how the app behaves (spec: `pwa` — "Install affordance").
+ *
+ * **Artists sits beside Languages** because it is the same kind of control: a
+ * first-run answer the listener can revise. The first-run surface asks about
+ * artists; this one lets them change their mind, exactly as Languages has
+ * always allowed for languages.
  */
 export default function SettingsPage() {
   return (

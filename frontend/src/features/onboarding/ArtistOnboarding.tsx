@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconButton } from "@/components/design-system/IconButton";
 import { ArtistCard } from "@/components/design-system/ArtistCard";
+import { Skeleton } from "@/components/design-system/Skeleton";
 import type { QuickPick } from "@/features/home/quickPicks";
 import { markOnboardingSeen } from "@/features/onboarding/onboardingGate";
 import { useQuickPickPicksStore } from "@/stores/quickPickPicksStore";
@@ -22,25 +23,156 @@ import { useQuickPickPicksStore } from "@/stores/quickPickPicksStore";
  * Escape and backdrop dismissal, and focus returning to whoever opened it. What
  * is new is `aria-pressed` on each artist toggle, because selection that is
  * conveyed by a ring colour alone is not selection a screen reader can report.
+ *
+ * ## Three states, and only two of them are answers
+ *
+ * A dismissal is an answer: `markOnboardingSeen()` is called on dismissal, on
+ * purpose, because re-asking someone who has already answered is nagging. So a
+ * surface that says "there are no artists" *before* the rail has asked is
+ * collecting an answer to a question it never asked — and that was exactly what
+ * happened, because the rail's entries arrive asynchronously and the first
+ * render always carried an empty list.
+ *
+ * | State | What it shows | Dismissible? |
+ * |---|---|---|
+ * | `pending` | the rail has not settled | **No** |
+ * | `offering` | the artist grid | Yes |
+ * | `nothing` | the settled-and-empty case, and where to choose later | Yes |
+ *
+ * `pending` offers **no dismissal control at all** — not a disabled one. A
+ * control that looks available and is not is worse than its absence.
+ *
+ * `pending` is also **time-bounded** (design limit D7). A provider request that
+ * never settles would otherwise leave a listener who cannot leave, and a
+ * surface that will not let someone leave is worse than the defect this
+ * surface fixes. After the bound the surface proceeds to `nothing` and offers
+ * the dismissal.
  */
 
 export const ARTIST_ONBOARDING_LABEL = "Pick artists you like";
 export const ARTIST_ONBOARDING_TITLE = "Welcome to Spotivibe";
 
+/**
+ * The heading for the surface opened on demand, rather than at first run.
+ *
+ * A listener who has been using the app for a week should not be greeted as a
+ * new one every time they revise their picks.
+ */
+export const ARTIST_ONBOARDING_HEADING = "Choose artists";
+
+/**
+ * How long the surface waits for the rail before it stops waiting.
+ *
+ * Bounded on purpose. The value is a *bound*, not a target: the surface
+ * proceeds to the settled-and-empty state when it expires, so a listener is
+ * never held. Exported so the test that proves the bound exists asserts the
+ * real number rather than a copy of it.
+ */
+export const ARTIST_ONBOARDING_PENDING_TIMEOUT_MS = 8_000;
+
+/**
+ * The settled-and-empty copy.
+ *
+ * It does **not** promise a choice it cannot offer. The candidates are the rail's
+ * entries, so an empty rail means there is nothing to pick — and a surface that says
+ * "you can pick them later" over an empty list is a promise it has no way to keep.
+ *
+ * What it can honestly say is where artists come from: the rail is derived from what the
+ * listener has played, so artists appear as they listen.
+ */
+export const ARTIST_ONBOARDING_EMPTY =
+  "We couldn't find any artists yet. Artists appear as you listen.";
+
+/**
+ * The copy for a surface that stopped waiting for the rail.
+ *
+ * Deliberately **not** the empty copy: the rail never settled, so "we couldn't
+ * find any artists" would be a claim this surface cannot make. What it can say
+ * is that the artists did not arrive — and that the listener may leave.
+ */
+export const ARTIST_ONBOARDING_UNRESOLVED =
+  "We couldn't load artists yet. Give it a moment and try again.";
+
+/** The three states the surface can be in. */
+export type ArtistOnboardingPhase = "pending" | "offering" | "nothing";
+
 export interface ArtistOnboardingProps {
   /** The artists offered for selection — the Quick Picks rail's own entries. */
   artists: readonly QuickPick[];
+  /**
+   * Whether the rail has settled.
+   *
+   * The surface cannot tell an empty rail that has decided to hold nothing from
+   * one that has not decided yet, and the difference decides whether it may
+   * claim there are no artists and whether it may offer a dismissal.
+   */
+  settled: boolean;
   onClose(): void;
+  /**
+   * The heading, for a host that is not a first run.
+   *
+   * The Settings re-entry opens this same surface, and a listener who has been
+   * using the app for a week should not be greeted as a new one.
+   */
+  heading?: string;
 }
 
-export function ArtistOnboarding({ artists, onClose }: ArtistOnboardingProps) {
+export function ArtistOnboarding({
+  artists,
+  settled,
+  onClose,
+  heading = ARTIST_ONBOARDING_TITLE,
+}: ArtistOnboardingProps) {
   const confirm = useQuickPickPicksStore((state) => state.confirm);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  /**
+   * Whether the surface gave up waiting for the rail.
+   *
+   * Set by a timer rather than by the rail, because the rail is the thing that
+   * might never answer.
+   */
+  const [timedOut, setTimedOut] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   /** Set on dismissal so a late write never updates an unmounted dialog. */
   const dismissedRef = useRef(false);
+
+  /*
+   * The pending state has a bound.
+   *
+   * The rail settles when the provider settles and the local stores have
+   * hydrated — and a provider request that hangs would otherwise hold a
+   * surface that offers no way out. When the bound expires the surface stops
+   * waiting and becomes dismissible.
+   */
+  useEffect(() => {
+    if (settled) return;
+    const timer = setTimeout(() => {
+      setTimedOut(true);
+    }, ARTIST_ONBOARDING_PENDING_TIMEOUT_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [settled]);
+
+  /*
+   * The phase, and therefore whether this surface may be dismissed at all.
+   *
+   * `settled` decides between "offering"/"nothing" and "pending"; the timeout
+   * is what stops "pending" from being permanent. A rail that settles *after*
+   * the bound has expired still wins: the surface then shows the truth.
+   */
+  const phase: ArtistOnboardingPhase = settled
+    ? artists.length > 0
+      ? "offering"
+      : "nothing"
+    : timedOut
+      ? "nothing"
+      : "pending";
+
+  /** Only a surface whose answer is true may be dismissed. */
+  const dismissible = phase !== "pending";
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -53,14 +185,18 @@ export function ArtistOnboarding({ artists, onClose }: ArtistOnboardingProps) {
   }, []);
 
   const dismiss = useCallback(() => {
+    if (!dismissible) return;
     dismissedRef.current = true;
     // A dismissal counts as completing first run. Re-asking someone who has
     // already answered — or who chose to skip — is nagging, not onboarding.
     markOnboardingSeen();
     onClose();
-  }, [onClose]);
+  }, [dismissible, onClose]);
 
   useEffect(() => {
+    // No Escape dismissal while the question has not been asked: the surface
+    // would be collecting an answer it never posed.
+    if (!dismissible) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
@@ -69,7 +205,7 @@ export function ArtistOnboarding({ artists, onClose }: ArtistOnboardingProps) {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [dismiss]);
+  }, [dismiss, dismissible]);
 
   const toggle = useCallback((artistId: string) => {
     setSelected((current) => {
@@ -122,24 +258,62 @@ export function ArtistOnboarding({ artists, onClose }: ArtistOnboardingProps) {
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h2 className="text-link font-bold text-pure-white">{ARTIST_ONBOARDING_TITLE}</h2>
+            <h2 className="text-link font-bold text-pure-white">{heading}</h2>
             <p className="text-body text-mist">
               Pick a few artists you like. They lead your Quick Picks. Everything stays on this
               device.
             </p>
           </div>
-          <IconButton label="Close" onClick={dismiss}>
-            <X className="size-4" aria-hidden="true" />
-          </IconButton>
+          {/*
+           * The close control is part of the dismissal, so it is part of what
+           * `pending` withholds: a control that looks available and is not is
+           * worse than its absence.
+           */}
+          {dismissible && (
+            <IconButton label="Close" onClick={dismiss}>
+              <X className="size-4" aria-hidden="true" />
+            </IconButton>
+          )}
         </div>
 
         {/* Nothing to pick from yet: an empty rail must not render an empty grid
             of controls, or a "done" button that stores nothing. */}
-        {artists.length === 0 ? (
-          <p className="text-body text-mist">
-            We couldn&apos;t find any artists yet. You can pick them later.
-          </p>
-        ) : (
+        {phase === "pending" && (
+          /*
+           * The rail has not settled, so this surface does not yet know whether
+           * there are any artists. It says so, and it offers no way out: a
+           * dismissal here would be an answer to a question that has not been
+           * asked.
+           */
+          <div
+            aria-busy="true"
+            data-testid="artist-onboarding-pending"
+            className="flex flex-col gap-3"
+          >
+            <p className="text-body text-mist">Looking for artists…</p>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {Array.from({ length: 4 }, (_, index) => (
+                <Skeleton key={index} variant="circle" className="w-full" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {phase === "nothing" && (
+          /*
+           * The settled-and-empty case, or the surface that stopped waiting.
+           * Either way it says what it knows — and it does not point at a
+           * choice it cannot offer, because the candidates are the rail's
+           * entries and the rail is empty.
+           */
+          <div data-testid="artist-onboarding-empty" className="flex flex-col gap-3">
+            <p className="text-body text-mist">
+              {settled ? ARTIST_ONBOARDING_EMPTY : ARTIST_ONBOARDING_UNRESOLVED}
+            </p>
+          </div>
+        )}
+
+        {phase === "offering" && (
           <>
             <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               {artists.map((artist) => {

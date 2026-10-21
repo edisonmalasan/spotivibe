@@ -2,8 +2,8 @@
 
 import { Disc3 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Shelf } from "@/components/recommendations/Shelf";
 import type { Track } from "@/data/repositories";
 import { genreHref, GENRE_CATALOG } from "@/features/home/genreCatalog";
 import { HomeFilterBar } from "@/features/home/HomeFilterBar";
@@ -36,15 +36,18 @@ import { ShelfTrackCard } from "@/features/home/ShelfTrackCard";
 import { TimeShelf } from "@/features/home/TimeShelf";
 import { systemClock, type Clock } from "@/features/home/timeBands";
 import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDiscoveryShelf";
+import type { QuickPickRailReport } from "@/features/home/useQuickPickArtists";
+import { toProviderShelfState } from "@/features/home/useQuickPickArtists";
 import { MixList } from "@/features/mixes/MixList";
-import { ArtistOnboarding } from "@/features/onboarding/ArtistOnboarding";
+import {
+  ArtistOnboarding,
+  ARTIST_ONBOARDING_HEADING,
+} from "@/features/onboarding/ArtistOnboarding";
 import {
   getOnboardingServerSnapshot,
   isOnboardingSeen,
   subscribeToOnboarding,
 } from "@/features/onboarding/onboardingGate";
-import { useQuickPickPicksStore } from "@/stores/quickPickPicksStore";
-import type { QuickPick } from "@/features/home/quickPicks";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useLibraryStore } from "@/stores/libraryStore";
 import { useMixStore } from "@/stores/mixStore";
@@ -146,24 +149,6 @@ const M17_SURFACE_ROWS: readonly HomeFilterSurface[] = [
  */
 const SHELF_ERROR = QUICK_PICKS_ERROR;
 
-/**
- * The onboarding dialog's `onClose`, which has nothing left to do.
- *
- * The dialog owns the gate — it calls `markOnboardingSeen()` on confirmation and
- * on dismissal — and that write notifies the `useSyncExternalStore` subscription,
- * so this surface re-renders with the dialog already gone. Kept as a named
- * module-level no-op rather than an inline arrow so the identity is stable and the
- * JSX says what it means.
- */
-function closeOnboarding(): void {}
-
-/** Map a shelf status onto the `Shelf` primitive's state vocabulary. */
-function toShelfState(status: string): ShelfState {
-  // `idle` only reaches a rendered shelf when a local gate and the section's own
-  // `enabled` predicate disagree; skeletons are the honest rendering.
-  return status === "ready" || status === "empty" || status === "error" ? status : "loading";
-}
-
 /** A shelf with its resolved tracks replaced by the long-form preference. */
 function withLongFormPreference(shelf: DiscoveryShelf): DiscoveryShelf {
   if (shelf.status !== "ready") return shelf;
@@ -231,7 +216,7 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
           title={section.title}
           description={section.description}
           shape={section.shape}
-          state={toShelfState(feed.trending.status)}
+          state={toProviderShelfState(feed.trending.status)}
           onRetry={feed.trending.retry}
           error={SHELF_ERROR}
           data-testid={testId}
@@ -246,7 +231,7 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
           title={section.title}
           description={section.description}
           shape={section.shape}
-          state={toShelfState(feed.forYou.status)}
+          state={toProviderShelfState(feed.forYou.status)}
           onRetry={feed.forYou.retry}
           error={SHELF_ERROR}
           data-testid={testId}
@@ -280,7 +265,7 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
           title={section.title}
           description={section.description}
           shape={section.shape}
-          state={toShelfState(feed.podcasts.status)}
+          state={toProviderShelfState(feed.podcasts.status)}
           onRetry={feed.podcasts.retry}
           error={SHELF_ERROR}
           data-testid={testId}
@@ -295,7 +280,7 @@ function HomeSectionView({ section, feed }: { section: HomeSection; feed: Feed }
           title={section.title}
           description={section.description}
           shape={section.shape}
-          state={toShelfState(feed.collections.status)}
+          state={toProviderShelfState(feed.collections.status)}
           onRetry={feed.collections.retry}
           error={SHELF_ERROR}
           data-testid={testId}
@@ -363,11 +348,25 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
     isOnboardingSeen,
     getOnboardingServerSnapshot,
   );
-  // The rail's own derived entries, reported upward by `QuickPicksShelf` so the
-  // onboarding dialog offers exactly the artists the feed is showing.
-  const [onboardingArtists, setOnboardingArtists] = useState<readonly QuickPick[]>([]);
-  const storedPicks = useQuickPickPicksStore((state) => state.picks);
-  const hydratePicks = useQuickPickPicksStore((state) => state.load);
+  // The rail's own derived entries and settled state, reported upward by
+  // `QuickPicksShelf` so the onboarding dialog offers exactly the artists the
+  // feed is showing — and knows whether the rail has settled yet.
+  const [railReport, setRailReport] = useState<QuickPickRailReport>({
+    artists: [],
+    settled: false,
+  });
+  /*
+   * Whether the artist picker is open because the listener asked for it.
+   *
+   * The first-run gate is a one-shot: it does not re-present itself. But the
+   * picker is also reachable on demand — the empty rail offers it — so the
+   * surface needs a state of its own for "open because I was asked", which is
+   * not the same thing as "the first run has not been answered".
+   */
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const closePicker = useCallback(() => {
+    setPickerOpen(false);
+  }, []);
   // M17: the presented filter, for this visit only. No store, no preference, no
   // URL — a lens on the feed is not a piece of state the device keeps.
   const [filter, setFilter] = useState<HomeFilterValue>("all");
@@ -390,10 +389,7 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
     void hydrateMixes().catch((error: unknown) => {
       console.warn("[home] smart mixes unavailable:", error);
     });
-    void hydratePicks().catch((error: unknown) => {
-      console.warn("[home] first-run artist picks unavailable:", error);
-    });
-  }, [hydrateHistory, hydrateLibrary, hydrateMixes, hydratePicks, hydratePreferences]);
+  }, [hydrateHistory, hydrateLibrary, hydrateMixes, hydratePreferences]);
 
   // Local signals drive which sections render at all, and — through the seeds —
   // which locally informed shelves may issue a request.
@@ -456,7 +452,7 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
     recent: recentlyPlayedTracks(events, RECENT_LIMIT),
   };
 
-  const showOnboarding = !onboardingSeen;
+  const showOnboarding = !onboardingSeen || pickerOpen;
 
   return (
     <div className="flex flex-col gap-8" data-testid="home-view">
@@ -492,9 +488,6 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
         order rather than this source, so it cannot drift back.
       */}
       <QuickPicksShelf
-        likedTracks={likedTracks}
-        events={events}
-        languages={languages}
         /*
          * M22 — the fourth source `home-mixes` specifies: provider results the
          * feed has already fetched. Both `useDiscoveryShelf` calls above run
@@ -510,12 +503,19 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
          * M23: the state is only consulted when the rail has no picks of its own — see
          * `QuickPicksShelf`. Passing it is what keeps the consolidated rail's resilience
          * equal to the Popular Artists section it replaced.
+         *
+         * The liked tracks, the events, the languages, and the first-run picks
+         * are **not** passed: the rail reads them from the stores through the
+         * shared hook, so the rail, this surface's dialog, and the Settings
+         * re-entry are guaranteed to be looking at the same artists (D1).
          */
         providerTracks={[...feed.trending.tracks, ...feed.collections.tracks]}
-        providerState={toShelfState(feed.trending.status)}
+        providerState={toProviderShelfState(feed.trending.status)}
         onRetry={feed.trending.retry}
-        storedPicks={storedPicks}
-        onRailChange={setOnboardingArtists}
+        onRailChange={setRailReport}
+        onRequestArtistPicks={() => {
+          setPickerOpen(true);
+        }}
         filter={filter}
       />
       <MixCards
@@ -563,14 +563,22 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
 
       {showOnboarding && (
         /*
-         * `onClose` has nothing to set. The dialog owns the gate: it calls
-         * `markOnboardingSeen()` on both confirmation and dismissal, which notifies
-         * the `useSyncExternalStore` subscription and re-renders this surface with
-         * `onboardingSeen === true`. An earlier version also flipped local state
-         * here, which left `setOnboardingSeen` as dead reference to a setter that
-         * no longer existed.
+         * `onClose` closes the re-entry picker. The first-run case closes itself:
+         * the dialog owns the gate — it calls `markOnboardingSeen()` on both
+         * confirmation and dismissal — and that write notifies the
+         * `useSyncExternalStore` subscription, so this surface re-renders with
+         * the dialog already gone.
+         *
+         * `settled` travels with the entries, because the surface may not say
+         * "there are no artists" before the rail has decided whether it holds
+         * any.
          */
-        <ArtistOnboarding artists={onboardingArtists} onClose={closeOnboarding} />
+        <ArtistOnboarding
+          artists={railReport.artists}
+          settled={railReport.settled}
+          heading={pickerOpen ? ARTIST_ONBOARDING_HEADING : undefined}
+          onClose={closePicker}
+        />
       )}
     </div>
   );

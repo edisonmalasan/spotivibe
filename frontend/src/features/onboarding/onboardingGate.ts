@@ -75,7 +75,15 @@ export function markOnboardingSeen(): void {
   writeFlag(ONBOARDING_SEEN_KEY, true);
 }
 
-/** Clear the gate. Exists for "Reset Spotivibe data" and for tests. */
+/**
+ * Clear the gate.
+ *
+ * Called by "Reset Spotivibe data" alongside the IndexedDB reset, and by tests.
+ * The gate and the picked artists are two halves of one answer held in two
+ * stores — the artists in IndexedDB, this flag in `localStorage` — and a reset
+ * that cleared only one of them would leave the question answered and the
+ * answer deleted.
+ */
 export function clearOnboardingSeen(): void {
   writeFlag(ONBOARDING_SEEN_KEY, false);
 }

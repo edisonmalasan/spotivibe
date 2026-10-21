@@ -16,6 +16,7 @@ import {
   type PrepareFailure,
 } from "@/data/backup";
 import { getLocalData, type RepositorySet } from "@/data/localData";
+import { clearOnboardingSeen } from "@/features/onboarding/onboardingGate";
 import { useHistoryStore } from "@/stores/historyStore";
 
 /**
@@ -227,7 +228,22 @@ export function DataControls() {
     await runAction(
       "reset",
       "Resetting Spotivibe data…",
-      () => repositories.resetAll(),
+      /*
+       * The reset clears the first-run gate as well as the IndexedDB stores.
+       *
+       * The picked artists live in IndexedDB and the gate lives in
+       * `localStorage`, and a reset that cleared only the first would leave a
+       * question answered whose answer had been deleted — a reset that cannot
+       * be repeated, and a device the application itself considers empty while
+       * it declines to ask again.
+       *
+       * The gate is cleared **after** the store reset succeeds: a failed reset
+       * changes nothing, and that has to include the gate.
+       */
+      async () => {
+        await repositories.resetAll();
+        clearOnboardingSeen();
+      },
       "Spotivibe data reset.",
       "Could not reset Spotivibe data — your data is unchanged.",
     );
