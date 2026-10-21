@@ -186,6 +186,23 @@ export const M30_CLIENT_BUDGET = Object.freeze({
   homeFirstLoadChunkCount: 13,
 });
 
+/**
+ * M31's record, preserved for the same reason `M30_CLIENT_BUDGET` is.
+ *
+ * M31 added the `scripts:check` gate step and re-recorded the ceiling by 17 bytes. That record lived
+ * in `CLIENT_BUDGET` until the artist Quick Picks re-entry replaced it, and it is kept here so that
+ * "what did M31 cost" still has a record to be read from — the same reason M30's is kept, and the
+ * same reason the M22/M23 pair exists: a ceiling that silently replaces its predecessor erases the
+ * only evidence the number ever moved more than once.
+ */
+export const M31_CLIENT_BUDGET = Object.freeze({
+  totalGzippedBytes: 388583,
+  largestChunkGzippedBytes: 97507,
+  chunkCount: 25,
+  homeFirstLoadGzippedBytes: 231327,
+  homeFirstLoadChunkCount: 13,
+});
+
 export const CLIENT_BUDGET = Object.freeze({
   /** What the ceiling is a ceiling *of*. */
   subject: "gzipped bytes of every emitted client chunk under .next/static/chunks",
@@ -199,24 +216,31 @@ export const CLIENT_BUDGET = Object.freeze({
   /**
    * When and after what this figure was measured, so a drift has something to be compared to.
    *
-   * Re-recorded for `scripts:check`, the step that reaches the repository-root `scripts/` directory.
-   * **The +17 is not the cost of that step.** No client code was added; the step is a Node script the
-   * browser never loads. Measured: adding a meaningless dummy entry (`"zzz:dummy": "node -e 0"`) to
-   * this same manifest moved the figure by the same ~16 bytes, and leaving the manifest untouched
-   * reproduced the smaller number. So the emitted chunks shift with *any* edit to `package.json`,
-   * which is what M30's own commit "re-record the client ceiling for the 20 bytes `ps:check` costs"
-   * recorded an earlier instance of.
+   * Re-recorded for the **artist Quick Picks re-entry** — the first-run picker that asks with real
+   * artists instead of an empty list, and the rail's own control for revising the picks.
    *
-   * That makes this ceiling sensitive to an edit that changes no client behaviour, which is a real
-   * weakness in it. It is recorded here rather than absorbed: `toleranceBytes` below already exists
-   * and would absorb it, but widening this assertion from a ceiling to ceiling-plus-slack changes
-   * what the budget guarantees, which is not this change's decision to make.
+   * **The move is +965 bytes in total and +27 in the largest chunk, with no new chunk anywhere.**
+   * The chunk count and `/`'s first-load chunk count are both unchanged, which is the shape that
+   * distinguishes first-party code from a dependency arriving — a dependency brings a chunk with it,
+   * and the rules that watch the chunk counts carry no tolerance at all.
+   *
+   * The origin is not assumed. The chunks that changed were opened and read: they contain this
+   * change's own code — the shared derivation hook, the three-state surface, the rail's control —
+   * and no library, no vendor table, and nothing that was not already a dependency.
+   *
+   * **A larger version of this change was measured and rejected.** Hosting the re-entry in Settings
+   * instead cost 6,987 bytes in total, added a 26th chunk, and added a 14th chunk to `/`'s first
+   * load. The tolerance below is 4,096 bytes, and the chunk-count rules carry none, so that version
+   * could only ship by moving this ceiling by more than its whole headroom. The budget's own
+   * `toleranceBytes` note says that widening what this file guarantees "is not this change's decision
+   * to make", so the Settings host is deferred to a change that owns the budget, and the re-entry is
+   * hosted on the rail instead. The 965 bytes here are what that costs.
    */
-  recordedAt: "2026-10-11, after adding the `scripts:check` gate step",
-  totalGzippedBytes: 388583,
-  largestChunkGzippedBytes: 97507,
+  recordedAt: "2026-10-22, after adding the artist Quick Picks re-entry",
+  totalGzippedBytes: 389548,
+  largestChunkGzippedBytes: 97534,
   chunkCount: 25,
-  homeFirstLoadGzippedBytes: 231327,
+  homeFirstLoadGzippedBytes: 232000,
   homeFirstLoadChunkCount: 13,
   /**
    * How far a rebuild may drift from the recorded figure.

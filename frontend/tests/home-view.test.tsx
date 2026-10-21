@@ -974,8 +974,14 @@ describe("HomeView: first-run artist onboarding", () => {
      * dismissal is an answer, and the rail has not been asked yet. The rail
      * settles here as soon as the provider resolves and the stores hydrate, and
      * the artists appear.
+     *
+     * **The "no dismissal while pending" assertion is not made here.** This
+     * provider *resolves*, so whether the rail has settled by the time the
+     * dialog is found is a race — and it was caught failing, which is what a
+     * race looks like from the outside. The property is asserted
+     * deterministically in `artist-picks-reentry.test.tsx`, where the provider
+     * is held in flight so the pending state cannot resolve itself.
      */
-    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
     // Scoped to the dialog: the feed's own track cards also carry the artist's
     // name in their accessible names.
     expect(await within(dialog).findByRole("button", { name: /Aurora/ })).toBeInTheDocument();

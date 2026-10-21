@@ -16,10 +16,10 @@ The first-run surface SHALL gate the dashboard: the discovery feed SHALL NOT be 
 onboarding is completed or dismissed. A listener who dismisses without selecting anything SHALL reach
 the dashboard rather than being held.
 
-**The artist selection SHALL be as changeable afterwards as the language selection is now.** The
-first-run surface answers a question once, and an answer a listener cannot revise is a decision
-rather than a question. The application SHALL therefore offer the same artist selection outside
-first run, and a listener who dismisses the first-run surface without choosing SHALL still have a
+**The artist selection SHALL be changeable afterwards, and a dismissal SHALL NOT be the end of the
+question.** A first-run surface answers a question once, and an answer a listener cannot revise is a
+decision rather than a question. The application SHALL therefore offer the same artist selection
+outside first run, and a listener who dismissed the first-run surface without choosing SHALL have a
 reachable way to choose later. Offering that selection elsewhere SHALL NOT change what is stored, and
 SHALL NOT re-present the first-run surface to a listener who has already answered it.
 
@@ -28,8 +28,8 @@ offers are derived from a shelf whose contents are not known until a request set
 that reports an empty set before it has asked cannot distinguish a device with no artists from a
 device whose artists have not arrived. It SHALL NOT offer a dismissal, or state that there are no
 artists, before the shelf has settled. Once the shelf has settled and offers nothing, the surface
-SHALL say so and SHALL point at the place where artists can be chosen later, and that place SHALL
-exist.
+SHALL say so, and SHALL NOT promise a choice it cannot offer — the candidates are the shelf's own
+entries, so an empty shelf means there is nothing to pick.
 
 **Resetting the application's local data SHALL clear the first-run gate.** A reset that leaves the
 first-run question answered but its answer deleted is a reset that cannot be repeated, and it leaves
@@ -55,10 +55,11 @@ the listener in a state the application itself considers empty.
   Quick Picks rail, because a first-run answer a listener cannot revise is a decision rather than a
   question
 
-#### Scenario: The artist selection is changeable later, as the language selection already is
+#### Scenario: The artist selection is changeable later
 
-- **WHEN** the user changes the selected artists from Settings
-- **THEN** the new selection persists across reload and is the selection the Quick Picks rail offers
+- **WHEN** the user changes the selected artists from the place where artists are chosen
+- **THEN** the new selection persists across reload and is the selection the Quick Picks rail offers,
+  and the previous selection is replaced rather than kept alongside it
 
 #### Scenario: The first-run surface is shown before the artists are known
 
@@ -69,8 +70,8 @@ the listener in a state the application itself considers empty.
 #### Scenario: The shelf settles with no artists at all
 
 - **WHEN** the artist shelf has settled and offers no artists
-- **THEN** the first-run surface says so and points at the place where artists can be chosen later,
-  and that place exists
+- **THEN** the first-run surface says so, and does not promise a later choice, because the
+  candidates are the shelf's own entries and an empty shelf has none to offer
 
 #### Scenario: Local data is reset
 

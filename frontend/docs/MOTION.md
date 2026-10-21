@@ -320,6 +320,52 @@ component changed. `states what the scripts:check step cost, in bytes` pins the 
 `M30_CLIENT_BUDGET`, a record preserved for the same reason `M29_CLIENT_BUDGET` is: so M30's published
 +20 is not restated as +37 by a later milestone's ceiling.
 
+### 2g. The artist Quick Picks re-entry re-recorded the ceiling a seventh time, and a bigger version of it was rejected first
+
+| Measurement | After `scripts:check` | After the artist Quick Picks re-entry | Delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 388,583 B | 389,548 B | **+965 B** |
+| Largest single chunk, gzipped | 97,507 B | 97,534 B | **+27 B** |
+| Emitted chunks | 25 | 25 | **0** |
+| `/` first load, gzipped | 231,327 B (13 chunks) | 232,000 B (13 chunks) | +673 B |
+
+**No chunk arrived.** The emitted count is unchanged, and `/`'s first load still loads 13 chunks. That
+is the part that says this is first-party code rather than a library arriving in disguise: a dependency
+brings a chunk with it, and the rules that watch the chunk counts carry **no** `toleranceBytes` at all.
+
+**The origin was read, not assumed.** The chunks that changed were opened and searched: they contain
+this change's own code — the shared derivation hook, the three-state first-run surface, the rail's own
+control for revising the picks — and no library, no vendor table, and nothing that was not already a
+dependency. `states what the artist Quick Picks re-entry cost, in bytes` pins the +965 against
+`M31_CLIENT_BUDGET`, a record preserved for the same reason every other one is, so M31's published
++17 is not restated by a later ceiling.
+
+**A larger version of this change was measured and rejected, and the measurement is the point.** The
+re-entry was first built in Settings, beside the Languages section, which is where "changeable later"
+belongs — the Languages section already reopens the shared language picker. It cost:
+
+| Measurement | After `scripts:check` | With the re-entry in Settings | Delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 388,583 B | 396,552 B | **+7,969 B** |
+| Largest single chunk, gzipped | 97,507 B | 97,879 B | **+372 B** |
+| Emitted chunks | 25 | **26** | **+1** |
+| `/` first load, gzipped | 231,327 B (13 chunks) | 233,188 B (**14 chunks**) | +1 chunk |
+
+**6,987 bytes of that is the Settings section itself, and it is 1.9 times this file's entire
+4,096-byte tolerance — and it added a chunk.** The chunk-count rules carry no tolerance, so that
+version could only ship by re-recording the ceiling by more than its whole headroom, which is not a
+re-record but a rewrite of what this budget guarantees. `toleranceBytes`'s own note says exactly that
+widening the assertion "changes what the budget guarantees, which is not this change's decision to
+make" — so it was not made. The Settings host is deferred to a change that owns the budget; the
+re-entry is hosted on the rail instead, and costs the 965 bytes above.
+
+**The same rejection killed a better idea.** The re-entry was first offered on the **empty** rail, as
+the way out of a dead end. But the candidates *are* the rail's entries, so an empty rail means opening
+the picker would show an empty picker — the affordance was offering the very dead end it was meant to
+end. It is now offered when the rail holds artists, which is when there is something to choose and a
+selection can be revised. That is a correctness finding, and it cost nothing to fix because the
+control was already in the bundle.
+
 ## 3. No motion without a reduced-motion path
 
 The floor already existed before this milestone: `src/app/globals.css` sets `animation-duration`,

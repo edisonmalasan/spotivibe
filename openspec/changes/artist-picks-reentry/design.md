@@ -104,21 +104,44 @@ settles (resolved, failed, or disabled) and the surface reaches `offering` or `n
 
 ## D4 — Where the re-entry lives
 
-**In Settings, beside Languages, and in the empty rail.** Two entries, one implementation.
+**On Home, beside the rail. Not in Settings — and that was measured, not preferred.**
 
-- **Settings → Artists.** A section that shows the current selection and a control that opens the
-  same dialog. This is the direct analogue of `LanguagesSettingsSection`, which reopens the shared
-  `LanguagePicker`, and it is the surface that answers the spec's *"the artist selection is
-  changeable later, as the language selection already is"*.
-- **The empty rail.** When the rail has settled with no artists, it offers the same affordance, so
-  "we couldn't find any artists yet" leads somewhere instead of being a dead end.
+A Settings section was built first, and it was the obvious choice: the Languages section already
+reopens the shared `LanguagePicker`, and "changeable later" is exactly what Languages guarantees.
+It was measured, and **it did not fit the client budget**:
 
-**The Settings section needs the artists, and therefore needs a provider feed of its own** (D1.1).
-That is a real cost: opening Settings would issue the discovery requests Home issues. It is
-accepted, for two reasons: the requests are the same ones the app already makes, they are cached by
-the provider layer, and the alternative — a Settings surface that can only show the artists it
-already knows — would make the re-entry useless for exactly the listeners who need it, which are the
-ones with no local material.
+| | total gzipped | chunks | `/` first load |
+|---|---|---|---|
+| the tree before this change | 388,611 | 25 | 231,355 B / 13 chunks |
+| **this change, re-entry on Home** | **389,548** | **25** | 232,000 B / **13 chunks** |
+| this change, re-entry in Settings | 396,552 | **26** | 233,188 B / **14 chunks** |
+
+Both figures are the same machine, the same toolchain (Node 24.21.0, the one every recorded budget
+was measured on), and the same build procedure.
+
+**The Settings host costs 6,987 gzipped bytes and adds a 26th chunk and a 14th chunk to Home's first
+load.** The client budget's total tolerance is 4,096 bytes, and its chunk-count and largest-chunk
+rules carry **no tolerance at all**. So the Settings host could only ship by re-recording the
+ceiling — and the budget's own module says of exactly this situation:
+
+> *`toleranceBytes` below already exists and would absorb it, but widening this assertion from a
+> ceiling to ceiling-plus-slack changes what the budget guarantees, which is not this change's
+> decision to make.*
+
+**So it is not this change's decision to make, and it is not made.** The Settings section is deferred
+to a change that owns the budget, and `tasks.md` §8.5 records it with the measurement above so the
+next milestone starts from numbers rather than from a guess. The re-entry ships on Home, where it
+costs **937 bytes and no new chunk**.
+
+### D4.1 The affordance is offered when the rail holds artists
+
+The rail's own control opens the picker, so the re-entry is next to the thing it revises.
+
+**It is offered when the rail holds artists, not when the rail is empty** — and that is not a
+detail. The candidates *are* the rail's entries, so an empty rail means opening the picker would
+show an empty picker. An affordance offered exactly when there is nothing to choose would be
+offering the dead end it is meant to end, and the first build of this change got that backwards: it
+offered the control on the empty rail, which is where it is useless.
 
 **The one-shot first-run behaviour does not change.** The dialog does not re-present itself. A
 listener who answered does not get nagged; a listener who wants to change their mind has a place to
@@ -154,17 +177,23 @@ means "this device has no Spotivibe data", and the flag is Spotivibe data.
 
 > *"We couldn't find any artists yet. You can pick them later."*
 
-Once D3 and D4 land, that sentence is **true**, because "later" now exists. Before them it is a
-promise the application does not keep. The change does not delete the sentence; it makes it true,
-and the delta's scenario *"The shelf settles with no artists at all"* requires the surface to point
-at the place where artists can be chosen — so the copy names that place.
+**"Later" did not exist**, and the first attempt at fixing it made it worse by pointing at a Settings
+section that was then removed. The copy now says only what the surface knows:
+
+> *"We couldn't find any artists yet. Artists appear as you listen."*
+
+That is true, and it is the whole of it. The candidates are the rail's entries, so an empty rail
+means there is **nothing to pick** — a surface that says "you can pick them later" over an empty
+list is promising a choice it cannot offer, which is the same defect as asking before the rail has
+settled, one layer down.
 
 **The empty state is also allowed to be empty.** If there is genuinely nothing, saying so is honest.
-What is not allowed is saying it too early.
+What is not allowed is saying it too early, or promising something the list does not contain.
 
 ## D7 — Limits, stated rather than implied
 
-- **The Settings re-entry issues its own discovery requests** (D1.1, D4). Accepted and recorded.
+- **The re-entry is on Home, and the Settings host is deferred** (D4). The budget owns that decision,
+  not this change.
 - **The `pending` state is unbounded in wall-clock time.** If the provider request hangs, the dialog
   waits. The request is abortable and settles on failure, but a request that never settles would
   leave the surface in `pending` — and, because `pending` offers no dismissal, that is a listener
@@ -182,23 +211,24 @@ What is not allowed is saying it too early.
 Found while reviewing the implementation, and recorded here rather than left for a reader to
 discover.
 
-### D9.1 The Settings picker writes the first-run gate
+### D9.1 The on-demand picker writes the first-run gate
 
-`ArtistOnboarding`'s `finish()` and `dismiss()` both call `markOnboardingSeen()`. The Settings
-section opens **that same component**, so:
+`ArtistOnboarding`'s `finish()` and `dismiss()` both call `markOnboardingSeen()`. The rail's
+on-demand control opens **that same component**, so:
 
-- choosing artists in Settings marks the first run as answered — sensible, and the reason a listener
-  who picks in Settings is not asked again;
-- **and dismissing the Settings picker without choosing also marks the first run as answered** — on a
-  surface that is not the first run.
+- choosing artists from the rail marks the first run as answered — sensible, and the reason a
+  listener who picks that way is not asked again;
+- **and dismissing the on-demand picker without choosing also marks the first run as answered** — on
+  a surface that is not the first run.
 
 The delta does not forbid this: it says the re-entry *"SHALL NOT re-present the first-run surface to
 a listener who has already answered it"*, and the re-entry does not re-present anything. **No
-listener is stranded**, because the empty rail offers the same affordance.
+listener is stranded**, because the rail's control is always there when the rail holds artists.
 
 But the flag's meaning has widened from *"has this been seen"* to *"has this question been answered
 anywhere"*, and that widening is a consequence of sharing one component rather than something the
-delta asked for. The alternative — a second, Settings-specific picker that does not touch the gate —
+delta asked for. The alternative — a second, on-demand-specific picker that does not touch the
+gate —
 would be the drift D1 exists to prevent, so sharing is right and the consequence is recorded.
 
 ### D9.2 The pending bound is 8 000 ms, and it is a number someone chose
@@ -218,3 +248,5 @@ bound still wins: the surface then shows the truth rather than the timeout.
 | Move the picks out of IndexedDB into `localStorage` | The picks are user data and must survive a cache clear and travel through the backup envelope. The spec says so and the tests say so. |
 | Let the Settings section show only already-known artists | It would make the re-entry useless for the listeners who need it — the ones with no local material. |
 | Derive the Settings artist list independently of the rail | The disagreement M28's design refused to allow, reintroduced one component later. D1. |
+| **Re-record the client budget to cover the Settings host** | The cost is 6,987 gzipped bytes and a 26th chunk, and the chunk-count rules carry no tolerance, so it could only ship by moving the ceiling. The budget's own module says that widening what the budget guarantees **"is not this change's decision to make"**. Deferred, not absorbed — see D4 and `tasks.md` §8.5. |
+| **Ship the Settings host and let the budget fail** | A red gate is not a decision, it is an unfinished one. The same change that could have re-recorded the ceiling is the change that should have to justify it. |

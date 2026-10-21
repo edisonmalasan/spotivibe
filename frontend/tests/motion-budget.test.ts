@@ -9,6 +9,7 @@ import {
   M23_CLIENT_BUDGET,
   M29_CLIENT_BUDGET,
   M30_CLIENT_BUDGET,
+  M31_CLIENT_BUDGET,
   PRE_M19_CLIENT_BUDGET,
   measureClientBundle,
   measureRouteFirstLoad,
@@ -299,22 +300,61 @@ describe("the emitted client bundle is held to the ceiling (task 5.2)", () => {
     // Measured directly rather than inferred: adding a meaningless `"zzz:dummy": "node -e 0"` entry
     // to the same manifest moved the figure by the same ~16 bytes, and leaving the manifest
     // untouched reproduced the smaller number. So this cost is the manifest, not the step.
+    //
+    // **Read against `M31_CLIENT_BUDGET`, not `CLIENT_BUDGET`.** The artist Quick Picks re-entry has
+    // since replaced the head ceiling, and scoring this against the head would fold that change's
+    // bytes into M31's published 17 — the same misattribution the M22/M23 pair of records exists to
+    // prevent, and the one this file's own `ps:check` test warns about in its comment.
     const delta =
-      CLIENT_BUDGET.largestChunkGzippedBytes - M30_CLIENT_BUDGET.largestChunkGzippedBytes;
+      M31_CLIENT_BUDGET.largestChunkGzippedBytes - M30_CLIENT_BUDGET.largestChunkGzippedBytes;
     expect(delta, "the largest chunk's measured cost in gzipped bytes").toBe(17);
     expect(
-      CLIENT_BUDGET.totalGzippedBytes - M30_CLIENT_BUDGET.totalGzippedBytes,
+      M31_CLIENT_BUDGET.totalGzippedBytes - M30_CLIENT_BUDGET.totalGzippedBytes,
       "the total moved by the same amount as the largest chunk",
     ).toBe(17);
 
     // Still a string inside the existing graph, not a new chunk — which is the shape a dependency
     // takes, and the rule that would catch it.
-    expect(CLIENT_BUDGET.chunkCount - M30_CLIENT_BUDGET.chunkCount).toBe(0);
-    expect(CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(
+    expect(M31_CLIENT_BUDGET.chunkCount - M30_CLIENT_BUDGET.chunkCount).toBe(0);
+    expect(M31_CLIENT_BUDGET.homeFirstLoadGzippedBytes).toBe(
       M30_CLIENT_BUDGET.homeFirstLoadGzippedBytes,
     );
-    expect(CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(M30_CLIENT_BUDGET.homeFirstLoadChunkCount);
+    expect(M31_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
+      M30_CLIENT_BUDGET.homeFirstLoadChunkCount,
+    );
 
+    expect(delta).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
+    expect(
+      SPIKE_COST_BYTES / delta,
+      "an animation library remains far out of reach",
+    ).toBeGreaterThan(10);
+  });
+
+  it("states what the artist Quick Picks re-entry cost, in bytes", () => {
+    // The artist Quick Picks re-entry replaced the head ceiling. Its move is stated the way M20's,
+    // M22's, M23's, `ps:check`'s and `scripts:check`'s were: as a measured byte delta against the
+    // record it replaced, with the origin of the code asserted rather than assumed.
+    //
+    // Read against `M31_CLIENT_BUDGET`, which is the record it replaced.
+    const delta = CLIENT_BUDGET.totalGzippedBytes - M31_CLIENT_BUDGET.totalGzippedBytes;
+    expect(delta, "the re-entry's measured cost in gzipped bytes").toBe(965);
+
+    // **No chunk arrived, anywhere.** A dependency brings a chunk with it, and the rules that watch
+    // the chunk counts carry no tolerance at all — so "the count did not move" is the part that says
+    // this is first-party code rather than a library in disguise.
+    expect(CLIENT_BUDGET.chunkCount - M31_CLIENT_BUDGET.chunkCount).toBe(0);
+    expect(CLIENT_BUDGET.homeFirstLoadChunkCount - M31_CLIENT_BUDGET.homeFirstLoadChunkCount).toBe(
+      0,
+    );
+
+    // The largest chunk grew by 27 bytes, and the rule that watches it carries no tolerance — which
+    // is why the ceiling had to be re-recorded rather than absorbed.
+    expect(
+      CLIENT_BUDGET.largestChunkGzippedBytes - M31_CLIENT_BUDGET.largestChunkGzippedBytes,
+      "the largest chunk's measured cost in gzipped bytes",
+    ).toBe(27);
+
+    // Well inside the tolerance, and nowhere near the library the budget exists to keep out.
     expect(delta).toBeLessThan(CLIENT_BUDGET.toleranceBytes);
     expect(
       SPIKE_COST_BYTES / delta,
@@ -645,13 +685,24 @@ describe("the evidence file carries the decision and what would reverse it (task
     // M31's, published the same way: the `scripts:check` step that reaches the repository-root
     // `scripts/` directory cost 17 bytes, and for the same reason — `frontend/package.json` is
     // inlined into the client bundle.
+    //
+    // Read against `M31_CLIENT_BUDGET`, not the head ceiling: the artist Quick Picks re-entry has
+    // since replaced it, and scoring against the head would fold that change's bytes into M31's
+    // published 17.
     const scriptsCheck =
-      CLIENT_BUDGET.largestChunkGzippedBytes - M30_CLIENT_BUDGET.largestChunkGzippedBytes;
+      M31_CLIENT_BUDGET.largestChunkGzippedBytes - M30_CLIENT_BUDGET.largestChunkGzippedBytes;
     expect(evidence, "the scripts:check step's cost is published").toContain(
       `+${scriptsCheck.toLocaleString("en-US")} B`,
     );
 
-    // All seven records, so the history is readable rather than overwritten.
+    // This change's, published like every other re-recording's, so the evidence cannot stay
+    // silent about a ceiling it raised.
+    const reentry = CLIENT_BUDGET.totalGzippedBytes - M31_CLIENT_BUDGET.totalGzippedBytes;
+    expect(evidence, "the artist Quick Picks re-entry's cost is published").toContain(
+      `+${reentry.toLocaleString("en-US")} B`,
+    );
+
+    // All eight records, so the history is readable rather than overwritten.
     for (const record of [
       PRE_M19_CLIENT_BUDGET,
       M20_CLIENT_BUDGET,
@@ -659,6 +710,7 @@ describe("the evidence file carries the decision and what would reverse it (task
       M23_CLIENT_BUDGET,
       M29_CLIENT_BUDGET,
       M30_CLIENT_BUDGET,
+      M31_CLIENT_BUDGET,
       CLIENT_BUDGET,
     ]) {
       expect(evidence).toContain(record.totalGzippedBytes.toLocaleString("en-US"));
