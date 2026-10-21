@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
 import { ArtistCard } from "@/components/design-system/ArtistCard";
-import type { ListeningEventRecord, Track } from "@/data/repositories";
+import { Button } from "@/components/design-system/Button";
+import type { Track } from "@/data/repositories";
 import {
   QUICK_PICK_SURFACE,
   presentsSurface,
   type HomeFilterValue,
 } from "@/features/home/homeFilter";
-import { deriveQuickPicks, quickPickHref, type QuickPick } from "@/features/home/quickPicks";
-import type { QuickPickPickRecord } from "@/data/repositories";
+import { quickPickHref, type QuickPick } from "@/features/home/quickPicks";
+import { useQuickPickArtists, type QuickPickRailReport } from "@/features/home/useQuickPickArtists";
 
 /**
  * Home's Quick Picks shelf (M23; spec: `home-mixes` — "Quick Picks are artist
@@ -55,12 +56,22 @@ export const QUICK_PICKS_ERROR = {
  * Secondary line: what every entry is, and where the candidates come from.
  *
  * This string used to say "Artists, releases, and searches". Two of those three
- * are gone as of M23 — the rail is artist-only — so leaving the wording would be a
- * claim the shelf no longer makes. It names the artist's own songs instead, which
+ * are gone as of M23 — the rail is artist-only — so leaving the wording would be
+ * a claim the shelf no longer makes. It names the artist's own songs instead, which
  * is what activating a card opens.
  */
 export const QUICK_PICKS_DESCRIPTION =
   "Artists from what you have played, your languages, and what is playing now.";
+
+/**
+ * The empty rail's way out.
+ *
+ * "We couldn't find any artists yet" is only a dead end if there is nowhere to
+ * go from it. This is the control that opens the same artist picker the
+ * first-run surface and the Settings section open — one implementation, three
+ * places that reach it (D4).
+ */
+export const QUICK_PICKS_EMPTY_ACTION = "Choose artists";
 
 /** One entry: a link, with the kind and target exposed for tests and evidence. */
 function QuickPickCard({ pick }: { pick: QuickPick }) {
@@ -87,12 +98,6 @@ function QuickPickCard({ pick }: { pick: QuickPick }) {
 }
 
 export interface QuickPicksShelfProps {
-  /** Liked tracks, newest-first (the `libraryStore` slice). */
-  likedTracks: readonly Track[];
-  /** Listening events, newest-first (the `historyStore` slice). */
-  events: readonly ListeningEventRecord[];
-  /** The selected catalog language codes. */
-  languages: readonly string[];
   /**
    * Provider results the Home feed already holds, for the cold-start stand-in.
    *
@@ -119,22 +124,23 @@ export interface QuickPicksShelfProps {
   /** Retry handler for `providerState === "error"`. */
   onRetry?: () => void;
   /**
-   * First-run artist picks, which lead the rail. Supplied by `HomeView` from the
-   * picks store rather than read here, so this component stays free of storage.
-   *
-   * Named `storedPicks` because `picks` is already the derived rail inside this
-   * component, and two different things called `picks` in one scope is how a
-   * reader ends up trusting the wrong one.
-   */
-  storedPicks?: readonly QuickPickPickRecord[];
-  /**
    * The derived rail, reported upward.
    *
    * First-run onboarding offers the *same* entries the rail shows, so deriving
    * them twice would let the two disagree about which artists exist. The rail is
    * the single derivation site and the dialog renders what it produced.
+   *
+   * **The report carries the settled state as well as the entries** (D2). A
+   * consumer that receives only the entries cannot tell an empty rail that has
+   * settled from one that has not, and "no artists" is a statement that may only
+   * be made once the rail has decided.
    */
-  onRailChange?(entries: readonly QuickPick[]): void;
+  onRailChange?(report: QuickPickRailReport): void;
+  /**
+   * Opens the artist picker, offered by the rail once it has settled with
+   * nothing in it (D4). Omitted by a caller with nowhere to send the listener.
+   */
+  onRequestArtistPicks?(): void;
 }
 
 /**
@@ -146,29 +152,26 @@ export interface QuickPicksShelfProps {
  * ready-with-no-children rule rather than a search card standing in for a
  * language. That is the deliberate change from M22, where the reserved language
  * entry existed precisely so the rail could never be empty.
+ *
+ * The derivation itself belongs to `useQuickPickArtists` (D1): the rail, the
+ * first-run surface, and the Settings re-entry all read that one hook, so
+ * "the same artists" is true by construction rather than by two call sites
+ * agreeing.
  */
 export function QuickPicksShelf({
-  likedTracks,
-  events,
-  languages,
   providerTracks,
   filter = "all",
   className = "",
   providerState = "ready",
   onRetry,
-  storedPicks,
   onRailChange,
+  onRequestArtistPicks,
 }: QuickPicksShelfProps) {
-  const picks = useMemo(
-    () =>
-      deriveQuickPicks({
-        languages,
-        taste: { likedTracks, events },
-        providerTracks,
-        picks: storedPicks,
-      }),
-    [events, languages, likedTracks, providerTracks, storedPicks],
-  );
+  const { artists, settled, state } = useQuickPickArtists({
+    providerTracks,
+    providerState,
+    onRetry,
+  });
 
   /*
    * Report the derived rail upward so first-run onboarding offers exactly these
@@ -185,8 +188,8 @@ export function QuickPicksShelf({
    * Two independent hazards, both of which hang the run rather than failing an
    * assertion:
    *
-   * 1. `picks` is a fresh array from `useMemo` whenever an input's identity
-   *    changes, and `HomeView`'s `setOnboardingArtists` re-renders when called —
+   * 1. `artists` is a fresh array from `useMemo` whenever an input's identity
+   *    changes, and `HomeView`'s `setRailReport` re-renders when called —
    *    so reporting on array identity calls `setState` on every render.
    * 2. A caller passing an inline arrow (`onRailChange={(x) => …}`) hands over a
    *    new function identity on every render, which re-fires the effect even when
@@ -194,8 +197,15 @@ export function QuickPicksShelf({
    *
    * `railKey` is the rail's actual identity for this purpose, and the ref keeps
    * the callback out of the dependency list so neither can loop.
+   *
+   * **`settled` is a second dependency, and it is load-bearing.** The rail's
+   * content can be unchanged while its settledness changes — a device whose
+   * stores have just hydrated settles on the same empty list it was already
+   * showing — and a report keyed on content alone would never carry the
+   * transition, leaving the consumer unable to tell "still deciding" from
+   * "decided: nothing".
    */
-  const railKey = picks.map((entry) => entry.id).join("|");
+  const railKey = artists.map((entry) => entry.id).join("|");
   const onRailChangeRef = useRef(onRailChange);
   // Written inside an effect rather than during render: assigning `ref.current`
   // while rendering is exactly the anti-pattern `react-hooks/refs` flags, and it
@@ -206,11 +216,11 @@ export function QuickPicksShelf({
     onRailChangeRef.current = onRailChange;
   }, [onRailChange]);
   useEffect(() => {
-    onRailChangeRef.current?.(picks);
-    // `picks` is intentionally excluded: `railKey` is its identity for this
+    onRailChangeRef.current?.({ artists, settled });
+    // `artists` is intentionally excluded: `railKey` is its identity for this
     // purpose, and depending on the array itself is what caused the loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railKey]);
+  }, [railKey, settled]);
 
   if (!presentsSurface(QUICK_PICK_SURFACE, filter)) return null;
 
@@ -219,28 +229,61 @@ export function QuickPicksShelf({
    * it has nothing.
    *
    * Local taste is enough to fill the rail on its own, so a provider failure must not
-   * hide artists the device already knows. The error state is therefore reserved for
-   * the case where the rail is empty *because* the provider failed — which is the
+   * hide artists the device already knows. The error state is therefore reserved for the
+   * case where the rail is empty *because* the provider failed — which is the
    * same rule the removed Popular Artists section followed, since it too derived from
    * the trending result.
+   *
+   * The state is computed by the shared hook, which also knows whether the local
+   * stores have hydrated. A rail that has not settled is `"loading"`, never
+   * `"empty"` — an empty state that appears before the rail has decided is a
+   * claim the rail cannot yet make (D2.2).
    */
-  const state: ShelfState =
-    picks.length > 0 ? "ready" : providerState === "ready" ? "empty" : providerState;
+
+  const showEmptyAction = state === "empty" && onRequestArtistPicks !== undefined;
 
   return (
-    <Shelf
-      title={QUICK_PICKS_TITLE}
-      description={QUICK_PICKS_DESCRIPTION}
-      shape="circular"
-      state={state}
-      onRetry={state === "error" ? onRetry : undefined}
-      error={QUICK_PICKS_ERROR}
-      className={className}
-      data-testid={QUICK_PICK_SURFACE.id}
-    >
-      {picks.map((pick) => (
-        <QuickPickCard key={pick.id} pick={pick} />
-      ))}
-    </Shelf>
+    <>
+      <Shelf
+        title={QUICK_PICKS_TITLE}
+        description={QUICK_PICKS_DESCRIPTION}
+        shape="circular"
+        state={state}
+        onRetry={state === "error" ? onRetry : undefined}
+        error={QUICK_PICKS_ERROR}
+        className={className}
+        data-testid={QUICK_PICK_SURFACE.id}
+      >
+        {artists.map((pick) => (
+          <QuickPickCard key={pick.id} pick={pick} />
+        ))}
+      </Shelf>
+      {showEmptyAction && (
+        /*
+         * Rendered beside the shelf rather than inside it: the `Shelf` primitive
+         * owns its own empty state and its header, and this is an extra
+         * affordance the rail adds when that empty state is the settled truth.
+         *
+         * The shared ghost `Button`, not a hand-rolled one: the motion
+         * vocabulary belongs to the component that owns it, and this module is
+         * not on `MOTION_ALLOWED`.
+         *
+         * The test id deliberately does **not** start with `home-quick-picks`:
+         * the feed's row-order assertions select on that prefix, and a control
+         * that is not a feed row must not read as one.
+         */
+        <div className="-mt-6 mb-8 flex justify-center">
+          <Button
+            variant="ghost"
+            data-testid="quick-picks-empty-action"
+            onClick={() => {
+              onRequestArtistPicks?.();
+            }}
+          >
+            {QUICK_PICKS_EMPTY_ACTION}
+          </Button>
+        </div>
+      )}
+    </>
   );
 }

@@ -13,8 +13,10 @@ import {
 import { QUICK_PICKS_DESCRIPTION, QuickPicksShelf } from "@/features/home/QuickPicksShelf";
 import * as localData from "@/data/localData";
 import { makeTrack } from "./helpers/music-fixtures";
-import { resetHistoryStore } from "@/stores/historyStore";
-import { resetLibraryStore } from "@/stores/libraryStore";
+import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
+import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
+import { resetPreferencesStore, usePreferencesStore } from "@/stores/preferencesStore";
+import { resetQuickPickPicksStore, useQuickPickPicksStore } from "@/stores/quickPickPicksStore";
 
 /**
  * M23 (spec: `home-mixes` — "Quick Picks are artist surfaces that exist" and "Mix
@@ -131,9 +133,56 @@ function derive(languages: readonly string[] = ["en"], taste = material()): Quic
 /** Eight distinct catalog codes — the maximum selection. */
 const EIGHT_LANGUAGES = ["en", "ja", "ko", "es", "fr", "de", "pt", "it"];
 
+/**
+ * Seed the stores the rail reads.
+ *
+ * The rail no longer takes the local material as props: it reads the stores
+ * through the shared `useQuickPickArtists` hook, so the rail, the first-run
+ * surface, and the Settings re-entry are guaranteed to be looking at the same
+ * artists. Seeding the stores is therefore how a test sets up the rail.
+ *
+ * `hydrated: true` matters as much as the contents: the rail is not settled
+ * until the stores have hydrated, and an unsettled rail renders a loading
+ * state rather than its cards.
+ */
+function seedRailStores({
+  likedTracks = [] as Track[],
+  events = [] as ListeningEventRecord[],
+  languages = ["en"] as string[],
+  picks = [] as QuickPickPickRecord[],
+}: {
+  likedTracks?: Track[];
+  events?: ListeningEventRecord[];
+  languages?: string[];
+  picks?: QuickPickPickRecord[];
+} = {}): void {
+  useLibraryStore.setState({
+    likedTracks,
+    hydrated: true,
+    hydrate: () => Promise.resolve(),
+  });
+  useHistoryStore.setState({
+    events,
+    hydrated: true,
+    hydrate: () => Promise.resolve(),
+  });
+  usePreferencesStore.setState({
+    languages,
+    hydrated: true,
+    hydrate: () => Promise.resolve(),
+  });
+  useQuickPickPicksStore.setState({
+    picks,
+    hydrated: true,
+    load: () => Promise.resolve(),
+  });
+}
+
 beforeEach(() => {
   resetHistoryStore();
   resetLibraryStore();
+  resetPreferencesStore();
+  resetQuickPickPicksStore();
 });
 
 afterEach(() => {
@@ -495,14 +544,14 @@ describe("quickPicks: artist artwork", () => {
 });
 
 describe("QuickPicksShelf: circular artist cards that navigate", () => {
-  const props = {
-    likedTracks: [track("l1", "Aurora"), track("l2", "Beacon")],
-    events: [] as ListeningEventRecord[],
-    languages: ["en"],
-  };
+  const likedTracks = [track("l1", "Aurora"), track("l2", "Beacon")];
+
+  beforeEach(() => {
+    seedRailStores({ likedTracks });
+  });
 
   it("renders one anchor per entry, each with a resolvable href", () => {
-    render(<QuickPicksShelf {...props} />);
+    render(<QuickPicksShelf />);
     const cards = screen.getAllByTestId("quick-pick");
     expect(cards).toHaveLength(2);
     for (const card of cards) {
@@ -515,12 +564,12 @@ describe("QuickPicksShelf: circular artist cards that navigate", () => {
   it("keeps the consolidated circular artist card test id", () => {
     // The Popular Artists section was consolidated into this rail; assertions written
     // against `home-artist-card` must still find the circular artist card.
-    render(<QuickPicksShelf {...props} />);
+    render(<QuickPicksShelf />);
     expect(screen.getAllByTestId("home-artist-card")).toHaveLength(2);
   });
 
   it("renders circular geometry and the Artist label", () => {
-    const { container } = render(<QuickPicksShelf {...props} />);
+    const { container } = render(<QuickPicksShelf />);
     expect(container.querySelectorAll(".rounded-avatars").length).toBeGreaterThan(0);
     for (const card of screen.getAllByTestId("home-artist-card")) {
       expect(within(card).getByText("Artist")).toBeTruthy();
@@ -528,7 +577,7 @@ describe("QuickPicksShelf: circular artist cards that navigate", () => {
   });
 
   it("renders the artist's own image when the provider supplied one", () => {
-    const { container } = render(<QuickPicksShelf {...props} />);
+    const { container } = render(<QuickPicksShelf />);
     const image = container.querySelector<HTMLImageElement>(
       'img[src="https://example.test/l1.jpg"]',
     );
@@ -536,16 +585,15 @@ describe("QuickPicksShelf: circular artist cards that navigate", () => {
   });
 
   it("falls back to the existing artist placeholder when there is no artwork", () => {
-    const { container } = render(
-      <QuickPicksShelf {...props} likedTracks={[bareTrack("b1", "Aurora")]} />,
-    );
+    seedRailStores({ likedTracks: [bareTrack("b1", "Aurora")] });
+    const { container } = render(<QuickPicksShelf />);
     expect(container.querySelector("img")).toBeNull();
     // `ArtistCard`'s placeholder is the `User` glyph, not a broken image.
     expect(container.querySelector("svg")).not.toBeNull();
   });
 
   it("renders a link for every entry and no decorative card", () => {
-    render(<QuickPicksShelf {...props} />);
+    render(<QuickPicksShelf />);
     for (const card of screen.getAllByTestId("quick-pick")) {
       expect(card.getAttribute("href")).toBeTruthy();
       expect(card.getAttribute("tabindex")).toBeNull();
@@ -553,16 +601,16 @@ describe("QuickPicksShelf: circular artist cards that navigate", () => {
   });
 
   it("does not claim to offer releases or searches", () => {
-    render(<QuickPicksShelf {...props} />);
+    render(<QuickPicksShelf />);
     expect(screen.getByText(QUICK_PICKS_DESCRIPTION)).toBeTruthy();
     expect(QUICK_PICKS_DESCRIPTION).not.toMatch(/release|search/i);
   });
 
   it("is not presented under the Podcasts filter, and is under the other two", () => {
-    const { rerender } = render(<QuickPicksShelf {...props} filter="podcasts" />);
+    const { rerender } = render(<QuickPicksShelf filter="podcasts" />);
     expect(screen.queryByTestId("home-quick-picks")).toBeNull();
     for (const filter of ["all", "music"] as const) {
-      rerender(<QuickPicksShelf {...props} filter={filter} />);
+      rerender(<QuickPicksShelf filter={filter} />);
       expect(screen.getByTestId("home-quick-picks")).toBeTruthy();
     }
   });

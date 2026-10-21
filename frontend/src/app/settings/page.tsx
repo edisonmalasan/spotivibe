@@ -1,6 +1,7 @@
 import { SectionHeader } from "@/components/design-system/SectionHeader";
 import { DataControls } from "@/features/backup/DataControls";
 import { InstallRow } from "@/features/pwa/UpdateNotice";
+import { ArtistsSettingsSection } from "@/features/preferences/ArtistsSettingsSection";
 import { AutofillSettingsSection } from "@/features/preferences/AutofillSettingsSection";
 import { LanguagesSettingsSection } from "@/features/preferences/LanguagesSettingsSection";
 
@@ -13,6 +14,11 @@ import { LanguagesSettingsSection } from "@/features/preferences/LanguagesSettin
  * M13 adds the install affordance here rather than as a shell banner: installing
  * is a decision someone makes once, so it belongs in the place people already come
  * to change how the app behaves (spec: `pwa` — "Install affordance").
+ *
+ * **Artists sits beside Languages** because it is the same kind of control: a
+ * first-run answer the listener can revise. The first-run surface asks about
+ * artists; this one lets them change their mind, exactly as Languages has
+ * always allowed for languages.
  */
 export default function SettingsPage() {
   return (
@@ -34,6 +40,15 @@ export default function SettingsPage() {
           Your language choices shape every discovery shelf and stay on this device.
         </p>
         <LanguagesSettingsSection />
+      </section>
+
+      <section>
+        <SectionHeader title="Artists" />
+        <p className="mb-6 max-w-2xl text-body-lg font-regular text-mist">
+          The artists you pick lead your Quick Picks. They stay on this device, and you can change
+          them whenever you like.
+        </p>
+        <ArtistsSettingsSection />
       </section>
 
       <section>

@@ -969,6 +969,18 @@ describe("HomeView: first-run artist onboarding", () => {
     const dialog = await screen.findByRole("dialog", { name: "Pick artists you like" });
     expect(dialog).toBeInTheDocument();
 
+    /*
+     * The surface's first state is `pending`, and it offers no way out: a
+     * dismissal is an answer, and the rail has not been asked yet. The rail
+     * settles here as soon as the provider resolves and the stores hydrate, and
+     * the artists appear.
+     */
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    // Scoped to the dialog: the feed's own track cards also carry the artist's
+    // name in their accessible names.
+    expect(await within(dialog).findByRole("button", { name: /Aurora/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() =>
       expect(

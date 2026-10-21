@@ -1,9 +1,16 @@
 import "fake-indexeddb/auto";
-import { configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLocalData, type RepositorySet } from "@/data/localData";
 import type { QuickPick } from "@/features/home/quickPicks";
-import { ARTIST_ONBOARDING_LABEL, ArtistOnboarding } from "@/features/onboarding/ArtistOnboarding";
+import {
+  ARTIST_ONBOARDING_EMPTY,
+  ARTIST_ONBOARDING_LABEL,
+  ARTIST_ONBOARDING_PENDING_TIMEOUT_MS,
+  ARTIST_ONBOARDING_UNRESOLVED,
+  ArtistOnboarding,
+} from "@/features/onboarding/ArtistOnboarding";
 import {
   clearOnboardingSeen,
   isOnboardingSeen,
@@ -23,7 +30,25 @@ import { resetQuickPickPicksStore } from "@/stores/quickPickPicksStore";
  * verbatim — it would assert behaviour of something that no longer exists — but
  * the properties it protected are asserted here against the surface that
  * replaced it.
+ *
+ * **The surface has three states now, and every case below says which one it
+ * is.** `settled` is what distinguishes them, and it is not a detail: a
+ * dismissal is an answer, so a surface that offers one before the rail has
+ * settled is collecting an answer to a question it never asked.
  */
+
+// The empty state links to Settings, so `next/link` has to resolve.
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: { href: string; children: ReactNode } & Record<string, unknown>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 
 // IndexedDB round-trips plus a cold React start can exceed the 1s default.
 configure({ asyncUtilTimeout: 5000 });
@@ -45,12 +70,13 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
 describe("first-run artist onboarding", () => {
   it("offers the rail's own artists as toggleable selections", () => {
-    render(<ArtistOnboarding artists={ARTISTS} onClose={vi.fn()} />);
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={vi.fn()} />);
 
     for (const artist of ARTISTS) {
       expect(screen.getByRole("button", { name: new RegExp(artist.title) })).toBeInTheDocument();
@@ -63,7 +89,7 @@ describe("first-run artist onboarding", () => {
   });
 
   it("stores the picked artists and marks first run complete", async () => {
-    render(<ArtistOnboarding artists={ARTISTS} onClose={vi.fn()} />);
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Aurora Vale/ }));
     fireEvent.click(screen.getByRole("button", { name: /Cobalt/ }));
@@ -78,7 +104,7 @@ describe("first-run artist onboarding", () => {
 
   it("reaches the dashboard when nothing is picked", async () => {
     const onClose = vi.fn();
-    render(<ArtistOnboarding artists={ARTISTS} onClose={onClose} />);
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={onClose} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Start listening" }));
 
@@ -89,7 +115,7 @@ describe("first-run artist onboarding", () => {
   });
 
   it("prompts no account, sign-in, or email step", () => {
-    render(<ArtistOnboarding artists={ARTISTS} onClose={vi.fn()} />);
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={vi.fn()} />);
 
     for (const word of [/sign in/i, /log ?in/i, /account/i, /@/]) {
       expect(screen.queryByText(word)).not.toBeInTheDocument();
@@ -98,7 +124,7 @@ describe("first-run artist onboarding", () => {
 
   it("honors the dialog a11y contract: role, focus entry, and dismissal", async () => {
     const onClose = vi.fn();
-    render(<ArtistOnboarding artists={ARTISTS} onClose={onClose} />);
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={onClose} />);
 
     const dialog = screen.getByRole("dialog", { name: ARTIST_ONBOARDING_LABEL });
     expect(dialog).toHaveAttribute("aria-modal", "true");
@@ -110,7 +136,7 @@ describe("first-run artist onboarding", () => {
 
   it("dismisses on a backdrop press, persisting no picks", async () => {
     const onClose = vi.fn();
-    render(<ArtistOnboarding artists={ARTISTS} onClose={onClose} />);
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={onClose} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
@@ -127,7 +153,7 @@ describe("first-run artist onboarding", () => {
       new Error("disk full"),
     );
 
-    render(<ArtistOnboarding artists={ARTISTS} onClose={onClose} />);
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: /Aurora Vale/ }));
     fireEvent.click(screen.getByRole("button", { name: "Start listening" }));
 
@@ -137,13 +163,127 @@ describe("first-run artist onboarding", () => {
     expect(onClose).not.toHaveBeenCalled();
     warn.mockRestore();
   });
+});
 
-  it("explains itself rather than rendering an empty grid of controls", () => {
-    render(<ArtistOnboarding artists={[]} onClose={vi.fn()} />);
+/**
+ * The three states.
+ *
+ * The surface's own claim is "these are the artists you are choosing between",
+ * so it may only make that claim once the rail has settled. A dismissal is an
+ * answer, and an answer to a question that has not been asked is not an
+ * answer at all.
+ */
+describe("the first-run surface's three states", () => {
+  it("says nothing about the artists and offers no dismissal before the rail has settled", () => {
+    render(<ArtistOnboarding artists={[]} settled={false} onClose={vi.fn()} />);
 
-    expect(screen.getByText(/couldn't find any artists/i)).toBeInTheDocument();
+    // Not "there are no artists" — the rail has not answered.
+    expect(screen.queryByText(/couldn't find any artists/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("artist-onboarding-empty")).not.toBeInTheDocument();
+    // And no dismissal control of any kind: not a disabled one.
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    // The surface still says what it is doing.
+    expect(screen.getByTestId("artist-onboarding-pending")).toBeInTheDocument();
+  });
+
+  it("does not dismiss on Escape or a backdrop press before the rail has settled", () => {
+    const onClose = vi.fn();
+    render(<ArtistOnboarding artists={[]} settled={false} onClose={onClose} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.mouseDown(document.body);
+
+    expect(onClose).not.toHaveBeenCalled();
+    // A dismissal is an answer, and nothing has been answered.
+    expect(isOnboardingSeen()).toBe(false);
+  });
+
+  it("offers the grid, and a dismissal, once the rail has settled with artists", () => {
+    render(<ArtistOnboarding artists={ARTISTS} settled onClose={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: /Aurora Vale/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(screen.queryByTestId("artist-onboarding-pending")).not.toBeInTheDocument();
+  });
+
+  it("says so, and names the place to choose later, once the rail has settled with nothing", () => {
+    render(<ArtistOnboarding artists={[]} settled onClose={vi.fn()} />);
+
+    expect(screen.getByTestId("artist-onboarding-empty")).toHaveTextContent(
+      /couldn't find any artists/i,
+    );
+    // The copy names the place, and the place is a real route.
+    expect(screen.getByTestId("artist-onboarding-empty")).toHaveTextContent(/settings/i);
+    expect(screen.getByRole("link", { name: "Open Settings" }).getAttribute("href")).toBe(
+      "/settings",
+    );
     // No "Start listening" that would store nothing and look like a real choice.
     expect(screen.queryByRole("button", { name: "Start listening" })).not.toBeInTheDocument();
+    // And it is dismissible, because the answer is true.
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  it("uses the settled and the unresolved copy for the two different emptinesses", () => {
+    const { unmount } = render(<ArtistOnboarding artists={[]} settled={false} onClose={vi.fn()} />);
+    // Not settled, and not yet timed out: the surface must not claim there are
+    // no artists, because it does not know that yet.
+    expect(screen.queryByText(ARTIST_ONBOARDING_EMPTY)).not.toBeInTheDocument();
+    unmount();
+
+    render(<ArtistOnboarding artists={[]} settled onClose={vi.fn()} />);
+    expect(screen.getByText(ARTIST_ONBOARDING_EMPTY)).toBeInTheDocument();
+    expect(screen.queryByText(ARTIST_ONBOARDING_UNRESOLVED)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The pending state is bounded.
+ *
+ * A provider request that never settles would otherwise hold a surface that
+ * offers no way out, and a surface that will not let someone leave is worse
+ * than the defect it fixes.
+ */
+describe("the pending state cannot strand the listener", () => {
+  it("keeps waiting, and keeps the dismissal away, until the bound expires", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<ArtistOnboarding artists={[]} settled={false} onClose={onClose} />);
+
+    act(() => {
+      vi.advanceTimersByTime(ARTIST_ONBOARDING_PENDING_TIMEOUT_MS - 1);
+    });
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    // The bound has expired: the surface may be left.
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("bounds the wait by a time a listener can actually wait for", () => {
+    // A bound of "a minute" is a bound on paper. This asserts the number is
+    // one a listener would accept being held for.
+    expect(ARTIST_ONBOARDING_PENDING_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(ARTIST_ONBOARDING_PENDING_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
+  });
+
+  it("still shows the artists when the rail settles after the bound expires", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <ArtistOnboarding artists={[]} settled={false} onClose={vi.fn()} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(ARTIST_ONBOARDING_PENDING_TIMEOUT_MS);
+    });
+    expect(screen.getByTestId("artist-onboarding-empty")).toBeInTheDocument();
+
+    rerender(<ArtistOnboarding artists={ARTISTS} settled onClose={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /Aurora Vale/ })).toBeInTheDocument();
+    expect(screen.queryByTestId("artist-onboarding-empty")).not.toBeInTheDocument();
   });
 });
 
