@@ -374,6 +374,91 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > (2) **The first-run requirement as a whole** — `discovery`'s stale language-dialog scenario and the
 > feed-gating half that has never been met. (3) The root lockfile guard, which is live and uncaught.
 
+| **M35** | Port Lyrix's curated popular artists into the Quick Picks rail | `MERGED, ARCHIVED` - PR #149, merge `3006601`, sync #150 `c29e0cb`, archived `2026-10-22-curated-artist-picks`; gate exit 0, 189 files / 3560 tests; client budget **+658 B, no new chunk**; **10 languages, 33 artists** | M23, M28, M34 |
+
+
+> **M35 exists because Lyrix's rail is never empty and Spotivibe's could be, and the picker that
+> M34 had just fixed inherited that.**
+>
+> Lyrix's `QuickPicks.tsx` holds a hardcoded list of popular artists per language — **11 languages,
+> 39 artists** — so its rail is never empty and never depends on the network. Spotivibe's rail is
+> derived from the listener's material and from whatever the provider returned, so it **can be empty**,
+> and when it was, the first-run picker had nothing to offer and said *"We couldn't find any artists
+> yet."* M34 spent a milestone working around that dead end with a time bound and a copy change; this
+> removes it.
+>
+> **The behaviour is independently reimplemented; the artist names are Lyrix's data and are copied.**
+> That is the distinction `ATTRIBUTION.md` draws, and the module carries the MIT notice while
+> `ATTRIBUTION.md` gains a row. A list of well-known artists per language is a **curation, not an
+> algorithm** — re-deriving the same names while claiming independence would be the dishonest option,
+> and the table that used to say *"(none yet)"* now says otherwise.
+>
+> **Not ported, each for a recorded reason:** Lyrix's card (`ROADMAP.md` §9.2 bars Lyrix UI as final
+> Spotivibe UI); its **separate "Popular Artists" section** (the `discovery` spec says no separate
+> Popular Artists section renders beside Quick Picks — the artists go **into** the rail); its batch
+> thumbnail endpoint (the `home-mixes` spec forbids the derivation issuing a request for artwork); and
+> its name-slug route, because Spotivibe's `/artist/[key]` **already resolves a text key**.
+
+> **Two gaps the port exposed, both recorded rather than papered over.** **Punjabi is not portable** —
+> the catalog has 38 codes and no `pa`, so those five artists are not ported under an invented code,
+> because a language code that does not exist is a lookup that silently never matches. And **28 of the
+> 38 catalog languages have no Lyrix list at all** — Lyrix's own rail renders *nothing* for those, which
+> is worth **not** copying and is why a language-agnostic floor was added instead. **What is ported: 10
+> languages, 33 artists** — Lyrix's `Anime OST` was **dropped**, because it is a *category* and the
+> requirement says every Quick Pick SHALL be a resolvable artist.
+
+> **The implementation took three rounds, and two of them were corrections the design did not ask for.**
+> A curated entry that won the name-dedupe over the provider's own entry made the card link by *name* when
+> a **provider identity** was available, and the requirement says a Quick Pick navigates *"using the
+> provider artist identity when the entry has one"* — so a curated entry now takes that identity, and
+> the artwork of a candidate track by that artist, from the tracks the caller already supplied. The
+> lookup is **exact whole-key equality** on the normalized name, so `Anirudh` cannot take
+> `Anirudh Ravichander`'s picture or identity. The second correction was the worker's own honest
+> report that a cold-start rail had become *6 placeholder cards + 2 cards with artwork* — a visible
+> downgrade on the most common path, and unnecessary, because the requirement's artwork clause already
+> said artwork resolves from *"artwork already carried by the candidate tracks"*.
+
+> **Two probes went MISSED and were fixed rather than excused.** The name-dedupe probes stopped
+> discriminating once curated entries carried the provider identity, so the two tests were **not**
+> weakened: both assertions were kept, their comments corrected — they had claimed the name dedupe was
+> the only thing that could catch them, which had become false — and a **new** test was added for the
+> case only the name dedupe can catch. One more missed mechanically: prettier had reflowed the `hi:`
+> list, so the mutation's anchor no longer matched. **34 probes, all CAUGHT**, each restored
+> byte-for-byte with SHA-256.
+
+> **The budget moved +658 bytes and not one chunk** — 25 before, 25 after, and `/`'s first load still
+> loads 13. The **largest chunk did not move at all**, so the one ceiling rule that carries **no**
+> tolerance needed no re-record of its own, and the record keeps the CI-measured 97,538. **CI confirmed
+> that**: the Apply run's green gate is the budget's exact rule being satisfied on the runner rather
+> than on a local machine that measures the same build four bytes lower.
+
+> **Two consequences are recorded rather than hidden, and no branch was deleted for either.** The rail's
+> **error, empty and loading states are now unreachable** — it always holds artists, so a provider
+> failure is no longer shown *on the rail*; it is reported by the trending shelf, which is where it
+> belongs, and the requirement's settled-with-no-artists path and its code stay intact because there
+> is no authority to remove them. And a device with local material sees the **curated artists on the
+> first paint** and its own artists once the stores hydrate — a content swap in the rail, stated rather
+> than discovered.
+
+> **The delta lost a word and a possessive, and the tool caught both.** The main spec says *"that
+> artist's own image"*; the first draft of the delta said *"the artist's own image"*. The loss check was
+> rewritten to distinguish a **modified** unit from a **lost** one — a line- or sentence-based comparison
+> reports every deliberate reword as a loss, and a tool that cries wolf is a tool nobody reads. With that
+> fixed it found the real error. `openspec validate` then found a second: a **renamed scenario** reads
+> as a *drop* in a MODIFIED block, so the original title was kept and a separate scenario added for the
+> curated case. The **sync** was then done by script rather than by hand, because a MODIFIED requirement
+> replaces a ~170-line block and hand-transcribing it is what lost the word in the first place.
+
+> **Recorded, not absorbed.** `openspec/specs/discovery/spec.md` still says **"First run offers
+> language selection"**, which the code contradicts, and the same requirement's feed-gating half is
+> still unmet (M34 §8.1 and §8.2) — both need a change that owns the first-run requirement as a whole.
+> The **Settings host** for the artist re-entry (M34 §8.5) is 6,987 gzipped bytes and a 26th chunk
+> against a 4,096-byte tolerance, and it needs a change that owns the client budget. The root lockfile
+> guard gap is **live** — an untracked root `pnpm-lock.yaml` and a two-entry root `node_modules/` are
+> in the working tree, and they are **not this work's to delete**. And **28 uncovered languages are not
+> filled with a hand-written list**: that is a curation task, not a port, and it is recorded rather than
+> guessed at. **UNVERIFIED: no browser was attached at any point in M35**, so what a curated card looks
+> like with a candidate track's artwork, and with the placeholder, is unverified by eye.
 > **M31 exists because an exemption with an accurate reason is still an exemption, and accuracy is not currency.**
 >
 > `scripts/` was a **frozen root** — a tracked directory no gate step reads. Its recorded reason was
