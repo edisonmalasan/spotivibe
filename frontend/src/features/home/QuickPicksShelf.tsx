@@ -64,14 +64,19 @@ export const QUICK_PICKS_DESCRIPTION =
   "Artists from what you have played, your languages, and what is playing now.";
 
 /**
- * The empty rail's way out.
+ * The rail's way to revise the picks.
  *
- * "We couldn't find any artists yet" is only a dead end if there is nowhere to
- * go from it. This is the control that opens the same artist picker the
- * first-run surface and the Settings section open — one implementation, three
- * places that reach it (D4).
+ * "We couldn't find any artists yet" is only a dead end if there is nowhere to go from it. This is
+ * the control that opens the same artist picker the first-run surface opens — one implementation,
+ * two places that reach it.
+ *
+ * **Offered when the rail holds artists, not when it is empty.** An empty rail means there is
+ * nothing to pick: the candidates come from the rail, so opening the picker over an empty rail
+ * would show an empty picker, which is the dead end this control exists to end. The affordance is
+ * useful exactly when there is something to choose from, which is also when revising a selection
+ * is possible.
  */
-export const QUICK_PICKS_EMPTY_ACTION = "Choose artists";
+export const QUICK_PICKS_PICK_ACTION = "Choose artists";
 
 /** One entry: a link, with the kind and target exposed for tests and evidence. */
 function QuickPickCard({ pick }: { pick: QuickPick }) {
@@ -240,7 +245,16 @@ export function QuickPicksShelf({
    * claim the rail cannot yet make (D2.2).
    */
 
-  const showEmptyAction = state === "empty" && onRequestArtistPicks !== undefined;
+  /*
+   * The affordance is offered when the rail holds something to choose from.
+   *
+   * `state === "empty"` is the case with *no* artists, and opening the picker
+   * there would show an empty picker — the dead end this control exists to end.
+   * So the condition is the presence of artists, not the presence of an empty
+   * state.
+   */
+  const showPickAction =
+    state !== "loading" && artists.length > 0 && onRequestArtistPicks !== undefined;
 
   return (
     <>
@@ -258,11 +272,11 @@ export function QuickPicksShelf({
           <QuickPickCard key={pick.id} pick={pick} />
         ))}
       </Shelf>
-      {showEmptyAction && (
+      {showPickAction && (
         /*
          * Rendered beside the shelf rather than inside it: the `Shelf` primitive
          * owns its own empty state and its header, and this is an extra
-         * affordance the rail adds when that empty state is the settled truth.
+         * affordance the rail adds beside them.
          *
          * The shared ghost `Button`, not a hand-rolled one: the motion
          * vocabulary belongs to the component that owns it, and this module is
@@ -275,12 +289,12 @@ export function QuickPicksShelf({
         <div className="-mt-6 mb-8 flex justify-center">
           <Button
             variant="ghost"
-            data-testid="quick-picks-empty-action"
+            data-testid="quick-picks-pick-action"
             onClick={() => {
               onRequestArtistPicks?.();
             }}
           >
-            {QUICK_PICKS_EMPTY_ACTION}
+            {QUICK_PICKS_PICK_ACTION}
           </Button>
         </div>
       )}

@@ -39,7 +39,10 @@ import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDisco
 import type { QuickPickRailReport } from "@/features/home/useQuickPickArtists";
 import { toProviderShelfState } from "@/features/home/useQuickPickArtists";
 import { MixList } from "@/features/mixes/MixList";
-import { ArtistOnboarding } from "@/features/onboarding/ArtistOnboarding";
+import {
+  ArtistOnboarding,
+  ARTIST_ONBOARDING_HEADING,
+} from "@/features/onboarding/ArtistOnboarding";
 import {
   getOnboardingServerSnapshot,
   isOnboardingSeen,
@@ -573,6 +576,7 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
         <ArtistOnboarding
           artists={railReport.artists}
           settled={railReport.settled}
+          heading={pickerOpen ? ARTIST_ONBOARDING_HEADING : undefined}
           onClose={closePicker}
         />
       )}

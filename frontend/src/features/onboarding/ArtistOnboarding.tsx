@@ -1,7 +1,6 @@
 "use client";
 
 import { X } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconButton } from "@/components/design-system/IconButton";
 import { ArtistCard } from "@/components/design-system/ArtistCard";
@@ -54,6 +53,14 @@ export const ARTIST_ONBOARDING_LABEL = "Pick artists you like";
 export const ARTIST_ONBOARDING_TITLE = "Welcome to Spotivibe";
 
 /**
+ * The heading for the surface opened on demand, rather than at first run.
+ *
+ * A listener who has been using the app for a week should not be greeted as a
+ * new one every time they revise their picks.
+ */
+export const ARTIST_ONBOARDING_HEADING = "Choose artists";
+
+/**
  * How long the surface waits for the rail before it stops waiting.
  *
  * Bounded on purpose. The value is a *bound*, not a target: the surface
@@ -66,12 +73,15 @@ export const ARTIST_ONBOARDING_PENDING_TIMEOUT_MS = 8_000;
 /**
  * The settled-and-empty copy.
  *
- * It names the place where artists can be chosen later, because "You can pick
- * them later" is only true when there is a later — and there is now: Settings
- * carries the same picker, and the empty rail offers it too.
+ * It does **not** promise a choice it cannot offer. The candidates are the rail's
+ * entries, so an empty rail means there is nothing to pick — and a surface that says
+ * "you can pick them later" over an empty list is a promise it has no way to keep.
+ *
+ * What it can honestly say is where artists come from: the rail is derived from what the
+ * listener has played, so artists appear as they listen.
  */
 export const ARTIST_ONBOARDING_EMPTY =
-  "We couldn't find any artists yet. You can pick them in Settings, under Artists.";
+  "We couldn't find any artists yet. Artists appear as you listen.";
 
 /**
  * The copy for a surface that stopped waiting for the rail.
@@ -81,7 +91,7 @@ export const ARTIST_ONBOARDING_EMPTY =
  * is that the artists did not arrive — and that the listener may leave.
  */
 export const ARTIST_ONBOARDING_UNRESOLVED =
-  "We couldn't load artists yet. You can pick them in Settings, under Artists.";
+  "We couldn't load artists yet. Give it a moment and try again.";
 
 /** The three states the surface can be in. */
 export type ArtistOnboardingPhase = "pending" | "offering" | "nothing";
@@ -292,19 +302,14 @@ export function ArtistOnboarding({
         {phase === "nothing" && (
           /*
            * The settled-and-empty case, or the surface that stopped waiting.
-           * Either way it says what it knows and points at the place where
-           * artists can be chosen — a place that now exists.
+           * Either way it says what it knows — and it does not point at a
+           * choice it cannot offer, because the candidates are the rail's
+           * entries and the rail is empty.
            */
           <div data-testid="artist-onboarding-empty" className="flex flex-col gap-3">
             <p className="text-body text-mist">
               {settled ? ARTIST_ONBOARDING_EMPTY : ARTIST_ONBOARDING_UNRESOLVED}
             </p>
-            <Link
-              href="/settings"
-              className="self-start rounded-buttons px-4 py-2 text-body-lg font-bold text-mist hover:text-pure-white"
-            >
-              Open Settings
-            </Link>
           </div>
         )}
 

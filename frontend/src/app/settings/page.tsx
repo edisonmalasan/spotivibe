@@ -1,7 +1,6 @@
 import { SectionHeader } from "@/components/design-system/SectionHeader";
 import { DataControls } from "@/features/backup/DataControls";
 import { InstallRow } from "@/features/pwa/UpdateNotice";
-import { ArtistsSettingsSection } from "@/features/preferences/ArtistsSettingsSection";
 import { AutofillSettingsSection } from "@/features/preferences/AutofillSettingsSection";
 import { LanguagesSettingsSection } from "@/features/preferences/LanguagesSettingsSection";
 
@@ -40,15 +39,6 @@ export default function SettingsPage() {
           Your language choices shape every discovery shelf and stay on this device.
         </p>
         <LanguagesSettingsSection />
-      </section>
-
-      <section>
-        <SectionHeader title="Artists" />
-        <p className="mb-6 max-w-2xl text-body-lg font-regular text-mist">
-          The artists you pick lead your Quick Picks. They stay on this device, and you can change
-          them whenever you like.
-        </p>
-        <ArtistsSettingsSection />
       </section>
 
       <section>

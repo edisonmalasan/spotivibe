@@ -206,17 +206,16 @@ describe("the first-run surface's three states", () => {
     expect(screen.queryByTestId("artist-onboarding-pending")).not.toBeInTheDocument();
   });
 
-  it("says so, and names the place to choose later, once the rail has settled with nothing", () => {
+  it("says so, and promises no choice it cannot offer, once the rail has settled with nothing", () => {
     render(<ArtistOnboarding artists={[]} settled onClose={vi.fn()} />);
 
     expect(screen.getByTestId("artist-onboarding-empty")).toHaveTextContent(
       /couldn't find any artists/i,
     );
-    // The copy names the place, and the place is a real route.
-    expect(screen.getByTestId("artist-onboarding-empty")).toHaveTextContent(/settings/i);
-    expect(screen.getByRole("link", { name: "Open Settings" }).getAttribute("href")).toBe(
-      "/settings",
-    );
+    // The candidates are the rail's entries, and the rail is empty — so the copy
+    // must not promise a later choice. It says where artists come from instead.
+    expect(screen.getByTestId("artist-onboarding-empty")).not.toHaveTextContent(/pick them/i);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
     // No "Start listening" that would store nothing and look like a real choice.
     expect(screen.queryByRole("button", { name: "Start listening" })).not.toBeInTheDocument();
     // And it is dismissible, because the answer is true.
