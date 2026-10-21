@@ -374,6 +374,56 @@ end. It is now offered when the rail holds artists, which is when there is somet
 selection can be revised. That is a correctness finding, and it cost nothing to fix because the
 control was already in the bundle.
 
+### 2h. The curated popular artists re-recorded the ceiling an eighth time, and the largest chunk did not move
+
+M35 ported Lyrix's curated per-language artist lists into the Quick Picks rail, so that a device with
+no picks, no local material and a failing provider is still offered artists. The lists are static
+data and the derivation is client-side, so the names land in the client bundle. Measured 2026-10-22
+from a clean `.next` on the same toolchain:
+
+| Measurement | After the artist Quick Picks re-entry | After the curated popular artists | Delta |
+|---|---:|---:|---:|
+| Client JS, total gzipped | 389,548 B | 390,206 B | **+658 B** |
+| Largest single chunk, gzipped | 97,538 B | 97,538 B | **0 B** |
+| Emitted chunks | 25 | 25 | **0** |
+| `/` first load, gzipped | 232,000 B (13 chunks) | 232,658 B (13 chunks) | +658 B |
+
+**The chunk count did not move, and that was the figure to watch.** The design predicted it: a module
+imported by one route's graph adds to a chunk, it does not add a chunk. Twenty-five chunks before,
+twenty-five after, and `/`'s first load still loads thirteen of them. A dependency brings a chunk with
+it, and the rules that watch the chunk counts carry **no** `toleranceBytes` at all — so "the count did
+not move" is the part that says this is first-party code rather than a library in disguise.
+
+**The largest chunk did not move either, and that is why its rule needed no re-record of its own.**
+`keeps the largest single chunk under the recorded figure` is the one ceiling rule that carries no
+tolerance, so its figure has to mean the same thing on two machines. The same build measures 97,534 B
+on the machine that measured it locally and 97,538 B on CI's runner, and the same two machines differ
+by 2 B on the *pre-change* tree — so the gap is the machines, not the change. The record carries the
+higher figure, as it already did, and **it must be confirmed on CI's runner**: a local machine is not
+the runner, and the rule is written so that a local run cannot pass while CI fails.
+
+**The total is recorded at the figure measured here**, because the total's rule carries 4,096 B of
+tolerance and that is what the tolerance is for. The +658 B are inside it by a factor of six.
+
+**What the 658 bytes are.** Thirty-three artist names and ten language keys, plus the derivation pass
+that reads them — first-party source, no dependency, no new import edge to a library, and no new
+request: the lists are names, and a name is what the rail resolves an artist with when nothing more
+precise is in hand.
+
+**The visible cost is not a byte cost, and it is recorded rather than solved.** A curated card renders
+the application's existing artist placeholder rather than a real image **unless a candidate track is by
+that same artist** — in which case the card carries that track's artwork, because the artwork is
+already carried by the tracks the caller supplied and the derivation may not issue a request to obtain
+it. A provider-derived card is a real picture; a curated one is a placeholder circle when there is no
+track to read a picture from. The way that would otherwise be solved is forbidden — Lyrix's batch
+thumbnail endpoint is a request, and this application has no provider artwork endpoint to read from — so
+the remainder is stated here instead.
+
+**The previous record is preserved, not overwritten.** `M34_CLIENT_BUDGET` holds the figures above's
+"before" column, and `states what the artist Quick Picks re-entry cost, in bytes` now reads against it
+rather than against the head ceiling. Measuring M34's delta from the head would restate its published
+965 as 1,493, which is the same misattribution the M22/M23 pair of records exists to prevent.
+
 ## 3. No motion without a reduced-motion path
 
 The floor already existed before this milestone: `src/app/globals.css` sets `animation-duration`,

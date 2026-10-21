@@ -28,7 +28,9 @@ material or from the provider's results. Curated popular artists SHALL be ranked
 and below the listener's explicit picks, and SHALL NOT displace, outrank, or reorder an entry derived
 from either. They SHALL be shaped by the selected languages, and a language that has no list of its
 own SHALL be offered artists from a list that is not language-specific. The shelf SHALL never be
-empty: where no other source offers an artist, it SHALL offer curated popular artists. Curated popular
+empty: where no other source offers an artist, it SHALL offer curated popular artists. A curated
+popular artist whose name matches an artist in the candidate tracks SHALL carry that artist's provider
+identity where the tracks supplied one, and that artist's name otherwise. Curated popular
 artists SHALL NOT be offered as one card per selected language, and a selection that would otherwise
 yield a single card SHALL be completed to more than one. Curated popular artists SHALL NOT be
 required in order for the rail to hold artist entries, and the shelf SHALL never fall back to a
@@ -50,7 +52,9 @@ Artist entries SHALL be deduplicated by canonical artist identity and by the art
 artist offered once under a provider identity and again under a name is offered once. Artist artwork
 SHALL resolve from artwork already carried by the candidate tracks; the derivation SHALL issue no
 request of its own to obtain it, and an artist whose tracks carry no artwork SHALL render the
-application's existing artist placeholder rather than a broken image.
+application's existing artist placeholder rather than a broken image. A curated popular artist whose
+name matches an artist in the candidate tracks SHALL carry that artist's artwork, because the
+artwork is already carried by the tracks the caller supplied.
 
 #### Scenario: Every Quick Pick navigates somewhere
 
@@ -72,8 +76,7 @@ application's existing artist placeholder rather than a broken image.
 
 - **WHEN** Quick Picks are derived for a device with no liked tracks and no listening events, and the
   Home surface holds resolved provider results
-- **THEN** the shelf offers artist entries derived from those results, or curated popular artists
-  where those results offer none
+- **THEN** the shelf offers artist entries derived from curated popular artists or from those results
 
 #### Scenario: A full set of selected languages still permits artist Quick Picks
 
@@ -180,5 +183,6 @@ application's existing artist placeholder rather than a broken image.
 #### Scenario: Curated popular artists resolve to a real artist
 
 - **WHEN** a curated popular artist is offered
-- **THEN** its target resolves to the artist route for that artist's name, and it carries no artwork
-  of its own, so it renders the application's existing artist placeholder
+- **THEN** its target resolves to the artist route for that artist's name, and it carries the artwork
+  of a candidate track by that artist where there is one, and the application's existing artist
+  placeholder where there is not
