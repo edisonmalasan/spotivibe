@@ -150,6 +150,7 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 | **M31** | Bring repository-root `scripts/` inside the quality gate | `MERGED, ARCHIVED` - PR #132, merge `4dc2850`, sync #133 `a75019e`, archived `2026-10-11-cover-root-scripts`; CI green on both runs; **no gate batch run** | M30, M21 |
 | **M32** | Make every reader of the application source tree race-tolerant | `MERGED, ARCHIVED` - PR #137, merge `3ceed84`, sync #138 `b2e06f8`, archived `2026-10-11-race-tolerant-tree-readers`; gate exit 0, 187 files / 3491 tests; **8 full-suite runs, 2 red** | M31, M25, M21 |
 | **M33** | Make a vanished source-tree file mean "look again" rather than fail now | `MERGED, ARCHIVED` - PR #141, merge `55bd6ea`, sync #142 `9f711f7`, archived `2026-10-13-source-tree-read-retry`; gate exit 0, 187 files / 3498 tests; **48 full-suite runs measured, 1 red — and that one was NOT this race** | M32, M25 |
+| **M34** | Make the artist Quick Picks picker re-enterable, and stop it asking with an empty list | `MERGED, ARCHIVED` - PR #145, merge `bde3970`, sync #146 `65f0f7c`, archived `2026-10-22-artist-picks-reentry`; gate exit 0, 188 files / 3518 tests; client budget re-recorded +965 B, **no new chunk** | M28, M23, M32 |
 
 > **M32 exists because the word "every" was in a scenario for four milestones and nothing could fail
 > on it.**
@@ -295,6 +296,83 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > run for M31, M32 or M33**. **`walk` can still throw an unretried `ENOENT`** if a *directory* vanishes —
 > pre-existing, untouched by M33, and recorded in `design.md` D5 so it is not later mistaken for handled.
 > **UNVERIFIED:** no browser was attached at any point in this milestone.
+
+> **M34 exists because the artist picker was implemented, worked, and asked once — and the spec never
+> said the answer could be changed.**
+>
+> The gate is one `localStorage` key, written at exactly two call sites in `ArtistOnboarding.tsx`:
+> **line 59 on dismissal**, **line 105 on confirmation**. A dismissal counted as an answer, on
+> purpose — *"re-asking someone who has already answered — or who chose to skip — is nagging, not
+> onboarding."* Sound reasoning for a surface whose choice can also be made later, and **the artist
+> picker had no such alternative**. `LanguagePicker` is reopened from Settings; `ArtistOnboarding` was
+> reached only through a one-shot flag. The `discovery` spec carried the scenario **"Languages are
+> changeable later"**, and **nothing carried an equivalent for the artist picks** — not in
+> `discovery`, not in `home-mixes`, not in `local-data`. The one first-run choice in this application
+> that cannot be revised was also the one the spec never protected.
+>
+> **And the way it was reached was worse than a one-shot.** The dialog renders on the first paint of
+> Home, but its artist list is fed by an asynchronous discovery request behind a queue slot, so **the
+> first render always carried an empty list** and rendered *"We couldn't find any artists yet. You can
+> pick them later."* **Later did not exist.** A dismissal there was an answer to a question the surface
+> had never asked. A temporary probe recorded the defect *before* anything changed: the first
+> committed paint offered both the empty message and the "Close" dismissal.
+
+> **The scope was cut by a measurement, and the measurement is published.** A **Settings → Artists**
+> section was built first, because it is the obvious home — the Languages section already reopens the
+> shared picker. It was measured and **it did not fit the client budget**: 6,987 gzipped bytes, a
+> **26th chunk**, and a **14th chunk on Home's first load**, against a 4,096-byte tolerance whose
+> chunk-count rules carry **none at all**. The budget's own module says of exactly that situation
+> that widening what it guarantees *"is not this change's decision to make"*, so **it was not made**.
+> The Settings host is deferred to a change that owns the budget, with the numbers recorded; the
+> re-entry ships on the rail instead, at **937 bytes and no new chunk**. The measurement is in
+> `docs/MOTION.md` §2g and `tasks.md` §8.5, so the next milestone starts from numbers.
+
+> **Two things the first build got wrong, and one of them was a correctness bug.** The affordance was
+> first offered on the **empty** rail — but the candidates *are* the rail's entries, so an empty rail
+> means opening the picker would show an empty picker. **The affordance was offering the very dead end
+> it was meant to end.** It is now offered when the rail **holds artists**, which is when there is
+> something to choose and a selection can be revised. And the empty state's copy pointed at a Settings
+> section that then did not exist; it now says only what the surface knows.
+
+> **CI failed this milestone once, and the failure was the point.** The first CI run was red with
+> `expected 97538 to be less than or equal to 97534` — **CI measured the largest chunk 4 bytes higher
+> than the machine that measured it locally**, and the same two machines differ by 2 bytes on the
+> *pre-change* tree. The largest-chunk rule carries **no** tolerance, so recording the lower of two
+> measurements against it would be a ceiling that passes on one machine and fails on another. The
+> record now carries the higher figure; the *total* keeps the local one, because the total's rule has
+> 4,096 bytes of tolerance and that is what the tolerance is for. **A budget whose only failing rule
+> is the one without tolerance, failing by four bytes on the runner it is supposed to guard, is the
+> rule working.**
+
+> **Two tests were found to be racy, and one was weaker than it looked.** `home-view.test.tsx`
+> asserted *"no dismissal while pending"* against a provider that **resolves**, so whether the rail had
+> settled by the time the dialog was found was a race — and it was caught failing. The property is now
+> asserted where the provider is held in flight. And the *"replaces the stored selection"* case
+> originally picked the **same** artist twice, so *"replaced"* and *"added to"* were indistinguishable;
+> it now picks two different artists and asserts the first is **gone**. The worker's own full-suite run
+> was green while its budget rules measured a **stale build** — the gate builds first, which is why it
+> caught what the standalone run missed.
+
+> **Recorded, not absorbed.** `openspec/specs/discovery/spec.md` still says **"First run offers
+> language selection"**, which the code contradicts and which M28's delta — landing in `home-mixes` and
+> `local-data` — never corrected: **two capabilities now disagree with each other and one disagrees
+> with the code.** The *same* requirement's other half is also unmet and has been since M28 — it says
+> the first-run surface gates the dashboard and the feed is *"not yet presented"*, and the code has
+> always rendered the feed behind the modal, so the honest reading is that **the spec is what is
+> wrong**. Both halves need a change that owns the first-run requirement as a whole. Also open: the
+> second unidentified intermittent failure (`gate-coverage.test.ts`'s 60 s timeout under load), the
+> root lockfile guard gap (**live** — an untracked root `pnpm-lock.yaml` and a two-entry root
+> `node_modules/` are in the working tree, and they are **not this work's to delete**; they were very
+> nearly committed by a careless `git add -A`, caught and reversed before the commit), and M31–M33's
+> open items including no gate batch for M31, M32, M33 or M34. **UNVERIFIED: no browser was attached
+> at any point in M34**, so nothing in it is visually verified — including the rail's control, whose
+> placement was chosen for the feed's row-order assertions and **not by eye**.
+
+> **Next eligible objective — recorded as a cursor, with no row created.** (1) **The Settings host for
+> the artist re-entry**, which needs a change that owns the client budget: the measurements are in
+> `docs/MOTION.md` §2g and `tasks.md` §8.5, and the implementation is recoverable from M34's history.
+> (2) **The first-run requirement as a whole** — `discovery`'s stale language-dialog scenario and the
+> feed-gating half that has never been met. (3) The root lockfile guard, which is live and uncaught.
 
 > **M31 exists because an exemption with an accurate reason is still an exemption, and accuracy is not currency.**
 >
