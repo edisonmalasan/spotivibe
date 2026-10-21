@@ -177,6 +177,37 @@ What is not allowed is saying it too early.
 - **This change does not make the rail better at finding artists.** It makes the existing rail
   reachable as a choice, which is a different thing.
 
+## D9 — Two consequences of sharing one component, recorded because the spec does not describe them
+
+Found while reviewing the implementation, and recorded here rather than left for a reader to
+discover.
+
+### D9.1 The Settings picker writes the first-run gate
+
+`ArtistOnboarding`'s `finish()` and `dismiss()` both call `markOnboardingSeen()`. The Settings
+section opens **that same component**, so:
+
+- choosing artists in Settings marks the first run as answered — sensible, and the reason a listener
+  who picks in Settings is not asked again;
+- **and dismissing the Settings picker without choosing also marks the first run as answered** — on a
+  surface that is not the first run.
+
+The delta does not forbid this: it says the re-entry *"SHALL NOT re-present the first-run surface to
+a listener who has already answered it"*, and the re-entry does not re-present anything. **No
+listener is stranded**, because the empty rail offers the same affordance.
+
+But the flag's meaning has widened from *"has this been seen"* to *"has this question been answered
+anywhere"*, and that widening is a consequence of sharing one component rather than something the
+delta asked for. The alternative — a second, Settings-specific picker that does not touch the gate —
+would be the drift D1 exists to prevent, so sharing is right and the consequence is recorded.
+
+### D9.2 The pending bound is 8 000 ms, and it is a number someone chose
+
+D7 requires a bound and does not state a value. **8 000 ms** was chosen, exported as
+`ARTIST_ONBOARDING_PENDING_TIMEOUT_MS`, and asserted to be **> 0 and ≤ 30 000 ms** — so a bound
+inflated into "a bound on paper" fails a test rather than passing it. A rail that settles *after* the
+bound still wins: the surface then shows the truth rather than the timeout.
+
 ## D8 — Rejected alternatives, with the reasons kept
 
 | Alternative | Why not |
