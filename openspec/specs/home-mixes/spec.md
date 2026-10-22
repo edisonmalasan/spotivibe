@@ -278,8 +278,20 @@ question about languages SHALL NOT remove the ability to choose languages, and S
 discovery, mix plans, or the time shelf use the selected languages.
 
 The first-run surface SHALL gate the dashboard: the discovery feed SHALL NOT be presented until
-onboarding is completed or dismissed. A listener who dismisses without selecting anything SHALL reach
-the dashboard rather than being held.
+onboarding is completed or dismissed. **The feed's own content SHALL NOT be rendered while that gate
+is up** — not hidden, not behind the surface — so the first run presents one thing and the feed
+appears when the surface ends. The application's shell around the feed SHALL remain, and so SHALL the
+route's own container: it is the feed's *content* that is withheld, not the box that holds it.
+
+**The gate belongs to the first run and not to a surface opened on demand.** A listener who opens the
+artist surface from the feed is revising a choice they have already made, and the feed they are
+revising is the one behind them; the feed SHALL remain presented in that case.
+
+**The first-run surface SHALL offer artists even while the feed is gated.** The artists it offers are
+derived, not rendered, so gating what the feed presents SHALL NOT empty the surface — otherwise
+gating the feed would replace one dead end with another.
+
+A listener who dismisses without selecting anything SHALL reach the dashboard rather than being held.
 
 **The artist selection SHALL be changeable afterwards, and a dismissal SHALL NOT be the end of the
 question.** A first-run surface answers a question once, and an answer a listener cannot revise is a
@@ -343,6 +355,30 @@ the listener in a state the application itself considers empty.
 - **WHEN** the listener resets the application's local data
 - **THEN** the first-run gate is cleared, and the next visit to Home asks again, because a reset
   that leaves the question answered but the answer deleted is a reset that cannot be repeated
+
+#### Scenario: The feed's content is not presented while the first run is up
+
+- **WHEN** the first-run surface is presented on a device that has not completed onboarding
+- **THEN** no part of the discovery feed's content is in the document, because a surface that
+  answers a question is not the place to show the content that question is about
+
+#### Scenario: The feed appears when the first run ends
+
+- **WHEN** the first-run surface is completed or dismissed
+- **THEN** the discovery feed is presented, because the gate is what the first run held and not a
+  permanent state
+
+#### Scenario: The first-run surface still offers artists while the feed is gated
+
+- **WHEN** the first-run surface is presented and the feed is not
+- **THEN** the surface offers the artists the rail would have offered, because gating the feed
+  withholds what is rendered and not what is known
+
+#### Scenario: A surface opened on demand does not gate the feed
+
+- **WHEN** a listener who has already answered opens the artist surface from the feed
+- **THEN** the feed remains presented behind it, because the listener is revising a choice they have
+  already made and the feed is what they are revising
 
 ### Requirement: Picked artists persist locally and travel through backup
 
