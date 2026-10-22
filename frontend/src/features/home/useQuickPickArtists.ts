@@ -70,18 +70,6 @@ export interface QuickPickArtists {
   retry(): void;
 }
 
-/**
- * What the rail reports upward.
- *
- * Both halves, deliberately: the entries *and* whether the rail has settled.
- * The first-run surface needs the second to know whether "there are no
- * artists" is a statement it may make at all.
- */
-export interface QuickPickRailReport {
-  readonly artists: readonly QuickPick[];
-  readonly settled: boolean;
-}
-
 /** The rail's lifecycle, derived from what the rail holds and what has settled. */
 function railState(
   artistCount: number,

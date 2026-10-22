@@ -18,6 +18,7 @@ import { getLocalData, type RepositorySet } from "@/data/localData";
 import { HomeView } from "@/features/home/HomeView";
 import { ShelfTrackCard } from "@/features/home/ShelfTrackCard";
 import { TopResultCard } from "@/features/search/TopResultCard";
+import { markOnboardingSeen } from "@/features/onboarding/onboardingGate";
 import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { resetMixStore, useMixStore } from "@/stores/mixStore";
@@ -533,6 +534,17 @@ describe("Home's content change (task 3.5)", () => {
       hydrated: true,
       hydrate: () => Promise.resolve(),
     });
+    /*
+     * The first run is off for this suite, and the gate is the `localStorage`
+     * flag rather than `preferences.onboardingComplete`.
+     *
+     * M36: while the first run is up the discovery feed is **not rendered** —
+     * not hidden, not behind the surface — so a case that wants Home's content
+     * to change under a filter has to be past the first run. Seeding the
+     * repository preference alone stopped doing that when the gate moved to
+     * `localStorage`; the flag is what the gate reads.
+     */
+    markOnboardingSeen();
     vi.stubGlobal(
       "fetch",
       vi.fn(

@@ -36,8 +36,7 @@ import { ShelfTrackCard } from "@/features/home/ShelfTrackCard";
 import { TimeShelf } from "@/features/home/TimeShelf";
 import { systemClock, type Clock } from "@/features/home/timeBands";
 import { useDiscoveryShelf, type DiscoveryShelf } from "@/features/home/useDiscoveryShelf";
-import type { QuickPickRailReport } from "@/features/home/useQuickPickArtists";
-import { toProviderShelfState } from "@/features/home/useQuickPickArtists";
+import { toProviderShelfState, useQuickPickArtists } from "@/features/home/useQuickPickArtists";
 import { MixList } from "@/features/mixes/MixList";
 import {
   ArtistOnboarding,
@@ -86,6 +85,13 @@ import { usePreferencesStore } from "@/stores/preferencesStore";
  * - **One clock read per mount.** The band is derived from an instant supplied
  *   here, so the filter, the cards, and the shelf cannot disagree about what time
  *   it is because they each asked separately.
+ * - **The first run gates the feed.** While the first run is unanswered, none
+ *   of the feed is rendered — the filter bar, the artist rail, the mix cards,
+ *   the time shelf and the section list. The surface is offered the rail's
+ *   artists from the shared derivation, so gating what the feed *presents*
+ *   withholds what is rendered and not what is known. The gate is keyed on the
+ *   first run rather than on the surface being open, so a picker opened from
+ *   the rail appears over a feed the listener is revising, and that feed stays.
  */
 
 /** A resolved duration of at least this many seconds counts as long-form. */
@@ -348,13 +354,6 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
     isOnboardingSeen,
     getOnboardingServerSnapshot,
   );
-  // The rail's own derived entries and settled state, reported upward by
-  // `QuickPicksShelf` so the onboarding dialog offers exactly the artists the
-  // feed is showing — and knows whether the rail has settled yet.
-  const [railReport, setRailReport] = useState<QuickPickRailReport>({
-    artists: [],
-    settled: false,
-  });
   /*
    * Whether the artist picker is open because the listener asked for it.
    *
@@ -452,114 +451,171 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
     recent: recentlyPlayedTracks(events, RECENT_LIMIT),
   };
 
-  const showOnboarding = !onboardingSeen || pickerOpen;
+  /*
+   * The Quick Picks rail, derived once and read by two consumers.
+   *
+   * M35 built `useQuickPickArtists` as the one derivation site, and this is the
+   * call that makes it one: the rail and the first-run surface read **this** hook
+   * with **the same two inputs** — the provider tracks the feed already fetched
+   * and the provider feed's own state — so "the surface offers the artists the
+   * rail would have offered" is true by construction rather than by two call
+   * sites agreeing.
+   *
+   * The surface used to learn the rail's contents from the rail itself, through
+   * an upward report. That report is gone: on first run the rail is not
+   * rendered, so there is nothing to report, and a surface handed an empty list
+   * would be a dead end where the rail used to be a choice. The derivation is
+   * read directly instead, and the report — a mechanism M34 specified in detail
+   * and never tested — leaves no untested channel behind it.
+   *
+   * The provider tracks are built once per render and handed to **both**
+   * consumers, so the two are handed the same values rather than two
+   * independently-built ones.
+   */
+  const providerTracks = [...feed.trending.tracks, ...feed.collections.tracks];
+  const providerState = toProviderShelfState(feed.trending.status);
+  const quickPickArtists = useQuickPickArtists({
+    providerTracks,
+    providerState,
+    onRetry: feed.trending.retry,
+  });
+
+  /*
+   * The first-run gate, and what it is keyed on.
+   *
+   * **Keyed on the first run, not on "is the surface open".** The first-run
+   * surface and the on-demand picker are the same component, and they have to
+   * behave differently: a listener who opens the picker from the rail is
+   * revising a choice they have already made, and the feed behind them is the
+   * thing they are revising. So the surface being open does not gate the feed —
+   * the first run not having been answered does.
+   */
+  const firstRun = !onboardingSeen;
+  const showOnboarding = firstRun || pickerOpen;
 
   return (
     <div className="flex flex-col gap-8" data-testid="home-view">
-      <HomeFilterBar
-        value={filter}
-        onChange={(chosen: HomeFilter) => {
-          setFilter(chosen);
-        }}
-      />
-
       {/*
-        The three M17 surfaces sit above the shelves, in their own rows rather than
-        inside the section flow: they are *not* `HOME_SECTIONS` entries, so folding
-        them in would mean either growing the one section list (which the rhythm
-        check then guards as if they were shelves) or keeping a second list of what
-        Home presents — the drift design decision 4 exists to prevent. Each one
-        reads the same presented filter the sections do, so they appear and
-        disappear together.
+        The first-run gate.
+
+        While the first run is up, **none of the feed is rendered** — not hidden,
+        not `opacity-0`, not behind the surface. The five parts of the feed (the
+        filter bar, the artist rail, the mix cards, the time shelf and the section
+        list) are absent from the document, so "the feed is not presented" is a
+        statement about the DOM rather than about a z-index: nothing of the feed
+        is in the accessibility tree, in the tab order, or in the payload.
+
+        **The app shell is outside this component** — the sidebar, the header and
+        the persistent player — so it stays, and the first run presents one thing
+        rather than a question laid over a dashboard.
       */}
-      {/*
-        The artist rail comes **first**, and that order is the requirement rather than a
-        layout preference.
+      {!firstRun && (
+        <>
+          <HomeFilterBar
+            value={filter}
+            onChange={(chosen: HomeFilter) => {
+              setFilter(chosen);
+            }}
+          />
 
-        It rendered third — behind the mix cards and the time shelf — while the *content*
-        requirement (artist-only) had been satisfied since M23. That combination is what
-        made it read as unfinished: the rail held only artists, but the first thing a
-        listener met was a row of mix cards derived from their selected languages, then a
-        time-of-day band. Both are legitimate surfaces answering a different question, and
-        neither was wrong on its own terms; they were simply ahead of the one surface that
-        speaks to who the listener already is.
+          {/*
+            The three M17 surfaces sit above the shelves, in their own rows rather than
+            inside the section flow: they are *not* `HOME_SECTIONS` entries, so folding
+            them in would mean either growing the one section list (which the rhythm
+            check then guards as if they were shelves) or keeping a second list of what
+            Home presents — the drift design decision 4 exists to prevent. Each one
+            reads the same presented filter the sections do, so they appear and
+            disappear together.
+          */}
+          {/*
+            The artist rail comes **first**, and that order is the requirement rather than a
+            layout preference.
 
-        Rendered order is asserted directly in `tests/routes.test.tsx`, against document
-        order rather than this source, so it cannot drift back.
-      */}
-      <QuickPicksShelf
-        /*
-         * M22 — the fourth source `home-mixes` specifies: provider results the
-         * feed has already fetched. Both `useDiscoveryShelf` calls above run
-         * unconditionally, so this costs no request and persists nothing; the
-         * derivation reads them only when the device holds no local material.
-         *
-         * This reads the *fetch*, not the section: whether the trending shelf is
-         * displayed is a layout decision and is deliberately not consulted, and
-         * `DiscoveryShelf.tracks` is `[]` until the shelf is ready — so a device
-         * whose discovery request failed or is still in flight renders the rail's
-         * error state rather than a silently empty rail.
-         *
-         * M23: the state is only consulted when the rail has no picks of its own — see
-         * `QuickPicksShelf`. Passing it is what keeps the consolidated rail's resilience
-         * equal to the Popular Artists section it replaced.
-         *
-         * The liked tracks, the events, the languages, and the first-run picks
-         * are **not** passed: the rail reads them from the stores through the
-         * shared hook, so the rail, this surface's dialog, and the Settings
-         * re-entry are guaranteed to be looking at the same artists (D1).
-         */
-        providerTracks={[...feed.trending.tracks, ...feed.collections.tracks]}
-        providerState={toProviderShelfState(feed.trending.status)}
-        onRetry={feed.trending.retry}
-        onRailChange={setRailReport}
-        onRequestArtistPicks={() => {
-          setPickerOpen(true);
-        }}
-        filter={filter}
-      />
-      <MixCards
-        likedTracks={likedTracks}
-        events={events}
-        languages={languages}
-        now={now}
-        clock={clock}
-        filter={filter}
-      />
-      <TimeShelf
-        likedTracks={likedTracks}
-        events={events}
-        now={now}
-        languages={languages}
-        clock={clock}
-        filter={filter}
-      />
+            It rendered third — behind the mix cards and the time shelf — while the *content*
+            requirement (artist-only) had been satisfied since M23. That combination is what
+            made it read as unfinished: the rail held only artists, but the first thing a
+            listener met was a row of mix cards derived from their selected languages, then a
+            time-of-day band. Both are legitimate surfaces answering a different question, and
+            neither was wrong on its own terms; they were simply ahead of the one surface that
+            speaks to who the listener already is.
 
-      {/*
-        M19, task 3.5 — the presented content changes when the filter changes.
+            Rendered order is asserted directly in `tests/routes.test.tsx`, against document
+            order rather than this source, so it cannot drift back.
+          */}
+          <QuickPicksShelf
+            /*
+             * M22 — the fourth source `home-mixes` specifies: provider results the
+             * feed has already fetched. Both `useDiscoveryShelf` calls above run
+             * unconditionally, so this costs no request and persists nothing; the
+             * derivation reads them only when the device holds no local material.
+             *
+             * This reads the *fetch*, not the section: whether the trending shelf is
+             * displayed is a layout decision and is deliberately not consulted, and
+             * `DiscoveryShelf.tracks` is `[]` until the shelf is ready — so a device
+             * whose discovery request failed or is still in flight renders the rail's
+             * error state rather than a silently empty rail.
+             *
+             * M23: the state is only consulted when the rail has no picks of its own — see
+             * `QuickPicksShelf`. Passing it is what keeps the consolidated rail's resilience
+             * equal to the Popular Artists section it replaced.
+             *
+             * The liked tracks, the events, the languages, and the first-run picks
+             * are **not** passed: the rail reads them from the stores through the
+             * shared hook, so the rail, this surface's dialog, and the Settings
+             * re-entry are guaranteed to be looking at the same artists (D1).
+             */
+            providerTracks={providerTracks}
+            providerState={providerState}
+            onRetry={feed.trending.retry}
+            onRequestArtistPicks={() => {
+              setPickerOpen(true);
+            }}
+            filter={filter}
+          />
+          <MixCards
+            likedTracks={likedTracks}
+            events={events}
+            languages={languages}
+            now={now}
+            clock={clock}
+            filter={filter}
+          />
+          <TimeShelf
+            likedTracks={likedTracks}
+            events={events}
+            now={now}
+            languages={languages}
+            clock={clock}
+            filter={filter}
+          />
 
-        `key={filter}` is what makes this a *transition* rather than a swap: a new
-        filter remounts the stack, and `@starting-style` gives the arriving content the
-        vocabulary's entrance. Without the key the element would survive the change and
-        nothing would animate, because the entrance is a rendering event, not a state
-        change.
+          {/*
+            M19, task 3.5 — the presented content changes when the filter changes.
 
-        **The leaving half is deliberately absent, and this is a recorded gap.** The
-        only way to fade a section *out* is to keep it in the DOM for the length of the
-        fade, and M17's own contract forbids that: `tests/home-view.test.tsx` asserts
-        that a section dropped by the filter is *not in the document* immediately after
-        the click, and a ghost copy would double every `home-section-*` test id and
-        every section landmark. So the removal stays immediate and the arrival is what
-        animates — which is the half that keeps the requirement that matters true: no
-        listener ever loses content to a motion, because no action waits for one. The
-        discrete route (`transition-behavior: allow-discrete`) is in the vocabulary and
-        is load-bearing on the `Dialog` primitive, where the leave *is* expressible.
-      */}
-      <div key={filter} className="motion-reveal flex flex-col gap-8">
-        {sections.map((section) => (
-          <HomeSectionView key={section.id} section={section} feed={feed} />
-        ))}
-      </div>
+            `key={filter}` is what makes this a *transition* rather than a swap: a new
+            filter remounts the stack, and `@starting-style` gives the arriving content the
+            vocabulary's entrance. Without the key the element would survive the change and
+            nothing would animate, because the entrance is a rendering event, not a state
+            change.
+
+            **The leaving half is deliberately absent, and this is a recorded gap.** The
+            only way to fade a section *out* is to keep it in the DOM for the length of the
+            fade, and M17's own contract forbids that: `tests/home-view.test.tsx` asserts
+            that a section dropped by the filter is *not in the document* immediately after
+            the click, and a ghost copy would double every `home-section-*` test id and
+            every section landmark. So the removal stays immediate and the arrival is what
+            animates — which is the half that keeps the requirement that matters true: no
+            listener ever loses content to a motion, because no action waits for one. The
+            discrete route (`transition-behavior: allow-discrete`) is in the vocabulary and
+            is load-bearing on the `Dialog` primitive, where the leave *is* expressible.
+          */}
+          <div key={filter} className="motion-reveal flex flex-col gap-8">
+            {sections.map((section) => (
+              <HomeSectionView key={section.id} section={section} feed={feed} />
+            ))}
+          </div>
+        </>
+      )}
 
       {showOnboarding && (
         /*
@@ -569,13 +625,16 @@ export function HomeView({ clock = systemClock }: { clock?: Clock }) {
          * `useSyncExternalStore` subscription, so this surface re-renders with
          * the dialog already gone.
          *
-         * `settled` travels with the entries, because the surface may not say
+         * The artists and the settled state come from the shared derivation read
+         * above, so the surface offers the artists the rail *would* have shown
+         * even though the rail is not rendered while the first run is up. The
+         * settled state travels with them, because the surface may not say
          * "there are no artists" before the rail has decided whether it holds
          * any.
          */
         <ArtistOnboarding
-          artists={railReport.artists}
-          settled={railReport.settled}
+          artists={quickPickArtists.artists}
+          settled={quickPickArtists.settled}
           heading={pickerOpen ? ARTIST_ONBOARDING_HEADING : undefined}
           onClose={closePicker}
         />

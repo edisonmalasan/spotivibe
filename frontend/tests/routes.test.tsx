@@ -30,7 +30,7 @@ import { makeTrack } from "./helpers/music-fixtures";
  * Route-shell contracts. M8 replaces the M1 Home placeholder with the discovery
  * feed and adds the `/discover` route, so the Home cases below assert the feed
  * the route now mounts (ordered sections, the geometry rhythm, first-run
- * language onboarding) rather than the placeholder's skeletons and empty copy.
+ * artist onboarding) rather than the placeholder's skeletons and empty copy.
  *
  * M9 adds the `/artist/[key]` and `/album/[key]` routes and a presentation layer
  * on `/now-playing`. Those two dynamic routes are thin by design, so what is
@@ -328,6 +328,12 @@ describe("route shells", () => {
     expect(within(dialog).getByRole("button", { name: "Start listening" })).toBeInTheDocument();
     // No account, sign-in, or email step is ever part of this choice.
     expect(dialog.textContent).not.toMatch(/sign in|log in|account|email/i);
+    // And the dashboard is not reached at all: the first run presents one
+    // thing, so no part of the feed is in the document behind the surface.
+    expect(screen.queryByTestId("home-quick-picks")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("home-mix-cards")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("home-time-shelf")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("home-filter")).not.toBeInTheDocument();
   });
 
   it("exposes the designed shell affordances — focusable shelf rails", async () => {
