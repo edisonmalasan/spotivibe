@@ -397,6 +397,50 @@ describe("the discovery capability and the home-mixes capability agree about the
     expect(effective).toContain(`### Requirement: ${REPLACEMENT_TITLE}`);
   });
 
+  it("leaves the main capability free of the contradiction once the change has been synced", () => {
+    const { main, delta } = readDiscoverySpecs();
+
+    /*
+     * **The stage is read from the main spec, not from the delta's presence.**
+     *
+     * The effective-capability computation above is right for a suite that must be
+     * green at Apply and green after the Sync: before the Sync the main spec still
+     * carries the stale requirement and the pending delta is what removes it, and
+     * after the Sync the main spec *is* the capability.
+     *
+     * But that computation **re-derives** the answer from the delta, so it would
+     * happily pass with a main spec that still carried the contradiction — the
+     * delta is found whether the change is active or archived, so it is never
+     * absent to absorb it. A guard that cannot fail against the very thing it
+     * guards is not a guard.
+     *
+     * So the main spec's own state is asserted directly, and the stage decides
+     * which way round it is checked:
+     *
+     *   - **before the Sync** the main spec is *expected* to still carry the stale
+     *     requirement, and the delta is what says how it goes away. That is the
+     *     pre-sync guard, and the delta must exist for it to be resolvable.
+     *   - **after the Sync** the main spec carries the replacement, and it SHALL
+     *     NOT also carry the stale requirement. That is the permanent guard.
+     */
+    const synced = main.includes(`### Requirement: ${REPLACEMENT_TITLE}`);
+
+    if (synced) {
+      expect(
+        main.includes(`### Requirement: ${STALE_TITLE}`),
+        "the main capability carries the replacement requirement and the stale one as well, so " +
+          "the two capabilities still contradict each other",
+      ).toBe(false);
+      expect(main).not.toContain("SHALL be offered language selection on first run");
+    } else {
+      expect(
+        delta,
+        "the main capability still carries the stale first-run requirement and this change's " +
+          "delta cannot be found, so nothing in the tree says how the contradiction is resolved",
+      ).not.toBeNull();
+    }
+  });
+
   it.skipIf(DELTA === null)("declares the removal with a reason and a migration", () => {
     const removed = DELTA!.slice(
       DELTA!.indexOf("## REMOVED Requirements"),

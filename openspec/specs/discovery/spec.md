@@ -114,19 +114,27 @@ Trending, genre, podcast, and curated collection shelves SHALL be produced from 
 - **WHEN** the podcast preview shelf renders
 - **THEN** it is presented as podcasts and prefers results whose known duration indicates long-form content
 
-### Requirement: Language catalog and first-run onboarding
+### Requirement: Language catalog and language preference
 
-The application SHALL offer a catalog of at least 37 selectable languages, each identified by a stable language code with a human-readable name. A user who has not completed onboarding SHALL be offered language selection on first run, presented as an explicit, dismissible-or-confirmable choice that can be completed with one or more languages. Completing it SHALL persist the selected languages and the completed state through the local preferences repository, SHALL survive reload, and SHALL NOT require an account. After onboarding, the selected languages SHALL remain changeable from Settings, and changing them SHALL persist the same way.
+The application SHALL offer a catalog of at least 37 selectable languages, each identified by a stable
+language code with a human-readable name. The selected languages SHALL be a **preference** rather than
+a profile: they SHALL be persisted locally, SHALL survive reload, and SHALL NOT require an account.
 
-#### Scenario: First run offers language selection
+The selected languages SHALL remain changeable from Settings, and changing them SHALL persist the same
+way. **First run SHALL NOT offer language selection** — the first-run surface asks for artists, and is
+specified in `home-mixes`' *"First run asks for artists, not languages"*. This capability states the
+language catalog and the language preference; it does not state a first-run surface, so that the two
+capabilities cannot come to disagree about one again.
+
+#### Scenario: First run does not offer language selection
 
 - **WHEN** a user opens the app with onboarding not yet completed
-- **THEN** language selection is offered with the full catalog, and no account, sign-in, or email prompt is shown
+- **THEN** language selection is not offered, and no account, sign-in, or email prompt is shown
 
-#### Scenario: Completing onboarding persists the choice
+#### Scenario: The language preference persists
 
-- **WHEN** the user confirms one or more languages and the app is reloaded
-- **THEN** the same languages are selected and onboarding is not offered again
+- **WHEN** the selected languages are persisted and the app is reloaded
+- **THEN** the same languages are selected, and no account was required to do it
 
 #### Scenario: Languages are changeable later
 
