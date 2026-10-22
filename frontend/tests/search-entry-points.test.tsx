@@ -9,6 +9,7 @@ import { AlbumTile } from "@/features/search/AlbumTile";
 import { deriveResults, type DerivedAlbum, type DerivedArtist } from "@/features/search/derive";
 import { ResultMenu } from "@/features/search/ResultMenu";
 import { artistRequestKey } from "@/features/artist/artistKeys";
+import { markOnboardingSeen } from "@/features/onboarding/onboardingGate";
 import { resetHistoryStore, useHistoryStore } from "@/stores/historyStore";
 import { resetLibraryStore, useLibraryStore } from "@/stores/libraryStore";
 import { resetPlayerStore } from "@/stores/playerStore";
@@ -96,6 +97,17 @@ beforeEach(() => {
     hydrated: true,
     hydrate: () => Promise.resolve(),
   });
+  /*
+   * The first run is off for this suite, and the gate is the `localStorage`
+   * flag rather than `preferences.onboardingComplete`.
+   *
+   * M36: while the first run is up the discovery feed is **not rendered** — not
+   * hidden, not behind the surface — so a case that asserts on the rail has to
+   * be past the first run. Seeding the repository preference alone stopped
+   * doing that when the gate moved to `localStorage`; the flag is what the gate
+   * reads.
+   */
+  markOnboardingSeen();
 });
 
 afterEach(() => {

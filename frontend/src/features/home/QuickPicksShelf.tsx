@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
 import { Shelf, type ShelfState } from "@/components/recommendations/Shelf";
 import { ArtistCard } from "@/components/design-system/ArtistCard";
 import { Button } from "@/components/design-system/Button";
@@ -12,7 +11,7 @@ import {
   type HomeFilterValue,
 } from "@/features/home/homeFilter";
 import { quickPickHref, type QuickPick } from "@/features/home/quickPicks";
-import { useQuickPickArtists, type QuickPickRailReport } from "@/features/home/useQuickPickArtists";
+import { useQuickPickArtists } from "@/features/home/useQuickPickArtists";
 
 /**
  * Home's Quick Picks shelf (M23; spec: `home-mixes` — "Quick Picks are artist
@@ -129,19 +128,6 @@ export interface QuickPicksShelfProps {
   /** Retry handler for `providerState === "error"`. */
   onRetry?: () => void;
   /**
-   * The derived rail, reported upward.
-   *
-   * First-run onboarding offers the *same* entries the rail shows, so deriving
-   * them twice would let the two disagree about which artists exist. The rail is
-   * the single derivation site and the dialog renders what it produced.
-   *
-   * **The report carries the settled state as well as the entries** (D2). A
-   * consumer that receives only the entries cannot tell an empty rail that has
-   * settled from one that has not, and "no artists" is a statement that may only
-   * be made once the rail has decided.
-   */
-  onRailChange?(report: QuickPickRailReport): void;
-  /**
    * Opens the artist picker, offered by the rail once it has settled with
    * nothing in it (D4). Omitted by a caller with nowhere to send the listener.
    */
@@ -169,63 +155,13 @@ export function QuickPicksShelf({
   className = "",
   providerState = "ready",
   onRetry,
-  onRailChange,
   onRequestArtistPicks,
 }: QuickPicksShelfProps) {
-  const { artists, settled, state } = useQuickPickArtists({
+  const { artists, state } = useQuickPickArtists({
     providerTracks,
     providerState,
     onRetry,
   });
-
-  /*
-   * Report the derived rail upward so first-run onboarding offers exactly these
-   * artists. Deriving them a second time inside the dialog would let the two
-   * disagree — and the dialog is the surface whose whole claim is "these are the
-   * artists you are choosing between".
-   *
-   * Reported *before* the filter check on purpose: the surface is filtered out
-   * of the feed under some filters, but onboarding still needs the artists.
-   */
-  /*
-   * The report is guarded on **content**, and the callback is held in a ref.
-   *
-   * Two independent hazards, both of which hang the run rather than failing an
-   * assertion:
-   *
-   * 1. `artists` is a fresh array from `useMemo` whenever an input's identity
-   *    changes, and `HomeView`'s `setRailReport` re-renders when called —
-   *    so reporting on array identity calls `setState` on every render.
-   * 2. A caller passing an inline arrow (`onRailChange={(x) => …}`) hands over a
-   *    new function identity on every render, which re-fires the effect even when
-   *    nothing about the rail changed.
-   *
-   * `railKey` is the rail's actual identity for this purpose, and the ref keeps
-   * the callback out of the dependency list so neither can loop.
-   *
-   * **`settled` is a second dependency, and it is load-bearing.** The rail's
-   * content can be unchanged while its settledness changes — a device whose
-   * stores have just hydrated settles on the same empty list it was already
-   * showing — and a report keyed on content alone would never carry the
-   * transition, leaving the consumer unable to tell "still deciding" from
-   * "decided: nothing".
-   */
-  const railKey = artists.map((entry) => entry.id).join("|");
-  const onRailChangeRef = useRef(onRailChange);
-  // Written inside an effect rather than during render: assigning `ref.current`
-  // while rendering is exactly the anti-pattern `react-hooks/refs` flags, and it
-  // would publish an uncommitted value to a concurrent render that may be thrown
-  // away. The update runs before the reporting effect below because effects fire
-  // in declaration order, so the latest callback is always the one invoked.
-  useEffect(() => {
-    onRailChangeRef.current = onRailChange;
-  }, [onRailChange]);
-  useEffect(() => {
-    onRailChangeRef.current?.({ artists, settled });
-    // `artists` is intentionally excluded: `railKey` is its identity for this
-    // purpose, and depending on the array itself is what caused the loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railKey, settled]);
 
   if (!presentsSurface(QUICK_PICK_SURFACE, filter)) return null;
 

@@ -245,6 +245,22 @@ describe("the artist selection is changeable later", () => {
         "Aurora",
       ]);
     });
+    /*
+     * The surface closes when the write completes, and the reopening below
+     * needs a *closed* surface to reopen.
+     *
+     * The repository read above is not that signal: it observes the write from
+     * outside, while the surface closes a moment later, when the write's own
+     * promise resolves and the surface calls `onClose()`. Reopening in between
+     * finds the *same* surface still on screen — with its button reading
+     * "Saving…" — and the second selection is then made on a surface that is
+     * already finishing the first one.
+     */
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: ARTIST_ONBOARDING_LABEL }),
+      ).not.toBeInTheDocument(),
+    );
 
     // Then change it: the picker reopens and the selection is replaced, not added to.
     fireEvent.click(screen.getByTestId("quick-picks-pick-action"));
@@ -308,14 +324,32 @@ describe("the first-run surface before the rail has settled", () => {
     render(<HomeView />);
     const dialog = await screen.findByRole("dialog", { name: ARTIST_ONBOARDING_LABEL });
 
-    // The rail knows an artist…
-    await waitFor(() => {
-      expect(screen.getAllByTestId("quick-pick").length).toBeGreaterThan(0);
-    });
-    // …and the surface does not yet, because the rail has not decided.
+    // The surface does not yet, because the rail has not decided.
     expect(within(dialog).queryByRole("button", { name: /Aurora/ })).not.toBeInTheDocument();
     expect(within(dialog).queryByTestId("artist-onboarding-empty")).not.toBeInTheDocument();
     expect(within(dialog).getByTestId("artist-onboarding-pending")).toBeInTheDocument();
+
+    /*
+     * And the derivation *does* know an artist — the feed is merely **gated**
+     * behind the surface, which is the whole point of the gate: what is
+     * withheld is what is **rendered**, not what is **known**.
+     *
+     * M36: on the first run the rail is not in the document, so the artist is
+     * observed once the gate lifts rather than beside the surface. Lifting it
+     * here is the same write the surface's own dismissal makes, and it does
+     * not settle the rail: the local stores are still hydrating, so the rail's
+     * *content* is there and its *settledness* is not.
+     */
+    act(() => {
+      markOnboardingSeen();
+    });
+    await waitFor(() => {
+      expect(
+        screen
+          .getAllByTestId("quick-pick")
+          .map((card) => card.getAttribute("data-quick-pick-target")),
+      ).toContain("Aurora");
+    });
   });
 
   it("cannot strand the listener: the pending state is time-bounded", async () => {
