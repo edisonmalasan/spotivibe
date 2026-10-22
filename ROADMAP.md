@@ -459,6 +459,98 @@ the full `AGENTS.md` lifecycle: Propose → Apply → independent verification �
 > filled with a hand-written list**: that is a curation task, not a port, and it is recorded rather than
 > guessed at. **UNVERIFIED: no browser was attached at any point in M35**, so what a curated card looks
 > like with a candidate track's artwork, and with the placeholder, is unverified by eye.
+| **M36** | Make the first run present one thing | `MERGED, ARCHIVED` - PR #153, merge `6db1cb8`, sync #154 `7f40472`, archived `2026-10-22-first-run-gates-the-feed`; gate exit 0, 190 files / 3573 tests; **client bundle −48 B**; `discovery`'s stale first-run requirement **removed** | M28, M34, M35 |
+
+
+> **M36 exists because two capabilities contradicted each other about what first run is, and the code
+> contradicted both.**
+>
+> `openspec/specs/discovery/spec.md` said a user who has not completed onboarding *"SHALL be offered
+> **language selection** on first run"*, with the choice persisted through the local preferences
+> repository. **The code has done none of that since M28**, which replaced the language dialog with an
+> artist picker; `home-mixes` says so in terms — *"SHALL NOT present a language-selection dialog"*. M28's
+> delta landed in `home-mixes` and `local-data` and **never corrected `discovery`**, so the two have
+> said opposite things about first run since October. M34 §8.1 and M35 §8.1 each recorded it as *"needs
+> a change that owns the first-run requirement as a whole"*. This was that change.
+>
+> **And the feed had never been gated.** `home-mixes` said *"the discovery feed SHALL NOT be presented
+> until onboarding is completed or dismissed"*, and `HomeView.tsx` rendered the rail at line 490, the mix
+> cards at 521, the time shelf at 529 and the sections at 559 — **alongside** the dialog at 576. `git log
+> -S "showOnboarding"` finds **exactly one commit**, the one that built the feed: **it was never gated.**
+> M28's own archived task said dismissal *"reaches the dashboard"*, and M28's own proposal gave the
+> reason the overlay was wrong: *"the dashboard renders behind a dialog before anyone has expressed a
+> preference at all"* and *"It covers content that is already there."* **So the requirement was right and
+> the code was wrong**, and it had been wrong since the feed was built.
+
+> **What M28's proposal identified, M35 made fixable.** M28's objection was that the dashboard rendered
+> *before anyone had expressed a preference* — but the dialog had nothing to offer, so gating the feed
+> would have meant gating it behind an empty dialog. **M35 fixed that**: the curated popular artists
+> guarantee the first-run surface always has real artists, from every language, with no request. The
+> gate is now possible, and the dead end that prevented it is gone.
+
+> **The gate is a render decision, and the surface still knows.** The feed's content is **not rendered**
+> while the first run is up — not hidden, not behind the surface — and the route's own container and the
+> app shell stay. The surface is handed the same artists the rail would have shown, read from the shared
+> derivation M35 built, with the **same two inputs** the shelf is handed, so the two readings cannot
+> differ. **The gate is keyed on the first run and not on *"is the surface open"***: a picker opened
+> from the rail appears over a feed the listener is revising, and that feed stays.
+
+> **The upward report is retired, and M34's untested mechanism is a finding of its own.** M34's design
+> made the rail report its contents upward through `onRailChange`, **specified that report's shape in
+> detail**, made *"settled"* the milestone's load-bearing signal — and **nothing ever tested it**. No
+> test in the repository referenced `onRailChange`, `railReport` or `QuickPickRailReport`, and no
+> requirement mandated it. On first run the rail is not rendered, so there is nothing to report, so the
+> report could not survive. **It is retired rather than replaced**, and the surface reads the hook
+> directly: a mechanism no test can fail is one nobody knows is doing anything, and this removes the
+> last one instead of adding another.
+
+> **Two suites were silently rendering the first-run surface over the feed.** `motion-surfaces.test.tsx`
+> and `search-entry-points.test.tsx` seeded `preferences.onboardingComplete: true` — the *old* gate —
+> and never marked the `localStorage` flag. Harmless before, because the feed rendered anyway; **five
+> tests** failed once it was not. Both now mark the first run seen. That two suites were passing
+> *through* a first-run surface they believed they had skipped is a finding about M17-era test setup
+> rather than about this change, and it is recorded here.
+
+> **A pre-existing race was found, measured, and fixed in the test.** One case synchronised on the
+> **repository write** rather than on the **surface closing**, and those are different moments. Measured
+> with the pre-change source restored byte-for-byte: **10 of 10 passed**; with this change **1 of 8**,
+> then **1 of 20** — the second derivation instance widened the window; **0 of 20** once the test waited
+> for the surface. **The underlying store race is not fixed**: the picks store's `load()` has **no
+> in-flight guard**, so the two readers this change adds can read it concurrently. Harmless today
+> because both read the same data, but it is a second reader on a store written assuming one, and it is
+> recorded rather than absorbed.
+
+> **The client bundle went _down_ by 48 bytes**, because the report mechanism is gone. The largest
+> chunk and the chunk count did not move, so **the recorded budget still holds and no re-record was
+> needed**, and `motion-budget.test.ts` passes 29/29 against the unchanged record.
+
+> **The spec-side guard had a hole, and the negative control found it.** The test computed the
+> *"effective"* capability — the main spec with the stale requirement dropped and the delta's added
+> block put in its place — so that it would be green before the Sync and after it. But that computation
+> **re-derives** the answer from the delta, and the delta is found whether the change is active **or
+> archived**, so it is never absent to absorb a contradiction: **the test would have passed with a main
+> spec that still said first run was a language choice.** The stage is now read **from the main spec**
+> — before the Sync it is *expected* to carry the stale requirement and the delta is what removes it;
+> after it, the main spec must not carry it — and the control (the stale requirement put back into the
+> synced main spec) **now fails**, with the tree restored byte-for-byte by SHA-256. The test was
+> verified green in **both** stages. A guard that cannot fail against the very thing it guards is not a
+> guard, and this one was, until a control that was supposed to fail instead passed.
+
+> **The `discovery` requirement was replaced _in place_,** so the capability's reading order is
+> unchanged and the diff is one region rather than two — and the shape is **M23's**, which is the
+> precedent in this repository for the same job: a `## REMOVED Requirements` block with a **Reason**
+> and a **Migration**, and a `## ADDED Requirements` block carrying the requirement's true half. The
+> added requirement **points at** `home-mixes` for the first-run surface rather than restating it,
+> because duplication is what produced the contradiction in the first place.
+
+> **Recorded, not absorbed.** The **Settings host** for the artist re-entry (M34 §8.5) is 6,987 gzipped
+> bytes and a 26th chunk against a 4,096-byte tolerance, and it needs a change that owns the client
+> budget — though **M35 has made it less pressing, not more**, since the rail's own control is always
+> reachable now. The root lockfile guard gap is **live**: an untracked root `pnpm-lock.yaml` and a
+> two-entry root `node_modules/` are in the working tree, and they are **not this work's to delete**.
+> The unidentified intermittent failure (M34 §8.3) stands, and no gate batch has been run for M31
+> through M36. **UNVERIFIED: no browser was attached at any point in M36**, so what the first run looks
+> like with the feed absent was not observed by eye — the evidence for the gate is the DOM assertions.
 > **M31 exists because an exemption with an accurate reason is still an exemption, and accuracy is not currency.**
 >
 > `scripts/` was a **frozen root** — a tracked directory no gate step reads. Its recorded reason was
